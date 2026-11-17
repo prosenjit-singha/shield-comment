@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createQueryClient } from '@/lib/query-client'
 import { createAppRouter } from '@/router'
 
@@ -50,17 +50,6 @@ async function submit(email = 'admin@shield.bd', password = 'secret-password') {
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: password } })
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 }
-
-beforeAll(() => {
-  // jsdom has no matchMedia; the `_authed` layout reads it to resolve the 'system' theme.
-  window.matchMedia ??= ((query: string) =>
-    ({
-      matches: false,
-      media: query,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    }) as unknown as MediaQueryList) as typeof window.matchMedia
-})
 
 beforeEach(() => {
   auth.getSession.mockReset().mockResolvedValue(noSession)

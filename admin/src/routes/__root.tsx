@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-router'
 import { lazy, Suspense } from 'react'
 import { Button } from '@/components/ui/button'
+import { Toaster } from '@/components/ui/sonner'
 
 export interface RouterContext {
   queryClient: QueryClient
@@ -31,6 +32,7 @@ function RootLayout() {
   return (
     <>
       <Outlet />
+      <Toaster position="top-right" closeButton />
       {RouterDevtools && (
         <Suspense fallback={null}>
           <RouterDevtools position="bottom-right" />

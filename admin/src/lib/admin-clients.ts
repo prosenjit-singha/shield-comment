@@ -1,0 +1,127 @@
+import { keepPreviousData, queryOptions } from '@tanstack/react-query'
+import { apiFetch } from '@/lib/api'
+
+/** `GET /api/admin/clients` item (M1-T1 / M2-T3). */
+export type ClientStatus = 'ACTIVE' | 'SUSPENDED'
+export interface ClientOwner {
+  id: string
+  email: string
+  name: string
+}
+export interface AdminClient {
+  id: string
+  name: string
+  slug: string
+  status: ClientStatus
+  createdAt: string
+  owner: ClientOwner | null
+  memberCount: number
+}
+export interface ClientList {
+  items: AdminClient[]
+  total: number
+  skip: number
+  take: number
+}
+
+export const CLIENT_SORTS = ['newest', 'oldest', 'name'] as const
+export type ClientSort = (typeof CLIENT_SORTS)[number]
+export const CLIENT_STATUSES: readonly ClientStatus[] = ['ACTIVE', 'SUSPENDED']
+export const CLIENTS_PAGE_SIZE = 20
+export const REASON_MAX = 500
+
+/**
+ * `/admin/clients` URL search params. Defaults are left out of the URL (`undefined`):
+ * no search, all statuses, newest first, page 1. `from`/`to` are Dhaka calendar days (`YYYY-MM-DD`).
+ */
+export interface ClientsSearch {
+  q?: string
+  status?: ClientStatus
+  from?: string
+  to?: string
+  sort?: Exclude<ClientSort, 'newest'>
+  page?: number
+}
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+
+function isValidDay(value: unknown): value is string {
+  return typeof value === 'string' && DATE_ONLY.test(value) && !Number.isNaN(Date.parse(value))
+}
+
+/** `validateSearch` for the route: drops anything malformed instead of throwing. */
+export function validateClientsSearch(raw: Record<string, unknown>): ClientsSearch {
+  const search: ClientsSearch = {}
+  if (typeof raw.q === 'string' && raw.q.trim()) search.q = raw.q.trim().slice(0, 100)
+  if (raw.status === 'ACTIVE' || raw.status === 'SUSPENDED') search.status = raw.status
+  if (isValidDay(raw.from)) search.from = raw.from
+  if (isValidDay(raw.to)) search.to = raw.to
+  if (raw.sort === 'oldest' || raw.sort === 'name') search.sort = raw.sort
+  const page = typeof raw.page === 'number' ? raw.page : Number(raw.page)
+  if (Number.isInteger(page) && page > 1) search.page = page
+  return search
+}
+
+/** Bangladesh has no DST: a Dhaka day is always `+06:00`. */
+const DHAKA_OFFSET = '+06:00'
+
+/**
+ * Query string for the API. Date filters are whole Dhaka days: the backend reads offset date-times
+ * as instants and treats `createdTo` as inclusive (`< createdTo + 1 ms`).
+ */
+export function clientListParams(search: ClientsSearch): URLSearchParams {
+  const params = new URLSearchParams()
+  if (search.q) params.set('q', search.q)
+  if (search.status) params.set('status', search.status)
+  if (search.from) params.set('createdFrom', `${search.from}T00:00:00${DHAKA_OFFSET}`)
+  if (search.to) params.set('createdTo', `${search.to}T23:59:59.999${DHAKA_OFFSET}`)
+  params.set('sort', search.sort ?? 'newest')
+  params.set('skip', String(((search.page ?? 1) - 1) * CLIENTS_PAGE_SIZE))
+  params.set('take', String(CLIENTS_PAGE_SIZE))
+  return params
+}
+
+export const adminClientsKey = ['admin', 'clients'] as const
+
+export function clientsQueryOptions(search: ClientsSearch) {
+  const params = clientListParams(search)
+  return queryOptions({
+    queryKey: [...adminClientsKey, 'list', params.toString()] as const,
+    queryFn: ({ signal }) => apiFetch<ClientList>(`/admin/clients?${params.toString()}`, { signal }),
+    // Keep the previous page on screen while the next filter/page loads.
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function updateClientStatus(input: { id: string; status: ClientStatus; reason: string }) {
+  return apiFetch<{ client: AdminClient; changed: boolean }>(
+    `/admin/clients/${encodeURIComponent(input.id)}/status`,
+    { method: 'PATCH', body: JSON.stringify({ status: input.status, reason: input.reason }) },
+  )
+}
+
+export function impersonateClient(workspaceId: string) {
+  return apiFetch<{ token: string; redirectUrl: string }>(
+    `/admin/clients/${encodeURIComponent(workspaceId)}/impersonate`,
+    { method: 'POST' },
+  )
+}
+
+/** Trimmed reason → error text, or `null` when valid (backend: required, trimmed, 1–500). */
+export function reasonError(reason: string): string | null {
+  const trimmed = reason.trim()
+  if (!trimmed) return 'A reason is required.'
+  if (trimmed.length > REASON_MAX) return `Keep the reason to ${REASON_MAX} characters or fewer.`
+  return null
+}
+
+const dhakaDate = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Dhaka',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+})
+
+export function formatDhakaDate(iso: string): string {
+  return dhakaDate.format(new Date(iso))
+}

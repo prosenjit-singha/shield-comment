@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createQueryClient } from '@/lib/query-client'
 import { createAppRouter } from '@/router'
 
@@ -32,31 +32,6 @@ function renderAt(path: string) {
   )
   return { router, queryClient }
 }
-
-beforeAll(() => {
-  // jsdom has no matchMedia; the shell reads it for the theme and the mobile breakpoint.
-  window.matchMedia ??= ((query: string) =>
-    ({
-      matches: false,
-      media: query,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    }) as unknown as MediaQueryList) as typeof window.matchMedia
-  // jsdom has no Web Animations API; Animate UI's menus stagger their rows with element.animate().
-  Element.prototype.animate ??= function () {
-    return {
-      finished: Promise.resolve(),
-      playState: 'finished',
-      cancel() {},
-      finish() {},
-      addEventListener() {},
-      removeEventListener() {},
-    } as unknown as Animation
-  }
-  Element.prototype.getAnimations ??= () => []
-  // …and no SVGGeometryElement, which the menu's check indicators test with instanceof.
-  globalThis.SVGGeometryElement ??= class extends SVGElement {} as typeof SVGGeometryElement
-})
 
 beforeEach(() => {
   auth.getSession.mockReset().mockResolvedValue(superAdmin)

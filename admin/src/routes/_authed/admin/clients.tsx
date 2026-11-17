@@ -1,19 +1,553 @@
+import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { Building2 } from 'lucide-react'
-import { PlaceholderPage } from '@/components/placeholder-page'
+import {
+  ArrowDownUp,
+  Building2,
+  ChevronLeft,
+  ChevronRight,
+  LogIn,
+  RotateCcw,
+  Search,
+  SearchX,
+} from 'lucide-react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { ClientStatusDialog, type StatusChange } from '@/components/clients/client-status-dialog'
+import { useLoginAsClient } from '@/components/clients/use-login-as-client'
+import { PageHeader } from '@/components/placeholder-page'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Progress } from '@/components/ui/progress'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  type AdminClient,
+  type ClientSort,
+  type ClientStatus,
+  CLIENTS_PAGE_SIZE,
+  type ClientsSearch,
+  clientsQueryOptions,
+  formatDhakaDate,
+  validateClientsSearch,
+} from '@/lib/admin-clients'
 
 export const Route = createFileRoute('/_authed/admin/clients')({
+  validateSearch: validateClientsSearch,
+  loaderDeps: ({ search }) => search,
+  // Warm the cache (hover preload, first load) without blocking the screen; the page shows skeletons.
+  loader: ({ context, deps }) => {
+    void context.queryClient.prefetchQuery(clientsQueryOptions(deps))
+  },
   component: ClientsPage,
 })
 
+const SEARCH_DEBOUNCE_MS = 300
+
+/**
+ * The actions column stays pinned to the right edge while the table scrolls inside its card, so
+ * Login as Client is always in view (from `sm` up; on phones the whole row scrolls).
+ */
+const stickyActions = 'bg-card sm:sticky sm:right-0 sm:border-l'
+
+const sortLabels: Record<ClientSort, string> = {
+  newest: 'Newest first',
+  oldest: 'Oldest first',
+  name: 'Name (A–Z)',
+}
+
 function ClientsPage() {
+  const search = Route.useSearch()
+  const navigate = Route.useNavigate()
+  const query = useQuery(clientsQueryOptions(search))
+  const loginAs = useLoginAsClient()
+  const [statusChange, setStatusChange] = useState<StatusChange | null>(null)
+
+  /** Any filter change goes back to page 1; `replace` keeps typing out of the history stack. */
+  const setFilters = (patch: Partial<ClientsSearch>) =>
+    navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true })
+
+  const hasFilters = Boolean(search.q || search.status || search.from || search.to)
+  const page = search.page ?? 1
+  const data = query.data
+  const pageCount = data ? Math.max(1, Math.ceil(data.total / CLIENTS_PAGE_SIZE)) : 1
+
   return (
-    <PlaceholderPage
-      title="Clients"
-      description="Every F-commerce workspace on ShieldComment, with plan, quota and status."
-      icon={Building2}
-      emptyTitle="No clients to show yet"
-      emptyBody="The client table, search, suspend/activate and Login as Client are being built. Workspaces will be listed here."
-    />
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Clients"
+        description="Every F-commerce workspace on ShieldComment, with plan, quota and status."
+      />
+
+      <section
+        aria-label="Clients"
+        className="flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-card"
+      >
+        <Toolbar search={search} setFilters={setFilters} hasFilters={hasFilters} />
+
+        {query.isError && !data ? (
+          <ErrorState message={query.error.message} onRetry={() => void query.refetch()} />
+        ) : data && data.items.length === 0 ? (
+          <EmptyState
+            filtered={hasFilters || page > 1}
+            onClear={() => setFilters({ q: undefined, status: undefined, from: undefined, to: undefined })}
+          />
+        ) : (
+          <div
+            className="min-w-0 border-t transition-opacity aria-busy:opacity-60"
+            aria-busy={query.isFetching && query.isPlaceholderData ? true : undefined}
+          >
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="pl-4">Client</TableHead>
+                  <TableHead>Owner</TableHead>
+                  <TableHead>Plan</TableHead>
+                  <TableHead>Quota</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className={`${stickyActions} pr-4 text-right`}>
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data
+                  ? data.items.map((client) => (
+                      <ClientRow
+                        key={client.id}
+                        client={client}
+                        loggingIn={loginAs.pendingId === client.id}
+                        onLoginAs={() => loginAs.start(client)}
+                        onChangeStatus={(status) => setStatusChange({ client, status })}
+                      />
+                    ))
+                  : Array.from({ length: 6 }, (_, i) => <SkeletonRow key={i} />)}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {data && data.total > 0 && (
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            total={data.total}
+            shown={data.items.length}
+            skip={data.skip}
+            onPage={(next) =>
+              navigate({ search: (prev) => ({ ...prev, page: next > 1 ? next : undefined }) })
+            }
+          />
+        )}
+      </section>
+
+      <ClientStatusDialog change={statusChange} onClose={() => setStatusChange(null)} />
+    </div>
+  )
+}
+
+function Toolbar({
+  search,
+  setFilters,
+  hasFilters,
+}: {
+  search: ClientsSearch
+  setFilters: (patch: Partial<ClientsSearch>) => void
+  hasFilters: boolean
+}) {
+  const fromId = useId()
+  const toId = useId()
+  const sort = search.sort ?? 'newest'
+
+  return (
+    <div className="flex flex-col gap-3 p-4 md:p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <SearchInput value={search.q ?? ''} onSearch={(q) => setFilters({ q: q || undefined })} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Tabs
+            value={search.status ?? 'ALL'}
+            onValueChange={(value) =>
+              setFilters({ status: value === 'ALL' ? undefined : (value as ClientStatus) })
+            }
+          >
+            <TabsList aria-label="Status" className="rounded-full">
+              <TabsTrigger value="ALL" className="rounded-full px-3">
+                All
+              </TabsTrigger>
+              <TabsTrigger value="ACTIVE" className="rounded-full px-3">
+                Active
+              </TabsTrigger>
+              <TabsTrigger value="SUSPENDED" className="rounded-full px-3">
+                Suspended
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" aria-label={`Sort: ${sortLabels[sort]}`}>
+                <ArrowDownUp data-icon="inline-start" />
+                {sortLabels[sort]}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel>Sort clients</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={sort}
+                onValueChange={(value) =>
+                  setFilters({ sort: value === 'newest' ? undefined : (value as 'oldest' | 'name') })
+                }
+              >
+                {(Object.keys(sortLabels) as ClientSort[]).map((value) => (
+                  <DropdownMenuRadioItem key={value} value={value}>
+                    {sortLabels[value]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="grid gap-1.5">
+          <Label htmlFor={fromId} className="text-xs text-muted-foreground">
+            Created from
+          </Label>
+          <Input
+            id={fromId}
+            type="date"
+            className="w-40"
+            value={search.from ?? ''}
+            max={search.to}
+            onChange={(e) => setFilters({ from: e.target.value || undefined })}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor={toId} className="text-xs text-muted-foreground">
+            Created to
+          </Label>
+          <Input
+            id={toId}
+            type="date"
+            className="w-40"
+            value={search.to ?? ''}
+            min={search.from}
+            onChange={(e) => setFilters({ to: e.target.value || undefined })}
+          />
+        </div>
+        <p className="pb-2 text-xs text-muted-foreground">Dates are Bangladesh time.</p>
+        {hasFilters && (
+          <Button
+            variant="ghost"
+            className="ml-auto"
+            onClick={() =>
+              setFilters({ q: undefined, status: undefined, from: undefined, to: undefined })
+            }
+          >
+            <RotateCcw data-icon="inline-start" />
+            Clear filters
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Debounced search box. The URL is the source of truth; the box only holds what is being typed.
+ * `lastSent` tells our own URL updates apart from outside ones (back button, Clear filters).
+ */
+function SearchInput({ value, onSearch }: { value: string; onSearch: (q: string) => void }) {
+  const [text, setText] = useState(value)
+  const lastSent = useRef(value)
+  const onSearchRef = useRef(onSearch)
+  useEffect(() => {
+    onSearchRef.current = onSearch
+  })
+
+  useEffect(() => {
+    if (value === lastSent.current) return
+    lastSent.current = value
+    setText(value)
+  }, [value])
+
+  useEffect(() => {
+    const q = text.trim()
+    if (q === lastSent.current) return
+    const timer = setTimeout(() => {
+      lastSent.current = q
+      onSearchRef.current(q)
+    }, SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [text])
+
+  return (
+    <div className="relative min-w-0 flex-1">
+      <Search
+        className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+        aria-hidden
+      />
+      <Input
+        type="search"
+        aria-label="Search clients"
+        placeholder="Search name, slug, owner email or name"
+        className="h-9 pl-9"
+        value={text}
+        maxLength={100}
+        onChange={(e) => setText(e.target.value)}
+      />
+    </div>
+  )
+}
+
+function ClientRow({
+  client,
+  loggingIn,
+  onLoginAs,
+  onChangeStatus,
+}: {
+  client: AdminClient
+  loggingIn: boolean
+  onLoginAs: () => void
+  onChangeStatus: (status: ClientStatus) => void
+}) {
+  const suspended = client.status === 'SUSPENDED'
+  const loginBlocked = suspended
+    ? 'Activate this client before logging in as it.'
+    : client.owner
+      ? undefined
+      : 'This client has no owner to log in as.'
+
+  return (
+    <TableRow className="group/row hover:bg-muted">
+      <TableCell className="pl-4">
+        <div className="flex max-w-44 flex-col">
+          <span className="truncate font-medium" title={client.name}>
+            {client.name}
+          </span>
+          <span className="truncate text-xs text-muted-foreground" title={client.slug}>
+            {client.slug} · {client.memberCount} {client.memberCount === 1 ? 'member' : 'members'}
+          </span>
+        </div>
+      </TableCell>
+      <TableCell>
+        {client.owner ? (
+          <div className="flex max-w-40 flex-col">
+            <span className="truncate">{client.owner.name}</span>
+            <span className="truncate text-xs text-muted-foreground" title={client.owner.email}>
+              {client.owner.email}
+            </span>
+          </div>
+        ) : (
+          <span className="text-muted-foreground">No owner</span>
+        )}
+      </TableCell>
+      <TableCell>
+        <PlanBadge />
+      </TableCell>
+      <TableCell>
+        <QuotaBar />
+      </TableCell>
+      <TableCell>
+        <StatusPill status={client.status} />
+      </TableCell>
+      <TableCell className="whitespace-nowrap text-muted-foreground">
+        <time dateTime={client.createdAt}>{formatDhakaDate(client.createdAt)}</time>
+      </TableCell>
+      <TableCell className={`${stickyActions} pr-4 transition-colors group-hover/row:bg-muted`}>
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onChangeStatus(suspended ? 'ACTIVE' : 'SUSPENDED')}
+            aria-label={`${suspended ? 'Activate' : 'Suspend'} ${client.name}`}
+          >
+            {suspended ? 'Activate' : 'Suspend'}
+          </Button>
+          <Button
+            onClick={onLoginAs}
+            disabled={loggingIn || loginBlocked !== undefined}
+            title={loginBlocked}
+            aria-label={`Login as Client: ${client.name}`}
+            className="px-3.5"
+          >
+            <LogIn data-icon="inline-start" />
+            {loggingIn ? 'Opening…' : 'Login as Client'}
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  )
+}
+
+/** Placeholder until plans exist (M2-T11 / Module 8): same slot, muted dash. */
+function PlanBadge() {
+  return (
+    <Badge variant="outline" className="text-muted-foreground" aria-label="Plan: none yet">
+      —
+    </Badge>
+  )
+}
+
+/** Placeholder until quota data exists: an empty bar in the final slot. */
+function QuotaBar() {
+  return (
+    <div className="flex w-24 flex-col gap-1.5" data-testid="quota-bar">
+      <Progress value={0} aria-label="Quota used" className="h-1.5" />
+      <span className="text-xs text-muted-foreground">No plan yet</span>
+    </div>
+  )
+}
+
+function StatusPill({ status }: { status: ClientStatus }) {
+  const active = status === 'ACTIVE'
+  return (
+    <span
+      className={
+        active
+          ? 'inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary'
+          : 'inline-flex items-center gap-1.5 rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive'
+      }
+    >
+      <span className="size-1.5 rounded-full bg-current" aria-hidden />
+      {active ? 'Active' : 'Suspended'}
+    </span>
+  )
+}
+
+function SkeletonRow() {
+  return (
+    <TableRow className="hover:bg-transparent" aria-hidden>
+      <TableCell className="pl-4">
+        <Skeleton className="mb-1.5 h-4 w-36 rounded-full" />
+        <Skeleton className="h-3 w-24 rounded-full" />
+      </TableCell>
+      <TableCell>
+        <Skeleton className="mb-1.5 h-4 w-28 rounded-full" />
+        <Skeleton className="h-3 w-40 rounded-full" />
+      </TableCell>
+      <TableCell>
+        <Skeleton className="h-5 w-10 rounded-full" />
+      </TableCell>
+      <TableCell>
+        <Skeleton className="h-1.5 w-24 rounded-full" />
+      </TableCell>
+      <TableCell>
+        <Skeleton className="h-5 w-16 rounded-full" />
+      </TableCell>
+      <TableCell>
+        <Skeleton className="h-4 w-20 rounded-full" />
+      </TableCell>
+      <TableCell className={`${stickyActions} pr-4`}>
+        <div className="flex justify-end gap-2">
+          <Skeleton className="h-7 w-16 rounded-full" />
+          <Skeleton className="h-8 w-32 rounded-full" />
+        </div>
+      </TableCell>
+    </TableRow>
+  )
+}
+
+function EmptyState({ filtered, onClear }: { filtered: boolean; onClear: () => void }) {
+  const Icon = filtered ? SearchX : Building2
+  return (
+    <div className="flex flex-col items-center gap-3 border-t px-6 py-16 text-center">
+      <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+        <Icon className="size-6" aria-hidden />
+      </span>
+      <h2 className="text-base font-semibold">
+        {filtered ? 'No clients match these filters' : 'No clients yet'}
+      </h2>
+      <p className="max-w-md text-sm text-balance text-muted-foreground">
+        {filtered
+          ? 'Try a shorter search, another status or a wider date range.'
+          : 'Workspaces appear here as soon as a brand signs up.'}
+      </p>
+      {filtered && (
+        <Button variant="outline" onClick={onClear}>
+          Clear filters
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div role="alert" className="flex flex-col items-center gap-3 border-t px-6 py-16 text-center">
+      <h2 className="text-base font-semibold">Couldn't load clients</h2>
+      <p className="max-w-md text-sm text-muted-foreground">{message}</p>
+      <Button variant="outline" onClick={onRetry}>
+        <RotateCcw data-icon="inline-start" />
+        Try again
+      </Button>
+    </div>
+  )
+}
+
+function Pagination({
+  page,
+  pageCount,
+  total,
+  shown,
+  skip,
+  onPage,
+}: {
+  page: number
+  pageCount: number
+  total: number
+  shown: number
+  skip: number
+  onPage: (page: number) => void
+}) {
+  const first = shown > 0 ? skip + 1 : 0
+  return (
+    <nav
+      aria-label="Pagination"
+      className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3 md:px-5"
+    >
+      <p className="text-sm text-muted-foreground">
+        {first}–{skip + shown} of {total} {total === 1 ? 'client' : 'clients'}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Previous page"
+          disabled={page <= 1}
+          onClick={() => onPage(page - 1)}
+        >
+          <ChevronLeft />
+        </Button>
+        <span className="text-sm tabular-nums">
+          {page} / {pageCount}
+        </span>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Next page"
+          disabled={page >= pageCount}
+          onClick={() => onPage(page + 1)}
+        >
+          <ChevronRight />
+        </Button>
+      </div>
+    </nav>
   )
 }
