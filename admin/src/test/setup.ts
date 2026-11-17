@@ -34,3 +34,16 @@ globalThis.ResizeObserver ??= class {
   unobserve() {}
   disconnect() {}
 } as unknown as typeof ResizeObserver
+
+// Animate UI's CountingNumber watches visibility (motion's `useInView`).
+globalThis.IntersectionObserver ??= class {
+  readonly root = null
+  readonly rootMargin = '0px'
+  readonly thresholds = [0]
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return []
+  }
+} as unknown as typeof IntersectionObserver
