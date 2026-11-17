@@ -1,10 +1,12 @@
 import { Body, Controller, Get, type INestApplication, Post, UseGuards } from '@nestjs/common';
+import { getDrizzleToken } from '@nestjs/drizzle';
 import { AuthGuard as BetterAuthGuard, Session, type UserSession } from '@thallesp/nestjs-better-auth';
 import { IsString } from 'class-validator';
+import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
-import { Public } from '../src/auth/decorators/public.decorator.js';
-import { PrismaService } from '../src/prisma/prisma.service.js';
+import type { Database } from '../src/db/database.js';
+import { users } from '../src/db/schema/index.js';
 import { createTestApp, uniqueEmail } from './utils/create-test-app.js';
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -16,10 +18,9 @@ class EchoDto {
 }
 
 /**
- * Test-only routes. `@Public()` skips the legacy JwtAuthGuard (removed in SW-T3), so these probe
- * the Better Auth guard and the JSON parser that the integration re-adds for non-auth routes.
+ * Test-only routes: probe the integration's guard + `@Session()` and the JSON parser that the
+ * library re-adds for non-auth routes (Nest's own body parser is off).
  */
-@Public()
 @Controller('spike')
 class SpikeController {
   @Get('me')
@@ -44,11 +45,11 @@ function sessionCookie(res: request.Response): string {
 
 describe('Better Auth (e2e)', () => {
   let app: INestApplication<App>;
-  let prisma: PrismaService;
+  let db: Database;
 
   beforeAll(async () => {
     app = await createTestApp(undefined, [SpikeController]);
-    prisma = app.get(PrismaService);
+    db = app.get<Database>(getDrizzleToken());
   });
 
   afterAll(async () => {
@@ -69,26 +70,27 @@ describe('Better Auth (e2e)', () => {
     sessionCookie(signUp);
 
     // Rows land in our snake_case tables with UUIDv7 ids; the password is hashed in `accounts`.
-    const user = await prisma.user.findUniqueOrThrow({
-      where: { email },
-      include: { accounts: true, sessions: true },
+    const user = await db.query.users.findFirst({
+      where: eq(users.email, email),
+      with: { accounts: true, sessions: true },
     });
-    expect(user.role).toBe('USER');
-    expect(user.accounts).toHaveLength(1);
-    const [account] = user.accounts;
-    expect(account).toMatchObject({ providerId: 'credential', accountId: user.id });
+    expect(user).toBeDefined();
+    expect(user!.id).toBe(signUp.body.user.id);
+    expect(user!.accounts).toHaveLength(1);
+    const [account] = user!.accounts;
+    expect(account).toMatchObject({ providerId: 'credential', accountId: user!.id });
     expect(account!.id).toMatch(UUID_V7);
     expect(account!.password).toBeTruthy();
     expect(account!.password).not.toContain(PASSWORD);
-    expect(user.sessions).toHaveLength(1);
-    expect(user.sessions[0]!.id).toMatch(UUID_V7);
+    expect(user!.sessions).toHaveLength(1);
+    expect(user!.sessions[0]!.id).toMatch(UUID_V7);
 
     // Sign-in.
     const signIn = await request(server)
       .post('/api/auth/sign-in/email')
       .send({ email, password: PASSWORD })
       .expect(200);
-    expect(signIn.body.user).toMatchObject({ id: user.id, email });
+    expect(signIn.body.user).toMatchObject({ id: user!.id, email });
     const cookie = sessionCookie(signIn);
 
     // Get-session with the cookie.
@@ -96,14 +98,14 @@ describe('Better Auth (e2e)', () => {
       .get('/api/auth/get-session')
       .set('Cookie', cookie)
       .expect(200);
-    expect(session.body.user).toMatchObject({ id: user.id, email });
-    expect(session.body.session).toMatchObject({ userId: user.id });
+    expect(session.body.user).toMatchObject({ id: user!.id, email });
+    expect(session.body.session).toMatchObject({ userId: user!.id });
 
     // The integration's guard + @Session() work on a NestJS 12 controller.
     await request(server)
       .get('/api/spike/me')
       .set('Cookie', cookie)
-      .expect(200, { userId: user.id, email });
+      .expect(200, { userId: user!.id, email });
   });
 
   it('get-session without a cookie returns null', async () => {

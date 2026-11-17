@@ -5,6 +5,7 @@ import {
   validateEnv,
   type EnvironmentVariables,
 } from './config/env.validation.js';
+import { AuthModule } from './auth/auth.module.js';
 import { HealthModule } from './health/health.module.js';
 import { DbModule } from './db/db.module.js';
 import { RedisModule } from './redis/redis.module.js';
@@ -34,6 +35,7 @@ import { RedisModule } from './redis/redis.module.js';
     }),
     DbModule,
     RedisModule,
+    AuthModule,
     HealthModule,
   ],
 })

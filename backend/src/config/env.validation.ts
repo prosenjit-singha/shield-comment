@@ -39,6 +39,20 @@ export class EnvironmentVariables {
   @IsString()
   CORS_ORIGINS?: string;
 
+  /** Signs Better Auth cookies/tokens. Generate with `openssl rand -base64 48`. */
+  @IsString()
+  @MinLength(32)
+  BETTER_AUTH_SECRET!: string;
+
+  /** Public URL of this backend, without `/api/auth` (e.g. `http://localhost:3000`). */
+  @IsString()
+  BETTER_AUTH_URL!: string;
+
+  /** Comma list of app origins allowed to call `/api/auth/*` (CSRF / redirect checks). */
+  @IsOptional()
+  @IsString()
+  TRUSTED_ORIGINS?: string;
+
   /** HS256 secret for access tokens. Generate with `openssl rand -base64 48`. */
   @IsString()
   @MinLength(32)

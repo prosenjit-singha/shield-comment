@@ -4,7 +4,9 @@ import { AppModule } from './app.module.js';
 import { configureApp } from './app.setup.js';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // Body parsing is owned by the Better Auth integration (src/auth/auth.module.ts): it must see
+  // the raw `/api/auth/*` stream and re-adds JSON/urlencoded parsing for every other route.
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, bodyParser: false });
   app.useLogger(app.get(Logger));
   configureApp(app);
   app.enableShutdownHooks();
