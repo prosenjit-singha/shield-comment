@@ -13,7 +13,12 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
+import { Route as AuthedAdminBillingRouteImport } from './routes/_authed/admin/billing'
+import { Route as AuthedAdminClientsRouteImport } from './routes/_authed/admin/clients'
 import { Route as AuthedAdminDashboardRouteImport } from './routes/_authed/admin/dashboard'
+import { Route as AuthedAdminSettingsRouteImport } from './routes/_authed/admin/settings'
+import { Route as AuthedAdminSystemRouteImport } from './routes/_authed/admin/system'
+import { Route as AuthedAdminTicketsRouteImport } from './routes/_authed/admin/tickets'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,9 +39,34 @@ const AdminLoginRoute = AdminLoginRouteImport.update({
   path: '/admin/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthedAdminBillingRoute = AuthedAdminBillingRouteImport.update({
+  id: '/admin/billing',
+  path: '/admin/billing',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedAdminClientsRoute = AuthedAdminClientsRouteImport.update({
+  id: '/admin/clients',
+  path: '/admin/clients',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedAdminDashboardRoute = AuthedAdminDashboardRouteImport.update({
   id: '/admin/dashboard',
   path: '/admin/dashboard',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedAdminSettingsRoute = AuthedAdminSettingsRouteImport.update({
+  id: '/admin/settings',
+  path: '/admin/settings',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedAdminSystemRoute = AuthedAdminSystemRouteImport.update({
+  id: '/admin/system',
+  path: '/admin/system',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedAdminTicketsRoute = AuthedAdminTicketsRouteImport.update({
+  id: '/admin/tickets',
+  path: '/admin/tickets',
   getParentRoute: () => AuthedRoute,
 } as any)
 
@@ -44,13 +74,23 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/': typeof AdminIndexRoute
+  '/admin/billing': typeof AuthedAdminBillingRoute
+  '/admin/clients': typeof AuthedAdminClientsRoute
   '/admin/dashboard': typeof AuthedAdminDashboardRoute
+  '/admin/settings': typeof AuthedAdminSettingsRoute
+  '/admin/system': typeof AuthedAdminSystemRoute
+  '/admin/tickets': typeof AuthedAdminTicketsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin': typeof AdminIndexRoute
+  '/admin/billing': typeof AuthedAdminBillingRoute
+  '/admin/clients': typeof AuthedAdminClientsRoute
   '/admin/dashboard': typeof AuthedAdminDashboardRoute
+  '/admin/settings': typeof AuthedAdminSettingsRoute
+  '/admin/system': typeof AuthedAdminSystemRoute
+  '/admin/tickets': typeof AuthedAdminTicketsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -58,20 +98,48 @@ export interface FileRoutesById {
   '/_authed': typeof AuthedRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
   '/admin/': typeof AdminIndexRoute
+  '/_authed/admin/billing': typeof AuthedAdminBillingRoute
+  '/_authed/admin/clients': typeof AuthedAdminClientsRoute
   '/_authed/admin/dashboard': typeof AuthedAdminDashboardRoute
+  '/_authed/admin/settings': typeof AuthedAdminSettingsRoute
+  '/_authed/admin/system': typeof AuthedAdminSystemRoute
+  '/_authed/admin/tickets': typeof AuthedAdminTicketsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin/login' | '/admin/' | '/admin/dashboard'
+  fullPaths:
+    | '/'
+    | '/admin/login'
+    | '/admin/'
+    | '/admin/billing'
+    | '/admin/clients'
+    | '/admin/dashboard'
+    | '/admin/settings'
+    | '/admin/system'
+    | '/admin/tickets'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin/login' | '/admin' | '/admin/dashboard'
+  to:
+    | '/'
+    | '/admin/login'
+    | '/admin'
+    | '/admin/billing'
+    | '/admin/clients'
+    | '/admin/dashboard'
+    | '/admin/settings'
+    | '/admin/system'
+    | '/admin/tickets'
   id:
     | '__root__'
     | '/'
     | '/_authed'
     | '/admin/login'
     | '/admin/'
+    | '/_authed/admin/billing'
+    | '/_authed/admin/clients'
     | '/_authed/admin/dashboard'
+    | '/_authed/admin/settings'
+    | '/_authed/admin/system'
+    | '/_authed/admin/tickets'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -111,6 +179,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authed/admin/billing': {
+      id: '/_authed/admin/billing'
+      path: '/admin/billing'
+      fullPath: '/admin/billing'
+      preLoaderRoute: typeof AuthedAdminBillingRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/admin/clients': {
+      id: '/_authed/admin/clients'
+      path: '/admin/clients'
+      fullPath: '/admin/clients'
+      preLoaderRoute: typeof AuthedAdminClientsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/admin/dashboard': {
       id: '/_authed/admin/dashboard'
       path: '/admin/dashboard'
@@ -118,15 +200,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAdminDashboardRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/admin/settings': {
+      id: '/_authed/admin/settings'
+      path: '/admin/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AuthedAdminSettingsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/admin/system': {
+      id: '/_authed/admin/system'
+      path: '/admin/system'
+      fullPath: '/admin/system'
+      preLoaderRoute: typeof AuthedAdminSystemRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/admin/tickets': {
+      id: '/_authed/admin/tickets'
+      path: '/admin/tickets'
+      fullPath: '/admin/tickets'
+      preLoaderRoute: typeof AuthedAdminTicketsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
   }
 }
 
 interface AuthedRouteChildren {
+  AuthedAdminBillingRoute: typeof AuthedAdminBillingRoute
+  AuthedAdminClientsRoute: typeof AuthedAdminClientsRoute
   AuthedAdminDashboardRoute: typeof AuthedAdminDashboardRoute
+  AuthedAdminSettingsRoute: typeof AuthedAdminSettingsRoute
+  AuthedAdminSystemRoute: typeof AuthedAdminSystemRoute
+  AuthedAdminTicketsRoute: typeof AuthedAdminTicketsRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedAdminBillingRoute: AuthedAdminBillingRoute,
+  AuthedAdminClientsRoute: AuthedAdminClientsRoute,
   AuthedAdminDashboardRoute: AuthedAdminDashboardRoute,
+  AuthedAdminSettingsRoute: AuthedAdminSettingsRoute,
+  AuthedAdminSystemRoute: AuthedAdminSystemRoute,
+  AuthedAdminTicketsRoute: AuthedAdminTicketsRoute,
 }
 
 const AuthedRouteWithChildren =

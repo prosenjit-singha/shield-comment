@@ -1,11 +1,12 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, Outlet, redirect, useNavigate } from '@tanstack/react-router'
-import { LogOut, Moon, ShieldCheck, Sun } from 'lucide-react'
+import { createFileRoute, Outlet, redirect, useRouterState } from '@tanstack/react-router'
+import { AppSidebar } from '@/components/app-shell/app-sidebar'
+import { activeNavItem } from '@/components/app-shell/nav-items'
 import { FullPageLoader } from '@/components/full-page-loader'
-import { Button } from '@/components/ui/button'
-import { authClient, type AuthSession } from '@/lib/auth-client'
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import type { AuthSession } from '@/lib/auth-client'
 import { isSuperAdmin, sessionQueryOptions } from '@/lib/session'
-import { resolveTheme, useUiStore } from '@/stores/ui-store'
+import { useUiStore } from '@/stores/ui-store'
 
 /**
  * Pathless layout: every route below it needs a Better Auth session with role `super_admin`
@@ -31,48 +32,31 @@ export const Route = createFileRoute('/_authed')({
 
 function AuthedLayout() {
   const { session } = Route.useRouteContext()
-  const queryClient = useQueryClient()
-  const navigate = useNavigate()
-  const theme = useUiStore((s) => s.theme)
-  const setTheme = useUiStore((s) => s.setTheme)
-  const isDark = resolveTheme(theme) === 'dark'
-
-  const signOut = useMutation({
-    mutationFn: async () => {
-      const { error } = await authClient.signOut()
-      if (error) throw new Error(error.message ?? 'Sign-out failed')
-    },
-    onSuccess: async () => {
-      queryClient.clear() // drop the session and any tenant data cached under it
-      await navigate({ to: '/admin/login', search: {}, replace: true })
-    },
-  })
+  const collapsed = useUiStore((s) => s.sidebarCollapsed)
+  const setCollapsed = useUiStore((s) => s.setSidebarCollapsed)
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const section = activeNavItem(pathname)?.label
 
   return (
-    <div className="flex min-h-svh flex-col bg-muted">
-      {/* Placeholder shell; the Animate UI sidebar arrives with Module 2. */}
-      <header className="flex items-center gap-3 border-b bg-card px-6 py-3">
-        <ShieldCheck className="size-6 text-primary" aria-hidden />
-        <span className="font-semibold">ShieldComment BD · Admin</span>
-        <span className="ml-auto hidden text-sm text-muted-foreground sm:inline">
-          {session.user.email}
-        </span>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
-          onClick={() => setTheme(isDark ? 'light' : 'dark')}
-        >
-          {isDark ? <Sun /> : <Moon />}
-        </Button>
-        <Button variant="outline" onClick={() => signOut.mutate()} disabled={signOut.isPending}>
-          <LogOut />
-          Sign out
-        </Button>
-      </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 p-6">
-        <Outlet />
-      </main>
-    </div>
+    // Own provider so the shell's tooltips also work where only the router is rendered (tests).
+    <TooltipProvider>
+      <SidebarProvider
+        open={!collapsed}
+        onOpenChange={(open) => setCollapsed(!open)}
+        className="bg-muted"
+      >
+        <AppSidebar user={session.user} />
+        <SidebarInset className="min-w-0 bg-muted">
+          <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 bg-muted/85 px-4 backdrop-blur md:px-6">
+            <SidebarTrigger className="-ml-1" />
+            <span className="truncate text-sm font-medium">{section ?? 'Admin'}</span>
+          </header>
+          {/* SidebarInset is the <main> landmark. */}
+          <div className="mx-auto w-full max-w-6xl flex-1 px-4 pt-2 pb-10 md:px-6">
+            <Outlet />
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    </TooltipProvider>
   )
 }
