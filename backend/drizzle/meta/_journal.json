@@ -22,6 +22,13 @@
       "when": 1794933661441,
       "tag": "0002_auth_plugins",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794948377822,
+      "tag": "0003_impersonation_audit_logs",
+      "breakpoints": true
     }
   ]
 }

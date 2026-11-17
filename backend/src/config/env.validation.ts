@@ -60,6 +60,14 @@ export class EnvironmentVariables {
   @IsString()
   TRUSTED_ORIGINS?: string;
 
+  /**
+   * Public origin of the client app (`client/`), used for impersonation `redirectUrl`s
+   * (`<origin>/impersonate?token=…`). Defaults to the dev URL `http://app.localhost:5174`.
+   */
+  @IsOptional()
+  @IsUrl({ require_tld: false, require_protocol: true, protocols: ['http', 'https'] })
+  CLIENT_APP_URL?: string;
+
   // --- Neon Object Storage (S3-compatible). Optional: StorageService is disabled without them.
   // `neon deploy` / `neon env pull` writes the AWS_* names; STORAGE_BUCKET is the bucket key in neon.ts.
   @IsOptional()

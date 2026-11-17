@@ -1,13 +1,14 @@
 import type { INestApplication } from '@nestjs/common';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import { AuthService } from '@thallesp/nestjs-better-auth';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, or } from 'drizzle-orm';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import type { BetterAuth } from '../../src/auth/better-auth.js';
 import { ensureSuperAdmin } from '../../src/auth/super-admin.js';
 import type { Database } from '../../src/db/database.js';
 import {
+  impersonationAuditLogs,
   users,
   workspaceMembers,
   workspaces,
@@ -121,8 +122,21 @@ export function createAuthActors(app: INestApplication<App>) {
     await storage.set(token, JSON.stringify(cached));
   }
 
-  /** Deletes every tracked workspace and user (members, sessions and accounts cascade). */
+  /**
+   * Deletes every tracked workspace and user (members, sessions and accounts cascade). Their
+   * impersonation audit rows go first: those FKs are `restrict`.
+   */
   async function cleanup() {
+    const auditRefs = [
+      ...(userIds.length
+        ? [inArray(impersonationAuditLogs.adminId, userIds)]
+        : []),
+      ...(workspaceIds.length
+        ? [inArray(impersonationAuditLogs.targetWorkspaceId, workspaceIds)]
+        : []),
+    ];
+    if (auditRefs.length)
+      await db.delete(impersonationAuditLogs).where(or(...auditRefs));
     if (workspaceIds.length)
       await db.delete(workspaces).where(inArray(workspaces.id, workspaceIds));
     if (userIds.length)

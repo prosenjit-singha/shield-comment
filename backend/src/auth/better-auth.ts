@@ -1,6 +1,6 @@
 import { APIError, betterAuth, type SecondaryStorage } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { createAuthMiddleware } from 'better-auth/api';
+import { createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { admin, organization } from 'better-auth/plugins';
 import { uuidv7 } from 'uuidv7';
 import type { Database } from '../db/database.js';
@@ -11,8 +11,14 @@ import {
   resolveActiveWorkspace,
   WORKSPACE_NAME_MAX,
 } from './first-workspace.js';
+import { impersonationExchange } from './impersonation-exchange.plugin.js';
 import type { PasswordService } from './password.service.js';
-import { platformAc, platformRoles, workspaceAc, workspaceRoles } from './permissions.js';
+import {
+  platformAc,
+  platformRoles,
+  workspaceAc,
+  workspaceRoles,
+} from './permissions.js';
 
 export interface BetterAuthSettings {
   /** `BETTER_AUTH_SECRET`: signs session cookies. At least 32 chars. */
@@ -32,6 +38,33 @@ export interface BetterAuthSettings {
 const SIGN_UP_PATH = '/sign-up/email';
 
 /**
+ * Better Auth's built-in impersonation is blocked (user decision, M1-T3): the audited token flow
+ * (`POST /api/admin/clients/:workspaceId/impersonate` → `POST /api/auth/impersonate-exchange`)
+ * is the only way in. `disabledPaths` answers 404 before the endpoint runs.
+ */
+export const DISABLED_AUTH_PATHS = [
+  '/admin/impersonate-user',
+  '/admin/stop-impersonating',
+];
+
+/**
+ * Paths an impersonated session may not call (403): the admin plugin (an owner may be a super admin)
+ * and anything that would move or widen its workspace lock.
+ */
+export function isBlockedWhileImpersonating(path: string): boolean {
+  return (
+    path.startsWith('/admin/') ||
+    path === '/organization/set-active' ||
+    path === '/organization/create'
+  );
+}
+
+type SessionFields = {
+  impersonatedBy?: string | null;
+  expiresAt?: Date | string;
+};
+
+/**
  * Better Auth server instance, mounted at `/api/auth/*` by `@thallesp/nestjs-better-auth`.
  * Design: docs/project-documentation/tech-stack.md §3.
  */
@@ -42,6 +75,7 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
     secret: settings.secret,
     baseURL: settings.baseURL,
     trustedOrigins: settings.trustedOrigins,
+    disabledPaths: DISABLED_AUTH_PATHS,
     // `usePlural` maps Better Auth's `user` model to our `users` table, etc. No adapter
     // transactions (default): src/auth/first-workspace.ts relies on the user row being committed.
     database: drizzleAdapter(db, { provider: 'pg', usePlural: true, schema }),
@@ -51,7 +85,8 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
       minPasswordLength: 8,
       password: {
         hash: (password) => settings.passwords.hash(password),
-        verify: ({ hash, password }) => settings.passwords.verify(hash, password),
+        verify: ({ hash, password }) =>
+          settings.passwords.verify(hash, password),
       },
     },
     session: {
@@ -79,10 +114,21 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
     },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
-        if (ctx.path === SIGN_UP_PATH && parseWorkspaceName(ctx.body) === null) {
+        if (
+          ctx.path === SIGN_UP_PATH &&
+          parseWorkspaceName(ctx.body) === null
+        ) {
           throw new APIError('BAD_REQUEST', {
             message: `workspaceName must be 1-${WORKSPACE_NAME_MAX} characters`,
           });
+        }
+        if (isBlockedWhileImpersonating(ctx.path)) {
+          const current = await getSessionFromCtx(ctx);
+          if ((current?.session as SessionFields | undefined)?.impersonatedBy) {
+            throw new APIError('FORBIDDEN', {
+              message: 'Not allowed while impersonating',
+            });
+          }
         }
       }),
     },
@@ -92,11 +138,39 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
           // Sign-up creates the first workspace (owner); every new session starts in a workspace.
           // Sessions that already carry one (impersonation, M1-T3) keep it.
           before: async (session, ctx) => {
-            const current = (session as { activeOrganizationId?: string | null }).activeOrganizationId;
+            const current = (
+              session as { activeOrganizationId?: string | null }
+            ).activeOrganizationId;
             if (current) return;
-            const createName = ctx?.path === SIGN_UP_PATH ? firstWorkspaceName(ctx.body) : undefined;
-            const activeOrganizationId = await resolveActiveWorkspace(db, session.userId, createName);
+            const createName =
+              ctx?.path === SIGN_UP_PATH
+                ? firstWorkspaceName(ctx.body)
+                : undefined;
+            const activeOrganizationId = await resolveActiveWorkspace(
+              db,
+              session.userId,
+              createName,
+            );
             return { data: { ...session, activeOrganizationId } };
+          },
+        },
+        update: {
+          // Impersonated sessions last exactly 1 hour (M1-T3): `get-session` (also run by the global
+          // guard on every request) would otherwise push expiresAt to now + 7 days, because the
+          // `updateAge` check is always due for a session that short. It sets ctx.context.session to
+          // the session it refreshes just before this update.
+          before: async (data, ctx) => {
+            const current = ctx?.context.session?.session as
+              SessionFields | undefined;
+            if (
+              !current?.impersonatedBy ||
+              !('expiresAt' in data) ||
+              !current.expiresAt
+            )
+              return;
+            return {
+              data: { ...data, expiresAt: new Date(current.expiresAt) },
+            };
           },
         },
       },
@@ -118,7 +192,10 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
               },
             },
           },
-          member: { modelName: 'workspaceMember', fields: { organizationId: 'workspaceId' } },
+          member: {
+            modelName: 'workspaceMember',
+            fields: { organizationId: 'workspaceId' },
+          },
           invitation: {
             modelName: 'workspaceInvitation',
             fields: { organizationId: 'workspaceId' },
@@ -131,6 +208,7 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
         adminRoles: ['super_admin'],
         defaultRole: 'user',
       }),
+      impersonationExchange(db),
     ],
   });
 }

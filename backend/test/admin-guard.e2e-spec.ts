@@ -192,7 +192,8 @@ describe('Super admin guard (e2e)', () => {
           .set('Origin', TRUSTED_ORIGIN)
           .set('Cookie', owner.cookie)
           .send(body);
-        expect([401, 403], path).toContain(res.status);
+        // impersonate-user is disabled outright (404, M1-T3).
+        expect([401, 403, 404], path).toContain(res.status);
       }
       const [row] = await actors.db
         .select({ role: users.role })
