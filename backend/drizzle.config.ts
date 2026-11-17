@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 import { defineConfig } from 'drizzle-kit';
 
-// Same as src/common/net/happy-eyeballs.ts: Neon us-east-2 is ~350 ms away, above Node's 250 ms default.
+// Same as src/common/net/happy-eyeballs.ts: a slow first connect to Neon can exceed Node's 250 ms default.
 setDefaultAutoSelectFamilyAttemptTimeout(1000);
 
 // Generate: `npm run db:generate -- --name <name>` · apply locally: `npm run db:migrate`.
