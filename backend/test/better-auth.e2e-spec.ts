@@ -2,12 +2,12 @@ import { Body, Controller, Get, type INestApplication, Post } from '@nestjs/comm
 import { getDrizzleToken } from '@nestjs/drizzle';
 import { Session, type UserSession } from '@thallesp/nestjs-better-auth';
 import { IsString } from 'class-validator';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import { Public } from '../src/auth/decorators/public.decorator.js';
 import type { Database } from '../src/db/database.js';
-import { users } from '../src/db/schema/index.js';
+import { users, workspaceMembers, workspaces } from '../src/db/schema/index.js';
 import { AUTH_SECONDARY_STORAGE } from '../src/redis/redis-secondary-storage.js';
 import { createTestApp, uniqueEmail } from './utils/create-test-app.js';
 import type { createMemorySecondaryStorage } from './utils/memory-secondary-storage.js';
@@ -77,12 +77,32 @@ describe('Better Auth (e2e)', () => {
     return user!;
   }
 
+  /** Every email this spec signs up with; afterAll deletes those users and their workspaces. */
+  const createdEmails: string[] = [];
+  function trackedEmail(prefix: string): string {
+    const email = uniqueEmail(prefix);
+    createdEmails.push(email);
+    return email;
+  }
+
   afterAll(async () => {
+    const ids = (
+      await db.select({ id: users.id }).from(users).where(inArray(users.email, createdEmails))
+    ).map((u) => u.id);
+    if (ids.length) {
+      const memberships = await db
+        .select({ id: workspaceMembers.workspaceId })
+        .from(workspaceMembers)
+        .where(inArray(workspaceMembers.userId, ids));
+      const workspaceIds = memberships.map((m) => m.id);
+      if (workspaceIds.length) await db.delete(workspaces).where(inArray(workspaces.id, workspaceIds));
+      await db.delete(users).where(inArray(users.id, ids));
+    }
     await app.close();
   });
 
   it('sign-up → sign-in → get-session', async () => {
-    const email = uniqueEmail('ba');
+    const email = trackedEmail('ba');
     const server = app.getHttpServer();
 
     // Sign-up (mixed-case email to prove normalisation).
@@ -131,7 +151,7 @@ describe('Better Auth (e2e)', () => {
   });
 
   it('sign-up creates the first workspace with the user as owner and makes it active', async () => {
-    const email = uniqueEmail('ba-ws');
+    const email = trackedEmail('ba-ws');
     const res = await signUp({ name: 'Rahim Uddin', email, password: PASSWORD }).expect(200);
     expect(res.body.user.role).toBe('user');
 
@@ -176,14 +196,14 @@ describe('Better Auth (e2e)', () => {
   });
 
   it('uses workspaceName from the sign-up body and rejects an invalid one', async () => {
-    const email = uniqueEmail('ba-wsname');
+    const email = trackedEmail('ba-wsname');
     await signUp({ name: 'Karim', email, password: PASSWORD, workspaceName: '  Dhaka Fashion  ' })
       .expect(200);
     const user = await membershipsOf(email);
     expect(user.memberships[0]!.workspace.name).toBe('Dhaka Fashion');
     expect(user.memberships[0]!.workspace.slug).toMatch(/^dhaka-fashion-[0-9a-f]{6}$/);
 
-    const bad = uniqueEmail('ba-wsbad');
+    const bad = trackedEmail('ba-wsbad');
     await signUp({ name: 'Bad', email: bad, password: PASSWORD, workspaceName: 'x'.repeat(81) })
       .expect(400);
     await signUp({ name: 'Bad', email: bad, password: PASSWORD, workspaceName: '   ' }).expect(400);
@@ -191,14 +211,14 @@ describe('Better Auth (e2e)', () => {
   });
 
   it('does not let sign-up set role, banned or workspace status', async () => {
-    const email = uniqueEmail('ba-role');
+    const email = trackedEmail('ba-role');
     const res = await signUp({ name: 'Sneaky', email, password: PASSWORD, role: 'super_admin' });
     expect(res.status).toBe(400);
     expect(await db.query.users.findFirst({ where: eq(users.email, email) })).toBeUndefined();
   });
 
   it('keeps sessions in Postgres and caches them in secondary storage', async () => {
-    const email = uniqueEmail('ba-cache');
+    const email = trackedEmail('ba-cache');
     const res = await signUp({ name: 'Cache', email, password: PASSWORD }).expect(200);
     const token = decodeURIComponent(sessionCookie(res).split('=')[1]!).split('.')[0]!;
     const user = await membershipsOf(email);
@@ -212,7 +232,7 @@ describe('Better Auth (e2e)', () => {
   });
 
   it('rejects a wrong password with 401', async () => {
-    const email = uniqueEmail('ba-wrong');
+    const email = trackedEmail('ba-wrong');
     await request(app.getHttpServer())
       .post('/api/auth/sign-up/email')
       .send({ name: 'Karim', email, password: PASSWORD })
@@ -224,7 +244,7 @@ describe('Better Auth (e2e)', () => {
   });
 
   it('rejects a duplicate sign-up', async () => {
-    const email = uniqueEmail('ba-dup');
+    const email = trackedEmail('ba-dup');
     const body = { name: 'Dup', email, password: PASSWORD };
     await request(app.getHttpServer()).post('/api/auth/sign-up/email').send(body).expect(200);
     const res = await request(app.getHttpServer()).post('/api/auth/sign-up/email').send(body);

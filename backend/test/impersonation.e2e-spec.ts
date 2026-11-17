@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type request from 'supertest';
 import type { App } from 'supertest/types.js';
 import {
+  accounts,
   impersonationAuditLogs,
   sessions,
   users,
@@ -16,11 +17,12 @@ import {
 import {
   type Actor,
   createAuthActors,
+  PASSWORD,
   sessionCookie,
   TRUSTED_ORIGIN,
   tokenOf,
 } from './utils/auth-actors.js';
-import { createTestApp } from './utils/create-test-app.js';
+import { createTestApp, uniqueEmail } from './utils/create-test-app.js';
 
 const CLIENT_ORIGIN = 'http://localhost:5174'; // trusted (vitest.config.e2e.ts)
 const REDIRECT_BASE = 'http://app.localhost:5174/impersonate?token='; // CLIENT_APP_URL
@@ -315,7 +317,9 @@ describe('Impersonation (e2e)', () => {
         exchange(fresh),
         exchange(fresh),
       ]);
-      expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([200, 401, 401]);
+      expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([
+        200, 401, 401,
+      ]);
     });
 
     it('an expired token is rejected (4xx) and stays unused', async () => {
@@ -459,6 +463,106 @@ describe('Impersonation (e2e)', () => {
       });
       expect(res.body).not.toHaveProperty('token');
       expect(await auditRowsFor(workspaceId)).toHaveLength(before);
+    });
+  });
+
+  describe('account routes are blocked while impersonating (M1-GATE decision)', () => {
+    let cookie: string; // impersonated session for `owner`
+
+    const post = (path: string, body: object, as = cookie) =>
+      http()
+        .post(`/api/auth${path}`)
+        .set('Origin', CLIENT_ORIGIN)
+        .set('Cookie', as)
+        .send(body);
+    const ownerRow = async () => {
+      const [user] = await db()
+        .select()
+        .from(users)
+        .where(eq(users.id, owner.id));
+      const ownerAccounts = await db()
+        .select()
+        .from(accounts)
+        .where(eq(accounts.userId, owner.id));
+      return { user, accounts: ownerAccounts };
+    };
+
+    beforeAll(async () => {
+      cookie = sessionCookie(
+        await exchange(await issueToken(owner.workspaceId)).expect(200),
+      );
+    });
+
+    it.each<[string, () => object]>([
+      [
+        '/change-password',
+        () => ({
+          currentPassword: PASSWORD,
+          newPassword: 'hijacked-password-1',
+          revokeOtherSessions: true,
+        }),
+      ],
+      ['/verify-password', () => ({ password: PASSWORD })],
+      ['/change-email', () => ({ newEmail: uniqueEmail('imp-hijack') })],
+      [
+        '/update-user',
+        () => ({ name: 'Hijacked', image: 'https://x.test/a.png' }),
+      ],
+      ['/delete-user', () => ({ password: PASSWORD })],
+      ['/revoke-session', () => ({ token: tokenOf(owner.cookie) })],
+      ['/revoke-sessions', () => ({})],
+      ['/revoke-other-sessions', () => ({})],
+      ['/link-social', () => ({ provider: 'google' })],
+      ['/unlink-account', () => ({ providerId: 'credential' })],
+      ['/get-access-token', () => ({ providerId: 'credential' })],
+      ['/refresh-token', () => ({ providerId: 'credential' })],
+    ])('POST %s → 403 and the owner is unchanged', async (path, body) => {
+      const before = await ownerRow();
+      const res = await post(path, body());
+      expect(res.status).toBe(403);
+      expect(res.body.message).toBe('Not allowed while impersonating');
+      expect(await ownerRow()).toEqual(before);
+      // The owner's own session and the impersonated one both survive.
+      await http()
+        .get('/api/auth/get-session')
+        .set('Cookie', owner.cookie)
+        .expect(200);
+      const mine = await http()
+        .get('/api/auth/get-session')
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(mine.body.session.impersonatedBy).toBe(superAdmin.id);
+    });
+
+    it('GET /delete-user/callback → 403; /set-password has no HTTP route (404)', async () => {
+      await http()
+        .get('/api/auth/delete-user/callback?token=whatever')
+        .set('Cookie', cookie)
+        .expect(403);
+      expect(
+        (await post('/set-password', { newPassword: 'x'.repeat(12) })).status,
+      ).toBe(404);
+      expect((await ownerRow()).user).toBeDefined();
+    });
+
+    it("the owner's own (non-impersonated) session can still use them: update-user 200", async () => {
+      const res = await post(
+        '/update-user',
+        { name: 'Owner Renamed' },
+        owner.cookie,
+      );
+      expect(res.status).toBe(200);
+      expect((await ownerRow()).user!.name).toBe('Owner Renamed');
+    });
+
+    it('sign-out still works for the impersonated session', async () => {
+      await post('/sign-out', {}).expect(200);
+      const after = await http()
+        .get('/api/auth/get-session')
+        .set('Cookie', cookie);
+      expect(after.body).toBeNull();
+      // The owner's own session is untouched.
+      await http().get('/api/me').set('Cookie', owner.cookie).expect(200);
     });
   });
 

@@ -48,14 +48,40 @@ export const DISABLED_AUTH_PATHS = [
 ];
 
 /**
- * Paths an impersonated session may not call (403): the admin plugin (an owner may be a super admin)
- * and anything that would move or widen its workspace lock.
+ * The owner's account routes (user decision, M1-GATE): an impersonator acts inside the workspace but
+ * never changes the owner's credentials, profile, linked accounts or other sessions. `get-session`
+ * and `sign-out` stay open. `/set-password` is server-only in Better Auth 1.7 (no HTTP route); it is
+ * listed in case a later version exposes it.
+ */
+export const IMPERSONATION_BLOCKED_ACCOUNT_PATHS: ReadonlySet<string> = new Set(
+  [
+    '/change-password',
+    '/set-password',
+    '/verify-password',
+    '/change-email',
+    '/update-user',
+    '/delete-user',
+    '/delete-user/callback',
+    '/revoke-session',
+    '/revoke-sessions',
+    '/revoke-other-sessions',
+    '/link-social',
+    '/unlink-account',
+    '/get-access-token',
+    '/refresh-token',
+  ],
+);
+
+/**
+ * Paths an impersonated session may not call (403): the admin plugin (an owner may be a super admin),
+ * anything that would move or widen its workspace lock, and the owner's account routes.
  */
 export function isBlockedWhileImpersonating(path: string): boolean {
   return (
     path.startsWith('/admin/') ||
     path === '/organization/set-active' ||
-    path === '/organization/create'
+    path === '/organization/create' ||
+    IMPERSONATION_BLOCKED_ACCOUNT_PATHS.has(path)
   );
 }
 
