@@ -29,8 +29,14 @@ export class EnvironmentVariables {
   @IsString()
   LOG_LEVEL = 'info';
 
+  /** Runtime connection. Prod: Neon **pooled** URL (host has `-pooler`). */
   @IsString()
   DATABASE_URL!: string;
+
+  /** Neon **direct** URL, used only for migrations (drizzle-kit + `db:deploy`). Defaults to `DATABASE_URL`. */
+  @IsOptional()
+  @IsString()
+  DIRECT_URL?: string;
 
   @IsString()
   REDIS_URL!: string;

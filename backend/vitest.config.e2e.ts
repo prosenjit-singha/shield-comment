@@ -19,6 +19,8 @@ export default defineConfig({
       NODE_ENV: 'test',
       LOG_LEVEL: 'silent',
       DATABASE_URL: TEST_DATABASE_URL,
+      // Locally the direct and pooled URLs are the same database.
+      DIRECT_URL: process.env.TEST_DIRECT_URL ?? TEST_DATABASE_URL,
       // Redis is stubbed in e2e specs; this only satisfies env validation.
       REDIS_URL: 'redis://localhost:6379',
       BETTER_AUTH_SECRET: 'e2e-better-auth-secret-0123456789abcdef',

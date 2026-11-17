@@ -50,6 +50,18 @@ describe('GET /api/health (e2e)', () => {
     });
   });
 
+  it('GET /api/health/live returns 200 without DB or Redis calls', async () => {
+    db.execute.mockClear();
+    redis.ping.mockClear();
+    const res = await request(app.getHttpServer())
+      .get('/api/health/live')
+      .expect(200);
+    expect(res.body).toMatchObject({ status: 'ok' });
+    expect(res.body.uptimeSeconds).toBeTypeOf('number');
+    expect(db.execute).not.toHaveBeenCalled();
+    expect(redis.ping).not.toHaveBeenCalled();
+  });
+
   it('returns the normalised error shape for unknown routes', async () => {
     const res = await request(app.getHttpServer()).get('/api/nope').expect(404);
     expect(res.body).toMatchObject({ statusCode: 404, path: '/api/nope' });

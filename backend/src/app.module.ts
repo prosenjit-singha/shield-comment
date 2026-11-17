@@ -7,6 +7,7 @@ import {
 } from './config/env.validation.js';
 import { AuthModule } from './auth/auth.module.js';
 import { HealthModule } from './health/health.module.js';
+import { isHealthProbe } from './health/health-probe.js';
 import { DbModule } from './db/db.module.js';
 import { RedisModule } from './redis/redis.module.js';
 
@@ -25,7 +26,7 @@ import { RedisModule } from './redis/redis.module.js';
           pinoHttp: {
             level: config.get('LOG_LEVEL', { infer: true }),
             redact: ['req.headers.authorization', 'req.headers.cookie'],
-            autoLogging: { ignore: (req) => req.url === '/api/health' },
+            autoLogging: { ignore: (req) => isHealthProbe(req.url) },
             transport: isDev
               ? { target: 'pino-pretty', options: { singleLine: true } }
               : undefined,

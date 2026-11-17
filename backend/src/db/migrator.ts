@@ -15,7 +15,12 @@ export async function runMigrations(
   connectionString: string,
   migrationsFolder = MIGRATIONS_FOLDER,
 ): Promise<void> {
-  const pool = new Pool({ connectionString, max: 1 });
+  // Fail fast on an unreachable host (Neon cold start is < 1 s) instead of hanging the deploy.
+  const pool = new Pool({
+    connectionString,
+    max: 1,
+    connectionTimeoutMillis: 10_000,
+  });
   try {
     await migrate(drizzle({ client: pool }), { migrationsFolder });
   } finally {

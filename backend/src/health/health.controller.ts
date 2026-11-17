@@ -3,6 +3,12 @@ import type { Response } from 'express';
 import { Public } from '../auth/decorators/public.decorator.js';
 import { HealthService, type HealthReport } from './health.service.js';
 
+export interface LivenessReport {
+  status: 'ok';
+  uptimeSeconds: number;
+  timestamp: string;
+}
+
 @Public()
 @Controller('health')
 export class HealthController {
@@ -16,5 +22,18 @@ export class HealthController {
       report.status === 'ok' ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE,
     );
     return report;
+  }
+
+  /**
+   * Liveness for uptime monitors and the Docker healthcheck: no DB or Redis calls, so frequent
+   * probes don't keep Neon's free compute awake. Use `GET /api/health` for dependency status.
+   */
+  @Get('live')
+  live(): LivenessReport {
+    return {
+      status: 'ok',
+      uptimeSeconds: Math.round(process.uptime()),
+      timestamp: new Date().toISOString(),
+    };
   }
 }

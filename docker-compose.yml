@@ -41,7 +41,9 @@ services:
       target: runtime
     command: ["node", "dist/db/migrate.js"]
     environment:
+      # Prod: DIRECT_URL = Neon direct URL (migrations), DATABASE_URL = pooled (runtime). Locally both hit Docker Postgres.
       DATABASE_URL: postgresql://${POSTGRES_USER:-shield}:${POSTGRES_PASSWORD:-shield}@postgres:5432/${POSTGRES_DB:-shield_comment}?schema=public
+      DIRECT_URL: postgresql://${POSTGRES_USER:-shield}:${POSTGRES_PASSWORD:-shield}@postgres:5432/${POSTGRES_DB:-shield_comment}?schema=public
     depends_on:
       postgres:
         condition: service_healthy
