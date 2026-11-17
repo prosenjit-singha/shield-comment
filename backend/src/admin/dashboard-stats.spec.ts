@@ -13,6 +13,7 @@ describe('buildDashboardStats', () => {
     const stats = buildDashboardStats(range, {
       activeClients: 4,
       clientsBefore: 10,
+      openTickets: 3,
       newClients: { '2026-11-13': 2, '2026-11-18': 1 },
     });
     expect(stats).toMatchObject({
@@ -21,7 +22,7 @@ describe('buildDashboardStats', () => {
       timezone: 'Asia/Dhaka',
       from: '2026-11-12',
       to: '2026-11-18',
-      kpis: { activeClients: 4, mrrBdt: 0, commentsScanned: 0, openTickets: 0 },
+      kpis: { activeClients: 4, mrrBdt: 0, commentsScanned: 0, openTickets: 3 },
     });
     expect(stats.series.growth).toEqual([
       { bucket: '2026-11-12', newClients: 0, totalClients: 10, mrrBdt: 0 },
@@ -48,6 +49,7 @@ describe('buildDashboardStats', () => {
     const stats = buildDashboardStats(range, {
       activeClients: 0,
       clientsBefore: 0,
+      openTickets: 0,
       newClients: {},
     });
     expect(stats.series.growth).toHaveLength(12);
@@ -70,6 +72,7 @@ describe('buildDashboardStats', () => {
     const stats = buildDashboardStats(range, {
       activeClients: 1,
       clientsBefore: 0,
+      openTickets: 0,
       newClients: { '2026-10-31': 5, '2026-11-02': 1 },
     });
     expect(stats.series.growth.map((p) => p.totalClients)).toEqual([0, 1]);

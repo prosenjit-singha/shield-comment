@@ -37,7 +37,7 @@ export interface DashboardKpis {
   mrrBdt: number;
   /** Comments scanned inside the range. Placeholder `0` until comment moderation exists. */
   commentsScanned: number;
-  /** Tickets not yet resolved. Placeholder `0` until M2-T7 wires support tickets. */
+  /** Unresolved support tickets right now (OPEN + IN_PROGRESS), not limited to the range. */
   openTickets: number;
 }
 

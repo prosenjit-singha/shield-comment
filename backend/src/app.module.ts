@@ -14,6 +14,7 @@ import { StorageModule } from './storage/storage.module.js';
 import { AiGatewayModule } from './ai-gateway/ai-gateway.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { MeModule } from './me/me.module.js';
+import { SupportTicketsModule } from './support-tickets/support-tickets.module.js';
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
 
 @Module({
@@ -48,6 +49,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module.js';
     MeModule,
     WorkspacesModule,
     AdminModule,
+    SupportTicketsModule,
   ],
 })
 export class AppModule {}

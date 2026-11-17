@@ -1,9 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
-import { count, eq } from 'drizzle-orm';
+import { count, eq, inArray } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
 import { dhakaBucketKey } from '../src/admin/dashboard-range.js';
 import type { DashboardStatsResponse } from '../src/admin/dto/dashboard-stats.dto.js';
-import { workspaces } from '../src/db/schema/index.js';
+import {
+  tickets,
+  UNRESOLVED_TICKET_STATUSES,
+  workspaces,
+} from '../src/db/schema/index.js';
 import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
 
@@ -72,7 +76,7 @@ describe('Admin dashboard stats (e2e)', () => {
       activeClients: expect.any(Number) as number,
       mrrBdt: 0,
       commentsScanned: 0,
-      openTickets: 0,
+      openTickets: expect.any(Number) as number,
     });
     expect(s.series.growth).toHaveLength(buckets);
     const keys = s.series.growth.map((p) => p.bucket);
@@ -157,6 +161,12 @@ describe('Admin dashboard stats (e2e)', () => {
       });
       expect(s.series.growth.at(-1)!.bucket).toBe(today());
       expect(s.series.growth[0]!.bucket).toBe(s.from);
+      // Wired in M2-T7 (seeded counts are covered in admin-tickets.e2e-spec.ts).
+      const [open] = await db()
+        .select({ n: count() })
+        .from(tickets)
+        .where(inArray(tickets.status, [...UNRESOLVED_TICKET_STATUSES]));
+      expect(s.kpis.openTickets).toBe(open!.n);
     });
 
     it.each([

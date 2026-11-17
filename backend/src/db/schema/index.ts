@@ -6,3 +6,4 @@ export * from './auth.js';
 export * from './workspaces.js';
 export * from './impersonation.js';
 export * from './workspace-status-audit.js';
+export * from './support-tickets.js';

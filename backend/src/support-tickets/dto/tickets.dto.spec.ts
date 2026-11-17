@@ -1,0 +1,128 @@
+import 'reflect-metadata';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import {
+  ListTicketsQueryDto,
+  ReplyTicketDto,
+  UpdateTicketStatusDto,
+} from './tickets.dto.js';
+
+/** Same options as the global ValidationPipe (src/app.setup.ts). */
+async function check<T extends object>(
+  cls: new () => T,
+  plain: Record<string, unknown>,
+) {
+  const dto = plainToInstance(cls, plain);
+  const errors = await validate(dto, {
+    whitelist: true,
+    forbidNonWhitelisted: true,
+  });
+  return { dto, fields: errors.map((e) => e.property) };
+}
+
+const WS = '019a0000-0000-7000-8000-000000000001';
+
+describe('ListTicketsQueryDto', () => {
+  it('defaults to the first 50, unfiltered', async () => {
+    const { dto, fields } = await check(ListTicketsQueryDto, {});
+    expect(fields).toEqual([]);
+    expect(dto).toMatchObject({ skip: 0, take: 50 });
+    expect(dto.q).toBeUndefined();
+  });
+
+  it('accepts every filter, converts numbers and trims q', async () => {
+    const { dto, fields } = await check(ListTicketsQueryDto, {
+      skip: '20',
+      take: '100',
+      status: 'IN_PROGRESS',
+      category: 'TECHNICAL',
+      priority: 'HIGH',
+      workspaceId: WS,
+      q: '  bKash ',
+    });
+    expect(fields).toEqual([]);
+    expect(dto).toEqual({
+      skip: 20,
+      take: 100,
+      status: 'IN_PROGRESS',
+      category: 'TECHNICAL',
+      priority: 'HIGH',
+      workspaceId: WS,
+      q: 'bKash',
+    });
+  });
+
+  it('blank q = no search', async () => {
+    const { dto, fields } = await check(ListTicketsQueryDto, { q: '   ' });
+    expect(fields).toEqual([]);
+    expect(dto.q).toBeUndefined();
+  });
+
+  it.each([
+    [{ take: '0' }, 'take'],
+    [{ take: '101' }, 'take'],
+    [{ take: '1.5' }, 'take'],
+    [{ skip: '-1' }, 'skip'],
+    [{ skip: 'abc' }, 'skip'],
+    [{ status: 'open' }, 'status'],
+    [{ status: 'CLOSED' }, 'status'],
+    [{ category: 'META' }, 'category'],
+    [{ priority: 'URGENT' }, 'priority'],
+    [{ workspaceId: 'not-a-uuid' }, 'workspaceId'],
+    [{ q: 'x'.repeat(101) }, 'q'],
+    [{ sort: 'oldest' }, 'sort'],
+  ])('rejects %j', async (plain, field) => {
+    const { fields } = await check(ListTicketsQueryDto, plain);
+    expect(fields).toEqual([field]);
+  });
+});
+
+describe('ReplyTicketDto', () => {
+  it('trims the body and defaults isInternalNote to false', async () => {
+    const { dto, fields } = await check(ReplyTicketDto, {
+      body: '  Hello  ',
+    });
+    expect(fields).toEqual([]);
+    expect(dto).toEqual({ body: 'Hello', isInternalNote: false });
+  });
+
+  it('accepts an internal note and a 5000-character body', async () => {
+    const { dto, fields } = await check(ReplyTicketDto, {
+      body: 'x'.repeat(5000),
+      isInternalNote: true,
+    });
+    expect(fields).toEqual([]);
+    expect(dto.isInternalNote).toBe(true);
+  });
+
+  it.each([
+    [{}, 'body'],
+    [{ body: '' }, 'body'],
+    [{ body: '   ' }, 'body'],
+    [{ body: 42 }, 'body'],
+    [{ body: 'x'.repeat(5001) }, 'body'],
+    [{ body: 'ok', isInternalNote: 'true' }, 'isInternalNote'],
+    [{ body: 'ok', isInternalNote: 1 }, 'isInternalNote'],
+    [{ body: 'ok', senderRole: 'CLIENT' }, 'senderRole'],
+  ])('rejects %j', async (plain, field) => {
+    const { fields } = await check(ReplyTicketDto, plain);
+    expect(fields).toEqual([field]);
+  });
+});
+
+describe('UpdateTicketStatusDto', () => {
+  it.each(['OPEN', 'IN_PROGRESS', 'RESOLVED'])('accepts %s', async (status) => {
+    const { fields } = await check(UpdateTicketStatusDto, { status });
+    expect(fields).toEqual([]);
+  });
+
+  it.each([
+    [{}, 'status'],
+    [{ status: 'CLOSED' }, 'status'],
+    [{ status: 'resolved' }, 'status'],
+    [{ status: 'OPEN', reason: 'x' }, 'reason'],
+  ])('rejects %j', async (plain, field) => {
+    const { fields } = await check(UpdateTicketStatusDto, plain);
+    expect(fields).toEqual([field]);
+  });
+});

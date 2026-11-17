@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { and, count, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
-import { workspaces } from '../db/schema/index.js';
+import {
+  tickets,
+  UNRESOLVED_TICKET_STATUSES,
+  workspaces,
+} from '../db/schema/index.js';
 import {
   type DashboardRangeQuery,
   type Granularity,
@@ -32,7 +36,7 @@ export class AdminDashboardService {
     const range = resolveDashboardRange(query, this.now());
     const bucket = sql<string>`to_char(${workspaces.createdAt} at time zone 'Asia/Dhaka', ${sql.raw(`'${BUCKET_FORMAT[range.granularity]}'`)})`;
 
-    const [perBucket, [before], [active]] = await Promise.all([
+    const [perBucket, [before], [active], [open]] = await Promise.all([
       this.db
         .select({ bucket, newClients: count() })
         .from(workspaces)
@@ -51,11 +55,16 @@ export class AdminDashboardService {
         .select({ n: count() })
         .from(workspaces)
         .where(eq(workspaces.status, 'ACTIVE')),
+      this.db
+        .select({ n: count() })
+        .from(tickets)
+        .where(inArray(tickets.status, [...UNRESOLVED_TICKET_STATUSES])),
     ]);
 
     return buildDashboardStats(range, {
       activeClients: active?.n ?? 0,
       clientsBefore: before?.n ?? 0,
+      openTickets: open?.n ?? 0,
       newClients: Object.fromEntries(
         perBucket.map((r) => [r.bucket, r.newClients]),
       ),

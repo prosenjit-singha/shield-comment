@@ -10,13 +10,15 @@ export interface DashboardSources {
   activeClients: number;
   /** Workspaces created before the range's first bucket. */
   clientsBefore: number;
+  /** Unresolved tickets now (OPEN + IN_PROGRESS). */
+  openTickets: number;
   /** New workspaces per bucket key; missing keys = 0. */
   newClients: Readonly<Record<string, number>>;
 }
 
 /**
  * Zero-fills every bucket of the range and builds the response. Data sources that don't exist yet
- * (MRR, comments, tickets, plan tiers, gateways) are zeros or empty lists, never `null`.
+ * (MRR, comments, plan tiers, gateways) are zeros or empty lists, never `null`.
  */
 export function buildDashboardStats(
   range: ResolvedRange,
@@ -39,7 +41,7 @@ export function buildDashboardStats(
       activeClients: sources.activeClients,
       mrrBdt: 0,
       commentsScanned: 0,
-      openTickets: 0,
+      openTickets: sources.openTickets,
     },
     series: {
       growth,
