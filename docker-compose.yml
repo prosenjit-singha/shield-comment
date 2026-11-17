@@ -1,0 +1,101 @@
+# ShieldComment BD — one command for the whole stack.
+#   Everything:        docker compose up --build
+#   Infra only (dev):  docker compose up -d postgres redis
+#   Host ports: if a local Postgres/Redis already uses 5432/6379, set POSTGRES_HOST_PORT=5433 / REDIS_HOST_PORT=6380 in .env.
+name: shield-comment
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-shield}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shield}
+      POSTGRES_DB: ${POSTGRES_DB:-shield_comment}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-off: applies Drizzle SQL migrations (backend/drizzle) with the runtime migrator, then exits. backend waits for it.
+  migrate:
+    build:
+      context: ./backend
+      target: runtime
+    command: ["node", "dist/db/migrate.js"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-shield}:${POSTGRES_PASSWORD:-shield}@postgres:5432/${POSTGRES_DB:-shield_comment}?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-shield}:${POSTGRES_PASSWORD:-shield}@postgres:5432/${POSTGRES_DB:-shield_comment}?schema=public
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:5174}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env}
+      JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-900}
+      JWT_REFRESH_TTL_SECONDS: ${JWT_REFRESH_TTL_SECONDS:-604800}
+    ports:
+      - "${BACKEND_HOST_PORT:-3000}:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Admin SPA: static build served by nginx (SPA fallback) on 5173.
+  admin:
+    build:
+      context: ./admin
+      target: runtime
+      args:
+        VITE_API_URL: ${ADMIN_API_URL:-http://localhost:3000/api}
+    ports:
+      - "${ADMIN_HOST_PORT:-5173}:5173"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Client SPA (bilingual brand dashboard): static build served by nginx (SPA fallback) on 5174.
+  client:
+    build:
+      context: ./client
+      target: runtime
+      args:
+        VITE_API_URL: ${CLIENT_API_URL:-http://localhost:3000/api}
+    ports:
+      - "${CLIENT_HOST_PORT:-5174}:5174"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

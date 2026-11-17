@@ -1,0 +1,59 @@
+# Task Report
+
+Status: ✅ done · 🟡 partly done or blocked · ⬜ todo. Work **one row per session**. Update the row when you finish it.
+
+## Module 0 — Scaffolding (`docs/project-documentation/modules/module-0-scaffolding.md`)
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| M0-T1 | Root AGENTS.md / CLAUDE.md + progress docs | ✅ 2026-11-17 | CLAUDE.md imports AGENTS.md |
+| M0-T2 | Backend: NestJS 12 strict scaffold | ✅ 2026-11-17 | ESM, Vitest, oxlint |
+| M0-T3 | Backend: Prisma 7 init + base schema | ✅ 2026-11-17 | First migration `20261117152706_init_auth` landed with M1-T1. |
+| M0-T4 | Backend: `GET /api/health` (DB latency + Redis ping) | ✅ 2026-11-17 | 200 when both are up, 503 otherwise. Unit and e2e tests pass. Live run with local Redis gave redis up and DB down (no Postgres yet). |
+| M0-T5 | Backend: ValidationPipe, global exception filter, Pino logging, env validation | ✅ 2026-11-17 | `AllExceptionsFilter`, `nestjs-pino`, `validateEnv` |
+| M0-T6 | Docker: backend Dockerfile + root docker-compose (postgres, redis, migrate, backend) | ✅ 2026-11-17 | `docker compose up --build -d` runs all 6 services. `migrate` exits 0 (no migrations yet), backend healthy and running as `node`. Host ports come from root `.env` (5433/6380, see MEMORY). |
+| M0-T7 | Admin: Vite + React + TS scaffold, Tailwind, shadcn, Animate UI, OKLCH tokens | ✅ 2026-11-17 | Vite 8 + TS 7 strict, Tailwind v4 (`@tailwindcss/vite`), shadcn `radix-nova`, 13 base components (5 animated by Animate UI), base.md tokens + `.dark` set in `src/globals.css`. `src/App.tsx` is a token smoke screen. Dev on 5173 (strictPort). |
+| M0-T8 | Admin: Zustand + TanStack Query providers, Dockerfile, compose service | ✅ 2026-11-17 | `src/providers/app-providers.tsx` (QueryClient + Tooltip + ThemeSync, devtools lazy-loaded in dev only), `src/stores/ui-store.ts` (persisted theme + sidebar). Dockerfile (node:24 build → nginx-unprivileged on 5173, SPA fallback, `/healthz`) + `admin` compose service. Image built and healthy in compose (`/healthz` ok, SPA fallback 200). |
+| M0-T9 | Client: same scaffold as admin | ✅ 2026-11-17 | Copied from admin (configs, `package-lock.json` → identical versions, `globals.css`, 13 `components/ui` already Animate-UI'd + rounded-full). `src/App.tsx` is a token smoke screen with a local dark toggle. **No providers yet** (QueryClient/Zustand wiring moves to T10). Dev on 5174 (strictPort). |
+| M0-T10 | Client: providers + `useLanguageStore` + `content(en, bn)` + unit test, Dockerfile, compose service | ✅ 2026-11-17 | Copied admin providers/query-client/ui-store (persist key `shield-client-ui`) + `LanguageSync` (sets `<html lang>`). `src/stores/language-store.ts` (persist key `shield-client-lang`), `src/hooks/use-language.ts` → `{ language, setLanguage, toggleLanguage, content }`. Vitest 5 + jsdom + Testing Library, `src/hooks/use-language.test.ts` (3 tests). Dockerfile/nginx on 5174 + `client` compose service (`CLIENT_API_URL`, `CLIENT_HOST_PORT`). Image built and healthy in compose. |
+| M0-GATE | All 3 projects build. Health returns 200 with DB and Redis up. Client language test passes. | ✅ 2026-11-17 | All 3 images build (each runs `npm run build`). `GET /api/health` → 200, database up, redis up. Client language test 3/3. M0-T3 stays 🟡 until Module 1 adds the first migration. |
+
+## Module 0b — Stack switch (TanStack Router / TanStack Start / Better Auth / Neon)
+
+Decided 2026-11-17. Spec: `docs/project-documentation/tech-stack.md`. The backend scaffold, health, validation, logging and Docker from Module 0 stay. The ORM (Prisma → Drizzle), auth, the auth schema and the frontend routing/scaffold are redone here. Module 0's gate is re-run as SW-GATE against the updated `module-0-scaffolding.md`.
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| SW-T1 | Docs: switch stack in all docs (tech-stack.md, base, modules 0–3 and 6–9, screens, design, AGENTS, MEMORY) | ✅ 2026-11-17 | New `docs/project-documentation/tech-stack.md` is the source of truth. Same day: ORM changed from Prisma to Drizzle in the docs. |
+| SW-T2 | Backend: replace Prisma with Drizzle. Remove `prisma`, `@prisma/*`, `prisma.config.ts`, `prisma/`, `src/generated/`. Add `drizzle-orm`, `pg`, `drizzle-kit`, `uuidv7`, `@nestjs/drizzle`. `src/db/` (schema folder, `drizzle.config.ts`, migrate script). Health check DB ping on Drizzle. Compose `migrate` service + e2e global setup use the Drizzle migrator. Build, unit and e2e (health) green. | ✅ 2026-11-17 | Drizzle 0.45.4 + drizzle-kit 0.31.11 + `@nestjs/drizzle` 0.0.2 (global, `@InjectDrizzle()`) + `uuidv7`. `src/db/`: `db.module.ts`, `database.ts` (`Database` type), `schema/` (`columns.ts` helpers `id()`/`timestamptz()`/`timestamps` + empty `index.ts`), `migrator.ts` + `migrate.ts`. `drizzle.config.ts`, migrations in `backend/drizzle/` (`0000_init` baseline, no tables). Health pings via `db.execute(sql\`select 1\`)`. Compose `migrate` = runtime image `node dist/db/migrate.js`. Old auth/workspaces/admin + Prisma schema + Better Auth/Prisma spike moved to `backend/legacy-auth/` (README). Local dev + test DBs reset (old Prisma tables dropped). ⚠️ Old `auth.service/controller/dto` .ts + `test/auth.e2e-spec.ts` were deleted before the move; compiled JS recovered from the Docker image, e2e spec lost. |
+| SW-T3 | Backend spike: install `better-auth` + NestJS integration + Drizzle adapter on NestJS 12 ESM. Better Auth core tables (user, session, account, verification) as Drizzle schema in our conventions + migration. E2E: sign-up → sign-in → get-session. | ⬜ | Proves the integration works. If `@thallesp/nestjs-better-auth` fails on NestJS 12, mount `toNodeHandler(auth)` ourselves and write our own guard. Check that body parsing doesn't break `/api/auth/*`. |
+| SW-T4 | Backend: `organization` plugin (→ Workspace / WorkspaceMember / WorkspaceInvitation, roles owner/admin/moderator, `status`) + `admin` plugin (`super_admin`). Sign-up hook creates the first workspace. argon2id hash. Redis `secondaryStorage` + rate limit. Global session guard + `@Public()`. Remove `@nestjs/jwt`, `TokenService`, `JwtAuthGuard`, JWT env vars. Migration for the plugin tables. | ⬜ | Keep `PasswordService` (argon2id) for Better Auth's `password.hash/verify`. |
+| SW-T5 | Backend: Neon + prod wiring. `DIRECT_URL` in `drizzle.config.ts` + migrate script, pooled `DATABASE_URL` at runtime, DB-free `/api/health/live`, `.env.example` (Neon + Redis Cloud samples, `BETTER_AUTH_*`, `TRUSTED_ORIGINS`), compose env, unit/e2e green. Optional: run the migrate script against a real Neon branch. | ⬜ | Needs a Neon connection string from the user for the optional check. |
+| SW-T6 | Admin: TanStack Router file routes (`@tanstack/router-plugin/vite`, `src/routes/`, `__root.tsx` with `{ queryClient }` context, `autoCodeSplitting`). Better Auth client + `sessionQueryOptions`. `_authed` layout guard + placeholder `/admin/login` and `/admin/dashboard`. `/api` proxy (Vite dev + nginx). Drop `VITE_API_URL`. | ⬜ | Keep existing providers, stores and `components/ui`. Dev URL `http://admin.localhost:5173`. |
+| SW-T7 | Client: re-scaffold on TanStack Start. Move over `components/ui`, `globals.css`, fonts, providers, language store (now cookie `shield-lang`) + its tests. SSR placeholder `/` and `/bn`. `_app` layout guard. Better Auth client. `/api` proxy. Dockerfile → Node server. Compose service. | ⬜ | Dev URL `http://app.localhost:5174`. Pick `ssr: false` vs `'data-only'` for `_app`. |
+| SW-GATE | Updated Module 0 gate: 3 builds, health 200, Better Auth e2e, admin redirect when logged out, client `/` server HTML has the `<h1>`, language test. | ⬜ | |
+
+## Module 1 — Auth, RBAC, multi-tenancy, impersonation (`docs/project-documentation/modules/module-1-auth-rbac.md`)
+
+Rebuilt on Better Auth (2026-11-17). Tests use **Vitest** + Supertest against Docker Postgres.
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| M1-T1 | Guards on Better Auth sessions (port from `backend/legacy-auth/`): `RolesGuard`, `SuperAdminGuard` (rejects impersonated sessions), `WorkspaceAccessGuard` (404 non-member, 403 suspended / low role, impersonation locked to its workspace). `GET /api/me`, `GET`/`PATCH /api/workspaces/:workspaceId`, `GET /api/admin/clients`. `npm run create-super-admin`. | ⬜ | Port the logic from the old M1-T4 draft to Better Auth sessions and Drizzle queries, then delete `backend/legacy-auth/`. |
+| M1-T2 | Tenant-isolation + admin-guard e2e specs | ⬜ | |
+| M1-T3 | Impersonation: `POST /api/admin/clients/:workspaceId/impersonate` + custom Better Auth plugin `POST /api/auth/impersonate-exchange` (unit + e2e) | ⬜ | 60 s single-use token, hashed in `ImpersonationAuditLog`. Session gets `impersonatedBy` + `activeOrganizationId`. |
+| M1-GATE | Unit: argon2id hashing, impersonation expiry/reuse. E2E: Better Auth session, tenant isolation 403/404, non-admin impersonate 403, exchange sets `impersonatedBy` | ⬜ | |
+
+**Superseded 2026-11-17 (custom JWT):** the old M1-T1 (Prisma auth models), M1-T2 (`PasswordService` + JWT `TokenService`), M1-T3 (`/auth/register|login|refresh|me` + `JwtAuthGuard`) were ✅ and the old M1-T4 (guards) was 🟡 untested. SW-T2 moves the code worth porting to `backend/legacy-auth/`; the rest is deleted. Their verification lines are kept below as history.
+
+## Verification log
+- 2026-11-17 backend SW-T2 (Drizzle): `npm run build` ✅ · `npm test` 10/10 (health 4, password 3, schema conventions 3) · `npm run test:e2e` 3/3 (global setup ran the Drizzle migrator on `shield_comment_test`) · lint exit 0 · `npm run db:deploy` twice (idempotent) + `drizzle-kit migrate` agree on 1 journal row · compose: `migrate` exit 0, backend healthy, `/api/health` 200 database up redis up
+- 2026-11-17 backend M1-T3: `npm run build` ✅ · `npm test` 14/14 · `npm run test:e2e` 14/14 (11 auth on real Postgres + 3 health) · lint exit 0
+- 2026-11-17 backend M1-T2: `npm run build` ✅ · `npm test` 14/14 (hash salt/verify/malformed, JWT roundtrip/HS256/TTL/typ swap/tamper/expiry) · `npm run test:e2e` 3/3 · lint exit 0
+- 2026-11-17 backend M1-T1: `prisma validate` ✅ · `migrate dev` applied ✅ · `npm run build` ✅ · `npm test` 3/3 · `npm run test:e2e` 3/3 · lint exit 0
+- 2026-11-17 M0-GATE (Docker 29.9): compose 6/6 up (migrate exit 0) · `/api/health` 200 `database:up redis:up` · admin :5173 + client :5174 `/healthz` ok, SPA fallback 200 · backend container user `node`. First build hit an npm `ECONNRESET` (network); the retry passed.
+- 2026-11-17 client M0-T10: `npm test` 3/3 ✅ · `npm run build` ✅ (0 TS errors; >500 kB chunk warning only) · `npm run lint` exit 0 (same 3 shadcn warnings) · devtools absent from prod bundle ✅ · dev server 200 on :5174 ✅ · compose YAML parses (6 services) ✅
+- 2026-11-17 client M0-T9: `npm ci` ✅ · `npm run build` ✅ (0 TS errors) · `npm run lint` exit 0 (same 3 shadcn warnings) · dev server 200 on :5174 ✅
+- 2026-11-17 admin M0-T8: `npm run build` ✅ · `npm run lint` exit 0 (same 3 shadcn warnings) · devtools absent from prod bundle ✅ · dev server 200 on :5173 ✅ · compose YAML parses ✅
+- 2026-11-17 admin: `npm run build` ✅ (0 TS errors; >500 kB chunk warning only) · `npm run lint` ✅ (3 shadcn fast-refresh warnings) · dev server 200 on :5173 ✅
+- 2026-11-17 backend: `npm run build` ✅ · `npm test` 3/3 ✅ · `npm run test:e2e` 3/3 ✅ · `npm run lint` ✅ · compose YAML parses ✅
