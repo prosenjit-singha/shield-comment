@@ -24,8 +24,6 @@ export default defineConfig({
       BETTER_AUTH_SECRET: 'e2e-better-auth-secret-0123456789abcdef',
       BETTER_AUTH_URL: 'http://localhost:3000',
       TRUSTED_ORIGINS: 'http://localhost:5173,http://localhost:5174',
-      JWT_ACCESS_SECRET: 'e2e-access-secret-0123456789abcdef0123',
-      JWT_REFRESH_SECRET: 'e2e-refresh-secret-0123456789abcdef012',
     },
   },
 });

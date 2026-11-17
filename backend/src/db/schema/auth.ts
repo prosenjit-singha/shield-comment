@@ -1,27 +1,46 @@
-import { relations } from 'drizzle-orm';
-import { boolean, index, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
+import { boolean, check, index, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { id, timestamps, timestamptz } from './columns.js';
+import { workspaceMembers, workspaces } from './workspaces.js';
 
 /**
  * Better Auth core tables (user / session / account / verification), in our conventions:
  * plural snake_case tables (`usePlural: true` in the Drizzle adapter), UUIDv7 ids, timestamptz(3).
  * Field names (TS keys) must stay exactly as Better Auth expects; SQL columns become snake_case.
- * The `organization` and `admin` plugins add their columns/tables in SW-T4.
+ * `admin` plugin: `users.role/banned/banReason/banExpires`, `sessions.impersonatedBy`.
+ * `organization` plugin: `sessions.activeOrganizationId` (the current workspace) + ./workspaces.ts.
  */
 
-export const users = pgTable('users', {
-  id: id(),
-  name: text().notNull(),
-  /** Always lower-cased: Better Auth normalises it on sign-up and sign-in. */
-  email: text().notNull().unique(),
-  emailVerified: boolean().notNull().default(false),
-  image: text(),
-  ...timestamps,
-});
+/** Platform roles (`admin` plugin, `adminRoles: ['super_admin']`). */
+export const USER_ROLES = ['super_admin', 'user'] as const;
+export type UserRole = (typeof USER_ROLES)[number];
+
+export const users = pgTable(
+  'users',
+  {
+    id: id(),
+    name: text().notNull(),
+    /** Always lower-cased: Better Auth normalises it on sign-up and sign-in. */
+    email: text().notNull().unique(),
+    emailVerified: boolean().notNull().default(false),
+    image: text(),
+    role: text().notNull().default('user'),
+    banned: boolean().notNull().default(false),
+    banReason: text(),
+    banExpires: timestamptz(),
+    ...timestamps,
+  },
+  () => [
+    check(
+      'users_role_check',
+      sql.raw(`role in (${USER_ROLES.map((r) => `'${r}'`).join(', ')})`),
+    ),
+  ],
+);
 
 /**
- * Postgres is the source of truth for sessions (list / revoke). Redis `secondaryStorage`
- * is added in SW-T4. `token` is the value inside the signed session cookie.
+ * Postgres is the source of truth for sessions (list / revoke); Redis `secondaryStorage` is a
+ * read-through cache (`storeSessionInDatabase: true`). `token` is the value inside the signed cookie.
  */
 export const sessions = pgTable(
   'sessions',
@@ -34,6 +53,10 @@ export const sessions = pgTable(
     expiresAt: timestamptz().notNull(),
     ipAddress: text(),
     userAgent: text(),
+    /** Current workspace (`organization` plugin). Set at sign-up / sign-in by src/auth/first-workspace.ts. */
+    activeOrganizationId: uuid().references(() => workspaces.id, { onDelete: 'set null' }),
+    /** Super admin who started this session (`admin` plugin / M1-T3 impersonation). */
+    impersonatedBy: uuid().references(() => users.id, { onDelete: 'set null' }),
     ...timestamps,
   },
   (t) => [index().on(t.userId)],
@@ -77,10 +100,15 @@ export const verifications = pgTable(
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   accounts: many(accounts),
+  memberships: many(workspaceMembers),
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, { fields: [sessions.userId], references: [users.id] }),
+  activeWorkspace: one(workspaces, {
+    fields: [sessions.activeOrganizationId],
+    references: [workspaces.id],
+  }),
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({

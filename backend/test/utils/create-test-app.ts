@@ -3,10 +3,13 @@ import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import type { App } from 'supertest/types.js';
 import { AppModule } from '../../src/app.module.js';
 import { configureApp } from '../../src/app.setup.js';
+import { AUTH_SECONDARY_STORAGE } from '../../src/redis/redis-secondary-storage.js';
 import { RedisService } from '../../src/redis/redis.service.js';
+import { createMemorySecondaryStorage } from './memory-secondary-storage.js';
 
 /**
- * Boots the real AppModule with production wiring. Redis is stubbed unless overridden.
+ * Boots the real AppModule with production wiring. Redis is stubbed unless overridden; Better Auth's
+ * `secondaryStorage` is an in-memory store (`app.get(AUTH_SECONDARY_STORAGE)` to inspect it).
  * `controllers` adds test-only controllers (e.g. to probe guards) next to the app's own.
  */
 export async function createTestApp(
@@ -18,7 +21,9 @@ export async function createTestApp(
 
   let builder = Test.createTestingModule({ imports: [AppModule, TestControllersModule] })
     .overrideProvider(RedisService)
-    .useValue({ ping: vi.fn().mockResolvedValue('PONG'), onModuleDestroy: vi.fn() });
+    .useValue({ ping: vi.fn().mockResolvedValue('PONG'), onModuleDestroy: vi.fn() })
+    .overrideProvider(AUTH_SECONDARY_STORAGE)
+    .useValue(createMemorySecondaryStorage());
   if (override) builder = override(builder);
   // Same as main.ts: the Better Auth integration owns body parsing.
   const app = (await builder.compile()).createNestApplication<INestApplication<App>>({

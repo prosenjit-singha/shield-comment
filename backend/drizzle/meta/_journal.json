@@ -15,6 +15,13 @@
       "when": 1794932628955,
       "tag": "0001_auth_core",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794933661441,
+      "tag": "0002_auth_plugins",
+      "breakpoints": true
     }
   ]
 }

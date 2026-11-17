@@ -1,9 +1,6 @@
-import { SetMetadata } from '@nestjs/common';
-
-export const IS_PUBLIC_KEY = 'auth:isPublic';
-
 /**
- * Marks a route (or controller) as open. No global guard is registered between SW-T2 and
- * SW-T4; the Better Auth session guard added in SW-T4 must honour this key.
+ * Marks a route (or controller) as open: the global Better Auth `AuthGuard` skips the session
+ * check (it still attaches `request.session` when a cookie is present). This is the
+ * integration's `@AllowAnonymous()` (metadata key `PUBLIC`), re-exported under our name.
  */
-export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
+export { AllowAnonymous as Public } from '@thallesp/nestjs-better-auth';

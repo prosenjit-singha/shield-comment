@@ -42,7 +42,7 @@ cd backend && npx drizzle-kit migrate                  # apply migrations locall
 - Vitest doesn't emit decorator metadata. In DTOs/env classes, use an explicit `@Type(() => Number)` for numbers.
 - npm 11 blocks install scripts unless they're listed in `allowScripts` in package.json. Run `npm approve-scripts <pkg>` when needed.
 - Global wiring lives in `configureApp()` (`src/app.setup.ts`): prefix, ValidationPipe, AllExceptionsFilter, CORS. `main.ts` and e2e tests both call it. Build e2e apps with `test/utils/create-test-app.ts`.
-- Auth is **Better Auth**, mounted at `/api/auth/*` (Drizzle adapter, Redis `secondaryStorage`, `organization` plugin = workspaces, `admin` plugin = super admin). A global session guard protects every route. Mark open routes with `@Public()`. Don't add `@nestjs/jwt` or hand-rolled tokens. (The old custom JWT code is being replaced; see TASKS.md Module 0b.)
+- Auth is **Better Auth**, mounted at `/api/auth/*` (Drizzle adapter, Redis `secondaryStorage`, `organization` plugin = workspaces, `admin` plugin = super admin). A global session guard protects every route. Mark open routes with `@Public()`. Don't add `@nestjs/jwt` or hand-rolled tokens (the old JWT code was removed in SW-T4).
 - Don't let uptime monitors hit `/api/health` often: it queries the DB and keeps Neon's free compute awake. Use `/api/health/live`.
 
 ## Engineering rules

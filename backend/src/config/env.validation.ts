@@ -52,26 +52,6 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   TRUSTED_ORIGINS?: string;
-
-  /** HS256 secret for access tokens. Generate with `openssl rand -base64 48`. */
-  @IsString()
-  @MinLength(32)
-  JWT_ACCESS_SECRET!: string;
-
-  /** Separate HS256 secret for refresh tokens, so one can't be used as the other. */
-  @IsString()
-  @MinLength(32)
-  JWT_REFRESH_SECRET!: string;
-
-  @Type(() => Number)
-  @IsInt()
-  @Min(60)
-  JWT_ACCESS_TTL_SECONDS = 900;
-
-  @Type(() => Number)
-  @IsInt()
-  @Min(300)
-  JWT_REFRESH_TTL_SECONDS = 604_800;
 }
 
 /** Fails fast at boot if required env vars are missing or malformed. */
