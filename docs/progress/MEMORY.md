@@ -29,6 +29,7 @@
 - WSL2, Node 24, npm 11 (it blocks install scripts; approved ones are in `allowScripts` in package.json).
 - Docker 29.9 now works in WSL. A **local Postgres 18 owns 5432** and local Redis owns 6379, so root `.env` maps Docker to `POSTGRES_HOST_PORT=5433` / `REDIS_HOST_PORT=6380`. `backend/.env` uses Docker Postgres `localhost:5433` (user/pass `shield`) and local Redis 6379.
 - Docker npm installs sometimes fail with `ECONNRESET`. Just retry the build.
+- Browser checks: the Playwright/DevTools MCPs fail (no `/opt/google/chrome`), but a headless script works with `playwright-core` from `~/.npm/_npx/*/node_modules` + `executablePath` `~/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome`. Test users: delete DB rows **and** their Redis `auth:<token>` + `auth:active-sessions-<userId>` keys.
 - `nest new` / the old `prisma init` also wrote agent skill folders (`backend/.agents`, `.claude`, `.windsurf`, `skills-lock.json`). They're harmless and excluded in `.dockerignore`.
 
 ## Versions
