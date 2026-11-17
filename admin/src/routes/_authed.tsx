@@ -1,20 +1,31 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Outlet, redirect, useNavigate } from '@tanstack/react-router'
 import { LogOut, Moon, ShieldCheck, Sun } from 'lucide-react'
+import { FullPageLoader } from '@/components/full-page-loader'
 import { Button } from '@/components/ui/button'
-import { authClient } from '@/lib/auth-client'
+import { authClient, type AuthSession } from '@/lib/auth-client'
 import { isSuperAdmin, sessionQueryOptions } from '@/lib/session'
 import { resolveTheme, useUiStore } from '@/stores/ui-store'
 
-/** Pathless layout: every route below it needs a Better Auth session with role `super_admin`. */
+/**
+ * Pathless layout: every route below it needs a Better Auth session with role `super_admin`
+ * that is neither banned nor an impersonation session (see `adminAccess`).
+ */
 export const Route = createFileRoute('/_authed')({
   beforeLoad: async ({ context, location }) => {
-    const session = await context.queryClient.ensureQueryData(sessionQueryOptions)
-    if (!isSuperAdmin(session)) {
-      throw redirect({ to: '/admin/login', search: { redirect: location.href } })
+    const toLogin = redirect({ to: '/admin/login', search: { redirect: location.href } })
+    let session: AuthSession | null
+    try {
+      session = await context.queryClient.ensureQueryData(sessionQueryOptions)
+    } catch {
+      // Fail closed: if the session can't be checked, the login page explains why.
+      throw toLogin
     }
+    // Refuses: no session, role !== 'super_admin', banned, and impersonation sessions.
+    if (!isSuperAdmin(session)) throw toLogin
     return { session }
   },
+  pendingComponent: () => <FullPageLoader />,
   component: AuthedLayout,
 })
 

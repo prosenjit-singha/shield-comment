@@ -7,24 +7,33 @@ import { createAppRouter } from '@/router'
 const getSession = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/auth-client', () => ({ authClient: { getSession } }))
 
-function sessionFor(role: string) {
+function sessionFor(
+  role: string,
+  extra: { impersonatedBy?: string; banned?: boolean } = {},
+) {
   return {
-    data: { session: { id: 's1' }, user: { id: 'u1', email: 'a@b.co', name: 'A', role } },
+    data: {
+      session: { id: 's1', impersonatedBy: extra.impersonatedBy ?? null },
+      user: { id: 'u1', email: 'a@b.co', name: 'A', role, banned: extra.banned ?? false },
+    },
     error: null,
   }
 }
 
 async function loadAt(path: string) {
-  const router = createAppRouter(
-    createQueryClient(),
-    createMemoryHistory({ initialEntries: [path] }),
-  )
+  const queryClient = createQueryClient()
+  const defaults = queryClient.getDefaultOptions()
+  queryClient.setDefaultOptions({ ...defaults, queries: { ...defaults.queries, retry: false } })
+  const router = createAppRouter(queryClient, createMemoryHistory({ initialEntries: [path] }))
   await router.load()
   return router.state.location
 }
 
 describe('_authed guard', () => {
-  beforeEach(() => getSession.mockReset())
+  // Braces matter: a function returned from beforeEach is run as teardown (it would call the mock).
+  beforeEach(() => {
+    getSession.mockReset()
+  })
 
   it('redirects a signed-out visitor to /admin/login with the target in ?redirect', async () => {
     getSession.mockResolvedValue({ data: null, error: null })
@@ -37,6 +46,26 @@ describe('_authed guard', () => {
     getSession.mockResolvedValue(sessionFor('user'))
     const location = await loadAt('/admin/dashboard')
     expect(location.pathname).toBe('/admin/login')
+  })
+
+  it('refuses an impersonation session even when the user is a super admin', async () => {
+    getSession.mockResolvedValue(sessionFor('super_admin', { impersonatedBy: 'admin-1' }))
+    const location = await loadAt('/admin/dashboard')
+    expect(location.pathname).toBe('/admin/login')
+    expect(location.search).toEqual({ redirect: '/admin/dashboard' })
+  })
+
+  it('refuses a banned super admin', async () => {
+    getSession.mockResolvedValue(sessionFor('super_admin', { banned: true }))
+    const location = await loadAt('/admin/dashboard')
+    expect(location.pathname).toBe('/admin/login')
+  })
+
+  it('fails closed to /admin/login when the session check errors', async () => {
+    getSession.mockRejectedValue(new TypeError('Failed to fetch'))
+    const location = await loadAt('/admin/dashboard')
+    expect(location.pathname).toBe('/admin/login')
+    expect(location.search).toEqual({ redirect: '/admin/dashboard' })
   })
 
   it('lets a super admin through to /admin/dashboard', async () => {
