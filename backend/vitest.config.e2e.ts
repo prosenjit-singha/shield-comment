@@ -11,7 +11,7 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.e2e-spec.ts'],
-    exclude: ['**/node_modules/**', 'dist/**', 'legacy-auth/**'],
+    exclude: ['**/node_modules/**', 'dist/**'],
     globalSetup: ['./test/utils/global-setup.ts'],
     // Specs share one database, so run files one at a time.
     fileParallelism: false,

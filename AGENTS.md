@@ -38,7 +38,7 @@ cd backend && npx drizzle-kit migrate                  # apply migrations locall
 ## Backend gotchas (read before you edit backend/)
 - The code is **ESM**: relative imports end in `.js`. Tests use **Vitest** (`vi.fn()`, not `jest`). Lint uses `oxlint`. See `backend/AGENTS.md` for NestJS 12 notes.
 - Drizzle ORM: schema is TypeScript in `backend/src/db/schema/` (no code generation step). The app connects with a `pg` Pool on `DATABASE_URL` (Neon **pooled** URL in prod) through `@nestjs/drizzle`. `drizzle.config.ts` and the migrate script use `DIRECT_URL` (Neon direct URL). Set `casing: 'snake_case'` in both `drizzle()` and `drizzle.config.ts`. Migrations are SQL files in `backend/drizzle/`; never `drizzle-kit push` against shared databases. Details: `docs/project-documentation/tech-stack.md` §6.
-- Prisma is gone (SW-T2). Ignore the `prisma-*` agent skills in `backend/.claude/skills`. `backend/legacy-auth/` is reference-only old code (see its README); don't import from it.
+- Prisma is gone (SW-T2). Ignore the `prisma-*` agent skills in `backend/.claude/skills`.
 - Vitest doesn't emit decorator metadata. In DTOs/env classes, use an explicit `@Type(() => Number)` for numbers.
 - npm 11 blocks install scripts unless they're listed in `allowScripts` in package.json. Run `npm approve-scripts <pkg>` when needed.
 - Global wiring lives in `configureApp()` (`src/app.setup.ts`): prefix, ValidationPipe, AllExceptionsFilter, CORS. `main.ts` and e2e tests both call it. Build e2e apps with `test/utils/create-test-app.ts`.

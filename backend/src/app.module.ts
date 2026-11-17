@@ -12,6 +12,9 @@ import { DbModule } from './db/db.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { AiGatewayModule } from './ai-gateway/ai-gateway.module.js';
+import { AdminModule } from './admin/admin.module.js';
+import { MeModule } from './me/me.module.js';
+import { WorkspacesModule } from './workspaces/workspaces.module.js';
 
 @Module({
   imports: [
@@ -42,6 +45,9 @@ import { AiGatewayModule } from './ai-gateway/ai-gateway.module.js';
     HealthModule,
     StorageModule,
     AiGatewayModule,
+    MeModule,
+    WorkspacesModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

@@ -8,7 +8,6 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.spec.ts'],
-    // legacy-auth/ holds old drafts kept for porting (M1-T1); not part of the app.
-    exclude: ['**/node_modules/**', 'dist/**', 'legacy-auth/**'],
+    exclude: ['**/node_modules/**', 'dist/**'],
   },
 });
