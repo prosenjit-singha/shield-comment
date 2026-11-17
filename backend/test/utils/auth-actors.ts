@@ -12,6 +12,7 @@ import {
   users,
   workspaceMembers,
   workspaces,
+  workspaceStatusAuditLogs,
   type WorkspaceRole,
 } from '../../src/db/schema/index.js';
 import { AUTH_SECONDARY_STORAGE } from '../../src/redis/redis-secondary-storage.js';
@@ -124,10 +125,10 @@ export function createAuthActors(app: INestApplication<App>) {
 
   /**
    * Deletes every tracked workspace and user (members, sessions and accounts cascade). Their
-   * impersonation audit rows go first: those FKs are `restrict`.
+   * impersonation and status audit rows go first: those FKs are `restrict`.
    */
   async function cleanup() {
-    const auditRefs = [
+    const impersonationRefs = [
       ...(userIds.length
         ? [inArray(impersonationAuditLogs.adminId, userIds)]
         : []),
@@ -135,8 +136,18 @@ export function createAuthActors(app: INestApplication<App>) {
         ? [inArray(impersonationAuditLogs.targetWorkspaceId, workspaceIds)]
         : []),
     ];
-    if (auditRefs.length)
-      await db.delete(impersonationAuditLogs).where(or(...auditRefs));
+    if (impersonationRefs.length)
+      await db.delete(impersonationAuditLogs).where(or(...impersonationRefs));
+    const statusRefs = [
+      ...(userIds.length
+        ? [inArray(workspaceStatusAuditLogs.adminId, userIds)]
+        : []),
+      ...(workspaceIds.length
+        ? [inArray(workspaceStatusAuditLogs.workspaceId, workspaceIds)]
+        : []),
+    ];
+    if (statusRefs.length)
+      await db.delete(workspaceStatusAuditLogs).where(or(...statusRefs));
     if (workspaceIds.length)
       await db.delete(workspaces).where(inArray(workspaces.id, workspaceIds));
     if (userIds.length)

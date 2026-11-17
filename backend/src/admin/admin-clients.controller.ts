@@ -1,9 +1,11 @@
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -19,6 +21,7 @@ import {
   requestIp,
 } from './admin-impersonation.service.js';
 import { ListClientsQueryDto } from './dto/list-clients-query.dto.js';
+import { UpdateClientStatusDto } from './dto/update-client-status.dto.js';
 
 @Controller('admin/clients')
 @UseGuards(SuperAdminGuard)
@@ -28,10 +31,27 @@ export class AdminClientsController {
     private readonly impersonation: AdminImpersonationService,
   ) {}
 
-  /** Newest first: `{ items: [{ id, name, slug, status, createdAt, owner, memberCount }], total, skip, take }`. */
+  /**
+   * `{ items: [{ id, name, slug, status, createdAt, owner, memberCount }], total, skip, take }`.
+   * Filters: `q` (name/slug/owner email/owner name), `status`, `createdFrom`/`createdTo`;
+   * `sort` = newest (default) | oldest | name.
+   */
   @Get()
   list(@Query() query: ListClientsQueryDto) {
-    return this.clients.list(query.skip, query.take);
+    return this.clients.list(query);
+  }
+
+  /**
+   * Suspend/activate a client: `{ status, reason }` → `{ client, changed }`. Audit-logged when the
+   * status changes; the same status again is an idempotent no-op (200, `changed: false`).
+   */
+  @Patch(':workspaceId/status')
+  updateStatus(
+    @Param('workspaceId') workspaceId: string,
+    @Body() body: UpdateClientStatusDto,
+    @Session() session: AuthSession,
+  ) {
+    return this.clients.updateStatus(workspaceId, body, session.user.id);
   }
 
   /**
