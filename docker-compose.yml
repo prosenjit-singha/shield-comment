@@ -85,13 +85,15 @@ services:
       - backend
     restart: unless-stopped
 
-  # Client SPA (bilingual brand dashboard): static build served by nginx (SPA fallback) on 5174.
+  # Client app: TanStack Start Node SSR server on 5174 (SSR landing at / and /bn, logged-in app under _app).
+  # Its server route proxies same-origin /api/* to backend. Open it at http://app.localhost:5174.
   client:
     build:
       context: ./client
       target: runtime
-      args:
-        VITE_API_URL: ${CLIENT_API_URL:-http://localhost:3000/api}
+    environment:
+      API_UPSTREAM: http://backend:3000
+      PUBLIC_SITE_URL: ${CLIENT_PUBLIC_URL:-http://app.localhost:5174}
     ports:
       - "${CLIENT_HOST_PORT:-5174}:5174"
     depends_on:

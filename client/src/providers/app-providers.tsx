@@ -1,14 +1,17 @@
-import { QueryClientProvider } from '@tanstack/react-query'
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
+import { ClientOnly } from '@tanstack/react-router'
+import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { createQueryClient } from '@/lib/query-client'
-import { useLanguageStore } from '@/stores/language-store'
 import { resolveTheme, useUiStore } from '@/stores/ui-store'
 
-// Dev-only: `import.meta.env.DEV` is statically false in production builds, so Vite drops this chunk.
+// Dev-only: `import.meta.env.DEV` is statically false in production builds, so Vite drops these chunks.
 const ReactQueryDevtools = import.meta.env.DEV
   ? lazy(() =>
       import('@tanstack/react-query-devtools').then((m) => ({ default: m.ReactQueryDevtools })),
+    )
+  : null
+const RouterDevtools = import.meta.env.DEV
+  ? lazy(() =>
+      import('@tanstack/react-router-devtools').then((m) => ({ default: m.TanStackRouterDevtools })),
     )
   : null
 
@@ -29,32 +32,21 @@ function ThemeSync() {
   return null
 }
 
-/** Keeps <html lang> in sync with the chosen language (screen readers, Bangla hyphenation/shaping). */
-function LanguageSync() {
-  const language = useLanguageStore((s) => s.language)
-
-  useEffect(() => {
-    document.documentElement.lang = language
-  }, [language])
-
-  return null
-}
-
+/**
+ * App-wide providers. QueryClientProvider comes from `setupRouterSsrQueryIntegration` (router.tsx) and
+ * the language store from __root.tsx, because both must be per request.
+ */
 export function AppProviders({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(createQueryClient)
-
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <ThemeSync />
-        <LanguageSync />
-        {children}
-      </TooltipProvider>
-      {ReactQueryDevtools && (
+    <TooltipProvider>
+      <ThemeSync />
+      {children}
+      <ClientOnly>
         <Suspense fallback={null}>
-          <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
+          {ReactQueryDevtools && <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />}
+          {RouterDevtools && <RouterDevtools position="bottom-right" />}
         </Suspense>
-      )}
-    </QueryClientProvider>
+      </ClientOnly>
+    </TooltipProvider>
   )
 }

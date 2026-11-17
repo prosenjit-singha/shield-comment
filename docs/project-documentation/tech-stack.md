@@ -81,7 +81,7 @@ Why:
 
 **`client/` (TanStack Start)**
 - Public routes (`/`, `/bn`, legal pages) are **SSR / prerendered** for SEO and Meta link previews (`og:` tags in `head()`).
-- Logged-in routes sit under a `_app` layout. Its `beforeLoad` checks the session; on the server it uses a server function that forwards the request cookie. The page components render in the browser (`ssr: false` or `'data-only'`, chosen in SW-T7).
+- Logged-in routes sit under a `_app` layout. Its `beforeLoad` checks the session; on the server it uses a server function that forwards the request cookie. The page components render in the browser: `ssr: 'data-only'` (SW-T7), so a signed-out request gets a server-side redirect and the session is dehydrated into the page.
 - Language: `en` by default. The preference is stored in a **cookie** (`shield-lang`) so server-rendered HTML matches the browser. The public landing page also has a fixed Bangla URL `/bn` with `hreflang` links.
 
 ## 6. Database layer (Drizzle)

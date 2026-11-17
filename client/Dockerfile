@@ -1,19 +1,27 @@
 # syntax=docker/dockerfile:1
-# ---- build: install deps and produce the static bundle in /app/dist
+# ---- build: install deps, build the TanStack Start client + server bundles into /app/dist
 FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-# Vite inlines VITE_* vars at build time, so they are build args, not runtime env.
-ARG VITE_API_URL=http://localhost:3000/api
-ENV VITE_API_URL=${VITE_API_URL}
-RUN npm run build
+# No build args: the app always calls same-origin /api (tech-stack.md §4).
+RUN npm run build && npm prune --omit=dev
 
-# ---- runtime: static files served by non-root nginx on 5174
-FROM nginxinc/nginx-unprivileged:1.28-alpine AS runtime
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/dist /usr/share/nginx/html
+# ---- runtime: Node SSR server (server.mjs = srvx + Start handler + static assets) as the non-root `node` user
+FROM node:24-alpine AS runtime
+ENV NODE_ENV=production \
+    PORT=5174 \
+    HOST=0.0.0.0 \
+    API_UPSTREAM=http://backend:3000
+WORKDIR /app
+# The server bundle imports its dependencies from node_modules at runtime (production deps only).
+COPY --from=build /app/package.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/server.mjs ./
+USER node
 EXPOSE 5174
-HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://127.0.0.1:5174/healthz >/dev/null || exit 1
+CMD ["node", "server.mjs"]

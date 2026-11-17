@@ -23,7 +23,8 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: 'shield-client-ui',
-      storage: createJSONStorage(() => localStorage),
+      // window.localStorage throws on the server; persist then just skips storage there.
+      storage: createJSONStorage(() => window.localStorage),
       partialize: ({ theme, sidebarCollapsed }) => ({ theme, sidebarCollapsed }),
     },
   ),
