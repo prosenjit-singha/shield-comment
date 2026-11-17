@@ -1,7 +1,6 @@
-import { QueryClientProvider } from '@tanstack/react-query'
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
+import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { createQueryClient } from '@/lib/query-client'
 import { resolveTheme, useUiStore } from '@/stores/ui-store'
 
 // Dev-only: `import.meta.env.DEV` is statically false in production builds, so Vite drops this chunk.
@@ -28,9 +27,14 @@ function ThemeSync() {
   return null
 }
 
-export function AppProviders({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(createQueryClient)
-
+/** `queryClient` is created once in main.tsx because the router context shares it. */
+export function AppProviders({
+  queryClient,
+  children,
+}: {
+  queryClient: QueryClient
+  children: ReactNode
+}) {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

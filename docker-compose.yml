@@ -58,10 +58,10 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: postgresql://${POSTGRES_USER:-shield}:${POSTGRES_PASSWORD:-shield}@postgres:5432/${POSTGRES_DB:-shield_comment}?schema=public
       REDIS_URL: redis://redis:6379
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:5174}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://admin.localhost:5173,http://app.localhost:5174,http://localhost:5173,http://localhost:5174}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
-      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:5173,http://localhost:5174}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://admin.localhost:5173,http://app.localhost:5174,http://localhost:5173,http://localhost:5174}
     ports:
       - "${BACKEND_HOST_PORT:-3000}:3000"
     depends_on:
@@ -71,13 +71,14 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Admin SPA: static build served by nginx (SPA fallback) on 5173.
+  # Admin SPA: static build served by nginx (SPA fallback) on 5173; nginx proxies same-origin /api/* to backend.
+  # Open it at http://admin.localhost:5173 (host-only session cookie, tech-stack.md §4).
   admin:
     build:
       context: ./admin
       target: runtime
-      args:
-        VITE_API_URL: ${ADMIN_API_URL:-http://localhost:3000/api}
+    environment:
+      API_UPSTREAM: http://backend:3000
     ports:
       - "${ADMIN_HOST_PORT:-5173}:5173"
     depends_on:

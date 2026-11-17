@@ -5,14 +5,16 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-# Vite inlines VITE_* vars at build time, so they are build args, not runtime env.
-ARG VITE_API_URL=http://localhost:3000/api
-ENV VITE_API_URL=${VITE_API_URL}
+# No VITE_* build args: the app always calls same-origin /api (nginx proxies it below).
 RUN npm run build
 
-# ---- runtime: static files served by non-root nginx on 5173
+# ---- runtime: static files + /api proxy, served by non-root nginx on 5173
 FROM nginxinc/nginx-unprivileged:1.28-alpine AS runtime
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Backend base URL (no path; /api/... is passed through as-is) and the DNS resolver nginx uses for it.
+# Defaults fit docker compose (service `backend`, Docker's embedded DNS).
+ENV API_UPSTREAM=http://backend:3000 \
+    NGINX_RESOLVER=127.0.0.11
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 5173
 HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
