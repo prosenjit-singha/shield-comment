@@ -4,6 +4,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUrl,
   Max,
   Min,
   MinLength,
@@ -58,6 +59,44 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   TRUSTED_ORIGINS?: string;
+
+  // --- Neon Object Storage (S3-compatible). Optional: StorageService is disabled without them.
+  // `neon deploy` / `neon env pull` writes the AWS_* names; STORAGE_BUCKET is the bucket key in neon.ts.
+  @IsOptional()
+  @IsString()
+  AWS_ACCESS_KEY_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  AWS_SECRET_ACCESS_KEY?: string;
+
+  /** Branch S3 endpoint, e.g. `https://<branch-id>.storage.<region>.aws.neon.tech`. */
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  AWS_ENDPOINT_URL_S3?: string;
+
+  @IsOptional()
+  @IsString()
+  AWS_REGION?: string;
+
+  @IsOptional()
+  @IsString()
+  STORAGE_BUCKET?: string;
+
+  // --- Neon AI Gateway. Optional: AiGatewayService is disabled without them.
+  /** Bare branch gateway host (no path), e.g. `https://<branch-id>-api.ai.<region>.aws.neon.tech`. */
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  NEON_AI_GATEWAY_BASE_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  NEON_AI_GATEWAY_TOKEN?: string;
+
+  /** Default chat model (gateway catalog id). */
+  @IsOptional()
+  @IsString()
+  AI_GATEWAY_MODEL?: string;
 }
 
 /** Fails fast at boot if required env vars are missing or malformed. */

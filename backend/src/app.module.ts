@@ -10,6 +10,8 @@ import { HealthModule } from './health/health.module.js';
 import { isHealthProbe } from './health/health-probe.js';
 import { DbModule } from './db/db.module.js';
 import { RedisModule } from './redis/redis.module.js';
+import { StorageModule } from './storage/storage.module.js';
+import { AiGatewayModule } from './ai-gateway/ai-gateway.module.js';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { RedisModule } from './redis/redis.module.js';
     RedisModule,
     AuthModule,
     HealthModule,
+    StorageModule,
+    AiGatewayModule,
   ],
 })
 export class AppModule {}

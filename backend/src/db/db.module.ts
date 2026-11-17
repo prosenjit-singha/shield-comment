@@ -14,7 +14,9 @@ export const DbModule = DrizzleModule.forRootAsync({
     drizzle,
     connection: {
       connectionString: config.get('DATABASE_URL', { infer: true }),
-      connectionTimeoutMillis: 3000,
+      // A new TLS + SCRAM connection to Neon us-east-2 from Bangladesh takes ~2.5 s (≈350 ms RTT),
+      // more after scale-to-zero, so 3 s timed out. Health checks keep their own 3 s cap.
+      connectionTimeoutMillis: 10_000,
     },
     schema,
     casing: 'snake_case' as const,
