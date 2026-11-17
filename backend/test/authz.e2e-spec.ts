@@ -1,52 +1,25 @@
 import type { INestApplication } from '@nestjs/common';
-import { getDrizzleToken } from '@nestjs/drizzle';
 import { AuthService } from '@thallesp/nestjs-better-auth';
-import { eq, inArray } from 'drizzle-orm';
-import request from 'supertest';
+import { eq } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
 import type { BetterAuth } from '../src/auth/better-auth.js';
 import { ensureSuperAdmin } from '../src/auth/super-admin.js';
 import type { Database } from '../src/db/database.js';
-import {
-  users,
-  workspaceMembers,
-  workspaces,
-  type WorkspaceRole,
-} from '../src/db/schema/index.js';
-import { AUTH_SECONDARY_STORAGE } from '../src/redis/redis-secondary-storage.js';
+import { users, workspaces } from '../src/db/schema/index.js';
+import { type Actor, createAuthActors, PASSWORD } from './utils/auth-actors.js';
 import { createTestApp, uniqueEmail } from './utils/create-test-app.js';
-import type { createMemorySecondaryStorage } from './utils/memory-secondary-storage.js';
 
-const PASSWORD = 'correct-horse-battery';
 const ARGON2ID_HASH = /^\$argon2id\$v=19\$m=19456,t=2,p=1\$/;
 const MISSING_WORKSPACE = '01970000-0000-7000-8000-0000000000ff';
 
-interface Actor {
-  id: string;
-  email: string;
-  cookie: string;
-  /** Workspace created at sign-up (owner). */
-  workspaceId: string;
-}
-
-function sessionCookie(res: request.Response): string {
-  const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = raw?.find((c) => c.startsWith('better-auth.session_token='));
-  expect(cookie, 'session cookie').toBeDefined();
-  return cookie!.split(';')[0]!;
-}
-
-/** The session token inside the signed cookie = the secondary-storage key. */
-function tokenOf(cookie: string): string {
-  return decodeURIComponent(cookie.split('=')[1]!).split('.')[0]!;
-}
-
+/**
+ * Basic guard + endpoint behaviour. Deeper matrices live in tenant-isolation.e2e-spec.ts
+ * (workspace guard, impersonation lock) and admin-guard.e2e-spec.ts (SuperAdminGuard).
+ */
 describe('Guards + /me, /workspaces, /admin/clients (e2e)', () => {
   let app: INestApplication<App>;
   let db: Database;
-  let storage: ReturnType<typeof createMemorySecondaryStorage>;
-  const userIds: string[] = [];
-  const workspaceIds: string[] = [];
+  let actors: ReturnType<typeof createAuthActors>;
 
   let owner: Actor; // owner of workspace A
   let other: Actor; // owner of workspace B, not a member of A
@@ -54,87 +27,26 @@ describe('Guards + /me, /workspaces, /admin/clients (e2e)', () => {
   let wsAdmin: Actor; // admin in A
   let superAdmin: Actor;
 
-  const http = () => request(app.getHttpServer());
-
-  async function signUp(prefix: string): Promise<Actor> {
-    const email = uniqueEmail(prefix);
-    const res = await http()
-      .post('/api/auth/sign-up/email')
-      .send({ name: prefix, email, password: PASSWORD })
-      .expect(200);
-    const id = res.body.user.id as string;
-    userIds.push(id);
-    const [member] = await db
-      .select({ workspaceId: workspaceMembers.workspaceId })
-      .from(workspaceMembers)
-      .where(eq(workspaceMembers.userId, id));
-    workspaceIds.push(member!.workspaceId);
-    return {
-      id,
-      email,
-      cookie: sessionCookie(res),
-      workspaceId: member!.workspaceId,
-    };
-  }
-
-  async function signIn(email: string): Promise<string> {
-    const res = await http()
-      .post('/api/auth/sign-in/email')
-      .send({ email, password: PASSWORD });
-    expect(res.status).toBe(200);
-    return sessionCookie(res);
-  }
-
-  async function addMember(
-    workspaceId: string,
-    userId: string,
-    role: WorkspaceRole,
-  ) {
-    await db.insert(workspaceMembers).values({ workspaceId, userId, role });
-  }
-
-  /** Edits the cached session the way M1-T3's impersonation exchange will create it. */
-  async function patchStoredSession(
-    cookie: string,
-    patch: Record<string, unknown>,
-  ) {
-    const token = tokenOf(cookie);
-    const raw = await storage.get(token);
-    expect(raw, 'cached session').toBeTruthy();
-    const cached = JSON.parse(raw as string) as {
-      session: Record<string, unknown>;
-    };
-    Object.assign(cached.session, patch);
-    await storage.set(token, JSON.stringify(cached));
-  }
+  const http = () => actors.http();
 
   beforeAll(async () => {
     app = await createTestApp();
-    db = app.get<Database>(getDrizzleToken());
-    storage = app.get(AUTH_SECONDARY_STORAGE);
+    actors = createAuthActors(app);
+    db = actors.db;
+    const { signUp, addMember } = actors;
 
     owner = await signUp('authz-owner');
     other = await signUp('authz-other');
     moderator = await signUp('authz-mod');
     wsAdmin = await signUp('authz-admin');
-    superAdmin = await signUp('authz-super');
+    superAdmin = await actors.signUpSuperAdmin('authz-super');
     await addMember(owner.workspaceId, moderator.id, 'moderator');
     await addMember(owner.workspaceId, wsAdmin.id, 'admin');
-
-    const auth = app.get(AuthService).instance as BetterAuth;
-    expect(
-      await ensureSuperAdmin(db, auth, { email: superAdmin.email, name: 'x' }),
-    ).toBe('promoted');
-    // The cached session still says role=user: sign in again.
-    superAdmin.cookie = await signIn(superAdmin.email);
   });
 
   afterAll(async () => {
-    if (workspaceIds.length)
-      await db.delete(workspaces).where(inArray(workspaces.id, workspaceIds));
-    if (userIds.length)
-      await db.delete(users).where(inArray(users.id, userIds));
-    await app.close();
+    await actors?.cleanup();
+    await app?.close();
   });
 
   describe('401 without a session', () => {
@@ -292,13 +204,6 @@ describe('Guards + /me, /workspaces, /admin/clients (e2e)', () => {
   });
 
   describe('GET /api/admin/clients', () => {
-    it('403 for a regular user', async () => {
-      await http()
-        .get('/api/admin/clients')
-        .set('Cookie', owner.cookie)
-        .expect(403);
-    });
-
     it('200 for a super admin: newest first, with owner and member count', async () => {
       const res = await http()
         .get('/api/admin/clients?take=100')
@@ -340,68 +245,6 @@ describe('Guards + /me, /workspaces, /admin/clients (e2e)', () => {
         expect(res.status, q).toBe(400);
       }
     });
-
-    it('403 once the role is revoked in Postgres, even with a cached super_admin session', async () => {
-      await db
-        .update(users)
-        .set({ role: 'user' })
-        .where(eq(users.id, superAdmin.id));
-      try {
-        await http()
-          .get('/api/admin/clients')
-          .set('Cookie', superAdmin.cookie)
-          .expect(403);
-      } finally {
-        await db
-          .update(users)
-          .set({ role: 'super_admin' })
-          .where(eq(users.id, superAdmin.id));
-      }
-    });
-  });
-
-  describe('impersonated sessions', () => {
-    it('are locked to their active workspace and never pass SuperAdminGuard', async () => {
-      // `other` also becomes an admin of A, so only the impersonation lock can hide A.
-      await addMember(owner.workspaceId, other.id, 'admin');
-      const cookie = await signIn(other.email);
-      await http()
-        .get(`/api/workspaces/${owner.workspaceId}`)
-        .set('Cookie', cookie)
-        .expect(200);
-
-      await patchStoredSession(cookie, {
-        impersonatedBy: superAdmin.id,
-        activeOrganizationId: other.workspaceId,
-      });
-      await http()
-        .get(`/api/workspaces/${other.workspaceId}`)
-        .set('Cookie', cookie)
-        .expect(200);
-      await http()
-        .get(`/api/workspaces/${owner.workspaceId}`)
-        .set('Cookie', cookie)
-        .expect(404);
-      const me = await http().get('/api/me').set('Cookie', cookie).expect(200);
-      expect(me.body).toMatchObject({
-        impersonatedBy: superAdmin.id,
-        activeWorkspaceId: other.workspaceId,
-      });
-      expect(me.body.workspaces.map((w: { id: string }) => w.id)).toEqual([
-        other.workspaceId,
-      ]);
-
-      const adminCookie = await signIn(superAdmin.email);
-      await http()
-        .get('/api/admin/clients')
-        .set('Cookie', adminCookie)
-        .expect(200);
-      await patchStoredSession(adminCookie, { impersonatedBy: superAdmin.id });
-      await http()
-        .get('/api/admin/clients')
-        .set('Cookie', adminCookie)
-        .expect(403);
-    });
   });
 
   describe('ensureSuperAdmin (npm run create-super-admin)', () => {
@@ -414,7 +257,7 @@ describe('Guards + /me, /workspaces, /admin/clients (e2e)', () => {
         where: eq(users.email, email),
         with: { accounts: true, memberships: true },
       });
-      userIds.push(user!.id);
+      actors.trackUser(user!.id);
       expect(user).toMatchObject({
         role: 'super_admin',
         name: 'Created Admin',
@@ -428,7 +271,7 @@ describe('Guards + /me, /workspaces, /admin/clients (e2e)', () => {
           password: 'other-password',
         }),
       ).toBe('unchanged');
-      const cookie = await signIn(email); // original password still works
+      const cookie = await actors.signIn(email); // original password still works
       await http().get('/api/admin/clients').set('Cookie', cookie).expect(200);
       await expect(
         ensureSuperAdmin(db, auth, { email: uniqueEmail('x'), name: 'x' }),

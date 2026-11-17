@@ -1,0 +1,145 @@
+import type { INestApplication } from '@nestjs/common';
+import { getDrizzleToken } from '@nestjs/drizzle';
+import { AuthService } from '@thallesp/nestjs-better-auth';
+import { eq, inArray } from 'drizzle-orm';
+import request from 'supertest';
+import type { App } from 'supertest/types.js';
+import type { BetterAuth } from '../../src/auth/better-auth.js';
+import { ensureSuperAdmin } from '../../src/auth/super-admin.js';
+import type { Database } from '../../src/db/database.js';
+import {
+  users,
+  workspaceMembers,
+  workspaces,
+  type WorkspaceRole,
+} from '../../src/db/schema/index.js';
+import { AUTH_SECONDARY_STORAGE } from '../../src/redis/redis-secondary-storage.js';
+import { uniqueEmail } from './create-test-app.js';
+import type { createMemorySecondaryStorage } from './memory-secondary-storage.js';
+
+/** Password for every e2e user. */
+export const PASSWORD = 'correct-horse-battery';
+/** Trusted (see vitest.config.e2e.ts) Origin for Better Auth POSTs that carry a session cookie. */
+export const TRUSTED_ORIGIN = 'http://localhost:5173';
+
+export interface Actor {
+  id: string;
+  email: string;
+  /** Only the `better-auth.session_token` cookie, so the cookie cache is skipped. */
+  cookie: string;
+  /** Workspace created at sign-up (owner). */
+  workspaceId: string;
+}
+
+export function sessionCookie(res: request.Response): string {
+  const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = raw?.find((c) => c.startsWith('better-auth.session_token='));
+  expect(cookie, 'session cookie').toBeDefined();
+  return cookie!.split(';')[0]!;
+}
+
+/** The session token inside the signed cookie = the secondary-storage key. */
+export function tokenOf(cookie: string): string {
+  return decodeURIComponent(cookie.split('=')[1]!).split('.')[0]!;
+}
+
+/**
+ * Sign-up/sign-in/membership helpers for e2e specs on the real test DB. Every user and workspace
+ * created through them is tracked; call `cleanup()` in `afterAll` (before `app.close()`).
+ */
+export function createAuthActors(app: INestApplication<App>) {
+  const db = app.get<Database>(getDrizzleToken());
+  const storage = app.get<ReturnType<typeof createMemorySecondaryStorage>>(
+    AUTH_SECONDARY_STORAGE,
+  );
+  const userIds: string[] = [];
+  const workspaceIds: string[] = [];
+  const http = () => request(app.getHttpServer());
+
+  async function signUp(prefix: string): Promise<Actor> {
+    const email = uniqueEmail(prefix);
+    const res = await http()
+      .post('/api/auth/sign-up/email')
+      .send({ name: prefix, email, password: PASSWORD })
+      .expect(200);
+    const id = res.body.user.id as string;
+    userIds.push(id);
+    const [member] = await db
+      .select({ workspaceId: workspaceMembers.workspaceId })
+      .from(workspaceMembers)
+      .where(eq(workspaceMembers.userId, id));
+    workspaceIds.push(member!.workspaceId);
+    return {
+      id,
+      email,
+      cookie: sessionCookie(res),
+      workspaceId: member!.workspaceId,
+    };
+  }
+
+  /** A fresh session (cookie) for an existing user. */
+  async function signIn(email: string): Promise<string> {
+    const res = await http()
+      .post('/api/auth/sign-in/email')
+      .send({ email, password: PASSWORD });
+    expect(res.status).toBe(200);
+    return sessionCookie(res);
+  }
+
+  async function addMember(
+    workspaceId: string,
+    userId: string,
+    role: WorkspaceRole,
+  ) {
+    await db.insert(workspaceMembers).values({ workspaceId, userId, role });
+  }
+
+  /** Signs up a user, promotes them like `npm run create-super-admin`, and signs in again. */
+  async function signUpSuperAdmin(prefix: string): Promise<Actor> {
+    const actor = await signUp(prefix);
+    const auth = app.get(AuthService).instance as BetterAuth;
+    expect(
+      await ensureSuperAdmin(db, auth, { email: actor.email, name: prefix }),
+    ).toBe('promoted');
+    // The cached session still says role=user.
+    actor.cookie = await signIn(actor.email);
+    return actor;
+  }
+
+  /** Edits the cached session the way M1-T3's impersonation exchange will create it. */
+  async function patchStoredSession(
+    cookie: string,
+    patch: Record<string, unknown>,
+  ) {
+    const token = tokenOf(cookie);
+    const raw = await storage.get(token);
+    expect(raw, 'cached session').toBeTruthy();
+    const cached = JSON.parse(raw as string) as {
+      session: Record<string, unknown>;
+    };
+    Object.assign(cached.session, patch);
+    await storage.set(token, JSON.stringify(cached));
+  }
+
+  /** Deletes every tracked workspace and user (members, sessions and accounts cascade). */
+  async function cleanup() {
+    if (workspaceIds.length)
+      await db.delete(workspaces).where(inArray(workspaces.id, workspaceIds));
+    if (userIds.length)
+      await db.delete(users).where(inArray(users.id, userIds));
+  }
+
+  return {
+    db,
+    storage,
+    http,
+    signUp,
+    signIn,
+    signUpSuperAdmin,
+    addMember,
+    patchStoredSession,
+    /** Track a user created outside `signUp` so `cleanup()` deletes it. */
+    trackUser: (id: string) => userIds.push(id),
+    cleanup,
+  };
+}
