@@ -15,6 +15,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "start:neon": "node --env-file=.env --env-file=.env.neon dist/main.js",
+    "start:staging": "node --env-file=.env --env-file=.env.staging dist/main.js",
     "lint": "oxlint --type-aware src/ test/",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -25,7 +26,9 @@
     "db:migrate": "drizzle-kit migrate",
     "db:deploy": "node --env-file-if-exists=.env dist/db/migrate.js",
     "db:deploy:neon": "node --env-file=.env --env-file=.env.neon dist/db/migrate.js",
+    "db:deploy:staging": "node --env-file=.env --env-file=.env.staging dist/db/migrate.js",
     "neon:smoke": "node --env-file=.env --env-file=.env.neon dist/scripts/neon-smoke.js",
+    "neon:smoke:staging": "node --env-file=.env --env-file=.env.staging dist/scripts/neon-smoke.js",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
