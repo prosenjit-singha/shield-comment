@@ -1,12 +1,15 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Outlet, redirect, useNavigate } from '@tanstack/react-router'
-import { Languages, LogOut, Moon, ShieldCheck, Sun } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { CircleAlert } from 'lucide-react'
+import { useState } from 'react'
+import { AppTopBar } from '@/components/app-shell/app-top-bar'
+import { ImpersonationBanner } from '@/components/app-shell/impersonation-banner'
+import { ImpersonationEnded } from '@/components/app-shell/impersonation-ended'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useLanguage } from '@/hooks/use-language'
-import { authClient } from '@/lib/auth-client'
+import { authErrorMessage, type AuthError } from '@/lib/auth-errors'
+import { signOutCurrentSession } from '@/lib/auth-forms'
 import { sessionQueryOptions } from '@/lib/session'
-import { resolveTheme, useUiStore } from '@/stores/ui-store'
 
 /**
  * Pathless layout for every logged-in page.
@@ -41,52 +44,59 @@ function AppLayout() {
   const { session } = Route.useRouteContext()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const { language, toggleLanguage, content } = useLanguage()
-  const theme = useUiStore((s) => s.theme)
-  const setTheme = useUiStore((s) => s.setTheme)
-  const isDark = resolveTheme(theme) === 'dark'
+  const { content } = useLanguage()
+  const impersonated = Boolean(session.session.impersonatedBy)
+  const [impersonationEnded, setImpersonationEnded] = useState(false)
 
-  const signOut = useMutation({
-    mutationFn: async () => {
-      const { error } = await authClient.signOut()
-      if (error) throw new Error(error.message ?? 'Sign-out failed')
-    },
+  const signOut = useMutation<void, AuthError>({
+    mutationFn: signOutCurrentSession,
     onSuccess: async () => {
       queryClient.clear() // drop the session and any tenant data cached under it
       await navigate({ to: '/login', search: {}, replace: true })
     },
   })
 
+  // D11: "Exit" ends the impersonated session only (the admin's own session lives on the admin origin).
+  // The children unmount with the shell, so nothing refetches under the dead session.
+  const exitImpersonation = useMutation<void, AuthError>({
+    mutationFn: signOutCurrentSession,
+    onSuccess: () => {
+      setImpersonationEnded(true)
+      queryClient.clear()
+    },
+  })
+
+  if (impersonationEnded) return <ImpersonationEnded />
+
   return (
     <div className="flex min-h-svh flex-col bg-muted">
-      {/* Placeholder shell; the real sidebar + impersonation banner arrive with Module 6. */}
-      <header className="flex items-center gap-2 border-b bg-card px-4 py-3 sm:gap-3 sm:px-6">
-        <ShieldCheck className="size-6 text-primary" aria-hidden />
-        <span className="font-semibold">ShieldComment BD</span>
-        <span className="ml-auto hidden text-sm text-muted-foreground sm:inline">{session.user.email}</span>
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto sm:ml-0"
-          onClick={toggleLanguage}
-          aria-label={content('Switch to Bangla', 'ইংরেজিতে দেখুন')}
-        >
-          <Languages />
-          {language === 'en' ? 'বাংলা' : 'English'}
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label={isDark ? content('Switch to light theme', 'লাইট থিম') : content('Switch to dark theme', 'ডার্ক থিম')}
-          onClick={() => setTheme(isDark ? 'light' : 'dark')}
-        >
-          {isDark ? <Sun /> : <Moon />}
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => signOut.mutate()} disabled={signOut.isPending}>
-          <LogOut />
-          <span className="hidden sm:inline">{content('Log out', 'লগ আউট')}</span>
-        </Button>
-      </header>
+      {impersonated ? (
+        <ImpersonationBanner
+          ownerEmail={session.user.email}
+          onExit={() => exitImpersonation.mutate()}
+          pending={exitImpersonation.isPending}
+          error={exitImpersonation.error}
+        />
+      ) : null}
+      <AppTopBar
+        email={session.user.email}
+        onSignOut={impersonated ? undefined : () => signOut.mutate()}
+        signingOut={signOut.isPending}
+      />
+      {signOut.error && !signOut.isPending ? (
+        <div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6">
+          <div
+            role="alert"
+            data-kind={signOut.error.kind}
+            className="flex items-start gap-2.5 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-foreground"
+          >
+            <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+            <p>
+              {content('Couldn’t log you out.', 'লগ আউট করা যায়নি।')} {authErrorMessage(signOut.error, content)}
+            </p>
+          </div>
+        </div>
+      ) : null}
       <main className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6">
         <Outlet />
       </main>

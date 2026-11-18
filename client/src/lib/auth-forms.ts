@@ -132,3 +132,19 @@ export async function signUpWithWorkspace(input: SignUpInput): Promise<void> {
   }
   if (result.error) throw authErrorFromResponse(result.error, captured.retryAfter)
 }
+
+/**
+ * `POST /api/auth/sign-out` for the current session (normal log-out and the impersonation "Exit").
+ * Better Auth answers 200 even when the session is already gone, so any error means the cookie may
+ * still be live: 403 (untrusted Origin), 429, 5xx or a network failure. Throws `AuthError`.
+ */
+export async function signOutCurrentSession(): Promise<void> {
+  const { captured, onError } = captureRetryAfter()
+  let result: Awaited<ReturnType<typeof authClient.signOut>>
+  try {
+    result = await authClient.signOut({ fetchOptions: { onError } })
+  } catch (thrown) {
+    throw toAuthError(thrown)
+  }
+  if (result.error) throw authErrorFromResponse(result.error, captured.retryAfter)
+}
