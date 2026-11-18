@@ -7,10 +7,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, only the Module 4 header + decisions + its own row from TASKS.md, `docs/project-documentation/modules/module-4-webhooks-queue.md` (UI rows M4-T11/T12 also `docs/design/base.md` + `client.md`).
 - Standing approvals: admin/ + client/ changes approved for the rest of this run (user, 2026-11-18).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #2 (2026-11-18) · rows this session: 8 · estimate: 190k
+- Session: #2 (2026-11-18) · rows this session: 9 · estimate: 208k
 
 ## State
-dispatched M4-T9 (2026-11-19) · commit: "feat(backend): add meta connection status and disconnect (M4-T9)"
+verified M4-T9
 
 ## Resume
 `/orchestration --continue`
@@ -92,4 +92,4 @@ You are implementing exactly ONE task row, **M4-T10**, in the ShieldComment BD r
 - 2026-11-18 M4-T6 ✅ 03f3427 · backend 849 + e2e 460 · e2e 2/2 · Meta Deauthorize + Data Deletion callbacks: signed_request helper, REVOKED + tokens cleared (migration 0013), deletion requests + `data-deletion` job on meta-token-check, status lookup, throttler
 - 2026-11-19 M4-T7 ✅ 6974bfa · backend 919 + e2e 465 · e2e 2/2 · scheduled jobs on meta-token-check: `debug_token` check (03:00 Dhaka, D8 mapping, conditional status UPDATE) + 30-day `raw_payload` purge (03:30), `MetaGraphClient.debugToken`, background scheduler registration
 - 2026-11-19 M4-T8 ✅ c2570a8 · backend 964 + e2e 477 · client 303 · e2e 2/2 · subscribed_apps on the Page toggle (subscribe before tx, 502 META_SUBSCRIBE_FAILED, NEEDS_REAUTH on token_invalid, best-effort unsubscribe) + backfill script
-- 2026-11-19 M4-T9 ✅ · backend 1001 + e2e 488 · e2e 2/2 · connection status in pages list, 409 CONNECTION_NEEDS_REAUTH on switch-on, DELETE …/meta/connection (stamp + hard delete + best-effort unsubscribe/revoke), Data Deletion covers stamped comments (migration 0014)
+- 2026-11-19 M4-T9 ✅ a64e807 · backend 1001 + e2e 488 · e2e 2/2 · connection status in pages list, 409 CONNECTION_NEEDS_REAUTH on switch-on, DELETE …/meta/connection (stamp + hard delete + best-effort unsubscribe/revoke), Data Deletion covers stamped comments (migration 0014)
