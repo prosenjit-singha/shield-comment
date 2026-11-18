@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as BnRouteImport } from './routes/bn'
+import { Route as DataDeletionRouteImport } from './routes/data-deletion'
 import { Route as ImpersonateRouteImport } from './routes/impersonate'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as RegisterRouteImport } from './routes/register'
@@ -32,6 +33,11 @@ const AppRoute = AppRouteImport.update({
 const BnRoute = BnRouteImport.update({
   id: '/bn',
   path: '/bn',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DataDeletionRoute = DataDeletionRouteImport.update({
+  id: '/data-deletion',
+  path: '/data-deletion',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ImpersonateRoute = ImpersonateRouteImport.update({
@@ -73,6 +79,7 @@ const ApiSplatRoute = ApiSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/bn': typeof BnRoute
+  '/data-deletion': typeof DataDeletionRoute
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
@@ -84,6 +91,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/bn': typeof BnRoute
+  '/data-deletion': typeof DataDeletionRoute
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
@@ -97,6 +105,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/bn': typeof BnRoute
+  '/data-deletion': typeof DataDeletionRoute
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
@@ -110,6 +119,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/bn'
+    | '/data-deletion'
     | '/impersonate'
     | '/login'
     | '/register'
@@ -121,6 +131,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/bn'
+    | '/data-deletion'
     | '/impersonate'
     | '/login'
     | '/register'
@@ -133,6 +144,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/bn'
+    | '/data-deletion'
     | '/impersonate'
     | '/login'
     | '/register'
@@ -146,6 +158,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   BnRoute: typeof BnRoute
+  DataDeletionRoute: typeof DataDeletionRoute
   ImpersonateRoute: typeof ImpersonateRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
@@ -173,6 +186,13 @@ declare module '@tanstack/react-router' {
       path: '/bn'
       fullPath: '/bn'
       preLoaderRoute: typeof BnRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/data-deletion': {
+      id: '/data-deletion'
+      path: '/data-deletion'
+      fullPath: '/data-deletion'
+      preLoaderRoute: typeof DataDeletionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/impersonate': {
@@ -245,6 +265,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   BnRoute: BnRoute,
+  DataDeletionRoute: DataDeletionRoute,
   ImpersonateRoute: ImpersonateRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
