@@ -225,6 +225,34 @@ describe('/admin/dashboard rendering', () => {
     expect(screen.getByTestId('gateways-chart')).toBeTruthy()
   })
 
+  it('renders real plan tiers (M2-T12b) in API order while the other placeholders stay empty', async () => {
+    respond = () => {
+      const stats = zeroFixture()
+      stats.kpis.activeClients = 10
+      stats.series.planTiers = [
+        { tier: 'Free', clients: 5 },
+        { tier: 'Starter', clients: 3 },
+        { tier: 'Growth', clients: 2 },
+      ]
+      return json(stats)
+    }
+    await renderDashboard()
+    const tiers = within(screen.getByRole('region', { name: 'Plan tiers' }))
+    expect(tiers.getByText('Active clients per plan right now.')).toBeTruthy()
+    expect(tiers.queryByText('No plans yet')).toBeNull()
+    expect(tiers.getByText('10')).toBeTruthy() // total in the hole
+    expect(tiers.getByText('clients')).toBeTruthy()
+    expect(tiers.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'Free550%',
+      'Starter330%',
+      'Growth220%',
+    ])
+    // Plans don't fill the other placeholders.
+    expect(screen.getByText('No comments scanned yet')).toBeTruthy()
+    expect(screen.getByText('No payments yet')).toBeTruthy()
+    expect(kpi('Monthly recurring revenue').getByText('No paid plans yet')).toBeTruthy()
+  })
+
   it('shows skeletons while the first response is loading', async () => {
     let release: (r: Response) => void = () => {}
     respond = () => new Promise<Response>((resolve) => (release = resolve)) as unknown as Response

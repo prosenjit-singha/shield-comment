@@ -1,9 +1,10 @@
 import type { INestApplication } from '@nestjs/common';
-import { count, eq, inArray } from 'drizzle-orm';
+import { asc, count, eq, inArray } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
 import { dhakaBucketKey } from '../src/admin/dashboard-range.js';
 import type { DashboardStatsResponse } from '../src/admin/dto/dashboard-stats.dto.js';
 import {
+  plans,
   tickets,
   UNRESOLVED_TICKET_STATUSES,
   workspaces,
@@ -59,7 +60,11 @@ describe('Admin dashboard stats (e2e)', () => {
   }
 
   /** Full response shape with zero-filled placeholders and no nulls. */
-  function expectShape(s: DashboardStatsResponse, buckets: number) {
+  function expectShape(
+    s: DashboardStatsResponse,
+    buckets: number,
+    planTiers: DashboardStatsResponse['series']['planTiers'] = [],
+  ) {
     expect(Object.keys(s).sort()).toEqual(
       [
         'from',
@@ -93,7 +98,7 @@ describe('Admin dashboard stats (e2e)', () => {
         mrrBdt: 0,
       });
     }
-    expect(s.series.planTiers).toEqual([]);
+    expect(s.series.planTiers).toEqual(planTiers);
     expect(s.series.gateways).toEqual([]);
     expect(JSON.stringify(s)).not.toContain('null');
   }
@@ -258,6 +263,91 @@ describe('Admin dashboard stats (e2e)', () => {
       expect(g['2024-03']).toEqual([1, 5]); // marLast
       expect(g['2024-04']).toEqual([1, 6]); // aprFirst
       expect(g['2024-05']).toEqual([0, 6]);
+    });
+  });
+
+  /** M2-T12b: ACTIVE workspaces per plan now (only plans with ≥ 1, by sortOrder, tier = name). */
+  describe('planTiers', () => {
+    const setPlan = (actors_: Actor[], planId: string | null) =>
+      db()
+        .update(workspaces)
+        .set({ planId })
+        .where(
+          inArray(
+            workspaces.id,
+            actors_.map((x) => x.workspaceId),
+          ),
+        );
+
+    it('is [] while no workspace has a plan', async () => {
+      const [withPlan] = await db()
+        .select({ n: count() })
+        .from(workspaces)
+        .innerJoin(plans, eq(plans.id, workspaces.planId));
+      expect(withPlan!.n).toBe(0);
+      expect((await stats('range=7d')).series.planTiers).toEqual([]);
+    });
+
+    it('counts ACTIVE workspaces per plan, ordered by sortOrder, for any range', async () => {
+      const rows = await db()
+        .select({ id: plans.id, slug: plans.slug, name: plans.name })
+        .from(plans)
+        .orderBy(asc(plans.sortOrder), asc(plans.name));
+      expect(rows.map((r) => r.slug)).toEqual([
+        'free',
+        'starter',
+        'growth',
+        'pro',
+      ]);
+      const bySlug = Object.fromEntries(rows.map((r) => [r.slug, r]));
+      const all = [client, ...Object.values(edge)];
+      try {
+        // Growth ×3 (inserted before Starter on purpose), Pro ×1, Starter ×1; the only Free
+        // workspace is SUSPENDED (not counted) and aprFirst has no plan.
+        await setPlan(
+          [edge.janLast!, edge.febFirst!, client],
+          bySlug.growth!.id,
+        );
+        await setPlan([edge.feb29!], bySlug.pro!.id);
+        await setPlan([edge.feb28!], bySlug.starter!.id);
+        await setPlan([edge.marLast!], bySlug.free!.id);
+        await db()
+          .update(workspaces)
+          .set({ status: 'SUSPENDED' })
+          .where(eq(workspaces.id, edge.marLast!.workspaceId));
+
+        const expected = [
+          { tier: bySlug.starter!.name, clients: 1 },
+          { tier: bySlug.growth!.name, clients: 3 },
+          { tier: bySlug.pro!.name, clients: 1 },
+        ];
+        expectShape(await stats('range=7d'), 7, expected);
+        expectShape(await stats('range=12m'), 12, expected);
+        expectShape(await stats('from=2024-02-29&to=2024-02-29'), 1, expected);
+
+        // A suspended Growth client drops out; a plan whose last client goes is omitted.
+        await db()
+          .update(workspaces)
+          .set({ status: 'SUSPENDED' })
+          .where(eq(workspaces.id, client.workspaceId));
+        await setPlan([edge.feb29!], null);
+        expect((await stats('range=7d')).series.planTiers).toEqual([
+          { tier: bySlug.starter!.name, clients: 1 },
+          { tier: bySlug.growth!.name, clients: 2 },
+        ]);
+      } finally {
+        await setPlan(all, null);
+        await db()
+          .update(workspaces)
+          .set({ status: 'ACTIVE' })
+          .where(
+            inArray(
+              workspaces.id,
+              all.map((x) => x.workspaceId),
+            ),
+          );
+      }
+      expect((await stats('range=7d')).series.planTiers).toEqual([]);
     });
   });
 

@@ -92,9 +92,17 @@ describe('Super admin guard (e2e)', () => {
         'memberCount',
         'name',
         'owner',
+        'plan',
         'slug',
         'status',
       ]);
+      if (item.plan !== null) {
+        expect(Object.keys(item.plan as object).sort()).toEqual([
+          'id',
+          'name',
+          'slug',
+        ]);
+      }
       if (item.owner !== null) {
         expect(Object.keys(item.owner as object).sort()).toEqual([
           'email',

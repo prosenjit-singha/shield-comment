@@ -5,6 +5,7 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
+  Layers,
   LogIn,
   RotateCcw,
   SearchX,
@@ -22,6 +23,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
@@ -39,14 +41,17 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   type AdminClient,
+  type ClientPlan,
   type ClientSort,
   type ClientStatus,
   CLIENTS_PAGE_SIZE,
   type ClientsSearch,
   clientsQueryOptions,
   formatDhakaDate,
+  NO_PLAN,
   validateClientsSearch,
 } from '@/lib/admin-clients'
+import { plansQueryOptions } from '@/lib/admin-plans'
 
 export const Route = createFileRoute('/_authed/admin/clients')({
   validateSearch: validateClientsSearch,
@@ -63,6 +68,17 @@ export const Route = createFileRoute('/_authed/admin/clients')({
  * Login as Client is always in view (from `sm` up; on phones the whole row scrolls).
  */
 const stickyActions = 'bg-card sm:sticky sm:right-0 sm:border-l'
+
+/** Clears every filter (sort is kept). */
+const noFilters: Partial<ClientsSearch> = {
+  q: undefined,
+  status: undefined,
+  plan: undefined,
+  from: undefined,
+  to: undefined,
+}
+
+const ANY_PLAN = 'any'
 
 const sortLabels: Record<ClientSort, string> = {
   newest: 'Newest first',
@@ -81,7 +97,7 @@ function ClientsPage() {
   const setFilters = (patch: Partial<ClientsSearch>) =>
     navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true })
 
-  const hasFilters = Boolean(search.q || search.status || search.from || search.to)
+  const hasFilters = Boolean(search.q || search.status || search.plan || search.from || search.to)
   const page = search.page ?? 1
   const data = query.data
   const pageCount = data ? Math.max(1, Math.ceil(data.total / CLIENTS_PAGE_SIZE)) : 1
@@ -104,7 +120,7 @@ function ClientsPage() {
         ) : data && data.items.length === 0 ? (
           <EmptyState
             filtered={hasFilters || page > 1}
-            onClear={() => setFilters({ q: undefined, status: undefined, from: undefined, to: undefined })}
+            onClear={() => setFilters(noFilters)}
           />
         ) : (
           <div
@@ -173,6 +189,14 @@ function Toolbar({
   const fromId = useId()
   const toId = useId()
   const sort = search.sort ?? 'newest'
+  const plans = useQuery({ ...plansQueryOptions(), select: (data) => data.items })
+  const planValue = search.plan ?? ANY_PLAN
+  const planLabel =
+    planValue === ANY_PLAN
+      ? 'All plans'
+      : planValue === NO_PLAN
+        ? 'No plan'
+        : (plans.data?.find((p) => p.slug === planValue)?.name ?? planValue)
 
   return (
     <div className="flex flex-col gap-3 p-4 md:p-5">
@@ -202,6 +226,33 @@ function Toolbar({
               </TabsTrigger>
             </TabsList>
           </Tabs>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" aria-label={`Plan: ${planLabel}`}>
+                <Layers data-icon="inline-start" />
+                {planLabel}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel>Filter by plan</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={planValue}
+                onValueChange={(value) => setFilters({ plan: value === ANY_PLAN ? undefined : value })}
+              >
+                <DropdownMenuRadioItem value={ANY_PLAN}>All plans</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value={NO_PLAN}>No plan</DropdownMenuRadioItem>
+                {plans.data && plans.data.length > 0 && <DropdownMenuSeparator />}
+                {plans.data?.map((plan) => (
+                  <DropdownMenuRadioItem key={plan.id} value={plan.slug}>
+                    {plan.name}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              {plans.isError && (
+                <p className="px-2 py-1.5 text-xs text-muted-foreground">Couldn't load plans.</p>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" aria-label={`Sort: ${sortLabels[sort]}`}>
@@ -259,9 +310,7 @@ function Toolbar({
           <Button
             variant="ghost"
             className="ml-auto"
-            onClick={() =>
-              setFilters({ q: undefined, status: undefined, from: undefined, to: undefined })
-            }
+            onClick={() => setFilters(noFilters)}
           >
             <RotateCcw data-icon="inline-start" />
             Clear filters
@@ -315,7 +364,7 @@ function ClientRow({
         )}
       </TableCell>
       <TableCell>
-        <PlanBadge />
+        <PlanBadge plan={client.plan} />
       </TableCell>
       <TableCell>
         <QuotaBar />
@@ -352,11 +401,18 @@ function ClientRow({
   )
 }
 
-/** Placeholder until plans exist (M2-T11 / Module 8): same slot, muted dash. */
-function PlanBadge() {
+/** The client's plan name (M2-T12b); a muted dash until Module 8 assigns plans. */
+function PlanBadge({ plan }: { plan: ClientPlan | null }) {
+  if (!plan) {
+    return (
+      <Badge variant="outline" className="text-muted-foreground" aria-label="Plan: none yet">
+        —
+      </Badge>
+    )
+  }
   return (
-    <Badge variant="outline" className="text-muted-foreground" aria-label="Plan: none yet">
-      —
+    <Badge variant="outline" className="max-w-28" title={plan.name} aria-label={`Plan: ${plan.name}`}>
+      <span className="truncate">{plan.name}</span>
     </Badge>
   )
 }

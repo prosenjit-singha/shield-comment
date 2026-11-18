@@ -33,7 +33,7 @@ export class DashboardStatsQueryDto {
 export interface DashboardKpis {
   /** Workspaces whose status is `ACTIVE` right now. */
   activeClients: number;
-  /** Current MRR in BDT. Placeholder `0` until plans/payments (M2-T11, Module 8). */
+  /** Current MRR in BDT. Placeholder `0` until payments (Module 8). */
   mrrBdt: number;
   /** Comments scanned inside the range. Placeholder `0` until comment moderation exists. */
   commentsScanned: number;
@@ -60,8 +60,12 @@ export interface CommentsPoint {
   blocked: number;
 }
 
-/** Donut: clients per plan tier right now. Empty until M2-T11 defines the tiers. */
+/**
+ * Donut: ACTIVE clients per plan right now (M2-T12b). Only plans with ≥ 1 client, by plan
+ * `sortOrder`; workspaces without a plan are not counted, so `[]` until Module 8 assigns plans.
+ */
 export interface PlanTierSlice {
+  /** Plan name. */
   tier: string;
   clients: number;
 }

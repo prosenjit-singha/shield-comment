@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { resolveDashboardRange } from './dashboard-range.js';
-import { buildDashboardStats } from './dashboard-stats.js';
+import { buildDashboardStats, planTierSlices } from './dashboard-stats.js';
 import { DashboardStatsQueryDto } from './dto/dashboard-stats.dto.js';
 
 const NOW = new Date('2026-11-18T04:00:00Z');
@@ -15,6 +15,7 @@ describe('buildDashboardStats', () => {
       clientsBefore: 10,
       openTickets: 3,
       newClients: { '2026-11-13': 2, '2026-11-18': 1 },
+      planTiers: [],
     });
     expect(stats).toMatchObject({
       range: '7d',
@@ -51,6 +52,7 @@ describe('buildDashboardStats', () => {
       clientsBefore: 0,
       openTickets: 0,
       newClients: {},
+      planTiers: [],
     });
     expect(stats.series.growth).toHaveLength(12);
     expect(stats.series.comments).toHaveLength(12);
@@ -74,8 +76,53 @@ describe('buildDashboardStats', () => {
       clientsBefore: 0,
       openTickets: 0,
       newClients: { '2026-10-31': 5, '2026-11-02': 1 },
+      planTiers: [],
     });
     expect(stats.series.growth.map((p) => p.totalClients)).toEqual([0, 1]);
+  });
+});
+
+describe('planTierSlices', () => {
+  it('keeps plans with ≥ 1 client, ordered by sortOrder then name, tier = plan name', () => {
+    expect(
+      planTierSlices([
+        { name: 'Pro', sortOrder: 3, clients: 1 },
+        { name: 'Free', sortOrder: 0, clients: 0 },
+        { name: 'Starter', sortOrder: 1, clients: 4 },
+        { name: 'Growth', sortOrder: 2, clients: 2 },
+        { name: 'Agency', sortOrder: 2, clients: 1 },
+      ]),
+    ).toEqual([
+      { tier: 'Starter', clients: 4 },
+      { tier: 'Agency', clients: 1 },
+      { tier: 'Growth', clients: 2 },
+      { tier: 'Pro', clients: 1 },
+    ]);
+  });
+
+  it('is [] (never null) when no workspace has a plan', () => {
+    expect(planTierSlices([])).toEqual([]);
+    expect(
+      planTierSlices([{ name: 'Free', sortOrder: 0, clients: 0 }]),
+    ).toEqual([]);
+  });
+
+  it('feeds series.planTiers', () => {
+    const range = resolveDashboardRange({ range: '7d' }, NOW);
+    const stats = buildDashboardStats(range, {
+      activeClients: 3,
+      clientsBefore: 0,
+      openTickets: 0,
+      newClients: {},
+      planTiers: [
+        { name: 'Growth', sortOrder: 2, clients: 2 },
+        { name: 'Free', sortOrder: 0, clients: 1 },
+      ],
+    });
+    expect(stats.series.planTiers).toEqual([
+      { tier: 'Free', clients: 1 },
+      { tier: 'Growth', clients: 2 },
+    ]);
   });
 });
 

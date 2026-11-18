@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { and, count, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, count, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import {
+  plans,
   tickets,
   UNRESOLVED_TICKET_STATUSES,
   workspaces,
@@ -36,7 +37,7 @@ export class AdminDashboardService {
     const range = resolveDashboardRange(query, this.now());
     const bucket = sql<string>`to_char(${workspaces.createdAt} at time zone 'Asia/Dhaka', ${sql.raw(`'${BUCKET_FORMAT[range.granularity]}'`)})`;
 
-    const [perBucket, [before], [active], [open]] = await Promise.all([
+    const [perBucket, [before], [active], [open], tiers] = await Promise.all([
       this.db
         .select({ bucket, newClients: count() })
         .from(workspaces)
@@ -59,12 +60,25 @@ export class AdminDashboardService {
         .select({ n: count() })
         .from(tickets)
         .where(inArray(tickets.status, [...UNRESOLVED_TICKET_STATUSES])),
+      // Plan tiers (M2-T12b): ACTIVE workspaces per plan now; no plan = not counted.
+      this.db
+        .select({
+          name: plans.name,
+          sortOrder: plans.sortOrder,
+          clients: count(),
+        })
+        .from(workspaces)
+        .innerJoin(plans, eq(plans.id, workspaces.planId))
+        .where(eq(workspaces.status, 'ACTIVE'))
+        .groupBy(plans.id)
+        .orderBy(asc(plans.sortOrder), asc(plans.name)),
     ]);
 
     return buildDashboardStats(range, {
       activeClients: active?.n ?? 0,
       clientsBefore: before?.n ?? 0,
       openTickets: open?.n ?? 0,
+      planTiers: tiers,
       newClients: Object.fromEntries(
         perBucket.map((r) => [r.bucket, r.newClients]),
       ),

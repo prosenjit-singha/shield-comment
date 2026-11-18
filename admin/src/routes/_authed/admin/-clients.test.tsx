@@ -26,6 +26,7 @@ const acme: AdminClient = {
   slug: 'acme-fashion',
   status: 'ACTIVE',
   createdAt: '2026-11-17T20:30:00.000Z', // 18 Nov in Dhaka
+  plan: { id: '0199a000-0000-7000-8000-0000000000b3', slug: 'growth', name: 'Growth' },
   owner: { id: 'o1', email: 'rahim@acme.bd', name: 'Rahim Uddin' },
   memberCount: 3,
 }
@@ -35,10 +36,20 @@ const bazaar: AdminClient = {
   slug: 'bazaar-bd',
   status: 'SUSPENDED',
   createdAt: '2026-10-01T06:00:00.000Z',
+  plan: null,
   owner: { id: 'o2', email: 'karim@bazaar.bd', name: 'Karim' },
   memberCount: 1,
 }
 const list: ClientList = { items: [acme, bazaar], total: 2, skip: 0, take: 20 }
+/** `GET /api/admin/settings/plans` (only the fields the plan filter reads). */
+const plans = {
+  items: [
+    { id: '0199a000-0000-7000-8000-0000000000b1', slug: 'free', name: 'Free' },
+    { id: '0199a000-0000-7000-8000-0000000000b2', slug: 'starter', name: 'Starter' },
+    { id: '0199a000-0000-7000-8000-0000000000b3', slug: 'growth', name: 'Growth' },
+    { id: '0199a000-0000-7000-8000-0000000000b4', slug: 'pro', name: 'Pro' },
+  ],
+}
 
 type Handler = (url: URL, init: RequestInit) => Response | Promise<Response>
 const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>()
@@ -75,7 +86,10 @@ function renderAt(path: string) {
 
 beforeEach(() => {
   auth.getSession.mockReset().mockResolvedValue(superAdmin)
-  handlers = { 'GET /api/admin/clients': () => json(list) }
+  handlers = {
+    'GET /api/admin/clients': () => json(list),
+    'GET /api/admin/settings/plans': () => json(plans),
+  }
   fetchMock.mockReset().mockImplementation(async (input, init = {}) => {
     const url = new URL(input, 'http://admin.localhost')
     const handler = handlers[`${init.method ?? 'GET'} ${url.pathname}`]
@@ -119,11 +133,50 @@ describe('/admin/clients list', () => {
     expect(screen.getByText('1–2 of 2 clients')).toBeTruthy()
   })
 
-  it('shows the Plan and Quota placeholders on every row', async () => {
+  it('shows the plan name, a muted dash for no plan, and the Quota placeholder on every row', async () => {
     await renderList()
-    expect(screen.getAllByLabelText('Plan: none yet').map((b) => b.textContent)).toEqual(['—', '—'])
+    expect(row('Acme Fashion').getByLabelText('Plan: Growth').textContent).toBe('Growth')
+    expect(row('Bazaar BD').getByLabelText('Plan: none yet').textContent).toBe('—')
+    expect(screen.getAllByLabelText('Plan: none yet')).toHaveLength(1)
     expect(screen.getAllByText('No plan yet')).toHaveLength(2)
     expect(screen.getAllByTestId('quota-bar')).toHaveLength(2)
+  })
+
+  it('shows the muted dash on every row while no client has a plan', async () => {
+    handlers['GET /api/admin/clients'] = () =>
+      json({ ...list, items: list.items.map((c) => ({ ...c, plan: null })) })
+    await renderList()
+    expect(screen.getAllByLabelText('Plan: none yet').map((b) => b.textContent)).toEqual(['—', '—'])
+  })
+
+  it('filters by plan (slug or none) through ?plan= and the API query', async () => {
+    const { router } = await renderList('/admin/clients?page=3')
+    expect(lastListCall()?.has('plan')).toBe(false)
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Plan: All plans' }), { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Growth' }))
+    await waitFor(() => expect(lastListCall()?.get('plan')).toBe('growth'))
+    expect(lastListCall()?.get('skip')).toBe('0') // a filter change resets the page
+    expect(router.state.location.search).toEqual({ plan: 'growth' })
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Plan: Growth' }), { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'No plan' }))
+    await waitFor(() => expect(lastListCall()?.get('plan')).toBe('none'))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(screen.getByRole('button', { name: 'Plan: No plan' })).toBeTruthy()
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Clear filters/ })[0]!)
+    await waitFor(() => expect(router.state.location.search).toEqual({}))
+    await waitFor(() => expect(lastListCall()?.has('plan')).toBe(false))
+  })
+
+  it('drops a malformed ?plan= and page instead of sending them', async () => {
+    const { router } = await renderList('/admin/clients?plan=Growth%20Plan&page=abc')
+    expect(lastListCall()?.has('plan')).toBe(false)
+    expect(lastListCall()?.get('skip')).toBe('0')
+    expect(router.state.location.search).toEqual({})
+    expect(screen.getByRole('button', { name: 'Plan: All plans' })).toBeTruthy()
   })
 
   it('debounces the search box into ?q= and the API query', async () => {

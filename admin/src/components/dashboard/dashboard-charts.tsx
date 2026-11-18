@@ -321,7 +321,10 @@ export function CommentsChart({ data }: { data: CommentsPoint[] | undefined }) {
   )
 }
 
-/** Donut of clients per plan tier. Empty = a muted ring with the message in the hole. */
+/**
+ * Donut of ACTIVE clients per plan (backend: plans with ≥ 1 client, in plan order, `tier` = plan
+ * name). Slices keep the API order. Empty = a muted ring with the message in the hole.
+ */
 export function PlanTiersChart({ data }: { data: PlanTierSlice[] | undefined }) {
   const total = data?.reduce((sum, s) => sum + s.clients, 0) ?? 0
   const empty = data !== undefined && total === 0
@@ -329,7 +332,7 @@ export function PlanTiersChart({ data }: { data: PlanTierSlice[] | undefined }) 
   return (
     <ChartCard
       title="Plan tiers"
-      description="Paying clients per plan right now."
+      description="Active clients per plan right now."
       className="lg:col-span-2"
     >
       {data === undefined ? (
@@ -380,14 +383,14 @@ export function PlanTiersChart({ data }: { data: PlanTierSlice[] | undefined }) 
               ) : (
                 <>
                   <p className="text-2xl font-semibold tabular-nums">{formatCount(total)}</p>
-                  <p className="text-xs text-muted-foreground">clients</p>
+                  <p className="text-xs text-muted-foreground">{total === 1 ? 'client' : 'clients'}</p>
                 </>
               )}
             </div>
           </div>
           {empty ? (
             <p className="text-center text-xs text-balance text-muted-foreground">
-              The tier split appears here once paid plans launch.
+              The tier split appears here once clients are on a plan.
             </p>
           ) : (
             <ul className="flex flex-col gap-1.5">

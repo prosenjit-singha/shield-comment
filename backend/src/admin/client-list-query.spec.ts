@@ -82,6 +82,22 @@ describe('clientListWhere', () => {
   });
 });
 
+describe('clientListWhere plan filter', () => {
+  const PLAN = '019a0000-0000-7000-8000-0000000000b1';
+
+  it('null = workspaces without a plan, an id = that plan, undefined = any', () => {
+    expect(whereSql({ planId: null }).sql).toContain(
+      'where "workspaces"."plan_id" is null',
+    );
+    const byId = whereSql({ planId: PLAN, status: 'ACTIVE' });
+    expect(byId.sql).toContain(
+      'where ("workspaces"."status" = $1 and "workspaces"."plan_id" = $2)',
+    );
+    expect(byId.params).toEqual(['ACTIVE', PLAN]);
+    expect(clientListWhere(db, { planId: undefined })).toBeUndefined();
+  });
+});
+
 describe('clientListOrder', () => {
   const dialect = new PgDialect({ casing: 'snake_case' });
   const order = (sort: Parameters<typeof clientListOrder>[0]) =>

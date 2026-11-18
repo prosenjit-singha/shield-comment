@@ -29,6 +29,13 @@ export type WorkspaceStatus = (typeof WORKSPACE_STATUSES)[number];
 export const ISO_DATE_OR_DATE_TIME =
   /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2}))?$/;
 
+/** `plan` filter value for workspaces without a plan (no seeded plan uses this slug). */
+export const NO_PLAN = 'none';
+
+/** A plan slug (same format as the `plans_slug_format` check) or `none`. */
+export const PLAN_FILTER = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+export const PLAN_FILTER_MAX = 40;
+
 const trimToUndefined = ({ value }: { value: unknown }) => {
   if (typeof value !== 'string') return value;
   const trimmed = value.trim();
@@ -38,7 +45,9 @@ const trimToUndefined = ({ value }: { value: unknown }) => {
 /**
  * `GET /api/admin/clients` (M2-T3, user decisions 2026-11-18): offset pagination + `q` search
  * (workspace name/slug, owner email/name; case-insensitive, partial), `status`, created-at range
- * (`createdFrom`/`createdTo`, inclusive) and `sort` (default newest first). No plan filter yet.
+ * (`createdFrom`/`createdTo`, inclusive) and `sort` (default newest first). M2-T12b adds `plan`
+ * (a plan slug, or `none` = no plan); the format is checked here, an unknown slug is a 400 from
+ * `AdminClientsService.list`.
  */
 export class ListClientsQueryDto {
   @IsOptional()
@@ -82,6 +91,13 @@ export class ListClientsQueryDto {
   })
   @IsISO8601({ strict: true })
   createdTo?: string;
+
+  /** Plan slug (`growth`) or `none` (workspaces without a plan). Case-sensitive, not trimmed. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(PLAN_FILTER_MAX)
+  @Matches(PLAN_FILTER, { message: 'plan must be a plan slug or none' })
+  plan?: string;
 
   @IsOptional()
   @IsIn(CLIENT_SORTS)

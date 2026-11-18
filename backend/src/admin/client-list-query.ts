@@ -6,6 +6,7 @@ import {
   exists,
   gte,
   ilike,
+  isNull,
   lt,
   or,
   type SQL,
@@ -23,6 +24,11 @@ export interface ClientListFilters {
   status?: WorkspaceStatus;
   createdFrom?: string;
   createdTo?: string;
+  /**
+   * Resolved plan filter (M2-T12b): a plan id, or `null` for workspaces without a plan.
+   * `undefined` = any plan. The service turns the `plan` slug (or `none`) into this.
+   */
+  planId?: string | null;
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -82,6 +88,9 @@ export function clientListWhere(
     );
   }
   if (filters.status) conditions.push(eq(workspaces.status, filters.status));
+  if (filters.planId === null) conditions.push(isNull(workspaces.planId));
+  else if (filters.planId)
+    conditions.push(eq(workspaces.planId, filters.planId));
   const { from, before } = createdRange(filters.createdFrom, filters.createdTo);
   if (from) conditions.push(gte(workspaces.createdAt, from));
   if (before) conditions.push(lt(workspaces.createdAt, before));

@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
 import {
+  plans,
   users,
   workspaces,
   workspaceStatusAuditLogs,
@@ -19,6 +20,7 @@ interface Item {
   slug: string;
   status: string;
   createdAt: string;
+  plan: { id: string; slug: string; name: string } | null;
   owner: { id: string; email: string; name: string } | null;
   memberCount: number;
 }
@@ -190,6 +192,7 @@ describe('Admin clients: list filters + status (e2e)', () => {
         slug: `ws-${T}-a`,
         status: 'ACTIVE',
         createdAt: '2026-01-15T12:00:00.000Z',
+        plan: null,
         owner: { id: a.id, email: a.email, name: `Owner ${T} A` },
         memberCount: 2,
       });
@@ -283,7 +286,10 @@ describe('Admin clients: list filters + status (e2e)', () => {
       'createdTo=2026-11-18T10:00:00',
       'createdFrom=2026-11-19&createdTo=2026-11-18',
       `q=${'x'.repeat(101)}`,
-      'plan=growth',
+      'plan=',
+      'plan=Growth',
+      'plan=growth%20plan',
+      'plan=growth&plan=pro',
       'search=x',
       'take=101',
     ])('400 for %s', async (query) => {
@@ -298,6 +304,86 @@ describe('Admin clients: list filters + status (e2e)', () => {
       const res = await http().get(`${CLIENTS}?q=${T}`).set('Cookie', a.cookie);
       expect(res.status).toBe(403);
       expect(res.body).not.toHaveProperty('items');
+    });
+  });
+
+  /** M2-T12b: `plan` on every item (LEFT JOIN `workspaces.plan_id`) + the `plan` filter. */
+  describe('plans', () => {
+    type PlanRef = { id: string; slug: string; name: string };
+    let plan: Record<string, PlanRef>;
+    const setPlan = (workspaceIds: string[], planId: string | null) =>
+      db()
+        .update(workspaces)
+        .set({ planId })
+        .where(inArray(workspaces.id, workspaceIds));
+
+    beforeAll(async () => {
+      const rows = await db()
+        .select({ id: plans.id, slug: plans.slug, name: plans.name })
+        .from(plans);
+      plan = Object.fromEntries(rows.map((r) => [r.slug, r]));
+      expect(Object.keys(plan).sort()).toEqual([
+        'free',
+        'growth',
+        'pro',
+        'starter',
+      ]);
+      // A + D on Growth, B on Starter; C (suspended) and M have no plan.
+      await setPlan([a.workspaceId, d.workspaceId], plan.growth!.id);
+      await setPlan([b.workspaceId], plan.starter!.id);
+    });
+
+    afterAll(async () => {
+      await setPlan([a.workspaceId, b.workspaceId, d.workspaceId], null);
+    });
+
+    it('every item carries { id, slug, name } of its plan, or null', async () => {
+      const body = await list(`q=${T}&sort=oldest`);
+      expect(body.items.map((i) => [i.id, i.plan])).toEqual([
+        [a.workspaceId, plan.growth],
+        [b.workspaceId, plan.starter],
+        [c.workspaceId, null],
+        [d.workspaceId, plan.growth],
+        [mod.workspaceId, null],
+      ]);
+    });
+
+    it.each([
+      ['plan=growth', () => [a, d]],
+      ['plan=starter', () => [b]],
+      ['plan=pro', () => []],
+      ['plan=none', () => [c, mod]],
+      ['plan=none&status=ACTIVE', () => [mod]],
+      ['plan=growth&createdFrom=2026-02-01', () => [d]],
+    ])('filters %s', async (query, expected) => {
+      expect(await ids(`${query}&sort=oldest`)).toEqual(
+        expected().map((x) => x.workspaceId),
+      );
+    });
+
+    it('400 for an unknown plan slug', async () => {
+      const res = await http()
+        .get(`${CLIENTS}?plan=platinum`)
+        .set('Cookie', superAdmin.cookie)
+        .expect(400);
+      expect(res.body).toMatchObject({
+        statusCode: 400,
+        message: 'Unknown plan: platinum',
+      });
+    });
+
+    it('PATCH status answers with the same item shape (plan included)', async () => {
+      const res = await patchStatus(b.workspaceId, {
+        status: 'ACTIVE',
+        reason: 'no-op check',
+      }).expect(200);
+      expect(res.body).toEqual({
+        changed: false,
+        client: (await list(`q=${encodeURIComponent(`alpha shop ${T}`)}`))
+          .items[0],
+      });
+      expect(res.body.client.plan).toEqual(plan.starter);
+      expect(await auditRows(b.workspaceId)).toEqual([]);
     });
   });
 
@@ -402,6 +488,7 @@ describe('Admin clients: list filters + status (e2e)', () => {
           slug: expect.any(String),
           status: 'SUSPENDED',
           createdAt: expect.any(String),
+          plan: null,
           owner: { id: target.id, email: target.email, name: 'm2t3-target' },
           memberCount: 2,
         },

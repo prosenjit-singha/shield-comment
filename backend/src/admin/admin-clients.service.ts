@@ -7,6 +7,7 @@ import { InjectDrizzle } from '@nestjs/drizzle';
 import { and, asc, count, eq, inArray } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import {
+  plans,
   users,
   workspaceMembers,
   workspaces,
@@ -18,9 +19,10 @@ import {
   clientListWhere,
   createdRange,
 } from './client-list-query.js';
-import type {
-  ClientSort,
-  WorkspaceStatus,
+import {
+  type ClientSort,
+  NO_PLAN,
+  type WorkspaceStatus,
 } from './dto/list-clients-query.dto.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -31,10 +33,19 @@ export interface ClientOwner {
   name: string;
 }
 
-export interface ClientListQuery extends ClientListFilters {
+export interface ClientListQuery extends Omit<ClientListFilters, 'planId'> {
   skip: number;
   take: number;
   sort: ClientSort;
+  /** Plan slug, or `none` for workspaces without a plan. */
+  plan?: string;
+}
+
+/** The workspace's plan (M2-T12b), `null` until one is assigned (Module 8). */
+export interface ClientPlan {
+  id: string;
+  slug: string;
+  name: string;
 }
 
 interface WorkspaceRow {
@@ -43,6 +54,7 @@ interface WorkspaceRow {
   slug: string;
   status: WorkspaceStatus;
   createdAt: Date;
+  plan: ClientPlan | null;
 }
 
 export interface ClientItem extends WorkspaceRow {
@@ -57,6 +69,8 @@ const workspaceColumns = {
   slug: workspaces.slug,
   status: workspaces.status,
   createdAt: workspaces.createdAt,
+  // LEFT JOIN plans: Drizzle returns `null` for the nested object when no plan matched.
+  plan: { id: plans.id, slug: plans.slug, name: plans.name },
 };
 
 /**
@@ -74,11 +88,13 @@ export class AdminClientsService {
     if (from && before && from.getTime() >= before.getTime()) {
       throw new BadRequestException('createdFrom must not be after createdTo');
     }
-    const where = clientListWhere(this.db, query);
+    const planId = await this.resolvePlanFilter(query.plan);
+    const where = clientListWhere(this.db, { ...query, planId });
     const [page, [totals]] = await Promise.all([
       this.db
         .select(workspaceColumns)
         .from(workspaces)
+        .leftJoin(plans, eq(plans.id, workspaces.planId))
         .where(where)
         .orderBy(...clientListOrder(sort))
         .offset(skip)
@@ -138,10 +154,29 @@ export class AdminClientsService {
     const rows = await this.db
       .select(workspaceColumns)
       .from(workspaces)
+      .leftJoin(plans, eq(plans.id, workspaces.planId))
       .where(eq(workspaces.id, workspaceId))
       .limit(1);
     const [item] = await this.withOwnersAndCounts(rows);
     return item;
+  }
+
+  /**
+   * `plan` query value → `ClientListFilters.planId`: `undefined` (no filter), `null` (`none` =
+   * no plan) or the plan's id. An unknown slug is a 400 (any plan, active or not, is accepted).
+   */
+  private async resolvePlanFilter(
+    plan: string | undefined,
+  ): Promise<string | null | undefined> {
+    if (plan === undefined) return undefined;
+    if (plan === NO_PLAN) return null;
+    const [row] = await this.db
+      .select({ id: plans.id })
+      .from(plans)
+      .where(eq(plans.slug, plan))
+      .limit(1);
+    if (!row) throw new BadRequestException(`Unknown plan: ${plan}`);
+    return row.id;
   }
 
   private async withOwnersAndCounts(

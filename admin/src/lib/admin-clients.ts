@@ -1,11 +1,17 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
 
-/** `GET /api/admin/clients` item (M1-T1 / M2-T3). */
+/** `GET /api/admin/clients` item (M1-T1 / M2-T3 / M2-T12b). */
 export type ClientStatus = 'ACTIVE' | 'SUSPENDED'
 export interface ClientOwner {
   id: string
   email: string
+  name: string
+}
+/** The workspace's plan; `null` until one is assigned (Module 8). */
+export interface ClientPlan {
+  id: string
+  slug: string
   name: string
 }
 export interface AdminClient {
@@ -14,6 +20,7 @@ export interface AdminClient {
   slug: string
   status: ClientStatus
   createdAt: string
+  plan: ClientPlan | null
   owner: ClientOwner | null
   memberCount: number
 }
@@ -30,13 +37,20 @@ export const CLIENT_STATUSES: readonly ClientStatus[] = ['ACTIVE', 'SUSPENDED']
 export const CLIENTS_PAGE_SIZE = 20
 export const REASON_MAX = 500
 
+/** `?plan=` value for clients without a plan (the backend's `plan=none`). */
+export const NO_PLAN = 'none'
+/** A plan slug (backend `plans_slug_format`, ≤ 40) or `none`. */
+const PLAN_FILTER = /^[a-z0-9]+(-[a-z0-9]+)*$/
+
 /**
  * `/admin/clients` URL search params. Defaults are left out of the URL (`undefined`):
- * no search, all statuses, newest first, page 1. `from`/`to` are Dhaka calendar days (`YYYY-MM-DD`).
+ * no search, all statuses, any plan, newest first, page 1. `from`/`to` are Dhaka calendar days
+ * (`YYYY-MM-DD`); `plan` is a plan slug or `none`.
  */
 export interface ClientsSearch {
   q?: string
   status?: ClientStatus
+  plan?: string
   from?: string
   to?: string
   sort?: Exclude<ClientSort, 'newest'>
@@ -45,21 +59,30 @@ export interface ClientsSearch {
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
+function isPlanFilter(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 40 && PLAN_FILTER.test(value)
+}
+
 function isValidDay(value: unknown): value is string {
   return typeof value === 'string' && DATE_ONLY.test(value) && !Number.isNaN(Date.parse(value))
 }
 
-/** `validateSearch` for the route: drops anything malformed instead of throwing. */
+/**
+ * `validateSearch` for the route: drops anything malformed instead of throwing. Every key is
+ * returned (`undefined` when missing or malformed): TanStack Router merges the raw search under
+ * this result, so an omitted key would let a malformed value through (router gotcha, MEMORY).
+ */
 export function validateClientsSearch(raw: Record<string, unknown>): ClientsSearch {
-  const search: ClientsSearch = {}
-  if (typeof raw.q === 'string' && raw.q.trim()) search.q = raw.q.trim().slice(0, 100)
-  if (raw.status === 'ACTIVE' || raw.status === 'SUSPENDED') search.status = raw.status
-  if (isValidDay(raw.from)) search.from = raw.from
-  if (isValidDay(raw.to)) search.to = raw.to
-  if (raw.sort === 'oldest' || raw.sort === 'name') search.sort = raw.sort
   const page = typeof raw.page === 'number' ? raw.page : Number(raw.page)
-  if (Number.isInteger(page) && page > 1) search.page = page
-  return search
+  return {
+    q: typeof raw.q === 'string' && raw.q.trim() ? raw.q.trim().slice(0, 100) : undefined,
+    status: raw.status === 'ACTIVE' || raw.status === 'SUSPENDED' ? raw.status : undefined,
+    plan: isPlanFilter(raw.plan) ? raw.plan : undefined,
+    from: isValidDay(raw.from) ? raw.from : undefined,
+    to: isValidDay(raw.to) ? raw.to : undefined,
+    sort: raw.sort === 'oldest' || raw.sort === 'name' ? raw.sort : undefined,
+    page: Number.isInteger(page) && page > 1 ? page : undefined,
+  }
 }
 
 /** Bangladesh has no DST: a Dhaka day is always `+06:00`. */
@@ -73,6 +96,7 @@ export function clientListParams(search: ClientsSearch): URLSearchParams {
   const params = new URLSearchParams()
   if (search.q) params.set('q', search.q)
   if (search.status) params.set('status', search.status)
+  if (search.plan) params.set('plan', search.plan)
   if (search.from) params.set('createdFrom', `${search.from}T00:00:00${DHAKA_OFFSET}`)
   if (search.to) params.set('createdTo', `${search.to}T23:59:59.999${DHAKA_OFFSET}`)
   params.set('sort', search.sort ?? 'newest')

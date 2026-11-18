@@ -32,8 +32,9 @@ export class AdminClientsController {
   ) {}
 
   /**
-   * `{ items: [{ id, name, slug, status, createdAt, owner, memberCount }], total, skip, take }`.
-   * Filters: `q` (name/slug/owner email/owner name), `status`, `createdFrom`/`createdTo`;
+   * `{ items: [{ id, name, slug, status, createdAt, plan, owner, memberCount }], total, skip, take }`
+   * (`plan` = `{ id, slug, name } | null`). Filters: `q` (name/slug/owner email/owner name),
+   * `status`, `createdFrom`/`createdTo`, `plan` (slug or `none`; unknown slug → 400);
    * `sort` = newest (default) | oldest | name.
    */
   @Get()

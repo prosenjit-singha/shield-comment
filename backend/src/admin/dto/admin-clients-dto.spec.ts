@@ -47,6 +47,14 @@ describe('ListClientsQueryDto', () => {
     ).toBeUndefined();
   });
 
+  it('accepts a plan slug or none (existence is checked by the service)', async () => {
+    for (const plan of ['growth', 'none', 'pro-annual', 'unknown-plan']) {
+      const { dto, fields } = await check(ListClientsQueryDto, { plan });
+      expect(fields).toEqual([]);
+      expect(dto.plan).toBe(plan);
+    }
+  });
+
   it.each([
     [{ take: '101' }, 'take'],
     [{ skip: '-1' }, 'skip'],
@@ -60,7 +68,13 @@ describe('ListClientsQueryDto', () => {
     [{ createdFrom: '2026-W47' }, 'createdFrom'],
     [{ createdTo: '2026-11-18T10:00:00' }, 'createdTo'],
     [{ createdTo: '1731900000000' }, 'createdTo'],
-    [{ plan: 'growth' }, 'plan'],
+    [{ plan: 'Growth' }, 'plan'],
+    [{ plan: ' growth' }, 'plan'],
+    [{ plan: 'growth plan' }, 'plan'],
+    [{ plan: '' }, 'plan'],
+    [{ plan: ['growth', 'pro'] }, 'plan'],
+    [{ plan: 'x'.repeat(41) }, 'plan'],
+    [{ planId: 'growth' }, 'planId'],
   ])('rejects %j', async (plain, field) => {
     expect((await check(ListClientsQueryDto, plain)).fields).toEqual([field]);
   });

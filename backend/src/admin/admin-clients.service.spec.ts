@@ -1,6 +1,10 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { Database } from '../db/database.js';
-import { workspaces, workspaceStatusAuditLogs } from '../db/schema/index.js';
+import {
+  plans,
+  workspaces,
+  workspaceStatusAuditLogs,
+} from '../db/schema/index.js';
 import {
   AdminClientsService,
   type ClientItem,
@@ -130,6 +134,23 @@ describe('AdminClientsService.updateStatus', () => {
 });
 
 describe('AdminClientsService.list', () => {
+  it('400s an unknown plan slug before listing', async () => {
+    const lookups: unknown[] = [];
+    const db = {
+      select: () => ({
+        from: (table: unknown) => {
+          lookups.push(table);
+          return { where: () => ({ limit: async () => [] }) };
+        },
+      }),
+    };
+    const svc = new AdminClientsService(db as unknown as Database);
+    await expect(
+      svc.list({ skip: 0, take: 50, sort: 'newest', plan: 'platinum' }),
+    ).rejects.toThrow(new BadRequestException('Unknown plan: platinum'));
+    expect(lookups).toEqual([plans]);
+  });
+
   it('400s when createdFrom is after createdTo, before querying', async () => {
     const svc = new AdminClientsService({} as Database);
     await expect(
