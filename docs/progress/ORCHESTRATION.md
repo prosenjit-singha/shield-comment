@@ -7,13 +7,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, only the Module 4 header + decisions + its own row from TASKS.md, `docs/project-documentation/modules/module-4-webhooks-queue.md` (UI rows M4-T11/T12 also `docs/design/base.md` + `client.md`).
 - Standing approvals: admin/ + client/ changes approved for the rest of this run (user, 2026-11-18).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #2 (2026-11-18) · rows this session: 9 · estimate: 208k
+- Session: #2 (2026-11-18) · rows this session: 10 · estimate: 228k
 
 ## State
-dispatched M4-T10 (2026-11-19) · commit: "fix(backend): fall back to the socket address for rate-limit ips (M4-T10)"
+paused: row cap (10 rows this session, after M4-T10 verified 2026-11-19); next M4-T11, then M4-T12 + M4-GATE
 
 ## Resume
-`/orchestration --continue`
+`/orchestration --continue` (session #3: M4-T11, M4-T12, then M4-GATE; no pending decision)
 
 ## Next prompt (M4-T11)
 
@@ -55,6 +55,9 @@ You are implementing exactly ONE task row, **M4-T11**, in the ShieldComment BD r
    - **replace** the `## Next prompt` section with the M4-T12 prompt in the format of `.claude/skills/orchestration/subagent-prompt.md` (M4-T12 = client public `/data-deletion` status page, D6: SSR, en/bn, reads `GET /api/meta/data-deletion/:code` → `{ status PENDING|COMPLETED, requestedAt, completedAt }`, 404 unknown/malformed, linked from the callback's `url` `CLIENT_APP_URL/data-deletion?code=`).
 3. Commit everything, journal included, as `feat(client): add meta reconnect banner and disconnect on pages (M4-T11)` with an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
+
+### Decisions added by orchestrator
+- 2026-11-19 (user, M4-T9 choice 4) D7 exception → "Keep the exception (Recommended)": Revoke app permissions on disconnect only when the Facebook user has no other workspace still connected. The other workspace keeps working. This is what was built. Record it in TASKS.md under D7 (answered 2026-11-19). The Disconnect dialog copy must not promise that the Facebook permission is always revoked (e.g. "may be revoked" / say it is revoked unless another workspace still uses it).
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -98,4 +101,4 @@ You are implementing exactly ONE task row, **M4-T11**, in the ShieldComment BD r
 - 2026-11-19 M4-T7 ✅ 6974bfa · backend 919 + e2e 465 · e2e 2/2 · scheduled jobs on meta-token-check: `debug_token` check (03:00 Dhaka, D8 mapping, conditional status UPDATE) + 30-day `raw_payload` purge (03:30), `MetaGraphClient.debugToken`, background scheduler registration
 - 2026-11-19 M4-T8 ✅ c2570a8 · backend 964 + e2e 477 · client 303 · e2e 2/2 · subscribed_apps on the Page toggle (subscribe before tx, 502 META_SUBSCRIBE_FAILED, NEEDS_REAUTH on token_invalid, best-effort unsubscribe) + backfill script
 - 2026-11-19 M4-T9 ✅ a64e807 · backend 1001 + e2e 488 · e2e 2/2 · connection status in pages list, 409 CONNECTION_NEEDS_REAUTH on switch-on, DELETE …/meta/connection (stamp + hard delete + best-effort unsubscribe/revoke), Data Deletion covers stamped comments (migration 0014)
-- 2026-11-19 M4-T10 ✅ · backend 1032 + e2e 494 · e2e 2/2 (host + docker) · Better Auth client IP: socket-address fallback via the auth module `middleware` option (no `no-trusted-ip` bucket), e2e seed sends a per-run `X-Forwarded-For`
+- 2026-11-19 M4-T10 ✅ f64418e + fix d273e68 · backend 1032 + e2e 494 · e2e 2/2 (host + docker) · Better Auth client IP: socket-address fallback via the auth module `middleware` option (no `no-trusted-ip` bucket), e2e seed sends a per-run `X-Forwarded-For`
