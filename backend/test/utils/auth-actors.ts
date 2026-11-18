@@ -9,7 +9,9 @@ import { ensureSuperAdmin } from '../../src/auth/super-admin.js';
 import type { Database } from '../../src/db/database.js';
 import {
   impersonationAuditLogs,
+  metaConnections,
   planAuditLogs,
+  socialPages,
   ticketMessages,
   tickets,
   users,
@@ -179,8 +181,16 @@ export function createAuthActors(app: INestApplication<App>) {
       await db
         .delete(planAuditLogs)
         .where(inArray(planAuditLogs.adminId, userIds));
-    if (workspaceIds.length)
+    if (workspaceIds.length) {
+      // Meta rows (M3-T2) reference workspaces with FK restrict.
+      await db
+        .delete(socialPages)
+        .where(inArray(socialPages.workspaceId, workspaceIds));
+      await db
+        .delete(metaConnections)
+        .where(inArray(metaConnections.workspaceId, workspaceIds));
       await db.delete(workspaces).where(inArray(workspaces.id, workspaceIds));
+    }
     if (userIds.length)
       await db.delete(users).where(inArray(users.id, userIds));
   }

@@ -71,6 +71,13 @@
       "when": 1794996406027,
       "tag": "0009_plan_audit_logs",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795000352710,
+      "tag": "0010_meta_connections",
+      "breakpoints": true
     }
   ]
 }

@@ -9,3 +9,4 @@ export * from './impersonation.js';
 export * from './workspace-status-audit.js';
 export * from './support-tickets.js';
 export * from './plan-audit.js';
+export * from './meta.js';
