@@ -20,6 +20,7 @@ import { MetaModule } from './meta/meta.module.js';
 import { SupportTicketsModule } from './support-tickets/support-tickets.module.js';
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
 import { WebhooksModule } from './webhooks/webhooks.module.js';
+import { CommentsModule } from './comments/comments.module.js';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { WebhooksModule } from './webhooks/webhooks.module.js';
     SupportTicketsModule,
     MetaModule,
     WebhooksModule,
+    CommentsModule,
   ],
 })
 export class AppModule {}

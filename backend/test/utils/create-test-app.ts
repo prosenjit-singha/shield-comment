@@ -6,12 +6,15 @@ import { configureApp } from '../../src/app.setup.js';
 import { AUTH_SECONDARY_STORAGE } from '../../src/redis/redis-secondary-storage.js';
 import { RedisService } from '../../src/redis/redis.service.js';
 import { overrideQueues } from './fake-queue.js';
+import { useFakeWorkers } from './fake-worker.js';
 import { createMemorySecondaryStorage } from './memory-secondary-storage.js';
 
 /**
  * Boots the real AppModule with production wiring. Redis is stubbed unless overridden; Better Auth's
  * `secondaryStorage` is an in-memory store (`app.get(AUTH_SECONDARY_STORAGE)` to inspect it) and
- * every BullMQ queue is a `FakeQueue` (`fakeQueue(app, name)`), so no spec opens a Redis connection.
+ * every BullMQ queue is a `FakeQueue` (`fakeQueue(app, name)`) and every `@Processor` gets a
+ * `FakeWorker` (no real BullMQ `Worker`; call the processor's `process(job)`), so no spec opens a
+ * Redis connection.
  * `controllers` adds test-only controllers (e.g. to probe guards) next to the app's own.
  */
 export async function createTestApp(
@@ -21,6 +24,7 @@ export async function createTestApp(
   @Module({ controllers })
   class TestControllersModule {}
 
+  useFakeWorkers();
   let builder = Test.createTestingModule({
     imports: [AppModule, TestControllersModule],
   })
