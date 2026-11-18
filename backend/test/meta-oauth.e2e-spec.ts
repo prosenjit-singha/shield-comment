@@ -87,6 +87,8 @@ describe('Meta OAuth connect (e2e)', () => {
       granted: ['pages_show_list', 'pages_manage_engagement'],
       declined: ['instagram_basic'],
     });
+    // Page sync (M3-T5) is covered in meta-page-sync.e2e-spec.ts: no Pages here.
+    graph.getPages.mockResolvedValueOnce([]);
     return tokens;
   }
 
@@ -140,6 +142,7 @@ describe('Meta OAuth connect (e2e)', () => {
     graph.exchangeForLongLivedToken.mockReset();
     graph.getMe.mockReset();
     graph.getPermissions.mockReset();
+    graph.getPages.mockReset();
   });
 
   afterAll(async () => {

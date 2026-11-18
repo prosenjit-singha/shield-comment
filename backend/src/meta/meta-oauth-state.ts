@@ -53,8 +53,12 @@ export const META_OAUTH_ERROR_REASONS = [
 ] as const;
 export type MetaOAuthErrorReason = (typeof META_OAUTH_ERROR_REASONS)[number];
 
+/**
+ * `skipped` (M3-T5, D7) = Pages not synced because they (or their IG account) belong to another
+ * workspace; sent as `&skipped=N` only when N > 0.
+ */
 export type MetaOAuthResult =
-  { ok: true } | { ok: false; reason: MetaOAuthErrorReason };
+  { ok: true; skipped?: number } | { ok: false; reason: MetaOAuthErrorReason };
 
 /** base64url of 32 bytes = 43 chars, no padding. */
 const STATE_FORMAT = /^[A-Za-z0-9_-]{43}$/;
@@ -108,7 +112,10 @@ export function parseMetaOAuthStateData(
   return { userId, workspaceId: workspaceId.toLowerCase(), returnTo };
 }
 
-/** `<clientOrigin><returnTo>?meta=connected` or `?meta=error&reason=<reason>`. */
+/**
+ * `<clientOrigin><returnTo>?meta=connected` (+ `&skipped=N` when Pages were skipped) or
+ * `?meta=error&reason=<reason>`.
+ */
 export function metaOAuthClientRedirect(
   clientOrigin: string,
   returnTo: MetaOAuthReturnPath,
@@ -117,6 +124,9 @@ export function metaOAuthClientRedirect(
   const url = new URL(returnTo, clientOrigin);
   if (result.ok) {
     url.searchParams.set('meta', 'connected');
+    if (result.skipped !== undefined && result.skipped > 0) {
+      url.searchParams.set('skipped', String(result.skipped));
+    }
   } else {
     url.searchParams.set('meta', 'error');
     url.searchParams.set('reason', result.reason);

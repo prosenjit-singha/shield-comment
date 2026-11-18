@@ -21,12 +21,16 @@ import { MetaGraphError, MetaNotConfiguredError } from './meta-graph.errors.js';
 import type { MetaOAuthStateData } from './meta-oauth-state.js';
 import type { MetaOAuthStateStore } from './meta-oauth-state.store.js';
 import { MetaOAuthService } from './meta-oauth.service.js';
+import { syncSocialPages } from './social-pages.sync.js';
 
 vi.mock('../auth/authz-queries.js', () => ({
   findWorkspaceMembership: vi.fn(),
 }));
 vi.mock('./meta-connection.queries.js', () => ({
   upsertMetaConnection: vi.fn(),
+}));
+vi.mock('./social-pages.sync.js', () => ({
+  syncSocialPages: vi.fn(),
 }));
 
 const WS = '0192f5a4-7c3e-7a10-8b2c-3d4e5f6a7b8c';
@@ -37,6 +41,21 @@ const SHORT = 'EAAshort-lived-token';
 const LONG = 'EAAlong-lived-token';
 const FB_USER = '1234567890';
 const ORIGIN = 'http://app.localhost:5174';
+const PAGE_A = '1111111111';
+const PAGE_B = '2222222222';
+const IG_A = '17841400000000001';
+const PAGE_TOKEN_A = 'EAApage-token-a';
+const PAGE_TOKEN_B = 'EAApage-token-b';
+const PAGES = [
+  {
+    id: PAGE_A,
+    name: 'Shop A',
+    accessToken: PAGE_TOKEN_A,
+    instagram: { id: IG_A, username: 'shop.a' },
+  },
+  { id: PAGE_B, name: 'Shop B', accessToken: PAGE_TOKEN_B, instagram: null },
+];
+const NO_SYNC = { created: 0, updated: 0, deactivated: 0, skipped: [] };
 
 function session(patch: Record<string, unknown> = {}): AuthSession {
   return {
@@ -68,6 +87,13 @@ function setup(
       granted: ['pages_show_list', 'business_management', 'pages_show_list'],
       declined: ['instagram_basic'],
     }),
+    getPages: vi.fn().mockResolvedValue(PAGES),
+  };
+  const tx = { tx: true };
+  const db = {
+    transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) =>
+      fn(tx),
+    ),
   };
   const stored = new Map<string, MetaOAuthStateData>();
   const states = {
@@ -89,7 +115,7 @@ function setup(
     get: vi.fn(() => ORIGIN),
   } as unknown as ConfigService<EnvironmentVariables, true>;
   const service = new MetaOAuthService(
-    {} as Database,
+    db as unknown as Database,
     graph as unknown as MetaGraphClient,
     cipher,
     states as unknown as MetaOAuthStateStore,
@@ -102,7 +128,7 @@ function setup(
       returnTo: '/onboarding',
       ...data,
     });
-  return { service, graph, states, stored, cipher, begin };
+  return { service, graph, states, stored, cipher, begin, db, tx };
 }
 
 const error = (reason: string, path = '/onboarding') =>
@@ -117,6 +143,8 @@ describe('MetaOAuthService', () => {
     });
     vi.mocked(upsertMetaConnection).mockReset();
     vi.mocked(upsertMetaConnection).mockResolvedValue({ id: 'conn-1' });
+    vi.mocked(syncSocialPages).mockReset();
+    vi.mocked(syncSocialPages).mockResolvedValue(NO_SYNC);
   });
 
   describe('createLoginUrl', () => {
@@ -224,6 +252,127 @@ describe('MetaOAuthService', () => {
           tokenCipherContext('meta_user_token', WS, FB_USER),
         ),
       ).toBe(LONG);
+    });
+
+    it('syncs every Page (+ IG account) with Page tokens encrypted per workspace + Page, in the same tx', async () => {
+      const { service, graph, cipher, begin, db, tx } = setup();
+      begin();
+      expect(
+        await service.handleCallback({ code: CODE, state: STATE }, session()),
+      ).toBe(`${ORIGIN}/onboarding?meta=connected`);
+      expect(graph.getPages).toHaveBeenCalledWith(LONG);
+      expect(db.transaction).toHaveBeenCalledOnce();
+      expect(vi.mocked(upsertMetaConnection).mock.calls[0]![0]).toBe(tx);
+
+      const [executor, workspaceId, rows] =
+        vi.mocked(syncSocialPages).mock.calls[0]!;
+      expect(executor).toBe(tx);
+      expect(workspaceId).toBe(WS);
+      expect(
+        rows.map(({ encryptedPageAccessToken: _t, ...rest }) => rest),
+      ).toEqual([
+        {
+          pageId: PAGE_A,
+          pageName: 'Shop A',
+          igBusinessId: IG_A,
+          igUsername: 'shop.a',
+        },
+        {
+          pageId: PAGE_B,
+          pageName: 'Shop B',
+          igBusinessId: null,
+          igUsername: null,
+        },
+      ]);
+      const [a, b] = rows;
+      expect(a!.encryptedPageAccessToken).toMatch(/^v1:unit:/);
+      expect(a!.encryptedPageAccessToken).not.toContain(PAGE_TOKEN_A);
+      expect(
+        cipher.decrypt(
+          a!.encryptedPageAccessToken,
+          tokenCipherContext('meta_page_token', WS, PAGE_A),
+        ),
+      ).toBe(PAGE_TOKEN_A);
+      expect(
+        cipher.decrypt(
+          b!.encryptedPageAccessToken,
+          tokenCipherContext('meta_page_token', WS, PAGE_B),
+        ),
+      ).toBe(PAGE_TOKEN_B);
+      // Bound to its Page: another Page id (or the user-token purpose) can't decrypt it.
+      expect(() =>
+        cipher.decrypt(
+          a!.encryptedPageAccessToken,
+          tokenCipherContext('meta_page_token', WS, PAGE_B),
+        ),
+      ).toThrow();
+      expect(() =>
+        cipher.decrypt(
+          a!.encryptedPageAccessToken,
+          tokenCipherContext('meta_user_token', WS, PAGE_A),
+        ),
+      ).toThrow();
+    });
+
+    it('a user with no Pages still connects (empty sync)', async () => {
+      const { service, graph, begin } = setup();
+      begin();
+      graph.getPages.mockResolvedValue([]);
+      expect(
+        await service.handleCallback({ code: CODE, state: STATE }, session()),
+      ).toBe(`${ORIGIN}/onboarding?meta=connected`);
+      expect(vi.mocked(syncSocialPages).mock.calls[0]![2]).toEqual([]);
+    });
+
+    it('reports skipped Pages as &skipped=N', async () => {
+      const { service, begin } = setup();
+      begin({ returnTo: '/pages' });
+      vi.mocked(syncSocialPages).mockResolvedValue({
+        ...NO_SYNC,
+        created: 1,
+        skipped: [
+          { pageId: PAGE_A, reason: 'page_in_other_workspace' },
+          { pageId: PAGE_B, reason: 'instagram_in_other_workspace' },
+        ],
+      });
+      expect(
+        await service.handleCallback({ code: CODE, state: STATE }, session()),
+      ).toBe(`${ORIGIN}/pages?meta=connected&skipped=2`);
+    });
+
+    it.each([
+      ['rate_limited', 'meta_unavailable'],
+      ['token_invalid', 'meta_error'],
+      ['unexpected_response', 'meta_error'],
+    ] as const)(
+      'getPages %s → %s, no transaction (connection not written either)',
+      async (kind, reason) => {
+        const { service, begin, graph, db } = setup();
+        begin();
+        graph.getPages.mockRejectedValue(
+          new MetaGraphError(kind, 'Meta Graph 400: bad', { status: 400 }),
+        );
+        expect(
+          await service.handleCallback({ code: CODE, state: STATE }, session()),
+        ).toBe(error(reason));
+        expect(db.transaction).not.toHaveBeenCalled();
+        expect(upsertMetaConnection).not.toHaveBeenCalled();
+        expect(syncSocialPages).not.toHaveBeenCalled();
+      },
+    );
+
+    it('server_error when the Page sync fails (the tx rolls back the connection)', async () => {
+      const { service, begin, db } = setup();
+      begin();
+      vi.mocked(syncSocialPages).mockRejectedValue(
+        Object.assign(new Error('insert failed'), {
+          cause: { code: '23505' },
+        }),
+      );
+      await expect(
+        service.handleCallback({ code: CODE, state: STATE }, session()),
+      ).resolves.toBe(error('server_error'));
+      await expect(db.transaction.mock.results[0]!.value).rejects.toThrow();
     });
 
     it('checks membership in the state’s workspace for the session user', async () => {
@@ -431,6 +580,12 @@ describe('MetaOAuthService', () => {
       try {
         const { service, begin, graph } = setup();
         begin();
+        vi.mocked(syncSocialPages).mockResolvedValueOnce({
+          created: 1,
+          updated: 0,
+          deactivated: 1,
+          skipped: [{ pageId: PAGE_B, reason: 'page_in_other_workspace' }],
+        });
         await service.handleCallback({ code: CODE, state: STATE }, session());
         begin();
         graph.exchangeCode.mockRejectedValueOnce(
@@ -448,9 +603,23 @@ describe('MetaOAuthService', () => {
 
         const logged = JSON.stringify(spies.flatMap((s) => s.mock.calls));
         expect(logged.length).toBeGreaterThan(2);
-        for (const secret of [CODE, STATE, SHORT, LONG, 'EAA']) {
+        for (const secret of [
+          CODE,
+          STATE,
+          SHORT,
+          LONG,
+          PAGE_TOKEN_A,
+          PAGE_TOKEN_B,
+          'EAA',
+          'v1:unit:',
+          'Shop A',
+        ]) {
           expect(logged).not.toContain(secret);
         }
+        expect(logged).toContain(
+          'pages created=1 updated=0 deactivated=1 skipped=1',
+        );
+        expect(logged).toContain(`${PAGE_B}:page_in_other_workspace`);
       } finally {
         for (const spy of spies) spy.mockRestore();
       }

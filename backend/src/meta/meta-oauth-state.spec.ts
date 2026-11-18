@@ -101,6 +101,15 @@ describe('meta OAuth state helpers', () => {
       );
     });
 
+    it('adds skipped=N only when Pages were skipped (M3-T5)', () => {
+      expect(
+        metaOAuthClientRedirect(origin, '/pages', { ok: true, skipped: 2 }),
+      ).toBe('https://app.example.com/pages?meta=connected&skipped=2');
+      expect(
+        metaOAuthClientRedirect(origin, '/pages', { ok: true, skipped: 0 }),
+      ).toBe('https://app.example.com/pages?meta=connected');
+    });
+
     it('builds the error URL with the reason', () => {
       expect(
         metaOAuthClientRedirect(origin, '/pages', {

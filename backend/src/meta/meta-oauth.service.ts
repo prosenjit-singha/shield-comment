@@ -33,6 +33,11 @@ import {
   metaOAuthClientRedirect,
 } from './meta-oauth-state.js';
 import { MetaOAuthStateStore } from './meta-oauth-state.store.js';
+import {
+  type PageSyncResult,
+  type SocialPageSyncInput,
+  syncSocialPages,
+} from './social-pages.sync.js';
 
 /** Workspace roles that may connect Meta (D5). */
 const CONNECT_ROLES = new Set(['owner', 'admin']);
@@ -63,7 +68,9 @@ function fail(reason: MetaOAuthErrorReason): never {
  *   Redis (10 min, single use) + the Login for Business dialog URL.
  * - `handleCallback`: never throws; always returns the client URL to redirect to
  *   (`<CLIENT_APP_URL><returnTo>?meta=connected|error&reason=…`). On success the workspace's
- *   `meta_connections` row holds the encrypted long-lived user token (Page sync = M3-T5).
+ *   `meta_connections` row holds the encrypted long-lived user token, and `social_pages` holds the
+ *   user's Pages (M3-T5: new ones inactive, encrypted Page tokens, other workspaces' Pages skipped
+ *   → `&skipped=N`), both written in one transaction.
  * Tokens and OAuth codes are never logged or returned.
  */
 @Injectable()
@@ -135,8 +142,8 @@ export class MetaOAuthService implements OnModuleInit {
     try {
       const state = await this.takeState(query['state']);
       returnTo = state.returnTo;
-      await this.connect(query, session, state);
-      result = { ok: true };
+      const sync = await this.connect(query, session, state);
+      result = { ok: true, skipped: sync.skipped.length };
     } catch (error) {
       result = { ok: false, reason: this.failureReason(error) };
     }
@@ -153,7 +160,7 @@ export class MetaOAuthService implements OnModuleInit {
     query: MetaOAuthCallbackQuery,
     session: AuthSession | null,
     state: MetaOAuthStateData,
-  ): Promise<void> {
+  ): Promise<PageSyncResult> {
     const error = query['error'];
     if (error !== undefined) {
       fail(error === 'access_denied' ? 'access_denied' : 'meta_error');
@@ -189,20 +196,44 @@ export class MetaOAuthService implements OnModuleInit {
     );
     const me = await this.graph.getMe(longLived.accessToken);
     const permissions = await this.graph.getPermissions(longLived.accessToken);
+    // All Meta calls happen before the transaction: a Graph failure writes nothing.
+    const pages = await this.graph.getPages(longLived.accessToken);
 
-    const connection = await upsertMetaConnection(this.db, {
-      workspaceId: state.workspaceId,
-      facebookUserId: me.id,
-      encryptedUserAccessToken: this.cipher.encrypt(
-        longLived.accessToken,
-        tokenCipherContext('meta_user_token', state.workspaceId, me.id),
-      ),
-      tokenExpiresAt: longLived.expiresAt,
-      grantedScopes: [...new Set(permissions.granted)].sort(),
-    });
-    this.logger.log(
-      `Meta connected: workspace ${state.workspaceId}, connection ${connection.id}`,
+    const workspaceId = state.workspaceId;
+    const encryptedUserAccessToken = this.cipher.encrypt(
+      longLived.accessToken,
+      tokenCipherContext('meta_user_token', workspaceId, me.id),
     );
+    const pageRows: SocialPageSyncInput[] = pages.map((page) => ({
+      pageId: page.id,
+      pageName: page.name,
+      igBusinessId: page.instagram?.id ?? null,
+      igUsername: page.instagram?.username ?? null,
+      encryptedPageAccessToken: this.cipher.encrypt(
+        page.accessToken,
+        tokenCipherContext('meta_page_token', workspaceId, page.id),
+      ),
+    }));
+
+    const { connection, sync } = await this.db.transaction(async (tx) => {
+      const connection = await upsertMetaConnection(tx, {
+        workspaceId,
+        facebookUserId: me.id,
+        encryptedUserAccessToken,
+        tokenExpiresAt: longLived.expiresAt,
+        grantedScopes: [...new Set(permissions.granted)].sort(),
+      });
+      const sync = await syncSocialPages(tx, workspaceId, pageRows);
+      return { connection, sync };
+    });
+    // Ids + counts only (never names or tokens); skipped Pages name their reason, not the owner.
+    const skipped = sync.skipped
+      .map((page) => `${page.pageId}:${page.reason}`)
+      .join(',');
+    this.logger.log(
+      `Meta connected: workspace ${workspaceId}, connection ${connection.id}, pages created=${sync.created} updated=${sync.updated} deactivated=${sync.deactivated} skipped=${sync.skipped.length}${skipped ? ` [${skipped}]` : ''}`,
+    );
+    return sync;
   }
 
   private failureReason(error: unknown): MetaOAuthErrorReason {
