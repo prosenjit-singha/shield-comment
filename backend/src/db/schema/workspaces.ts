@@ -2,6 +2,7 @@ import { relations, sql } from 'drizzle-orm';
 import { check, index, pgEnum, pgTable, text, unique, uuid } from 'drizzle-orm/pg-core';
 import { users } from './auth.js';
 import { id, timestamps, timestamptz } from './columns.js';
+import { plans } from './plans.js';
 
 /**
  * Better Auth `organization` plugin tables, renamed: organization → `workspaces`,
@@ -19,17 +20,26 @@ export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
 const roleCheck = (column: string) =>
   sql.raw(`${column} in (${WORKSPACE_ROLES.map((r) => `'${r}'`).join(', ')})`);
 
-export const workspaces = pgTable('workspaces', {
-  id: id(),
-  name: text().notNull(),
-  slug: text().notNull().unique(),
-  logo: text(),
-  /** Free-form JSON string (Better Auth stores organization metadata as text). */
-  metadata: text(),
-  /** Extra field (`additionalFields.status`). SUSPENDED workspaces are locked by `WorkspaceAccessGuard` (M1-T1). */
-  status: workspaceStatus().notNull().default('ACTIVE'),
-  ...timestamps,
-});
+export const workspaces = pgTable(
+  'workspaces',
+  {
+    id: id(),
+    name: text().notNull(),
+    slug: text().notNull().unique(),
+    logo: text(),
+    /** Free-form JSON string (Better Auth stores organization metadata as text). */
+    metadata: text(),
+    /** Extra field (`additionalFields.status`). SUSPENDED workspaces are locked by `WorkspaceAccessGuard` (M1-T1). */
+    status: workspaceStatus().notNull().default('ACTIVE'),
+    /**
+     * Current plan (M2-T11). `null` = no plan yet (every workspace until Module 8 assigns one).
+     * Not a Better Auth field: the organization plugin never reads or writes it.
+     */
+    planId: uuid().references(() => plans.id, { onDelete: 'restrict' }),
+    ...timestamps,
+  },
+  (t) => [index().on(t.planId)],
+);
 
 export const workspaceMembers = pgTable(
   'workspace_members',
@@ -76,7 +86,8 @@ export const workspaceInvitations = pgTable(
   ],
 );
 
-export const workspacesRelations = relations(workspaces, ({ many }) => ({
+export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
+  plan: one(plans, { fields: [workspaces.planId], references: [plans.id] }),
   members: many(workspaceMembers),
   invitations: many(workspaceInvitations),
 }));
@@ -92,4 +103,8 @@ export const workspaceInvitationsRelations = relations(workspaceInvitations, ({ 
     references: [workspaces.id],
   }),
   inviter: one(users, { fields: [workspaceInvitations.inviterId], references: [users.id] }),
+}));
+
+export const plansRelations = relations(plans, ({ many }) => ({
+  workspaces: many(workspaces),
 }));
