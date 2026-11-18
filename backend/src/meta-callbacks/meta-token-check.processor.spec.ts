@@ -1,5 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { type Job, UnrecoverableError } from 'bullmq';
+import type {
+  RawPayloadPurgeOutcome,
+  RawPayloadPurgeService,
+} from '../comments/raw-payload-purge.js';
 import { QUEUE_NAMES } from '../queue/queue.constants.js';
 import type { MetaDataDeletionService } from './meta-data-deletion.service.js';
 import {
@@ -8,11 +12,24 @@ import {
   parseMetaDataDeletionJob,
 } from './meta-data-deletion.job.js';
 import {
+  isScheduledJobData,
+  META_DEBUG_TOKEN_JOB_NAME,
+  META_SCHEDULED_JOBS,
+  RAW_PAYLOAD_PURGE_JOB_NAME,
+  SCHEDULE_TIME_ZONE,
+} from './meta-scheduled.jobs.js';
+import {
   MetaTokenCheckProcessor,
   type MetaTokenCheckResult,
 } from './meta-token-check.processor.js';
+import type {
+  MetaTokenCheckService,
+  TokenCheckOutcome,
+} from './meta-token-check.service.js';
 
 type Execute = MetaDataDeletionService['execute'];
+type RunTokenCheck = MetaTokenCheckService['run'];
+type RunPurge = RawPayloadPurgeService['run'];
 const REQUEST_ID = '0195a1b2-0000-7000-8000-000000000001';
 
 const job = (overrides: Partial<Job> = {}) =>
@@ -54,15 +71,50 @@ describe('meta data deletion job contract', () => {
   });
 });
 
+describe('scheduled job contract', () => {
+  it('debug-token daily 03:00 and purge daily 03:30, Asia/Dhaka, stable ids', () => {
+    expect(SCHEDULE_TIME_ZONE).toBe('Asia/Dhaka');
+    expect(META_SCHEDULED_JOBS).toEqual([
+      {
+        schedulerId: 'meta-debug-token-daily',
+        name: META_DEBUG_TOKEN_JOB_NAME,
+        pattern: '0 3 * * *',
+      },
+      {
+        schedulerId: 'raw-payload-purge-daily',
+        name: RAW_PAYLOAD_PURGE_JOB_NAME,
+        pattern: '30 3 * * *',
+      },
+    ]);
+  });
+
+  it.each([
+    [undefined, true],
+    [null, true],
+    [{}, true],
+    [[], false],
+    ['x', false],
+    [1, false],
+  ])('data %j accepted: %s', (data, ok) => {
+    expect(isScheduledJobData(data)).toBe(ok);
+  });
+});
+
 describe('MetaTokenCheckProcessor', () => {
   const execute = vi.fn<Execute>();
-  const processor = new MetaTokenCheckProcessor({
-    execute,
-  } as unknown as MetaDataDeletionService);
+  const runTokenCheck = vi.fn<RunTokenCheck>();
+  const runPurge = vi.fn<RunPurge>();
+  const processor = new MetaTokenCheckProcessor(
+    { execute } as unknown as MetaDataDeletionService,
+    { run: runTokenCheck } as unknown as MetaTokenCheckService,
+    { run: runPurge } as unknown as RawPayloadPurgeService,
+  );
   let logs: string[];
 
   beforeEach(() => {
     execute.mockReset();
+    runTokenCheck.mockReset();
+    runPurge.mockReset();
     logs = [];
     for (const level of ['log', 'warn', 'error', 'debug'] as const) {
       vi.spyOn(Logger.prototype, level).mockImplementation((message) => {
@@ -105,9 +157,94 @@ describe('MetaTokenCheckProcessor', () => {
 
   it('unknown job name → UnrecoverableError, no work', async () => {
     await expect(
-      processor.process(job({ name: 'debug-token' })),
+      processor.process(job({ name: 'debug_token' })),
     ).rejects.toBeInstanceOf(UnrecoverableError);
     expect(execute).not.toHaveBeenCalled();
+    expect(runTokenCheck).not.toHaveBeenCalled();
+    expect(runPurge).not.toHaveBeenCalled();
+  });
+
+  const scheduled = (name: string, data: unknown = {}) =>
+    job({ id: `repeat:${name}:1`, name, data });
+
+  it('debug-token runs the token check and logs counts', async () => {
+    const outcome: TokenCheckOutcome = {
+      kind: 'token_check',
+      rateLimited: true,
+      counts: {
+        checked: 4,
+        unchanged: 1,
+        toActive: 1,
+        toNeedsReauth: 1,
+        expiryRefreshed: 0,
+        raced: 0,
+        graphErrors: 1,
+        undecryptable: 0,
+        notChecked: 3,
+      },
+    };
+    runTokenCheck.mockResolvedValue(outcome);
+    expect(await processor.process(scheduled(META_DEBUG_TOKEN_JOB_NAME))).toBe(
+      outcome,
+    );
+    expect(execute).not.toHaveBeenCalled();
+    expect(runPurge).not.toHaveBeenCalled();
+    expect(logs.join('\n')).toContain(
+      'Token check: 4 checked, 1 unchanged, 1 → ACTIVE, 1 → NEEDS_REAUTH',
+    );
+    expect(logs.join('\n')).toContain('3 not checked (rate limited)');
+  });
+
+  it('debug-token passes a skipped run through', async () => {
+    runTokenCheck.mockResolvedValue({
+      kind: 'token_check_skipped',
+      reason: 'meta_not_configured',
+    });
+    expect(
+      await processor.process(scheduled(META_DEBUG_TOKEN_JOB_NAME)),
+    ).toEqual({ kind: 'token_check_skipped', reason: 'meta_not_configured' });
+  });
+
+  it('raw-payload-purge runs the purge and logs counts', async () => {
+    const outcome: RawPayloadPurgeOutcome = {
+      kind: 'raw_payload_purge',
+      cutoff: '2026-10-19T00:00:00.000Z',
+      purged: 1500,
+      batches: 2,
+      complete: true,
+    };
+    runPurge.mockResolvedValue(outcome);
+    expect(await processor.process(scheduled(RAW_PAYLOAD_PURGE_JOB_NAME))).toBe(
+      outcome,
+    );
+    expect(runTokenCheck).not.toHaveBeenCalled();
+    expect(logs.join('\n')).toContain(
+      'raw_payload purge: 1500 comment(s) cleared in 2 batch(es)',
+    );
+  });
+
+  it.each([META_DEBUG_TOKEN_JOB_NAME, RAW_PAYLOAD_PURGE_JOB_NAME])(
+    '%s with invalid data → UnrecoverableError, no work',
+    async (name) => {
+      await expect(
+        processor.process(scheduled(name, 'nope')),
+      ).rejects.toBeInstanceOf(UnrecoverableError);
+      expect(runTokenCheck).not.toHaveBeenCalled();
+      expect(runPurge).not.toHaveBeenCalled();
+    },
+  );
+
+  it('scheduled job: permanent DB error → UnrecoverableError, retryable rethrown', async () => {
+    runPurge.mockRejectedValueOnce(pgError('42703'));
+    await expect(
+      processor.process(scheduled(RAW_PAYLOAD_PURGE_JOB_NAME)),
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+    expect(logs.join('\n')).not.toContain('10000000000001');
+    const retryable = pgError('ECONNREFUSED');
+    runTokenCheck.mockRejectedValueOnce(retryable);
+    await expect(
+      processor.process(scheduled(META_DEBUG_TOKEN_JOB_NAME)),
+    ).rejects.toBe(retryable);
   });
 
   it('invalid data → UnrecoverableError, no work', async () => {

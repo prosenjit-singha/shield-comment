@@ -6,6 +6,10 @@ import {
   errorCode,
   isPermanentDbError,
 } from '../comments/comment-ingest.rules.js';
+import {
+  type RawPayloadPurgeOutcome,
+  RawPayloadPurgeService,
+} from '../comments/raw-payload-purge.js';
 import { QUEUE_NAMES } from '../queue/queue.constants.js';
 import {
   type DataDeletionOutcome,
@@ -15,16 +19,26 @@ import {
   META_DATA_DELETION_JOB_NAME,
   parseMetaDataDeletionJob,
 } from './meta-data-deletion.job.js';
+import {
+  isScheduledJobData,
+  META_DEBUG_TOKEN_JOB_NAME,
+  RAW_PAYLOAD_PURGE_JOB_NAME,
+} from './meta-scheduled.jobs.js';
+import {
+  MetaTokenCheckService,
+  type TokenCheckOutcome,
+} from './meta-token-check.service.js';
 
 const ERROR_LOG_INTERVAL_MS = 5 * 60 * 1000;
 
 /** What a `meta-token-check` job returned (one variant per job name). */
-export type MetaTokenCheckResult = DataDeletionOutcome;
+export type MetaTokenCheckResult =
+  DataDeletionOutcome | TokenCheckOutcome | RawPayloadPurgeOutcome;
 
 /**
  * The one worker of the `meta-token-check` queue (D3; in the API process). BullMQ runs one worker
- * per queue, so jobs are dispatched by name: M4-T6 `data-deletion` (Module 4 D6); M4-T7 adds the
- * scheduled `debug_token` check and the `raw_payload` purge **here**. Unknown name / invalid data /
+ * per queue, so jobs are dispatched by name: M4-T6 `data-deletion` (Module 4 D6); M4-T7 the
+ * scheduled `debug-token` check (D8) and `raw-payload-purge` (D4). Unknown name / invalid data /
  * permanent DB error → `UnrecoverableError` (no retries); anything else is retried (5 attempts).
  * Logs carry ids, counts and error codes only.
  *
@@ -35,7 +49,11 @@ export class MetaTokenCheckProcessor extends WorkerHost {
   private readonly logger = new Logger('MetaTokenCheck');
   private lastWorkerError: { message: string; at: number } | undefined;
 
-  constructor(private readonly dataDeletion: MetaDataDeletionService) {
+  constructor(
+    private readonly dataDeletion: MetaDataDeletionService,
+    private readonly tokenCheck: MetaTokenCheckService,
+    private readonly purge: RawPayloadPurgeService,
+  ) {
     super();
   }
 
@@ -45,6 +63,10 @@ export class MetaTokenCheckProcessor extends WorkerHost {
     switch (job.name) {
       case META_DATA_DELETION_JOB_NAME:
         return this.runDataDeletion(job);
+      case META_DEBUG_TOKEN_JOB_NAME:
+        return this.runScheduled(job, () => this.runTokenCheck());
+      case RAW_PAYLOAD_PURGE_JOB_NAME:
+        return this.runScheduled(job, () => this.runPurge());
       default:
         this.logger.warn(`Job ${job.id ?? '?'} rejected: unknown name`);
         throw new UnrecoverableError(
@@ -87,6 +109,47 @@ export class MetaTokenCheckProcessor extends WorkerHost {
         this.logger.warn(`Data deletion ${data.requestId}: request not found`);
         break;
     }
+    return outcome;
+  }
+
+  /** Shared guard of the scheduled jobs: data must be empty; permanent DB errors aren't retried. */
+  private async runScheduled<T>(job: Job, work: () => Promise<T>): Promise<T> {
+    if (!isScheduledJobData(job.data)) {
+      this.logger.warn(`Job ${job.id ?? '?'} rejected: invalid data`);
+      throw new UnrecoverableError(`${job.name}: invalid job data`);
+    }
+    try {
+      return await work();
+    } catch (error) {
+      if (isPermanentDbError(error)) {
+        const code = errorCode(error) ?? 'unknown';
+        this.logger.error(
+          `${job.name} rejected by the database (${code}); not retried`,
+        );
+        throw new UnrecoverableError(
+          `${job.name}: database rejected the change (${code})`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async runTokenCheck(): Promise<TokenCheckOutcome> {
+    const outcome = await this.tokenCheck.run();
+    if (outcome.kind === 'token_check') {
+      const c = outcome.counts;
+      this.logger.log(
+        `Token check: ${c.checked} checked, ${c.unchanged} unchanged, ${c.toActive} → ACTIVE, ${c.toNeedsReauth} → NEEDS_REAUTH, ${c.expiryRefreshed} expiry refreshed, ${c.raced} raced, ${c.graphErrors} Graph error(s), ${c.undecryptable} undecryptable, ${c.notChecked} not checked${outcome.rateLimited ? ' (rate limited)' : ''}`,
+      );
+    }
+    return outcome;
+  }
+
+  private async runPurge(): Promise<RawPayloadPurgeOutcome> {
+    const outcome = await this.purge.run();
+    this.logger.log(
+      `raw_payload purge: ${outcome.purged} comment(s) cleared in ${outcome.batches} batch(es), cutoff ${outcome.cutoff}${outcome.complete ? '' : ' (batch cap reached, rest next run)'}`,
+    );
     return outcome;
   }
 

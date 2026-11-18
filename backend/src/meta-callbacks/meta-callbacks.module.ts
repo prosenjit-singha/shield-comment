@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { CommentsModule } from '../comments/comments.module.js';
+import { TokenCipherModule } from '../crypto/token-cipher.module.js';
+import { MetaGraphModule } from '../meta/meta-graph.module.js';
 import {
   createMetaCallbacksConfig,
   META_CALLBACKS_CONFIG,
@@ -8,7 +11,9 @@ import {
 import { MetaCallbacksController } from './meta-callbacks.controller.js';
 import { MetaDataDeletionService } from './meta-data-deletion.service.js';
 import { MetaDeauthorizeService } from './meta-deauthorize.service.js';
+import { MetaJobSchedulers } from './meta-job-schedulers.js';
 import { MetaTokenCheckProcessor } from './meta-token-check.processor.js';
+import { MetaTokenCheckService } from './meta-token-check.service.js';
 
 /**
  * Rate limit of the Meta callbacks, per client IP and per route (in-memory, per API process;
@@ -18,11 +23,17 @@ export const META_CALLBACK_THROTTLE = { ttl: 60_000, limit: 30 } as const;
 
 /**
  * Meta Deauthorize + Data Deletion callbacks (Module 4 D6, M4-T6) and the `meta-token-check`
- * worker (Data Deletion job now; M4-T7 adds the scheduled jobs). Queues come from the global
- * `QueueModule`. Startup never fails when `META_APP_SECRET` is unset (the POSTs answer 503).
+ * worker: Data Deletion job + the M4-T7 scheduled jobs (`debug-token` check, `raw-payload-purge`)
+ * registered at startup by `MetaJobSchedulers`. Queues come from the global `QueueModule`.
+ * Startup never fails when `META_APP_SECRET`, the Meta app, the cipher or Redis are missing.
  */
 @Module({
-  imports: [ThrottlerModule.forRoot([{ ...META_CALLBACK_THROTTLE }])],
+  imports: [
+    ThrottlerModule.forRoot([{ ...META_CALLBACK_THROTTLE }]),
+    MetaGraphModule,
+    TokenCipherModule,
+    CommentsModule,
+  ],
   controllers: [MetaCallbacksController],
   providers: [
     {
@@ -32,7 +43,9 @@ export const META_CALLBACK_THROTTLE = { ttl: 60_000, limit: 30 } as const;
     },
     MetaDeauthorizeService,
     MetaDataDeletionService,
+    MetaTokenCheckService,
     MetaTokenCheckProcessor,
+    MetaJobSchedulers,
   ],
 })
 export class MetaCallbacksModule {}

@@ -380,6 +380,112 @@ describe('MetaGraphClient', () => {
     });
   });
 
+  describe('debugToken', () => {
+    const APP_TOKEN = `${CONFIG.appId}|${CONFIG.appSecret}`;
+
+    it('calls /debug_token with the app access token, no appsecret_proof', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse(200, {
+          data: {
+            app_id: CONFIG.appId,
+            type: 'USER',
+            is_valid: true,
+            expires_at: 1_800_000_000,
+            data_access_expires_at: 1_810_000_000,
+            scopes: ['pages_show_list', 'instagram_basic'],
+            user_id: '10000000000001',
+          },
+        }),
+      );
+      const info = await client.debugToken(USER_TOKEN);
+      expect(info).toEqual({
+        isValid: true,
+        expiresAt: new Date(1_800_000_000_000),
+        scopes: ['pages_show_list', 'instagram_basic'],
+      });
+      const url = calledUrl();
+      expect(url.origin + url.pathname).toBe(
+        `https://graph.facebook.com/${CONFIG.graphApiVersion}/debug_token`,
+      );
+      expect(url.searchParams.get('input_token')).toBe(USER_TOKEN);
+      expect(url.searchParams.get('access_token')).toBe(APP_TOKEN);
+      expect(url.searchParams.has('appsecret_proof')).toBe(false);
+    });
+
+    it('an invalid token is a result (is_valid false), not an error', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse(200, {
+          data: {
+            is_valid: false,
+            expires_at: 0,
+            error: { code: 190, subcode: 460, message: 'Session invalid' },
+          },
+        }),
+      );
+      expect(await client.debugToken(USER_TOKEN)).toEqual({
+        isValid: false,
+        expiresAt: null,
+        scopes: [],
+      });
+    });
+
+    it('drops non-string scopes and treats expires_at 0 as no expiry', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse(200, {
+          data: { is_valid: true, expires_at: 0, scopes: ['a', 7, '', null] },
+        }),
+      );
+      expect(await client.debugToken(USER_TOKEN)).toEqual({
+        isValid: true,
+        expiresAt: null,
+        scopes: ['a'],
+      });
+    });
+
+    it.each([[{}], [{ data: null }], [{ data: { is_valid: 'yes' } }], [[]]])(
+      'a body like %j is unexpected_response',
+      async (body) => {
+        fetchMock.mockResolvedValue(jsonResponse(200, body));
+        expect(await caught(client.debugToken(USER_TOKEN))).toMatchObject({
+          kind: 'unexpected_response',
+        });
+      },
+    );
+
+    it.each([
+      [190, 'token_invalid', false],
+      [4, 'rate_limited', true],
+      [1, 'transient', true],
+    ] as const)(
+      'Graph error #%i → %s, app secret + tokens scrubbed',
+      async (code, kind, retryable) => {
+        fetchMock.mockResolvedValue(
+          graphError(400, {
+            message: `Bad ${APP_TOKEN} / ${CONFIG.appSecret} / ${USER_TOKEN}`,
+            code,
+          }),
+        );
+        const error = await caught(client.debugToken(USER_TOKEN));
+        expect(error).toMatchObject({ kind, retryable });
+        expect(error.message).not.toContain(CONFIG.appSecret);
+        expect(error.message).not.toContain(USER_TOKEN);
+        expect(error.message).not.toContain(CONFIG.appId + '|');
+      },
+    );
+
+    it('network failure → network error without the URL', async () => {
+      fetchMock.mockRejectedValue(new TypeError(`failed ${APP_TOKEN}`));
+      const error = await caught(client.debugToken(USER_TOKEN));
+      expect(error).toMatchObject({ kind: 'network', retryable: true });
+      expect(error.message).not.toContain(CONFIG.appSecret);
+    });
+
+    it('rejects an empty token without calling fetch', async () => {
+      await expect(client.debugToken('')).rejects.toThrow('Token');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe('errors', () => {
     it.each([
       [190, 463, 'token_invalid', false],

@@ -1,7 +1,8 @@
-import { and, asc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import {
   comments,
+  type MetaConnectionStatus,
   metaConnections,
   metaDataDeletionRequests,
   type MetaDataDeletionStatus,
@@ -11,9 +12,9 @@ import {
 } from '../db/schema/index.js';
 
 /**
- * Queries behind the Deauthorize + Data Deletion callbacks (M4-T6). The only unscoped reads are the
- * routing reads by `facebook_user_id` (ids only); everything after them is scoped by
- * `workspace_id`.
+ * Queries behind the Deauthorize + Data Deletion callbacks (M4-T6) and the `debug_token` check
+ * (M4-T7). The only unscoped reads are the routing reads by `facebook_user_id` (ids only) and the
+ * token check's system-wide page of connections; every write is scoped by `workspace_id`.
  */
 
 /** A database or a transaction. */
@@ -334,4 +335,97 @@ export async function completeDeletionRequest(
     .update(metaDataDeletionRequests)
     .set({ status: 'COMPLETED', completedAt: now, updatedAt: now })
     .where(eq(metaDataDeletionRequests.id, requestId));
+}
+
+/** A connection the daily `debug_token` check looks at (M4-T7). */
+export interface TokenCheckRow {
+  id: string;
+  workspaceId: string;
+  facebookUserId: string;
+  status: MetaConnectionStatus;
+  encryptedUserAccessToken: string;
+  tokenExpiresAt: Date | null;
+}
+
+/**
+ * System job read (M4-T7, D8): one page of ACTIVE + NEEDS_REAUTH connections that hold a user
+ * token, across all workspaces (keyset on the UUIDv7 `id`, so new rows land at the end). REVOKED
+ * rows are never read. The writes that follow are scoped by `workspace_id` + `id`.
+ */
+export async function listConnectionsForTokenCheck(
+  executor: CallbacksExecutor,
+  afterId: string | null,
+  limit: number,
+): Promise<TokenCheckRow[]> {
+  const rows = await executor
+    .select({
+      id: metaConnections.id,
+      workspaceId: metaConnections.workspaceId,
+      facebookUserId: metaConnections.facebookUserId,
+      status: metaConnections.status,
+      encryptedUserAccessToken: metaConnections.encryptedUserAccessToken,
+      tokenExpiresAt: metaConnections.tokenExpiresAt,
+    })
+    .from(metaConnections)
+    .where(
+      and(
+        inArray(metaConnections.status, ['ACTIVE', 'NEEDS_REAUTH']),
+        isNotNull(metaConnections.encryptedUserAccessToken),
+        afterId === null ? undefined : gt(metaConnections.id, afterId),
+      ),
+    )
+    .orderBy(asc(metaConnections.id))
+    .limit(limit);
+  return rows.flatMap((row) =>
+    row.encryptedUserAccessToken === null
+      ? []
+      : [{ ...row, encryptedUserAccessToken: row.encryptedUserAccessToken }],
+  );
+}
+
+export interface TokenCheckUpdate {
+  workspaceId: string;
+  connectionId: string;
+  /** Status + token the check read; the UPDATE only applies if both are still the same. */
+  observedStatus: MetaConnectionStatus;
+  observedToken: string;
+  status: Extract<MetaConnectionStatus, 'ACTIVE' | 'NEEDS_REAUTH'>;
+  /** `undefined` = keep the stored expiry. */
+  tokenExpiresAt: Date | null | undefined;
+  now: Date;
+}
+
+/**
+ * Writes a `debug_token` verdict (M4-T7) as one conditional UPDATE: the row lock it takes
+ * re-checks status + token, so a concurrent Deauthorize (REVOKED, token cleared) or re-connect
+ * (new token) wins and this becomes a no-op. `status_changed_at` moves only when the status does.
+ * Single statement, one row lock: no lock-order issue with the workspace → connection callers.
+ * `true` = the row changed.
+ */
+export async function applyTokenCheckResult(
+  executor: CallbacksExecutor,
+  update: TokenCheckUpdate,
+): Promise<boolean> {
+  const rows = await executor
+    .update(metaConnections)
+    .set({
+      status: update.status,
+      ...(update.status === update.observedStatus
+        ? {}
+        : { statusChangedAt: update.now }),
+      ...(update.tokenExpiresAt === undefined
+        ? {}
+        : { tokenExpiresAt: update.tokenExpiresAt }),
+      updatedAt: update.now,
+    })
+    .where(
+      and(
+        eq(metaConnections.workspaceId, update.workspaceId),
+        eq(metaConnections.id, update.connectionId),
+        eq(metaConnections.status, update.observedStatus),
+        eq(metaConnections.encryptedUserAccessToken, update.observedToken),
+      ),
+    )
+    .returning({ id: metaConnections.id });
+  return rows.length > 0;
 }

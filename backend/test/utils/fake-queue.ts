@@ -1,12 +1,18 @@
 import { getQueueToken } from '@nestjs/bullmq';
 import type { INestApplication } from '@nestjs/common';
 import type { TestingModuleBuilder } from '@nestjs/testing';
-import type { JobsOptions } from 'bullmq';
+import type { JobsOptions, RepeatOptions } from 'bullmq';
 import {
   ALL_QUEUE_NAMES,
   DEFAULT_JOB_OPTIONS,
   type QueueName,
 } from '../../src/queue/queue.constants.js';
+
+export interface FakeJobScheduler {
+  id: string;
+  repeat: Omit<RepeatOptions, 'key'>;
+  template: { name?: string; data?: unknown; opts?: JobsOptions };
+}
 
 export interface FakeJob {
   id: string;
@@ -23,6 +29,8 @@ export interface FakeJob {
  */
 export class FakeQueue {
   readonly jobs: FakeJob[] = [];
+  /** Job schedulers by id (`upsertJobScheduler`; registered at boot, so `reset()` keeps them). */
+  readonly schedulers = new Map<string, FakeJobScheduler>();
   closed = false;
   private extraCounts: Record<string, number> = {};
   private countsError: Error | null = null;
@@ -58,6 +66,20 @@ export class FakeQueue {
     return Promise.all(
       jobs.map((job) => this.add(job.name, job.data, job.opts)),
     );
+  }
+
+  /** Like BullMQ: creates or replaces the scheduler with that id (adds no job here). */
+  upsertJobScheduler(
+    id: string,
+    repeat: Omit<RepeatOptions, 'key'>,
+    template: FakeJobScheduler['template'] = {},
+  ): Promise<undefined> {
+    this.schedulers.set(id, { id, repeat, template });
+    return Promise.resolve(undefined);
+  }
+
+  getJobSchedulers(): Promise<FakeJobScheduler[]> {
+    return Promise.resolve([...this.schedulers.values()]);
   }
 
   /** Makes `add`/`addBulk` reject with `error`, or never settle (`'hang'`, Redis down); `null` restores. */

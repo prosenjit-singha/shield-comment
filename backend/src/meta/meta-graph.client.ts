@@ -37,6 +37,15 @@ export interface MetaPageAccount {
   instagram: { id: string; username: string | null } | null;
 }
 
+/** `GET /debug_token` result for a user token (M4-T7, Module 4 D8). */
+export interface MetaTokenDebugInfo {
+  isValid: boolean;
+  /** `null` when Meta reports no expiry (`expires_at` 0 or missing). */
+  expiresAt: Date | null;
+  /** Permissions the token carries (may be empty for an invalid token). */
+  scopes: string[];
+}
+
 export interface MetaPermissions {
   granted: string[];
   /** `declined` and `expired` permissions. */
@@ -204,6 +213,39 @@ export class MetaGraphClient {
       else result.declined.push(item.permission);
     }
     return result;
+  }
+
+  /**
+   * `GET /debug_token?input_token=<user token>` with the app access token `app_id|app_secret`
+   * (M4-T7, D8). No `appsecret_proof`: the app token already carries the secret, and "Require App
+   * Secret" only asks for a proof on user/Page-token calls. An invalid or expired user token is a
+   * 200 with `is_valid: false` (not an error); Graph errors (e.g. a rejected app token) throw
+   * `MetaGraphError` like every other call. Neither token nor secret reaches logs or errors.
+   */
+  async debugToken(userToken: string): Promise<MetaTokenDebugInfo> {
+    const config = this.requireConfig();
+    if (!nonEmpty(userToken)) throw new Error('Token must not be empty');
+    const appToken = `${config.appId}|${config.appSecret}`;
+    const body = await this.get(
+      'debug_token',
+      { input_token: userToken, access_token: appToken },
+      // The app token first: it contains the secret, so scrubbing the secret first would leave the id.
+      [appToken, config.appSecret, userToken],
+    );
+    const data = isRecord(body) && isRecord(body.data) ? body.data : null;
+    if (!data || typeof data.is_valid !== 'boolean') {
+      throw unexpected('bad /debug_token body');
+    }
+    const expiresAt =
+      typeof data.expires_at === 'number' &&
+      Number.isFinite(data.expires_at) &&
+      data.expires_at > 0
+        ? new Date(data.expires_at * 1000)
+        : null;
+    const scopes = Array.isArray(data.scopes)
+      ? data.scopes.filter(nonEmpty)
+      : [];
+    return { isValid: data.is_valid, expiresAt, scopes };
   }
 
   private parseToken(body: unknown): MetaAccessToken {
