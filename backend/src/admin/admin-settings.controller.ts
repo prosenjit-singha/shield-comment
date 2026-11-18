@@ -5,10 +5,20 @@ import {
   Param,
   Patch,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import { Session } from '@thallesp/nestjs-better-auth';
+import type { Request } from 'express';
+import type { AuthSession } from '../auth/auth-session.js';
 import { SuperAdminGuard } from '../auth/guards/super-admin.guard.js';
+import { requestIp } from './admin-impersonation.service.js';
+import { auditUserAgent } from './plan-rules.js';
 import { AdminPlansService } from './admin-plans.service.js';
+import {
+  ListPlanAuditQueryDto,
+  type PlanAuditList,
+} from './dto/plan-audit.dto.js';
 import {
   type AdminPlansResponse,
   type AdminPlanUpdateResponse,
@@ -16,7 +26,10 @@ import {
   UpdatePlanDto,
 } from './dto/plans.dto.js';
 
-/** A7 `/admin/settings` API (M2-T11). Response types: `src/admin/dto/plans.dto.ts`. */
+/**
+ * A7 `/admin/settings` API (M2-T11, audit log M2-T15). Response types: `src/admin/dto/plans.dto.ts`
+ * and `src/admin/dto/plan-audit.dto.ts`.
+ */
 @Controller('admin/settings')
 @UseGuards(SuperAdminGuard)
 export class AdminSettingsController {
@@ -32,14 +45,30 @@ export class AdminSettingsController {
   }
 
   /**
+   * Plan edit history `{ items, total, skip, take }`, newest first; `planId` filters one plan.
+   * Declared before `plans/:planId` for readability (that route is PATCH only, so no clash).
+   */
+  @Get('plans/audit')
+  listPlanAudit(@Query() query: ListPlanAuditQueryDto): Promise<PlanAuditList> {
+    return this.plans.listAudit(query);
+  }
+
+  /**
    * One plan per request (the A7 editor saves each plan card on its own): partial body →
-   * `{ plan }`. 400 invalid / empty / offer > original, 404 unknown plan.
+   * `{ plan }`. 400 invalid / empty / offer > original, 404 unknown plan. A real change writes a
+   * `plan_audit_logs` row (who, changed fields before → after, IP, user agent); a no-op doesn't.
    */
   @Patch('plans/:planId')
   updatePlan(
     @Param('planId') planId: string,
     @Body() body: UpdatePlanDto,
+    @Session() session: AuthSession,
+    @Req() req: Request,
   ): Promise<AdminPlanUpdateResponse> {
-    return this.plans.update(planId, body);
+    return this.plans.update(planId, body, {
+      adminId: session.user.id,
+      ipAddress: requestIp(req),
+      userAgent: auditUserAgent(req.headers['user-agent']),
+    });
   }
 }

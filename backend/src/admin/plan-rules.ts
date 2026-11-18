@@ -1,6 +1,8 @@
 import {
+  PLAN_AUDIT_USER_AGENT_MAX,
   PLAN_FEATURE_KEYS,
   PLAN_LIMIT_KEYS,
+  type PlanAuditChange,
   type PlanFeatureConfig,
 } from '../db/schema/index.js';
 import type { AdminPlan, UpdatePlanDto } from './dto/plans.dto.js';
@@ -102,6 +104,59 @@ export function offerPriceError(values: PlanEditableValues): string | null {
     return `offerPriceBdt (${values.offerPriceBdt}) must not be greater than originalPriceBdt (${values.originalPriceBdt})`;
   }
   return null;
+}
+
+/**
+ * Fields that differ between the stored and the merged values (M2-T15 audit log), in
+ * `PLAN_AUDIT_FIELDS` order. Feature config is compared leaf by leaf on normalized configs, so a
+ * PATCH that re-sends the stored values yields `[]` (no-op: no update, no audit row).
+ */
+export function diffPlanValues(
+  before: PlanEditableValues,
+  after: PlanEditableValues,
+): PlanAuditChange[] {
+  const changes: PlanAuditChange[] = [];
+  for (const field of [
+    'originalPriceBdt',
+    'offerPriceBdt',
+    'offerBadge',
+  ] as const) {
+    if (before[field] !== after[field]) {
+      changes.push({ field, before: before[field], after: after[field] });
+    }
+  }
+  const from = normalizeFeatureConfig(before.featureConfig);
+  const to = normalizeFeatureConfig(after.featureConfig);
+  for (const key of PLAN_LIMIT_KEYS) {
+    if (from.limits[key] !== to.limits[key]) {
+      changes.push({
+        field: `featureConfig.limits.${key}`,
+        before: from.limits[key],
+        after: to.limits[key],
+      });
+    }
+  }
+  for (const key of PLAN_FEATURE_KEYS) {
+    if (from.features[key] !== to.features[key]) {
+      changes.push({
+        field: `featureConfig.features.${key}`,
+        before: from.features[key],
+        after: to.features[key],
+      });
+    }
+  }
+  return changes;
+}
+
+/** `User-Agent` header for the audit row: trimmed, ≤ 512 chars, `null` when absent/blank. */
+export function auditUserAgent(
+  header: string | string[] | undefined,
+): string | null {
+  const value = (Array.isArray(header) ? header[0] : header)?.trim();
+  // Cut by code point (not UTF-16 unit) so a surrogate pair is never split.
+  return value
+    ? Array.from(value).slice(0, PLAN_AUDIT_USER_AGENT_MAX).join('')
+    : null;
 }
 
 export function toAdminPlan(row: PlanRow): AdminPlan {

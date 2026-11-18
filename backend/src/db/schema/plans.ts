@@ -16,7 +16,9 @@ import { id, timestamps } from './columns.js';
  * relations live in workspaces.ts so this file has no imports from other schema files.
  *
  * The four tiers (free/starter/growth/pro) are seeded by migration `0007_seed_plans` with
- * `ON CONFLICT (slug) DO NOTHING`, so admin edits are never overwritten.
+ * `ON CONFLICT (slug) DO NOTHING`, so admin edits are never overwritten. `0008_plan_launch_offers`
+ * (M2-T15) adds the launch offers (Starter ~~৳999~~ ৳499, Growth ~~৳2,499~~ ৳1,499, Pro ~~৳5,999~~
+ * ৳3,999) only to plans still at their seed values. Every admin edit is logged in `plan_audit_logs`.
  */
 
 /** Numeric limits per plan (`feature_config.limits`). Rows 1–3 of the landing pricing matrix. */

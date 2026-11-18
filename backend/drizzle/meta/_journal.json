@@ -57,6 +57,20 @@
       "when": 1794976780255,
       "tag": "0007_seed_plans",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794996391798,
+      "tag": "0008_plan_launch_offers",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794996406027,
+      "tag": "0009_plan_audit_logs",
+      "breakpoints": true
     }
   ]
 }

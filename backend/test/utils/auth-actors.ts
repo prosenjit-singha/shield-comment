@@ -9,6 +9,7 @@ import { ensureSuperAdmin } from '../../src/auth/super-admin.js';
 import type { Database } from '../../src/db/database.js';
 import {
   impersonationAuditLogs,
+  planAuditLogs,
   ticketMessages,
   tickets,
   users,
@@ -127,7 +128,7 @@ export function createAuthActors(app: INestApplication<App>) {
 
   /**
    * Deletes every tracked workspace and user (members, sessions and accounts cascade). Their
-   * impersonation and status audit rows, ticket messages and tickets go first: those FKs are
+   * impersonation, status and plan audit rows, ticket messages and tickets go first: those FKs are
    * `restrict`.
    */
   async function cleanup() {
@@ -174,6 +175,10 @@ export function createAuthActors(app: INestApplication<App>) {
     ];
     if (statusRefs.length)
       await db.delete(workspaceStatusAuditLogs).where(or(...statusRefs));
+    if (userIds.length)
+      await db
+        .delete(planAuditLogs)
+        .where(inArray(planAuditLogs.adminId, userIds));
     if (workspaceIds.length)
       await db.delete(workspaces).where(inArray(workspaces.id, workspaceIds));
     if (userIds.length)

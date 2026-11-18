@@ -1,21 +1,30 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
-import { asc, eq } from 'drizzle-orm';
+import { asc, count, desc, eq, sql } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
+import type { PlanAuditList } from '../src/admin/dto/plan-audit.dto.js';
 import type {
   AdminPlansResponse,
   AdminPlanUpdateResponse,
 } from '../src/admin/dto/plans.dto.js';
-import { plans, workspaces } from '../src/db/schema/index.js';
+import { planAuditLogs, plans, workspaces } from '../src/db/schema/index.js';
 import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
 
 const PLANS = '/api/admin/settings/plans';
+const AUDIT = `${PLANS}/audit`;
+const OFFERS_MIGRATION = join(
+  import.meta.dirname,
+  '../drizzle/0008_plan_launch_offers.sql',
+);
 const UNKNOWN_ID = '01a1ecf3-0000-7000-8000-000000000000';
 
 /**
- * M2-T11: plans table (seeded by migration `0007_seed_plans`) + A7 plan settings API.
- * Every plan this spec edits is restored in `afterAll`, so the test DB keeps exactly the
- * seeded rows.
+ * M2-T11: plans table (seeded by migration `0007_seed_plans`, launch offers `0008_plan_launch_offers`)
+ * + A7 plan settings API; M2-T15: plan audit log. Every plan this spec edits is restored in
+ * `afterAll` and its audit rows are removed by `cleanup()`, so the test DB keeps exactly the
+ * seeded rows and no audit rows.
  */
 describe('Admin plan settings (e2e)', () => {
   let app: INestApplication<App>;
@@ -29,6 +38,14 @@ describe('Admin plan settings (e2e)', () => {
   const readPlans = () =>
     actors.db.select().from(plans).orderBy(asc(plans.sortOrder));
   const planBySlug = (slug: string) => seeded.find((p) => p.slug === slug)!;
+  const auditRows = (planId?: string) =>
+    actors.db
+      .select()
+      .from(planAuditLogs)
+      .where(planId ? eq(planAuditLogs.planId, planId) : undefined)
+      .orderBy(desc(planAuditLogs.createdAt), desc(planAuditLogs.id));
+  const auditCount = async () =>
+    (await actors.db.select({ n: count() }).from(planAuditLogs))[0]!.n;
   const patch = (id: string, body: unknown, cookie = superAdmin.cookie) =>
     http()
       .patch(`${PLANS}/${id}`)
@@ -55,15 +72,74 @@ describe('Admin plan settings (e2e)', () => {
     await app?.close();
   });
 
-  it('the migration seeded the four tiers with the agreed monthly prices', () => {
+  it('the migrations seeded the four tiers with the launch offers (client.md §7)', async () => {
     expect(
-      seeded.map((p) => [p.slug, p.name, p.originalPriceBdt, p.offerPriceBdt]),
+      seeded.map((p) => [
+        p.slug,
+        p.name,
+        p.originalPriceBdt,
+        p.offerPriceBdt,
+        p.offerBadge,
+      ]),
     ).toEqual([
-      ['free', 'Free', 0, null],
-      ['starter', 'Starter', 499, null],
-      ['growth', 'Growth', 1499, null],
-      ['pro', 'Pro', 3999, null],
+      ['free', 'Free', 0, null, null],
+      ['starter', 'Starter', 999, 499, '50% Launch Offer'],
+      ['growth', 'Growth', 2499, 1499, '40% Off'],
+      ['pro', 'Pro', 5999, 3999, '33% Off'],
     ]);
+    // Data migrations write no audit rows.
+    expect(await auditCount()).toBe(0);
+  });
+
+  it('the launch-offer migration is idempotent and only touches plans still at their seed values', async () => {
+    const offersSql = readFileSync(OFFERS_MIGRATION, 'utf8');
+    const rollback = new Error('rollback');
+    await expect(
+      actors.db.transaction(async (tx) => {
+        // Already applied: running it again changes nothing.
+        await tx.execute(sql.raw(offersSql));
+        expect(
+          await tx.select().from(plans).orderBy(asc(plans.sortOrder)),
+        ).toEqual(seeded);
+        // Back to the 0007 seed values, except growth (edited by an admin) and pro's badge.
+        await tx
+          .update(plans)
+          .set({ offerPriceBdt: null, offerBadge: null })
+          .where(sql`${plans.slug} in ('starter', 'growth', 'pro')`);
+        await tx
+          .update(plans)
+          .set({ originalPriceBdt: 499 })
+          .where(eq(plans.slug, 'starter'));
+        await tx
+          .update(plans)
+          .set({ originalPriceBdt: 1799 })
+          .where(eq(plans.slug, 'growth'));
+        await tx
+          .update(plans)
+          .set({ originalPriceBdt: 3999, offerBadge: 'Hand-made' })
+          .where(eq(plans.slug, 'pro'));
+        await tx.execute(sql.raw(offersSql));
+        const rows = await tx
+          .select()
+          .from(plans)
+          .orderBy(asc(plans.sortOrder));
+        expect(
+          rows.map((p) => [
+            p.slug,
+            p.originalPriceBdt,
+            p.offerPriceBdt,
+            p.offerBadge,
+          ]),
+        ).toEqual([
+          ['free', 0, null, null],
+          ['starter', 999, 499, '50% Launch Offer'],
+          ['growth', 1799, null, null],
+          ['pro', 3999, null, 'Hand-made'],
+        ]);
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+    expect(await readPlans()).toEqual(seeded);
   });
 
   describe('access', () => {
@@ -132,9 +208,9 @@ describe('Admin plan settings (e2e)', () => {
         name: 'Growth',
         sortOrder: 2,
         isActive: true,
-        originalPriceBdt: 1499,
-        offerPriceBdt: null,
-        offerBadge: null,
+        originalPriceBdt: 2499,
+        offerPriceBdt: 1499,
+        offerBadge: '40% Off',
         featureConfig: {
           limits: { connectedPages: 5, monthlyComments: 15000, teamSeats: 3 },
           features: {
@@ -172,9 +248,9 @@ describe('Admin plan settings (e2e)', () => {
     it('updates prices, badge and featureConfig and persists them', async () => {
       const growth = planBySlug('growth');
       const res = await patch(growth.id, {
-        originalPriceBdt: 2499,
-        offerPriceBdt: 1499,
-        offerBadge: '  40% Off  ',
+        originalPriceBdt: 2999,
+        offerPriceBdt: 1999,
+        offerBadge: '  33% Off  ',
         featureConfig: {
           limits: { teamSeats: 4 },
           features: { whiteLabelReports: true },
@@ -184,9 +260,9 @@ describe('Admin plan settings (e2e)', () => {
       expect(plan).toMatchObject({
         id: growth.id,
         slug: 'growth',
-        originalPriceBdt: 2499,
-        offerPriceBdt: 1499,
-        offerBadge: '40% Off',
+        originalPriceBdt: 2999,
+        offerPriceBdt: 1999,
+        offerBadge: '33% Off',
         featureConfig: {
           limits: { connectedPages: 5, monthlyComments: 15000, teamSeats: 4 },
           features: { customBlocklist: true, whiteLabelReports: true },
@@ -214,9 +290,9 @@ describe('Admin plan settings (e2e)', () => {
       }).expect(200);
       const { plan } = res.body as AdminPlanUpdateResponse;
       expect(plan).toMatchObject({
-        originalPriceBdt: 2499,
-        offerPriceBdt: 1499,
-        offerBadge: '40% Off',
+        originalPriceBdt: 2999,
+        offerPriceBdt: 1999,
+        offerBadge: '33% Off',
       });
       expect(plan.featureConfig.limits.teamSeats).toBe(4);
       expect(plan.featureConfig.features).toMatchObject({
@@ -231,7 +307,7 @@ describe('Admin plan settings (e2e)', () => {
         offerBadge: null,
       }).expect(200);
       expect((res.body as AdminPlanUpdateResponse).plan).toMatchObject({
-        originalPriceBdt: 2499,
+        originalPriceBdt: 2999,
         offerPriceBdt: null,
         offerBadge: null,
       });
@@ -253,7 +329,7 @@ describe('Admin plan settings (e2e)', () => {
         .select()
         .from(plans)
         .where(eq(plans.id, starter.id));
-      expect(row).toMatchObject({ originalPriceBdt: 499, offerPriceBdt: 299 });
+      expect(row).toMatchObject({ originalPriceBdt: 999, offerPriceBdt: 299 });
     });
 
     it.each([
@@ -279,11 +355,12 @@ describe('Admin plan settings (e2e)', () => {
         'string flag',
         { featureConfig: { features: { customBlocklist: 'yes' } } },
       ],
-    ])('400 for %s (plan unchanged)', async (_label, body) => {
+    ])('400 for %s (plan unchanged, no audit row)', async (_label, body) => {
       const pro = planBySlug('pro');
       const res = await patch(pro.id, body);
       expect(res.status).toBe(400);
       expect(res.body).not.toHaveProperty('plan');
+      expect(await auditRows(pro.id)).toEqual([]);
       const [row] = await actors.db
         .select()
         .from(plans)
@@ -292,9 +369,217 @@ describe('Admin plan settings (e2e)', () => {
     });
 
     it('404 for an unknown or malformed plan id', async () => {
+      const before = await auditCount();
       const res = await patch(UNKNOWN_ID, { originalPriceBdt: 1 }).expect(404);
       expect(res.body).toMatchObject({ message: 'Plan not found' });
       await patch('not-a-uuid', { originalPriceBdt: 1 }).expect(404);
+      expect(await auditCount()).toBe(before);
+    });
+  });
+
+  describe('audit log (M2-T15)', () => {
+    const UA = 'Mozilla/5.0 (M2-T15 e2e)';
+
+    it('a real change writes exactly one row: who, changed fields before → after, IP and UA', async () => {
+      const free = planBySlug('free');
+      const before = await auditCount();
+      const res = await patch(free.id, {
+        offerBadge: 'Always free',
+        // Same values as stored: not part of the diff.
+        originalPriceBdt: 0,
+        featureConfig: {
+          limits: { monthlyComments: 750, teamSeats: 1 },
+          features: { customBlocklist: true, banglaAiFilter: true },
+        },
+      })
+        .set('X-Forwarded-For', '203.0.113.7, 10.0.0.2')
+        .set('User-Agent', UA)
+        .expect(200);
+      // Response shape unchanged.
+      expect(Object.keys(res.body as object)).toEqual(['plan']);
+      expect(await auditCount()).toBe(before + 1);
+      const rows = await auditRows(free.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toEqual({
+        id: expect.any(String) as string,
+        planId: free.id,
+        adminId: superAdmin.id,
+        action: 'UPDATE',
+        changes: [
+          { field: 'offerBadge', before: null, after: 'Always free' },
+          {
+            field: 'featureConfig.limits.monthlyComments',
+            before: 500,
+            after: 750,
+          },
+          {
+            field: 'featureConfig.features.customBlocklist',
+            before: false,
+            after: true,
+          },
+        ],
+        ipAddress: '203.0.113.7',
+        userAgent: UA,
+        createdAt: expect.any(Date) as Date,
+      });
+    });
+
+    it('a no-op PATCH (stored values re-sent) writes no row and keeps updatedAt', async () => {
+      const [stored] = await actors.db
+        .select()
+        .from(plans)
+        .where(eq(plans.slug, 'free'));
+      const before = await auditCount();
+      const res = await patch(stored!.id, {
+        offerBadge: '  Always free ',
+        offerPriceBdt: null,
+        featureConfig: { limits: { monthlyComments: 750 } },
+      }).expect(200);
+      const { plan } = res.body as AdminPlanUpdateResponse;
+      expect(plan.updatedAt).toBe(stored!.updatedAt.toISOString());
+      expect(plan.featureConfig.limits.monthlyComments).toBe(750);
+      expect(await auditCount()).toBe(before);
+      const [row] = await actors.db
+        .select()
+        .from(plans)
+        .where(eq(plans.id, stored!.id));
+      expect(row).toEqual(stored);
+    });
+
+    it('400 (validation or offer > original) and impersonated 403 write no row', async () => {
+      const free = planBySlug('free');
+      const before = await auditCount();
+      await patch(free.id, { originalPriceBdt: 'x' }).expect(400);
+      await patch(free.id, { offerPriceBdt: 1 }).expect(400);
+      const cookie = await actors.signIn(superAdmin.email);
+      await actors.patchStoredSession(cookie, {
+        impersonatedBy: superAdmin.id,
+      });
+      await patch(free.id, { offerBadge: 'Nope' }, cookie).expect(403);
+      expect(await auditCount()).toBe(before);
+    });
+
+    it('records clearing values as → null and keeps rows per plan', async () => {
+      const growth = planBySlug('growth');
+      await patch(growth.id, {
+        offerPriceBdt: 1299,
+        offerBadge: 'Flash sale',
+      }).expect(200);
+      await patch(growth.id, { offerPriceBdt: null }).expect(200);
+      const [latest] = await auditRows(growth.id);
+      expect(latest!.changes).toEqual([
+        { field: 'offerPriceBdt', before: 1299, after: null },
+      ]);
+      expect(latest!.ipAddress).toEqual(expect.any(String));
+    });
+
+    describe('GET /audit', () => {
+      it('401 signed out, 403 for a normal user and impersonated sessions', async () => {
+        await http().get(AUDIT).expect(401);
+        await http().get(AUDIT).set('Cookie', client.cookie).expect(403);
+        const adminCookie = await actors.signIn(superAdmin.email);
+        await actors.patchStoredSession(adminCookie, {
+          impersonatedBy: superAdmin.id,
+        });
+        const ownerCookie = await actors.signIn(client.email);
+        await actors.patchStoredSession(ownerCookie, {
+          impersonatedBy: superAdmin.id,
+          activeOrganizationId: client.workspaceId,
+        });
+        for (const cookie of [adminCookie, ownerCookie]) {
+          await http().get(AUDIT).set('Cookie', cookie).expect(403);
+        }
+      });
+
+      it('lists every edit newest first with plan + admin, default paging', async () => {
+        const res = await http()
+          .get(AUDIT)
+          .set('Cookie', superAdmin.cookie)
+          .expect(200);
+        const body = res.body as PlanAuditList;
+        const rows = await auditRows();
+        expect(rows.length).toBeGreaterThanOrEqual(5);
+        expect(body).toMatchObject({ total: rows.length, skip: 0, take: 50 });
+        expect(body.items.map((i) => i.id)).toEqual(rows.map((r) => r.id));
+        const times = body.items.map((i) => Date.parse(i.createdAt));
+        expect(times).toEqual([...times].sort((a, b) => b - a));
+        // Newest = the growth "offer cleared" edit.
+        expect(body.items[0]).toEqual({
+          id: rows[0]!.id,
+          plan: { id: planBySlug('growth').id, slug: 'growth', name: 'Growth' },
+          admin: {
+            id: superAdmin.id,
+            name: expect.any(String) as string,
+            email: superAdmin.email,
+          },
+          action: 'UPDATE',
+          changes: [{ field: 'offerPriceBdt', before: 1299, after: null }],
+          ip: rows[0]!.ipAddress,
+          userAgent: rows[0]!.userAgent,
+          createdAt: rows[0]!.createdAt.toISOString(),
+        });
+        const freeEntry = body.items.find(
+          (i) => i.plan.slug === 'free' && i.userAgent === UA,
+        );
+        expect(freeEntry).toMatchObject({ ip: '203.0.113.7' });
+      });
+
+      it('pages with skip/take and filters by planId', async () => {
+        const all = await auditRows();
+        const page = await http()
+          .get(`${AUDIT}?skip=1&take=2`)
+          .set('Cookie', superAdmin.cookie)
+          .expect(200);
+        const body = page.body as PlanAuditList;
+        expect(body).toMatchObject({ total: all.length, skip: 1, take: 2 });
+        expect(body.items.map((i) => i.id)).toEqual(
+          all.slice(1, 3).map((r) => r.id),
+        );
+
+        const growth = planBySlug('growth');
+        const filtered = await http()
+          .get(`${AUDIT}?planId=${growth.id.toUpperCase()}`)
+          .set('Cookie', superAdmin.cookie)
+          .expect(200);
+        const growthRows = await auditRows(growth.id);
+        const fBody = filtered.body as PlanAuditList;
+        expect(fBody.total).toBe(growthRows.length);
+        expect(fBody.items.map((i) => i.id)).toEqual(
+          growthRows.map((r) => r.id),
+        );
+        expect(fBody.items.every((i) => i.plan.id === growth.id)).toBe(true);
+
+        const unknown = await http()
+          .get(`${AUDIT}?planId=${UNKNOWN_ID}`)
+          .set('Cookie', superAdmin.cookie)
+          .expect(200);
+        expect(unknown.body).toEqual({
+          items: [],
+          total: 0,
+          skip: 0,
+          take: 50,
+        });
+
+        const beyond = await http()
+          .get(`${AUDIT}?skip=1000`)
+          .set('Cookie', superAdmin.cookie)
+          .expect(200);
+        expect(beyond.body).toMatchObject({ items: [], total: all.length });
+      });
+
+      it.each([
+        ['unknown param', 'action=UPDATE'],
+        ['malformed planId', 'planId=not-a-uuid'],
+        ['take above 100', 'take=101'],
+        ['take 0', 'take=0'],
+        ['negative skip', 'skip=-1'],
+        ['text skip', 'skip=abc'],
+      ])('400 for %s', async (_label, query) => {
+        await http()
+          .get(`${AUDIT}?${query}`)
+          .set('Cookie', superAdmin.cookie)
+          .expect(400);
+      });
     });
   });
 

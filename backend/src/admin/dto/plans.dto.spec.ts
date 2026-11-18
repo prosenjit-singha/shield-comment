@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate, type ValidationError } from 'class-validator';
+import { ListPlanAuditQueryDto } from './plan-audit.dto.js';
 import { ListPlansQueryDto, UpdatePlanDto } from './plans.dto.js';
 
 /** Same options as the global ValidationPipe (src/app.setup.ts; Nest sets `forbidUnknownValues: false`). */
@@ -147,5 +148,40 @@ describe('UpdatePlanDto', () => {
   ])('rejects %s', async (_label, body, field) => {
     const { fields } = await check(UpdatePlanDto, body);
     expect(fields).toContain(field);
+  });
+});
+
+describe('ListPlanAuditQueryDto', () => {
+  const PLAN_ID = '01a1ecf3-2bc3-798d-b4f7-aa6b28d1f2db';
+
+  it('defaults to skip 0 / take 50 and converts query strings', async () => {
+    const empty = await check(ListPlanAuditQueryDto, {});
+    expect(empty.fields).toEqual([]);
+    expect(empty.dto).toMatchObject({ skip: 0, take: 50 });
+    const full = await check(ListPlanAuditQueryDto, {
+      skip: '20',
+      take: '100',
+      planId: PLAN_ID.toUpperCase(),
+    });
+    expect(full.fields).toEqual([]);
+    expect(full.dto).toMatchObject({
+      skip: 20,
+      take: 100,
+      planId: PLAN_ID.toUpperCase(),
+    });
+  });
+
+  it.each([
+    ['negative skip', { skip: '-1' }, 'skip'],
+    ['fractional skip', { skip: '1.5' }, 'skip'],
+    ['text skip', { skip: 'abc' }, 'skip'],
+    ['take 0', { take: '0' }, 'take'],
+    ['take above 100', { take: '101' }, 'take'],
+    ['malformed planId', { planId: 'not-a-uuid' }, 'planId'],
+    ['planId with extra chars', { planId: `${PLAN_ID}x` }, 'planId'],
+    ['planId array', { planId: [PLAN_ID, PLAN_ID] }, 'planId'],
+    ['unknown param', { action: 'UPDATE' }, 'action'],
+  ])('rejects %s', async (_label, query, field) => {
+    expect((await check(ListPlanAuditQueryDto, query)).fields).toEqual([field]);
   });
 });

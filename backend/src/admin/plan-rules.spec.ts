@@ -1,5 +1,7 @@
 import type { PlanFeatureConfig } from '../db/schema/index.js';
 import {
+  auditUserAgent,
+  diffPlanValues,
   isEmptyPlanPatch,
   mergePlanPatch,
   normalizeFeatureConfig,
@@ -169,5 +171,90 @@ describe('toAdminPlan', () => {
         'updatedAt',
       ].sort(),
     );
+  });
+});
+
+describe('diffPlanValues', () => {
+  it('is empty when nothing changed (also for a merged re-send of the stored values)', () => {
+    expect(diffPlanValues(growth(), growth())).toEqual([]);
+    expect(
+      diffPlanValues(
+        growth(),
+        mergePlanPatch(growth(), {
+          originalPriceBdt: 1499,
+          offerPriceBdt: null,
+          featureConfig: { limits: { teamSeats: 3 }, features: {} },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('lists only the changed fields, before → after, in a stable order', () => {
+    const after = mergePlanPatch(growth(), {
+      featureConfig: {
+        features: { whiteLabelReports: true },
+        limits: { teamSeats: 4 },
+      },
+      offerBadge: '40% Off',
+      offerPriceBdt: 1499,
+      originalPriceBdt: 2499,
+    });
+    expect(diffPlanValues(growth(), after)).toEqual([
+      { field: 'originalPriceBdt', before: 1499, after: 2499 },
+      { field: 'offerPriceBdt', before: null, after: 1499 },
+      { field: 'offerBadge', before: null, after: '40% Off' },
+      { field: 'featureConfig.limits.teamSeats', before: 3, after: 4 },
+      {
+        field: 'featureConfig.features.whiteLabelReports',
+        before: false,
+        after: true,
+      },
+    ]);
+  });
+
+  it('records clearing the offer and badge as → null', () => {
+    const before = { ...growth(), offerPriceBdt: 999, offerBadge: 'Sale' };
+    expect(
+      diffPlanValues(before, {
+        ...before,
+        offerPriceBdt: null,
+        offerBadge: null,
+      }),
+    ).toEqual([
+      { field: 'offerPriceBdt', before: 999, after: null },
+      { field: 'offerBadge', before: 'Sale', after: null },
+    ]);
+  });
+
+  it('compares normalized feature configs (a missing stored key counts as 0 / false)', () => {
+    const stored = {
+      ...growth(),
+      featureConfig: {
+        limits: {},
+        features: {},
+      } as unknown as PlanFeatureConfig,
+    };
+    const after = mergePlanPatch(stored, {
+      featureConfig: { limits: { teamSeats: 0, connectedPages: 2 } },
+    });
+    expect(diffPlanValues(stored, after)).toEqual([
+      { field: 'featureConfig.limits.connectedPages', before: 0, after: 2 },
+    ]);
+  });
+});
+
+describe('auditUserAgent', () => {
+  it('trims, keeps null for a missing or blank header and takes the first of an array', () => {
+    expect(auditUserAgent('  curl/8.0  ')).toBe('curl/8.0');
+    expect(auditUserAgent(undefined)).toBeNull();
+    expect(auditUserAgent('   ')).toBeNull();
+    expect(auditUserAgent(['a/1', 'b/2'])).toBe('a/1');
+  });
+
+  it('cuts at 512 code points without splitting a surrogate pair', () => {
+    expect(auditUserAgent('x'.repeat(600))).toHaveLength(512);
+    const emoji = auditUserAgent('x'.repeat(511) + '😀😀')!;
+    expect(Array.from(emoji)).toHaveLength(512);
+    expect(emoji.endsWith('😀')).toBe(true);
   });
 });
