@@ -9,7 +9,9 @@ import { AllExceptionsFilter } from './all-exceptions.filter.js';
 
 function run(exception: unknown) {
   const json = vi.fn();
-  const status = vi.fn(() => ({ json }));
+  const status = vi.fn<(code: number) => { json: typeof json }>(() => ({
+    json,
+  }));
   const host = {
     switchToHttp: () => ({
       getResponse: () => ({ status }),
@@ -24,7 +26,7 @@ function run(exception: unknown) {
   ).mockImplementation(() => undefined);
   filter.catch(exception, host);
   return {
-    status: status.mock.calls[0]?.[0] as unknown as number,
+    status: status.mock.calls[0]?.[0] as number,
     body: json.mock.calls[0]?.[0] as Record<string, unknown>,
   };
 }

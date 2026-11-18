@@ -14,7 +14,8 @@ export const id = () =>
     .$defaultFn(() => uuidv7());
 
 /** `timestamptz(3)`. */
-export const timestamptz = () => timestamp({ withTimezone: true, precision: 3, mode: 'date' });
+export const timestamptz = () =>
+  timestamp({ withTimezone: true, precision: 3, mode: 'date' });
 
 /** `createdAt` / `updatedAt` pair. `updatedAt` is refreshed by Drizzle on every update. */
 export const timestamps = {

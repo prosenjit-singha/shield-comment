@@ -97,10 +97,10 @@ function setup(
   };
   const stored = new Map<string, MetaOAuthStateData>();
   const states = {
-    save: vi.fn(async (state: string, data: MetaOAuthStateData) => {
+    save: vi.fn<MetaOAuthStateStore['save']>(async (state, data) => {
       stored.set(state, data);
     }),
-    take: vi.fn(async (state: string) => {
+    take: vi.fn<MetaOAuthStateStore['take']>(async (state) => {
       const data = stored.get(state) ?? null;
       stored.delete(state);
       return data;

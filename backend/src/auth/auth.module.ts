@@ -2,7 +2,10 @@ import { ConfigService } from '@nestjs/config';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import { AuthModule as BetterAuthModule } from '@thallesp/nestjs-better-auth';
 import type { SecondaryStorage } from 'better-auth';
-import { NodeEnv, type EnvironmentVariables } from '../config/env.validation.js';
+import {
+  NodeEnv,
+  type EnvironmentVariables,
+} from '../config/env.validation.js';
 import type { Database } from '../db/database.js';
 import { AUTH_SECONDARY_STORAGE } from '../redis/redis-secondary-storage.js';
 import { createBetterAuth } from './better-auth.js';

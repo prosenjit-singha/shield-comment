@@ -16,7 +16,9 @@ import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
 
 /** Postgres SQLSTATE of a failed query (Drizzle wraps the `pg` error in `cause`). */
-async function pgCode(query: PromiseLike<unknown>): Promise<string | undefined> {
+async function pgCode(
+  query: PromiseLike<unknown>,
+): Promise<string | undefined> {
   try {
     await query;
   } catch (error) {
@@ -49,7 +51,10 @@ describe('Meta schema (e2e)', () => {
   const igA = `${base}4`;
 
   const cipher = new TokenCipherService(
-    buildTokenKeyring({ key: randomBytes(32).toString('base64'), keyId: 'e2e' }),
+    buildTokenKeyring({
+      key: randomBytes(32).toString('base64'),
+      keyId: 'e2e',
+    }),
   );
   const userToken = (workspaceId: string) =>
     cipher.encrypt(
@@ -103,11 +108,13 @@ describe('Meta schema (e2e)', () => {
     it('allows only one connection per workspace (D7)', async () => {
       expect(
         await pgCode(
-          db().insert(metaConnections).values({
-            workspaceId: a.workspaceId,
-            facebookUserId: fbUserId,
-            encryptedUserAccessToken: userToken(a.workspaceId),
-          }),
+          db()
+            .insert(metaConnections)
+            .values({
+              workspaceId: a.workspaceId,
+              facebookUserId: fbUserId,
+              encryptedUserAccessToken: userToken(a.workspaceId),
+            }),
         ),
       ).toBe(UNIQUE_VIOLATION);
     });
@@ -123,7 +130,9 @@ describe('Meta schema (e2e)', () => {
         })
         .onConflictDoUpdate({
           target: metaConnections.workspaceId,
-          set: { grantedScopes: ['pages_show_list', 'instagram_manage_comments'] },
+          set: {
+            grantedScopes: ['pages_show_list', 'instagram_manage_comments'],
+          },
         });
       const rows = await db()
         .select()

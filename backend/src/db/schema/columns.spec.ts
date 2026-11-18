@@ -3,9 +3,14 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { pgTable, text } from 'drizzle-orm/pg-core';
 import { id, timestamps } from './columns.js';
 
-const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID_V7 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-const sample = pgTable('sample_rows', { id: id(), displayName: text().notNull(), ...timestamps });
+const sample = pgTable('sample_rows', {
+  id: id(),
+  displayName: text().notNull(),
+  ...timestamps,
+});
 
 describe('schema column conventions', () => {
   it('ids are uuid primary keys with an app-generated UUIDv7 default', () => {
@@ -34,6 +39,8 @@ describe('schema column conventions', () => {
       .values({ displayName: 'x' })
       .returning({ id: sample.id })
       .toSQL();
-    expect(sql).toMatch(/^insert into "sample_rows" \("id", "display_name", "created_at", "updated_at"\)/);
+    expect(sql).toMatch(
+      /^insert into "sample_rows" \("id", "display_name", "created_at", "updated_at"\)/,
+    );
   });
 });

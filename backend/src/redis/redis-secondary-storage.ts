@@ -31,7 +31,10 @@ export function createRedisSecondaryStorage(client: Redis): SecondaryStorage {
         .set(k(key), '0', 'EX', Math.max(1, Math.ceil(ttl)), 'NX')
         .incr(k(key))
         .exec();
-      const [error, value] = results?.[1] ?? [new Error('Redis MULTI aborted'), null];
+      const [error, value] = results?.[1] ?? [
+        new Error('Redis MULTI aborted'),
+        null,
+      ];
       if (error) throw error;
       return Number(value);
     },
@@ -41,5 +44,6 @@ export function createRedisSecondaryStorage(client: Redis): SecondaryStorage {
 export const authSecondaryStorageProvider = {
   provide: AUTH_SECONDARY_STORAGE,
   inject: [RedisService],
-  useFactory: (redis: RedisService) => createRedisSecondaryStorage(redis.client),
+  useFactory: (redis: RedisService) =>
+    createRedisSecondaryStorage(redis.client),
 };

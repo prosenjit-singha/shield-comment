@@ -1,5 +1,13 @@
 import { relations, sql } from 'drizzle-orm';
-import { check, index, pgEnum, pgTable, text, unique, uuid } from 'drizzle-orm/pg-core';
+import {
+  check,
+  index,
+  pgEnum,
+  pgTable,
+  text,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { users } from './auth.js';
 import { id, timestamps, timestamptz } from './columns.js';
 import { plans } from './plans.js';
@@ -11,7 +19,10 @@ import { plans } from './plans.js';
  * `eq(x.workspaceId, …)` / `workspace_id` everywhere. TS keys must match the plugin field names.
  */
 
-export const workspaceStatus = pgEnum('workspace_status', ['ACTIVE', 'SUSPENDED']);
+export const workspaceStatus = pgEnum('workspace_status', [
+  'ACTIVE',
+  'SUSPENDED',
+]);
 
 /** Workspace member roles (custom access control in src/auth/permissions.ts). */
 export const WORKSPACE_ROLES = ['owner', 'admin', 'moderator'] as const;
@@ -55,7 +66,10 @@ export const workspaceMembers = pgTable(
     ...timestamps,
   },
   (t) => [
-    unique('workspace_members_workspace_id_user_id_unique').on(t.workspaceId, t.userId),
+    unique('workspace_members_workspace_id_user_id_unique').on(
+      t.workspaceId,
+      t.userId,
+    ),
     index().on(t.userId),
     check('workspace_members_role_check', roleCheck('role')),
   ],
@@ -92,18 +106,33 @@ export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
   invitations: many(workspaceInvitations),
 }));
 
-export const workspaceMembersRelations = relations(workspaceMembers, ({ one }) => ({
-  workspace: one(workspaces, { fields: [workspaceMembers.workspaceId], references: [workspaces.id] }),
-  user: one(users, { fields: [workspaceMembers.userId], references: [users.id] }),
-}));
-
-export const workspaceInvitationsRelations = relations(workspaceInvitations, ({ one }) => ({
-  workspace: one(workspaces, {
-    fields: [workspaceInvitations.workspaceId],
-    references: [workspaces.id],
+export const workspaceMembersRelations = relations(
+  workspaceMembers,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [workspaceMembers.workspaceId],
+      references: [workspaces.id],
+    }),
+    user: one(users, {
+      fields: [workspaceMembers.userId],
+      references: [users.id],
+    }),
   }),
-  inviter: one(users, { fields: [workspaceInvitations.inviterId], references: [users.id] }),
-}));
+);
+
+export const workspaceInvitationsRelations = relations(
+  workspaceInvitations,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [workspaceInvitations.workspaceId],
+      references: [workspaces.id],
+    }),
+    inviter: one(users, {
+      fields: [workspaceInvitations.inviterId],
+      references: [users.id],
+    }),
+  }),
+);
 
 export const plansRelations = relations(plans, ({ many }) => ({
   workspaces: many(workspaces),

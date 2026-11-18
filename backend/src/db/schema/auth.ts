@@ -1,5 +1,12 @@
 import { relations, sql } from 'drizzle-orm';
-import { boolean, check, index, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  check,
+  index,
+  pgTable,
+  text,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { id, timestamps, timestamptz } from './columns.js';
 import { workspaceMembers, workspaces } from './workspaces.js';
 
@@ -54,7 +61,9 @@ export const sessions = pgTable(
     ipAddress: text(),
     userAgent: text(),
     /** Current workspace (`organization` plugin). Set at sign-up / sign-in by src/auth/first-workspace.ts. */
-    activeOrganizationId: uuid().references(() => workspaces.id, { onDelete: 'set null' }),
+    activeOrganizationId: uuid().references(() => workspaces.id, {
+      onDelete: 'set null',
+    }),
     /** Super admin who started this session (`admin` plugin / M1-T3 impersonation). */
     impersonatedBy: uuid().references(() => users.id, { onDelete: 'set null' }),
     ...timestamps,

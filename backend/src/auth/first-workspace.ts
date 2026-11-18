@@ -22,7 +22,8 @@ export function slugify(name: string): string {
  * when present but invalid (the sign-up `before` hook rejects that with 400).
  */
 export function parseWorkspaceName(body: unknown): string | null | undefined {
-  if (!body || typeof body !== 'object' || !('workspaceName' in body)) return undefined;
+  if (!body || typeof body !== 'object' || !('workspaceName' in body))
+    return undefined;
   const raw = (body as { workspaceName: unknown }).workspaceName;
   if (raw === undefined) return undefined;
   if (typeof raw !== 'string') return null;
@@ -35,10 +36,16 @@ export function firstWorkspaceName(body: unknown): string {
   const given = parseWorkspaceName(body);
   if (given) return given;
   const owner =
-    body && typeof body === 'object' && 'name' in body && typeof body.name === 'string'
+    body &&
+    typeof body === 'object' &&
+    'name' in body &&
+    typeof body.name === 'string'
       ? body.name.trim()
       : '';
-  return (owner ? `${owner}'s workspace` : 'My workspace').slice(0, WORKSPACE_NAME_MAX);
+  return (owner ? `${owner}'s workspace` : 'My workspace').slice(
+    0,
+    WORKSPACE_NAME_MAX,
+  );
 }
 
 /**
@@ -69,7 +76,9 @@ export async function resolveActiveWorkspace(
       .insert(workspaces)
       .values({ name: createName, slug: slugify(createName) })
       .returning({ id: workspaces.id });
-    await tx.insert(workspaceMembers).values({ workspaceId: workspace!.id, userId, role: 'owner' });
+    await tx
+      .insert(workspaceMembers)
+      .values({ workspaceId: workspace!.id, userId, role: 'owner' });
     return workspace!.id;
   });
 }

@@ -1,7 +1,9 @@
 import type { SecondaryStorage } from 'better-auth';
 
 /** In-memory Better Auth `secondaryStorage` for e2e (Redis is stubbed). `keys()` lets specs peek. */
-export function createMemorySecondaryStorage(): SecondaryStorage & { keys(): string[] } {
+export function createMemorySecondaryStorage(): SecondaryStorage & {
+  keys(): string[];
+} {
   const store = new Map<string, { value: string; expiresAt: number | null }>();
   const read = (key: string) => {
     const entry = store.get(key);
@@ -19,7 +21,10 @@ export function createMemorySecondaryStorage(): SecondaryStorage & { keys(): str
       return value;
     },
     set: (key, value, ttl) => {
-      store.set(key, { value, expiresAt: ttl ? Date.now() + ttl * 1000 : null });
+      store.set(key, {
+        value,
+        expiresAt: ttl ? Date.now() + ttl * 1000 : null,
+      });
     },
     delete: (key) => {
       store.delete(key);

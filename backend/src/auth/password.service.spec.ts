@@ -24,6 +24,8 @@ describe('PasswordService', () => {
   });
 
   it('returns false (does not throw) for a malformed hash', async () => {
-    await expect(passwords.verify('not-a-hash', 'anything')).resolves.toBe(false);
+    await expect(passwords.verify('not-a-hash', 'anything')).resolves.toBe(
+      false,
+    );
   });
 });

@@ -1,4 +1,10 @@
-import { Body, Controller, Get, type INestApplication, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  type INestApplication,
+  Post,
+} from '@nestjs/common';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import { Session, type UserSession } from '@thallesp/nestjs-better-auth';
 import { IsString } from 'class-validator';
@@ -12,10 +18,12 @@ import { AUTH_SECONDARY_STORAGE } from '../src/redis/redis-secondary-storage.js'
 import { createTestApp, uniqueEmail } from './utils/create-test-app.js';
 import type { createMemorySecondaryStorage } from './utils/memory-secondary-storage.js';
 
-const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID_V7 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const PASSWORD = 'correct-horse-battery';
 /** PasswordService: argon2id, v19, OWASP baseline (19 MiB, 2 passes, 1 lane). */
-const ARGON2ID_HASH = /^\$argon2id\$v=19\$m=19456,t=2,p=1\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$/;
+const ARGON2ID_HASH =
+  /^\$argon2id\$v=19\$m=19456,t=2,p=1\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$/;
 
 class EchoDto {
   @IsString()
@@ -65,13 +73,19 @@ describe('Better Auth (e2e)', () => {
   });
 
   function signUp(body: Record<string, unknown>) {
-    return request(app.getHttpServer()).post('/api/auth/sign-up/email').send(body);
+    return request(app.getHttpServer())
+      .post('/api/auth/sign-up/email')
+      .send(body);
   }
 
   async function membershipsOf(email: string) {
     const user = await db.query.users.findFirst({
       where: eq(users.email, email),
-      with: { memberships: { with: { workspace: true } }, sessions: true, accounts: true },
+      with: {
+        memberships: { with: { workspace: true } },
+        sessions: true,
+        accounts: true,
+      },
     });
     expect(user, `user ${email}`).toBeDefined();
     return user!;
@@ -87,7 +101,10 @@ describe('Better Auth (e2e)', () => {
 
   afterAll(async () => {
     const ids = (
-      await db.select({ id: users.id }).from(users).where(inArray(users.email, createdEmails))
+      await db
+        .select({ id: users.id })
+        .from(users)
+        .where(inArray(users.email, createdEmails))
     ).map((u) => u.id);
     if (ids.length) {
       const memberships = await db
@@ -95,7 +112,8 @@ describe('Better Auth (e2e)', () => {
         .from(workspaceMembers)
         .where(inArray(workspaceMembers.userId, ids));
       const workspaceIds = memberships.map((m) => m.id);
-      if (workspaceIds.length) await db.delete(workspaces).where(inArray(workspaces.id, workspaceIds));
+      if (workspaceIds.length)
+        await db.delete(workspaces).where(inArray(workspaces.id, workspaceIds));
       await db.delete(users).where(inArray(users.id, ids));
     }
     await app.close();
@@ -108,9 +126,17 @@ describe('Better Auth (e2e)', () => {
     // Sign-up (mixed-case email to prove normalisation).
     const signUp = await request(server)
       .post('/api/auth/sign-up/email')
-      .send({ name: 'Rahim Uddin', email: email.toUpperCase(), password: PASSWORD })
+      .send({
+        name: 'Rahim Uddin',
+        email: email.toUpperCase(),
+        password: PASSWORD,
+      })
       .expect(200);
-    expect(signUp.body.user).toMatchObject({ name: 'Rahim Uddin', email, emailVerified: false });
+    expect(signUp.body.user).toMatchObject({
+      name: 'Rahim Uddin',
+      email,
+      emailVerified: false,
+    });
     expect(signUp.body.user.id).toMatch(UUID_V7);
     sessionCookie(signUp);
 
@@ -123,7 +149,10 @@ describe('Better Auth (e2e)', () => {
     expect(user!.id).toBe(signUp.body.user.id);
     expect(user!.accounts).toHaveLength(1);
     const [account] = user!.accounts;
-    expect(account).toMatchObject({ providerId: 'credential', accountId: user!.id });
+    expect(account).toMatchObject({
+      providerId: 'credential',
+      accountId: user!.id,
+    });
     expect(account!.id).toMatch(UUID_V7);
     expect(account!.password).toMatch(ARGON2ID_HASH);
     expect(user!.sessions).toHaveLength(1);
@@ -146,13 +175,20 @@ describe('Better Auth (e2e)', () => {
     expect(session.body.session).toMatchObject({ userId: user!.id });
 
     // The global guard + @Session() work on a NestJS 12 controller.
-    const me = await request(server).get('/api/spike/me').set('Cookie', cookie).expect(200);
+    const me = await request(server)
+      .get('/api/spike/me')
+      .set('Cookie', cookie)
+      .expect(200);
     expect(me.body).toMatchObject({ userId: user!.id, email });
   });
 
   it('sign-up creates the first workspace with the user as owner and makes it active', async () => {
     const email = trackedEmail('ba-ws');
-    const res = await signUp({ name: 'Rahim Uddin', email, password: PASSWORD }).expect(200);
+    const res = await signUp({
+      name: 'Rahim Uddin',
+      email,
+      password: PASSWORD,
+    }).expect(200);
     expect(res.body.user.role).toBe('user');
 
     const user = await membershipsOf(email);
@@ -161,17 +197,26 @@ describe('Better Auth (e2e)', () => {
     expect(user.memberships).toHaveLength(1);
     const [membership] = user.memberships;
     expect(membership).toMatchObject({ role: 'owner', userId: user.id });
-    expect(membership!.workspace).toMatchObject({ name: "Rahim Uddin's workspace", status: 'ACTIVE' });
+    expect(membership!.workspace).toMatchObject({
+      name: "Rahim Uddin's workspace",
+      status: 'ACTIVE',
+    });
     expect(membership!.workspace.id).toMatch(UUID_V7);
-    expect(membership!.workspace.slug).toMatch(/^rahim-uddin-s-workspace-[0-9a-f]{6}$/);
+    expect(membership!.workspace.slug).toMatch(
+      /^rahim-uddin-s-workspace-[0-9a-f]{6}$/,
+    );
     // The sign-up session already points at it (DB row, get-session and the guard's session).
-    expect(user.sessions[0]!.activeOrganizationId).toBe(membership!.workspaceId);
+    expect(user.sessions[0]!.activeOrganizationId).toBe(
+      membership!.workspaceId,
+    );
     const cookie = sessionCookie(res);
     const session = await request(app.getHttpServer())
       .get('/api/auth/get-session')
       .set('Cookie', cookie)
       .expect(200);
-    expect(session.body.session.activeOrganizationId).toBe(membership!.workspaceId);
+    expect(session.body.session.activeOrganizationId).toBe(
+      membership!.workspaceId,
+    );
 
     // The organization plugin reads the renamed tables.
     const list = await request(app.getHttpServer())
@@ -179,7 +224,10 @@ describe('Better Auth (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
     expect(list.body).toEqual([
-      expect.objectContaining({ id: membership!.workspaceId, status: 'ACTIVE' }),
+      expect.objectContaining({
+        id: membership!.workspaceId,
+        status: 'ACTIVE',
+      }),
     ]);
 
     // Sign-in reuses it (no second workspace) and starts the new session in it.
@@ -197,37 +245,69 @@ describe('Better Auth (e2e)', () => {
 
   it('uses workspaceName from the sign-up body and rejects an invalid one', async () => {
     const email = trackedEmail('ba-wsname');
-    await signUp({ name: 'Karim', email, password: PASSWORD, workspaceName: '  Dhaka Fashion  ' })
-      .expect(200);
+    await signUp({
+      name: 'Karim',
+      email,
+      password: PASSWORD,
+      workspaceName: '  Dhaka Fashion  ',
+    }).expect(200);
     const user = await membershipsOf(email);
     expect(user.memberships[0]!.workspace.name).toBe('Dhaka Fashion');
-    expect(user.memberships[0]!.workspace.slug).toMatch(/^dhaka-fashion-[0-9a-f]{6}$/);
+    expect(user.memberships[0]!.workspace.slug).toMatch(
+      /^dhaka-fashion-[0-9a-f]{6}$/,
+    );
 
     const bad = trackedEmail('ba-wsbad');
-    await signUp({ name: 'Bad', email: bad, password: PASSWORD, workspaceName: 'x'.repeat(81) })
-      .expect(400);
-    await signUp({ name: 'Bad', email: bad, password: PASSWORD, workspaceName: '   ' }).expect(400);
-    expect(await db.query.users.findFirst({ where: eq(users.email, bad) })).toBeUndefined();
+    await signUp({
+      name: 'Bad',
+      email: bad,
+      password: PASSWORD,
+      workspaceName: 'x'.repeat(81),
+    }).expect(400);
+    await signUp({
+      name: 'Bad',
+      email: bad,
+      password: PASSWORD,
+      workspaceName: '   ',
+    }).expect(400);
+    expect(
+      await db.query.users.findFirst({ where: eq(users.email, bad) }),
+    ).toBeUndefined();
   });
 
   it('does not let sign-up set role, banned or workspace status', async () => {
     const email = trackedEmail('ba-role');
-    const res = await signUp({ name: 'Sneaky', email, password: PASSWORD, role: 'super_admin' });
+    const res = await signUp({
+      name: 'Sneaky',
+      email,
+      password: PASSWORD,
+      role: 'super_admin',
+    });
     expect(res.status).toBe(400);
-    expect(await db.query.users.findFirst({ where: eq(users.email, email) })).toBeUndefined();
+    expect(
+      await db.query.users.findFirst({ where: eq(users.email, email) }),
+    ).toBeUndefined();
   });
 
   it('keeps sessions in Postgres and caches them in secondary storage', async () => {
     const email = trackedEmail('ba-cache');
-    const res = await signUp({ name: 'Cache', email, password: PASSWORD }).expect(200);
-    const token = decodeURIComponent(sessionCookie(res).split('=')[1]!).split('.')[0]!;
+    const res = await signUp({
+      name: 'Cache',
+      email,
+      password: PASSWORD,
+    }).expect(200);
+    const token = decodeURIComponent(sessionCookie(res).split('=')[1]!).split(
+      '.',
+    )[0]!;
     const user = await membershipsOf(email);
     expect(user.sessions.map((s) => s.token)).toContain(token);
     expect(storage.keys()).toContain(token);
   });
 
   it('get-session without a cookie returns null', async () => {
-    const res = await request(app.getHttpServer()).get('/api/auth/get-session').expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/api/auth/get-session')
+      .expect(200);
     expect(res.body).toBeNull();
   });
 
@@ -246,20 +326,29 @@ describe('Better Auth (e2e)', () => {
   it('rejects a duplicate sign-up', async () => {
     const email = trackedEmail('ba-dup');
     const body = { name: 'Dup', email, password: PASSWORD };
-    await request(app.getHttpServer()).post('/api/auth/sign-up/email').send(body).expect(200);
-    const res = await request(app.getHttpServer()).post('/api/auth/sign-up/email').send(body);
+    await request(app.getHttpServer())
+      .post('/api/auth/sign-up/email')
+      .send(body)
+      .expect(200);
+    const res = await request(app.getHttpServer())
+      .post('/api/auth/sign-up/email')
+      .send(body);
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.status).toBeLessThan(500);
   });
 
   it('global guard: 401 without a session, @Public() routes stay open', async () => {
-    const res = await request(app.getHttpServer()).get('/api/spike/me').expect(401);
+    const res = await request(app.getHttpServer())
+      .get('/api/spike/me')
+      .expect(401);
     expect(res.body).toMatchObject({ statusCode: 401, path: '/api/spike/me' });
     await request(app.getHttpServer())
       .get('/api/spike/me')
       .set('Cookie', 'better-auth.session_token=forged.value')
       .expect(401);
-    const health = await request(app.getHttpServer()).get('/api/health').expect(200);
+    const health = await request(app.getHttpServer())
+      .get('/api/health')
+      .expect(200);
     expect(health.body).toMatchObject({ status: 'ok' });
   });
 
@@ -272,6 +361,9 @@ describe('Better Auth (e2e)', () => {
       .post('/api/spike/echo')
       .send({ message: 'hello', extra: 1 })
       .expect(400);
-    expect(bad.body).toMatchObject({ statusCode: 400, path: '/api/spike/echo' });
+    expect(bad.body).toMatchObject({
+      statusCode: 400,
+      path: '/api/spike/echo',
+    });
   });
 });

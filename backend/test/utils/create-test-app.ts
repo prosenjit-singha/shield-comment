@@ -19,14 +19,21 @@ export async function createTestApp(
   @Module({ controllers })
   class TestControllersModule {}
 
-  let builder = Test.createTestingModule({ imports: [AppModule, TestControllersModule] })
+  let builder = Test.createTestingModule({
+    imports: [AppModule, TestControllersModule],
+  })
     .overrideProvider(RedisService)
-    .useValue({ ping: vi.fn().mockResolvedValue('PONG'), onModuleDestroy: vi.fn() })
+    .useValue({
+      ping: vi.fn().mockResolvedValue('PONG'),
+      onModuleDestroy: vi.fn(),
+    })
     .overrideProvider(AUTH_SECONDARY_STORAGE)
     .useValue(createMemorySecondaryStorage());
   if (override) builder = override(builder);
   // Same as main.ts: the Better Auth integration owns body parsing.
-  const app = (await builder.compile()).createNestApplication<INestApplication<App>>({
+  const app = (await builder.compile()).createNestApplication<
+    INestApplication<App>
+  >({
     bodyParser: false,
   });
   configureApp(app);

@@ -4,7 +4,12 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 
 /** `backend/drizzle/`, from both `src/db/` (tests) and `dist/db/` (Docker image). */
-export const MIGRATIONS_FOLDER = join(import.meta.dirname, '..', '..', 'drizzle');
+export const MIGRATIONS_FOLDER = join(
+  import.meta.dirname,
+  '..',
+  '..',
+  'drizzle',
+);
 
 /**
  * Applies pending SQL migrations from `drizzle/` with Drizzle's runtime migrator, so the
