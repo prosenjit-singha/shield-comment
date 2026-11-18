@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# shield-cli: small interactive helper for ShieldComment BD.
+#
+#   ./shield-cli add super-admin    Create (or promote) a platform super admin
+#   ./shield-cli help               Show usage
+#
+# Wraps backend/src/scripts/create-super-admin.ts (Better Auth createUser, argon2id).
+# The password goes to the script via an env var, never argv, so it does not show up in `ps`.
+set -uo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+BACKEND_DIR="$ROOT_DIR/backend"
+SCRIPT_JS="dist/scripts/create-super-admin.js"
+EMAIL_RE='^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'
+PASSWORD_MIN=8
+
+if [[ -t 1 ]]; then
+  BOLD=$'\e[1m'; DIM=$'\e[2m'; RED=$'\e[31m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'; CYAN=$'\e[36m'; RESET=$'\e[0m'
+else
+  BOLD=''; DIM=''; RED=''; GREEN=''; YELLOW=''; CYAN=''; RESET=''
+fi
+
+info()  { printf '%s\n' "${CYAN}›${RESET} $*"; }
+warn()  { printf '%s\n' "${YELLOW}!${RESET} $*"; }
+error() { printf '%s\n' "${RED}✗${RESET} $*" >&2; }
+
+press_any_key() {
+  echo
+  if [[ -t 0 ]]; then
+    read -rsn1 -p "${DIM}Press any key to exit...${RESET}"
+    echo
+  fi
+}
+
+finish() {
+  local code=$1
+  press_any_key
+  exit "$code"
+}
+
+usage() {
+  cat <<EOF
+${BOLD}shield-cli${RESET}: ShieldComment BD helper
+
+Usage:
+  ./shield-cli add super-admin    Create a super admin (or promote an existing user)
+  ./shield-cli help               Show this help
+EOF
+}
+
+# --- prompts -------------------------------------------------------------
+
+ask_environment() {
+  local choice
+  echo "${BOLD}Which database?${RESET}"
+  echo "  1) local    (backend/.env)"
+  [[ -f "$BACKEND_DIR/.env.neon" ]] && echo "  2) neon     (backend/.env + .env.neon)"
+  [[ -f "$BACKEND_DIR/.env.staging" ]] && echo "  3) staging  (backend/.env + .env.staging)"
+  while true; do
+    read -rp "Choose [1]: " choice
+    case "${choice:-1}" in
+      1) ENV_NAME=local; ENV_ARGS=(--env-file-if-exists=.env); return ;;
+      2) [[ -f "$BACKEND_DIR/.env.neon" ]] && { ENV_NAME=neon; ENV_ARGS=(--env-file=.env --env-file=.env.neon); return; } ;;
+      3) [[ -f "$BACKEND_DIR/.env.staging" ]] && { ENV_NAME=staging; ENV_ARGS=(--env-file=.env --env-file=.env.staging); return; } ;;
+    esac
+    warn "Pick one of the listed numbers."
+  done
+}
+
+ask_name() {
+  read -rp "Full name [Super Admin]: " NAME
+  NAME="$(printf '%s' "$NAME" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  NAME="${NAME:-Super Admin}"
+}
+
+ask_email() {
+  while true; do
+    read -rp "Email: " EMAIL
+    EMAIL="$(printf '%s' "$EMAIL" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [[ "$EMAIL" =~ $EMAIL_RE ]] && return
+    warn "That doesn't look like a valid email address."
+  done
+}
+
+ask_password() {
+  local confirm
+  echo "${DIM}If this email already has an account, it is promoted and its password is kept.${RESET}"
+  echo "${DIM}Leave empty only when promoting an existing user.${RESET}"
+  while true; do
+    read -rsp "Password (min $PASSWORD_MIN chars): " PASSWORD; echo
+    if [[ -z "$PASSWORD" ]]; then
+      return
+    fi
+    if (( ${#PASSWORD} < PASSWORD_MIN )); then
+      warn "The password must be at least $PASSWORD_MIN characters."
+      continue
+    fi
+    read -rsp "Confirm password: " confirm; echo
+    [[ "$PASSWORD" == "$confirm" ]] && return
+    warn "The passwords don't match. Try again."
+  done
+}
+
+confirm_summary() {
+  local answer
+  echo
+  echo "${BOLD}Summary${RESET}"
+  printf '  %-10s %s\n' "Database" "$ENV_NAME" "Name" "$NAME" "Email" "$EMAIL" \
+    "Password" "$([[ -n "$PASSWORD" ]] && echo '******** (set)' || echo '(none: promote only)')"
+  echo
+  read -rp "Add this super admin? [y/N]: " answer
+  [[ "$answer" =~ ^[Yy]([Ee][Ss])?$ ]]
+}
+
+# --- build ---------------------------------------------------------------
+
+ensure_built() {
+  local target="$BACKEND_DIR/$SCRIPT_JS"
+  if [[ ! -d "$BACKEND_DIR/node_modules" ]]; then
+    error "backend/node_modules is missing. Run: cd backend && npm install"
+    return 1
+  fi
+  if [[ -f "$target" ]] && [[ -z "$(find "$BACKEND_DIR/src" -newer "$target" -name '*.ts' -print -quit)" ]]; then
+    return 0
+  fi
+  info "Building the backend (npm run build)..."
+  if ! (cd "$BACKEND_DIR" && npm run build --silent >/dev/null 2>&1); then
+    error "Backend build failed. Run 'cd backend && npm run build' to see why."
+    return 1
+  fi
+}
+
+# --- commands ------------------------------------------------------------
+
+add_super_admin() {
+  local output status
+  echo
+  echo "${BOLD}Add a super admin${RESET}"
+  echo
+
+  ask_environment; echo
+  ask_name
+  ask_email
+  ask_password
+
+  if ! confirm_summary; then
+    warn "Cancelled. Nothing was changed."
+    finish 1
+  fi
+
+  echo
+  ensure_built || { echo; echo "${RED}${BOLD}FAILED${RESET}: could not build the backend."; finish 1; }
+
+  info "Adding super admin to the ${ENV_NAME} database..."
+  # Only pass the password when one was typed: an empty value is rejected by the backend script.
+  output="$(
+    cd "$BACKEND_DIR" || exit 1
+    export SUPER_ADMIN_NAME="$NAME" SUPER_ADMIN_EMAIL="$EMAIL"
+    if [[ -n "$PASSWORD" ]]; then export SUPER_ADMIN_PASSWORD="$PASSWORD"; else unset SUPER_ADMIN_PASSWORD; fi
+    node "${ENV_ARGS[@]}" "$SCRIPT_JS" 2>&1
+  )"
+  status=$?
+  unset PASSWORD
+
+  echo
+  if (( status == 0 )); then
+    echo "${GREEN}${BOLD}SUCCESS${RESET}: ${output}"
+    finish 0
+  else
+    output="${output#create-super-admin failed: }"
+    [[ "$output" == "No user "* ]] &&
+      output="No account exists for ${EMAIL} yet, so a password is required to create one."
+    echo "${RED}${BOLD}FAILED${RESET}: ${output}"
+    finish 1
+  fi
+}
+
+case "${1:-} ${2:-}" in
+  "add super-admin") add_super_admin ;;
+  "help "|"-h "|"--help "|" ") usage ;;
+  *) error "Unknown command: $*"; echo; usage; exit 1 ;;
+esac
