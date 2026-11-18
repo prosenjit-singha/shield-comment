@@ -7,10 +7,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, only the Module 4 header + decisions + its own row from TASKS.md, `docs/project-documentation/modules/module-4-webhooks-queue.md` (UI rows M4-T11/T12 also `docs/design/base.md` + `client.md`).
 - Standing approvals: admin/ + client/ changes approved for the rest of this run (user, 2026-11-18).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #2 (2026-11-18) · rows this session: 2 · estimate: 90k
+- Session: #2 (2026-11-18) · rows this session: 3 · estimate: 104k
 
 ## State
-dispatched M4-T3 (2026-11-18) · commit: "feat(backend): add meta webhook verify and signature guard (M4-T3)"
+verified M4-T3
 
 ## Resume
 `/orchestration --continue`
@@ -80,4 +80,4 @@ You are implementing exactly ONE task row, **M4-T4**, in the ShieldComment BD re
 - 2026-11-18 M4-PLAN ✅ db06752 + 2f671c1 · docs only · Module 4 planned, D1–D13 answered (run outside the journal)
 - 2026-11-18 M4-T1 ✅ b4aca20 · backend 597 + e2e 383 · BullMQ QueueModule (3 D3 queues), eviction warning, real admin queue counts, e2e FakeQueue
 - 2026-11-18 M4-T2 ✅ 8e672fc · backend 605 + e2e 397 · e2e 2/2 · webhook_events/comments/daily_comment_stats schema (0011) + comments.queries helpers
-- 2026-11-18 M4-T3 ✅ · backend 645 + e2e 415 · e2e 2/2 · GET/POST /api/webhooks/meta: verify handshake, raw-body capture, X-Hub-Signature-256 guard (stub receiver)
+- 2026-11-18 M4-T3 ✅ bede928 · backend 645 + e2e 415 · e2e 2/2 · GET/POST /api/webhooks/meta: verify handshake, raw-body capture, X-Hub-Signature-256 guard (stub receiver)
