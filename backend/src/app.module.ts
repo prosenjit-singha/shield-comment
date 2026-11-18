@@ -8,12 +8,14 @@ import {
 import { AuthModule } from './auth/auth.module.js';
 import { HealthModule } from './health/health.module.js';
 import { isHealthProbe } from './health/health-probe.js';
+import { redactRequestSerializer } from './common/logging/redact-query.js';
 import { DbModule } from './db/db.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { AiGatewayModule } from './ai-gateway/ai-gateway.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { MeModule } from './me/me.module.js';
+import { MetaModule } from './meta/meta.module.js';
 import { SupportTicketsModule } from './support-tickets/support-tickets.module.js';
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
 
@@ -33,6 +35,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module.js';
             level: config.get('LOG_LEVEL', { infer: true }),
             redact: ['req.headers.authorization', 'req.headers.cookie'],
             autoLogging: { ignore: (req) => isHealthProbe(req.url) },
+            // OAuth `code`/`state` in callback URLs never reach the logs (M3-T4).
+            serializers: { req: redactRequestSerializer },
             transport: isDev
               ? { target: 'pino-pretty', options: { singleLine: true } }
               : undefined,
@@ -50,6 +54,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module.js';
     WorkspacesModule,
     AdminModule,
     SupportTicketsModule,
+    MetaModule,
   ],
 })
 export class AppModule {}

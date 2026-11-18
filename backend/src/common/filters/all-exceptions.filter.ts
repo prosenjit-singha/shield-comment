@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { redactUrlQuery } from '../logging/redact-query.js';
 
 export interface ErrorBody {
   statusCode: number;
@@ -25,6 +26,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const res = ctx.getResponse<Response>();
     const req = ctx.getRequest<Request>();
+    const path = redactUrlQuery(req.originalUrl);
 
     let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string | string[] = 'Internal server error';
@@ -45,7 +47,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (statusCode >= 500) {
       this.logger.error(
-        { err: exception, path: req.originalUrl },
+        { err: exception, path },
         exception instanceof Error ? exception.message : 'Unknown error',
       );
     }
@@ -54,7 +56,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode,
       error,
       message,
-      path: req.originalUrl,
+      path,
       timestamp: new Date().toISOString(),
     };
     res.status(statusCode).json(payload);
