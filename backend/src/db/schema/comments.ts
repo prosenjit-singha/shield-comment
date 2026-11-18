@@ -19,8 +19,9 @@ import { workspaces } from './workspaces.js';
  * docs/progress/TASKS.md).
  *
  * - `webhook_events`: one row per processed webhook change, `event_id` =
- *   `<platform>:<commentId>:<verb>` (same format as the BullMQ job id, `commentJobId()`), so
- *   duplicate deliveries/retries hit the unique key (`ON CONFLICT DO NOTHING`).
+ *   `<platform>:<commentId>:<verb>` (same format as the BullMQ job id, `commentJobId()`; verb
+ *   `edited` is `edited-<16 hex edit hash>`, M4-T4), so duplicate deliveries/retries hit the
+ *   unique key (`ON CONFLICT DO NOTHING`) while every different edit gets its own row.
  * - `comments`: one row per Meta comment (`comment_id` unique). `status` is only `PENDING` until
  *   Module 5. Only `raw_payload` is cleared after 30 days (D4); text/author/status stay.
  *   D7: disconnect deletes the `social_pages` row, the comment stays with `social_page_id = null`
@@ -63,7 +64,7 @@ export const webhookEvents = pgTable(
   'webhook_events',
   {
     id: id(),
-    /** `<platform>:<commentId>:<verb>` (D4). */
+    /** `<platform>:<commentId>:<verb>` (D4); `edited` = `edited-<hash>` (`commentJobId()`). */
     eventId: text().notNull(),
     workspaceId: uuid()
       .notNull()
@@ -80,7 +81,7 @@ export const webhookEvents = pgTable(
     check(
       'webhook_events_event_id_format',
       sql.raw(
-        `event_id ~ '^(${COMMENT_PLATFORMS.join('|')}):[0-9_]+:(${COMMENT_VERBS.join('|')})$'`,
+        `event_id ~ '^(${COMMENT_PLATFORMS.join('|')}):[0-9_]+:(add|remove|edited-[0-9a-f]{16})$'`,
       ),
     ),
     check(

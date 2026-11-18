@@ -1,0 +1,2 @@
+ALTER TABLE "webhook_events" DROP CONSTRAINT "webhook_events_event_id_format";--> statement-breakpoint
+ALTER TABLE "webhook_events" ADD CONSTRAINT "webhook_events_event_id_format" CHECK (event_id ~ '^(FACEBOOK|INSTAGRAM):[0-9_]+:(add|remove|edited-[0-9a-f]{16})$');

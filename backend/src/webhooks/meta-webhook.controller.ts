@@ -6,6 +6,7 @@ import {
   HttpCode,
   Inject,
   Post,
+  type RawBodyRequest,
   Req,
   Res,
   ServiceUnavailableException,
@@ -17,6 +18,7 @@ import {
   META_WEBHOOK_CONFIG,
   type MetaWebhookConfig,
 } from './meta-webhook.config.js';
+import { MetaWebhookReceiver } from './meta-webhook.receiver.js';
 import { MetaWebhookSignatureGuard } from './meta-webhook-signature.guard.js';
 import { checkMetaVerifyRequest } from './meta-webhook-signature.js';
 
@@ -29,6 +31,7 @@ import { checkMetaVerifyRequest } from './meta-webhook-signature.js';
 export class MetaWebhookController {
   constructor(
     @Inject(META_WEBHOOK_CONFIG) private readonly config: MetaWebhookConfig,
+    private readonly receiver: MetaWebhookReceiver,
   ) {}
 
   /**
@@ -60,13 +63,18 @@ export class MetaWebhookController {
   }
 
   /**
-   * Event delivery. The guard has checked the HMAC of `req.rawBody`. M4-T4 replaces this stub with
-   * envelope parsing + enqueueing (Meta retries anything that isn't a fast 200).
+   * Event delivery. The guard has checked the HMAC of `req.rawBody` (the only body: `req.body` is
+   * left unparsed). Kept comment changes become `comment-ingest` jobs; anything we don't use still
+   * gets 200 (Meta retries non-200s). Enqueue failure/timeout → 503 so Meta retries.
    */
   @Post()
   @HttpCode(200)
   @UseGuards(MetaWebhookSignatureGuard)
-  receive(@Res({ passthrough: true }) response: Response): string {
+  async receive(
+    @Req() request: RawBodyRequest<Request>,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<string> {
+    await this.receiver.receive(request.rawBody ?? Buffer.alloc(0));
     response.type('text/plain');
     return 'EVENT_RECEIVED';
   }

@@ -1,6 +1,7 @@
 import {
   ALL_QUEUE_NAMES,
   bullRootOptions,
+  commentEditHash,
   commentJobId,
   DEFAULT_JOB_OPTIONS,
   QUEUE_NAMES,
@@ -63,6 +64,39 @@ describe('queue constants (D3)', () => {
       expect(() => commentJobId(platform, commentId, verb)).toThrow(
         `Invalid ${label} for a comment job id`,
       );
+    });
+
+    it('adds the edit hash to edited ids, still 3 parts', () => {
+      const hash = commentEditHash('new text');
+      const id = commentJobId('FACEBOOK', '1_2', 'edited', hash);
+      expect(id).toBe(`FACEBOOK:1_2:edited-${hash}`);
+      expect(id.split(':')).toHaveLength(3);
+    });
+
+    it.each([
+      ['edited', undefined],
+      ['edited', 'abc'],
+      ['edited', 'G'.repeat(16)],
+      ['edited', 'a'.repeat(17)],
+      ['add', 'a'.repeat(16)],
+      ['remove', 'a'.repeat(16)],
+    ])('rejects verb %j with edit hash %j', (verb, hash) => {
+      expect(() => commentJobId('FACEBOOK', '1_2', verb, hash)).toThrow(
+        'Invalid editHash for a comment job id',
+      );
+    });
+  });
+
+  describe('commentEditHash', () => {
+    it('is 16 lower-case hex chars, stable per message, different per edit', () => {
+      const hash = commentEditHash('bKash 01700000000');
+      expect(hash).toMatch(/^[0-9a-f]{16}$/);
+      expect(commentEditHash('bKash 01700000000')).toBe(hash);
+      expect(commentEditHash('bKash 01800000000')).not.toBe(hash);
+    });
+
+    it('treats a missing message as empty text', () => {
+      expect(commentEditHash(null)).toBe(commentEditHash(''));
     });
   });
 });

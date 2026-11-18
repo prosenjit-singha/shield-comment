@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { DefaultJobOptions, QueueOptions } from 'bullmq';
 
 /**
@@ -50,16 +51,37 @@ export function bullRootOptions(redisUrl: string): QueueOptions {
   };
 }
 
+/** Length of the `edited` hash in comment job / webhook event ids. */
+export const COMMENT_EDIT_HASH_LENGTH = 16;
+
+const EDIT_HASH_PATTERN = new RegExp(`^[0-9a-f]{${COMMENT_EDIT_HASH_LENGTH}}$`);
+
+/**
+ * Short hash of an edited comment's new message (sha256 hex, first 16 chars; `null` = no text).
+ * Part of the `edited` job id, so every different edit is its own job/event while an exact retry
+ * of the same edit is still deduped (orchestrator decision 2026-11-18, M4-T4/M4-T5).
+ */
+export function commentEditHash(message: string | null): string {
+  return createHash('sha256')
+    .update(message ?? '')
+    .digest('hex')
+    .slice(0, COMMENT_EDIT_HASH_LENGTH);
+}
+
 /**
  * Idempotent job id per D3: `<platform>:<commentId>:<verb>`, e.g. `FACEBOOK:123_456:add`.
- * BullMQ ignores an `add` whose `jobId` already exists, so webhook retries don't enqueue twice.
- * BullMQ only accepts a `:` in custom ids when there are exactly 3 parts, so no part may contain
- * one (it also rejects integer-looking ids, which this format can never be).
+ * Verb `edited` also carries the edit hash (`commentEditHash()`) in the 3rd part:
+ * `FACEBOOK:123_456:edited-<16 hex>`. The same string is `webhook_events.event_id` (D4; the DB
+ * check accepts exactly these forms). BullMQ ignores an `add` whose `jobId` already exists, so
+ * webhook retries don't enqueue twice. BullMQ only accepts a `:` in custom ids when there are
+ * exactly 3 parts, so no part may contain one (it also rejects integer-looking ids, which this
+ * format can never be).
  */
 export function commentJobId(
   platform: string,
   commentId: string,
   verb: string,
+  editHash?: string,
 ): string {
   for (const [label, part] of [
     ['platform', platform],
@@ -69,6 +91,15 @@ export function commentJobId(
     if (!part || part.includes(':')) {
       throw new Error(`Invalid ${label} for a comment job id`);
     }
+  }
+  if (verb === 'edited') {
+    if (editHash === undefined || !EDIT_HASH_PATTERN.test(editHash)) {
+      throw new Error('Invalid editHash for a comment job id');
+    }
+    return `${platform}:${commentId}:edited-${editHash}`;
+  }
+  if (editHash !== undefined) {
+    throw new Error('Invalid editHash for a comment job id');
   }
   return `${platform}:${commentId}:${verb}`;
 }

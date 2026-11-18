@@ -18,7 +18,7 @@ import {
   webhookEvents,
   workspaces,
 } from '../src/db/schema/index.js';
-import { commentJobId } from '../src/queue/queue.constants.js';
+import { commentEditHash, commentJobId } from '../src/queue/queue.constants.js';
 import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
 
@@ -142,13 +142,21 @@ describe('Comments schema (e2e)', () => {
 
     it('rejects a malformed event id or payload hash', async () => {
       const valid = {
-        eventId: commentJobId('INSTAGRAM', `${base}21`, 'edited'),
+        eventId: commentJobId(
+          'INSTAGRAM',
+          `${base}21`,
+          'edited',
+          commentEditHash('new text'),
+        ),
         workspaceId: a.workspaceId,
         payloadHash: webhookPayloadHash(payload),
       };
       for (const eventIdValue of [
         `TIKTOK:${base}21:add`,
         `FACEBOOK:${base}21:hide`,
+        `FACEBOOK:${base}21:edited`,
+        `FACEBOOK:${base}21:edited-ABCDEF0123456789`,
+        `FACEBOOK:${base}21:edited-0123`,
         `FACEBOOK:abc:add`,
       ]) {
         expect(
@@ -166,6 +174,8 @@ describe('Comments schema (e2e)', () => {
             .values({ ...valid, payloadHash: 'not-a-hash' }),
         ),
       ).toBe(CHECK_VIOLATION);
+      // The M4-T4 `edited-<hash>` form itself is accepted.
+      expect(await insertWebhookEvent(db(), valid)).toBe(true);
     });
   });
 

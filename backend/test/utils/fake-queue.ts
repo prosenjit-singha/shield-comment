@@ -18,7 +18,7 @@ export interface FakeJob {
 /**
  * In-memory stand-in for a BullMQ `Queue` in e2e (no Redis). Records added jobs (a duplicate
  * `jobId` is ignored, like BullMQ), answers `getJobCounts` (`waiting` = recorded jobs + any
- * `setCounts` extra) and can be told to fail counts. Only the members the app uses exist; add more
+ * `setCounts` extra) and can be told to fail counts or adds (`failAdds`). Only the members the app uses exist; add more
  * when a row needs them.
  */
 export class FakeQueue {
@@ -26,11 +26,14 @@ export class FakeQueue {
   closed = false;
   private extraCounts: Record<string, number> = {};
   private countsError: Error | null = null;
+  private addFailure: Error | 'hang' | null = null;
   private nextId = 1;
 
   constructor(readonly name: QueueName) {}
 
   add(name: string, data: unknown, opts: JobsOptions = {}): Promise<FakeJob> {
+    if (this.addFailure === 'hang') return new Promise<never>(() => {});
+    if (this.addFailure) return Promise.reject(this.addFailure);
     const merged: JobsOptions = { ...DEFAULT_JOB_OPTIONS, ...opts };
     const existing = merged.jobId
       ? this.jobs.find((job) => job.id === merged.jobId)
@@ -44,6 +47,22 @@ export class FakeQueue {
     };
     this.jobs.push(job);
     return Promise.resolve(job);
+  }
+
+  /** Like BullMQ: all or nothing (one MULTI); duplicate ids return the existing job. */
+  addBulk(
+    jobs: { name: string; data: unknown; opts?: JobsOptions }[],
+  ): Promise<FakeJob[]> {
+    if (this.addFailure === 'hang') return new Promise<never>(() => {});
+    if (this.addFailure) return Promise.reject(this.addFailure);
+    return Promise.all(
+      jobs.map((job) => this.add(job.name, job.data, job.opts)),
+    );
+  }
+
+  /** Makes `add`/`addBulk` reject with `error`, or never settle (`'hang'`, Redis down); `null` restores. */
+  failAdds(failure: Error | 'hang' | null): void {
+    this.addFailure = failure;
   }
 
   getJobCounts(...types: string[]): Promise<Record<string, number>> {
@@ -71,6 +90,7 @@ export class FakeQueue {
     this.jobs.length = 0;
     this.extraCounts = {};
     this.countsError = null;
+    this.addFailure = null;
   }
 
   on(): this {
