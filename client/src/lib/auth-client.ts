@@ -8,6 +8,9 @@ import { createAuthClient } from 'better-auth/react'
  */
 export const authClient = createAuthClient({
   basePath: '/api/auth',
+  // Better Auth captures `fetch` when the client is created; look it up per call instead, so a fetch
+  // installed later (tests stub the global, polyfills) is the one used.
+  fetchOptions: { customFetchImpl: (input, init) => globalThis.fetch(input, init) },
   plugins: [organizationClient(), adminClient()],
 })
 

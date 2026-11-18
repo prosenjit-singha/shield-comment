@@ -14,7 +14,9 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as BnRouteImport } from './routes/bn'
 import { Route as ImpersonateRouteImport } from './routes/impersonate'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as RegisterRouteImport } from './routes/register'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppOnboardingRouteImport } from './routes/_app/onboarding'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -41,9 +43,19 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RegisterRoute = RegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOnboardingRoute = AppOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => AppRoute,
 } as any)
 const ApiSplatRoute = ApiSplatRouteImport.update({
@@ -57,7 +69,9 @@ export interface FileRoutesByFullPath {
   '/bn': typeof BnRoute
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
   '/dashboard': typeof AppDashboardRoute
+  '/onboarding': typeof AppOnboardingRoute
   '/api/$': typeof ApiSplatRoute
 }
 export interface FileRoutesByTo {
@@ -65,7 +79,9 @@ export interface FileRoutesByTo {
   '/bn': typeof BnRoute
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
   '/dashboard': typeof AppDashboardRoute
+  '/onboarding': typeof AppOnboardingRoute
   '/api/$': typeof ApiSplatRoute
 }
 export interface FileRoutesById {
@@ -75,14 +91,32 @@ export interface FileRoutesById {
   '/bn': typeof BnRoute
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
   '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/onboarding': typeof AppOnboardingRoute
   '/api/$': typeof ApiSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/bn' | '/impersonate' | '/login' | '/dashboard' | '/api/$'
+  fullPaths:
+    | '/'
+    | '/bn'
+    | '/impersonate'
+    | '/login'
+    | '/register'
+    | '/dashboard'
+    | '/onboarding'
+    | '/api/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/bn' | '/impersonate' | '/login' | '/dashboard' | '/api/$'
+  to:
+    | '/'
+    | '/bn'
+    | '/impersonate'
+    | '/login'
+    | '/register'
+    | '/dashboard'
+    | '/onboarding'
+    | '/api/$'
   id:
     | '__root__'
     | '/'
@@ -90,7 +124,9 @@ export interface FileRouteTypes {
     | '/bn'
     | '/impersonate'
     | '/login'
+    | '/register'
     | '/_app/dashboard'
+    | '/_app/onboarding'
     | '/api/$'
   fileRoutesById: FileRoutesById
 }
@@ -100,6 +136,7 @@ export interface RootRouteChildren {
   BnRoute: typeof BnRoute
   ImpersonateRoute: typeof ImpersonateRoute
   LoginRoute: typeof LoginRoute
+  RegisterRoute: typeof RegisterRoute
   ApiSplatRoute: typeof ApiSplatRoute
 }
 
@@ -140,11 +177,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/register': {
+      id: '/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/dashboard': {
       id: '/_app/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/onboarding': {
+      id: '/_app/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof AppOnboardingRouteImport
       parentRoute: typeof AppRoute
     }
     '/api/$': {
@@ -159,10 +210,12 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
+  AppOnboardingRoute: typeof AppOnboardingRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
+  AppOnboardingRoute: AppOnboardingRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -173,6 +226,7 @@ const rootRouteChildren: RootRouteChildren = {
   BnRoute: BnRoute,
   ImpersonateRoute: ImpersonateRoute,
   LoginRoute: LoginRoute,
+  RegisterRoute: RegisterRoute,
   ApiSplatRoute: ApiSplatRoute,
 }
 export const routeTree = rootRouteImport

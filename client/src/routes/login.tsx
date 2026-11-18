@@ -1,26 +1,38 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
-import { ShieldCheck } from 'lucide-react'
+import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router'
+import { LoaderCircle } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { AuthAlert, AuthScreen, FormField } from '@/components/auth/auth-screen'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { useLanguage } from '@/hooks/use-language'
-import { authClient } from '@/lib/auth-client'
+import { authErrorMessage, type AuthError } from '@/lib/auth-errors'
+import {
+  fieldErrorMessage,
+  signInWithEmail,
+  validateSignIn,
+  type FieldErrors,
+  type SignInInput,
+} from '@/lib/auth-forms'
 import { safeRedirect } from '@/lib/safe-redirect'
-import { sessionQueryKey, sessionQueryOptions } from '@/lib/session'
+import { sessionQueryOptions } from '@/lib/session'
 
 interface LoginSearch {
   redirect?: string
 }
 
-/** Placeholder sign-in (SW-T7). Sign-up, reset and the real design arrive with Module 1/6. */
+/** C2 sign-in (M3-T8). A signed-in visitor goes straight to `?redirect=` (via `safeRedirect`). */
 export const Route = createFileRoute('/login')({
-  validateSearch: (search: Record<string, unknown>): LoginSearch =>
-    typeof search.redirect === 'string' ? { redirect: search.redirect } : {},
+  // Return the key even when invalid: the router merges the raw search under this result.
+  validateSearch: (search: Record<string, unknown>): LoginSearch => ({
+    redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
+  }),
   beforeLoad: async ({ context, search }) => {
-    const session = await context.queryClient.ensureQueryData(sessionQueryOptions)
+    let session: unknown = null
+    try {
+      session = await context.queryClient.ensureQueryData(sessionQueryOptions)
+    } catch {
+      return // session check failed (offline / API down): show the form; sign-in reports the problem
+    }
     if (session) throw redirect({ href: safeRedirect(search.redirect), replace: true })
   },
   head: () => ({ meta: [{ title: 'Log in | ShieldComment BD' }, { name: 'robots', content: 'noindex' }] }),
@@ -28,77 +40,94 @@ export const Route = createFileRoute('/login')({
 })
 
 function LoginPage() {
-  const router = useRouter()
+  const { redirect: target } = Route.useSearch()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { content } = useLanguage()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [values, setValues] = useState<SignInInput>({ email: '', password: '' })
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors<keyof SignInInput>>({})
 
-  const signIn = useMutation({
-    mutationFn: async (input: { email: string; password: string }) => {
-      const { data, error } = await authClient.signIn.email(input)
-      if (error) throw new Error(error.message ?? 'Sign-in failed')
-      return data
-    },
-    // Drop the cached `null` session and re-run beforeLoad, which redirects to the target page.
+  const signIn = useMutation<void, AuthError, SignInInput>({
+    mutationFn: signInWithEmail,
     onSuccess: async () => {
-      queryClient.removeQueries({ queryKey: sessionQueryKey })
-      await router.invalidate()
+      // New identity: drop the cached `null` session and anything cached under a previous user,
+      // then go to the target; the `_app` guard fetches the fresh session.
+      queryClient.removeQueries()
+      await navigate({ href: safeRedirect(target), replace: true })
     },
   })
 
+  const update = (field: keyof SignInInput, value: string) => {
+    setValues((current) => ({ ...current, [field]: value }))
+    setFieldErrors((current) => ({ ...current, [field]: undefined }))
+    if (signIn.isError) signIn.reset()
+  }
+
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    signIn.mutate({ email, password })
+    if (signIn.isPending) return
+    const errors = validateSignIn(values)
+    setFieldErrors(errors)
+    if (Object.keys(errors).length > 0) return
+    signIn.mutate(values)
+  }
+
+  const badCredentials = signIn.error?.kind === 'invalid-credentials'
+  const errorFor = (field: keyof SignInInput) => {
+    const error = fieldErrors[field]
+    return error ? fieldErrorMessage(field, error, content) : undefined
   }
 
   return (
-    <main className="flex min-h-svh items-center justify-center bg-muted p-4 sm:p-6">
-      <Card className="w-full max-w-sm rounded-3xl">
-        <CardHeader className="items-center text-center">
-          <Link to="/" aria-label="ShieldComment BD">
-            <ShieldCheck className="mx-auto size-10 text-primary" aria-hidden />
+    <AuthScreen
+      title={content('Welcome back', 'আবার স্বাগতম')}
+      description={content(
+        'Log in to keep scam comments off your ads.',
+        'আপনার অ্যাডে স্ক্যাম কমেন্ট ঠেকাতে লগ ইন করুন।',
+      )}
+      footer={
+        <p>
+          {content('New to ShieldComment?', 'ShieldComment-এ নতুন?')}{' '}
+          <Link to="/register" className="font-medium text-primary underline-offset-4 hover:underline">
+            {content('Create an account', 'অ্যাকাউন্ট খুলুন')}
           </Link>
-          <CardTitle className="text-xl">{content('Welcome back', 'আবার স্বাগতম')}</CardTitle>
-          <CardDescription>
-            {content('Log in to your ShieldComment workspace', 'আপনার ShieldComment ওয়ার্কস্পেসে লগ ইন করুন')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="email">{content('Email', 'ইমেইল')}</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="password">{content('Password', 'পাসওয়ার্ড')}</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            {signIn.error && (
-              <p className="text-sm text-destructive" role="alert">
-                {signIn.error.message}
-              </p>
-            )}
-            <Button type="submit" disabled={signIn.isPending}>
-              {signIn.isPending ? content('Logging in…', 'লগ ইন হচ্ছে…') : content('Log in', 'লগ ইন')}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </main>
+        </p>
+      }
+    >
+      <form className="flex flex-col gap-4" onSubmit={onSubmit} noValidate aria-busy={signIn.isPending}>
+        <fieldset className="flex flex-col gap-4" disabled={signIn.isPending}>
+          <FormField
+            id="email"
+            label={content('Email', 'ইমেইল')}
+            type="email"
+            autoComplete="username"
+            inputMode="email"
+            value={values.email}
+            onChange={(e) => update('email', e.target.value)}
+            error={errorFor('email')}
+            aria-invalid={badCredentials || fieldErrors.email ? true : undefined}
+          />
+          <FormField
+            id="password"
+            label={content('Password', 'পাসওয়ার্ড')}
+            type="password"
+            autoComplete="current-password"
+            value={values.password}
+            onChange={(e) => update('password', e.target.value)}
+            error={errorFor('password')}
+            aria-invalid={badCredentials || fieldErrors.password ? true : undefined}
+          />
+        </fieldset>
+        {signIn.error && (
+          <AuthAlert id="sign-in-error" kind={signIn.error.kind}>
+            {authErrorMessage(signIn.error, content)}
+          </AuthAlert>
+        )}
+        <Button type="submit" className="h-11 w-full" disabled={signIn.isPending}>
+          {signIn.isPending && <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden />}
+          {signIn.isPending ? content('Logging in…', 'লগ ইন হচ্ছে…') : content('Log in', 'লগ ইন')}
+        </Button>
+      </form>
+    </AuthScreen>
   )
 }
