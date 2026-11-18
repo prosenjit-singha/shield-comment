@@ -13,6 +13,7 @@ import {
   type FieldErrors,
   type SignInInput,
 } from '@/lib/auth-forms'
+import { postAuthDestination } from '@/lib/post-auth'
 import { safeRedirect } from '@/lib/safe-redirect'
 import { sessionQueryOptions } from '@/lib/session'
 
@@ -20,7 +21,10 @@ interface LoginSearch {
   redirect?: string
 }
 
-/** C2 sign-in (M3-T8). A signed-in visitor goes straight to `?redirect=` (via `safeRedirect`). */
+/**
+ * C2 sign-in (M3-T8). A signed-in visitor goes straight to `?redirect=` (via `safeRedirect`). After a
+ * sign-in without a usable `?redirect=`, `postAuthDestination` applies the D13 onboarding rule.
+ */
 export const Route = createFileRoute('/login')({
   // Return the key even when invalid: the router merges the raw search under this result.
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
@@ -50,10 +54,11 @@ function LoginPage() {
   const signIn = useMutation<void, AuthError, SignInInput>({
     mutationFn: signInWithEmail,
     onSuccess: async () => {
-      // New identity: drop the cached `null` session and anything cached under a previous user,
-      // then go to the target; the `_app` guard fetches the fresh session.
+      // New identity: drop the cached `null` session and anything cached under a previous user.
       queryClient.removeQueries()
-      await navigate({ href: safeRedirect(target), replace: true })
+      // An explicit (safe) ?redirect= wins; otherwise D13 picks /onboarding (0 active Pages) or /dashboard.
+      const explicit = safeRedirect(target, '')
+      await navigate({ href: explicit || (await postAuthDestination(queryClient)), replace: true })
     },
   })
 

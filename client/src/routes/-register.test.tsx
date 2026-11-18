@@ -5,6 +5,24 @@ import { callsTo, fetchMock, json, mockApi, renderAuthRoute } from '@/test/auth-
 vi.mock('@/server/session', () => ({ getServerSession: vi.fn() }))
 
 const USER = { id: 'u1', email: 'rahim@shop.bd', name: 'Rahim', emailVerified: false }
+const SESSION = { session: { id: 's1', userId: 'u1', impersonatedBy: null, activeOrganizationId: 'w1' }, user: USER }
+const PAGES = '/api/workspaces/w1/pages'
+
+/**
+ * Sign-up succeeds; get-session answers "signed out" until then (the /register guard) and the new
+ * session after it; the D13 pages check answers with `pages` (default: `activeCount` active Pages).
+ */
+function signUpFlow(activeCount: number, pages?: () => Response) {
+  let signedUp = false
+  return {
+    '/api/auth/sign-up/email': () => {
+      signedUp = true
+      return json(200, { token: 't', user: USER })
+    },
+    '/api/auth/get-session': () => json(200, signedUp ? SESSION : null),
+    [PAGES]: pages ?? (() => json(200, { items: [], pageLimit: { limit: 1, activeCount } })),
+  }
+}
 
 const copy = {
   en: {
@@ -15,8 +33,6 @@ const copy = {
     submit: 'Create account',
     pending: 'Creating account…',
     title: 'Create your account',
-    onboarding: 'Connect your Facebook Page',
-    skip: 'Skip for now',
     login: 'Log in',
     errors: {
       name: 'Enter your name.',
@@ -36,8 +52,6 @@ const copy = {
     submit: 'অ্যাকাউন্ট খুলুন',
     pending: 'অ্যাকাউন্ট খোলা হচ্ছে…',
     title: 'আপনার অ্যাকাউন্ট খুলুন',
-    onboarding: 'আপনার ফেসবুক পেজ কানেক্ট করুন',
-    skip: 'এখন থাক',
     login: 'লগ ইন',
     errors: {
       name: 'আপনার নাম লিখুন।',
@@ -79,15 +93,15 @@ afterEach(() => {
 describe.each(['en', 'bn'] as const)('/register (%s)', (language) => {
   const t = copy[language]
 
-  it('sends the business name as workspaceName and lands on /onboarding', async () => {
-    mockApi({ '/api/auth/sign-up/email': () => json(200, { token: 't', user: USER }) })
+  it('sends the business name as workspaceName and lands on /onboarding (0 active Pages, D13)', async () => {
+    mockApi(signUpFlow(0))
     const { history, queryClient } = renderAuthRoute('/register', language)
     expect(await screen.findByRole('heading', { name: t.title })).toBeTruthy()
 
     await fill(language)
     submit(language)
 
-    expect(await screen.findByRole('heading', { name: t.onboarding })).toBeTruthy()
+    expect(await screen.findByText('Onboarding stub')).toBeTruthy()
     expect(history.location.pathname).toBe('/onboarding')
     expect(history.length).toBe(1)
     const calls = callsTo('/api/auth/sign-up/email')
@@ -103,11 +117,34 @@ describe.each(['en', 'bn'] as const)('/register (%s)', (language) => {
         workspaceName: 'Rahim Fashion House',
       },
     })
-    expect(queryClient.getQueryData(['auth', 'session'])).toBeUndefined()
+    // The D13 check ran once against the new session's workspace; both answers stay cached for the
+    // `_app` guard and the wizard.
+    expect(callsTo('/api/auth/get-session')).toHaveLength(2) // guard (signed out) + the D13 check
+    expect(callsTo(PAGES)).toHaveLength(1)
+    expect(queryClient.getQueryData(['auth', 'session'])).toMatchObject({ session: { activeOrganizationId: 'w1' } })
+    expect(queryClient.getQueryData(['workspace', 'w1', 'pages'])).toMatchObject({ pageLimit: { activeCount: 0 } })
+  })
 
-    // Onboarding is skippable (D13).
-    fireEvent.click(screen.getByRole('link', { name: t.skip }))
+  it('goes to /dashboard when the workspace already has an active Page', async () => {
+    mockApi(signUpFlow(1))
+    const { history } = renderAuthRoute('/register', language)
+    await fill(language)
+    submit(language)
+
     expect(await screen.findByText('Dashboard stub')).toBeTruthy()
+    expect(history.location.pathname).toBe('/dashboard')
+    expect(history.length).toBe(1)
+  })
+
+  it('falls back to /dashboard when the pages check fails', async () => {
+    mockApi(signUpFlow(0, () => new Response('<html>Bad Gateway</html>', { status: 502 })))
+    const { history } = renderAuthRoute('/register', language)
+    await fill(language)
+    submit(language)
+
+    expect(await screen.findByText('Dashboard stub')).toBeTruthy()
+    expect(history.location.pathname).toBe('/dashboard')
+    expect(callsTo(PAGES)).toHaveLength(1) // no retry before falling back
   })
 
   it('shows every missing field without calling the API, and focuses the first', async () => {
@@ -143,11 +180,11 @@ describe.each(['en', 'bn'] as const)('/register (%s)', (language) => {
   })
 
   it('accepts an 80-character business name (trimmed)', async () => {
-    mockApi({ '/api/auth/sign-up/email': () => json(200, { token: 't', user: USER }) })
+    mockApi(signUpFlow(0))
     renderAuthRoute('/register', language)
     await fill(language, { business: ` ${'ক'.repeat(80)} ` })
     submit(language)
-    expect(await screen.findByRole('heading', { name: t.onboarding })).toBeTruthy()
+    expect(await screen.findByText('Onboarding stub')).toBeTruthy()
     expect(callsTo('/api/auth/sign-up/email')[0]?.body).toMatchObject({ workspaceName: 'ক'.repeat(80) })
   })
 

@@ -14,11 +14,13 @@ import {
   type FieldErrors,
   type SignUpInput,
 } from '@/lib/auth-forms'
+import { postAuthDestination } from '@/lib/post-auth'
 import { sessionQueryOptions } from '@/lib/session'
 
 /**
  * C2 sign-up (M3-T8, decision D13): name, email, password + business name (= the first workspace's
- * name). No email verification yet. After sign-up the user lands on `/onboarding` (skippable).
+ * name). No email verification yet. After sign-up the user lands on `/onboarding` (skippable) via
+ * `postAuthDestination` (D13 entry-point rule).
  */
 export const Route = createFileRoute('/register')({
   beforeLoad: async ({ context }) => {
@@ -46,9 +48,10 @@ function RegisterPage() {
   const signUp = useMutation<void, AuthError, SignUpInput>({
     mutationFn: signUpWithWorkspace,
     onSuccess: async () => {
-      // Better Auth signed the new user in: drop the cached `null` session, then start onboarding.
+      // Better Auth signed the new user in: drop the cached `null` session, then D13: /onboarding while
+      // the new workspace has 0 active Pages (always, unless the check fails → /dashboard).
       queryClient.removeQueries()
-      await navigate({ to: '/onboarding', replace: true })
+      await navigate({ href: await postAuthDestination(queryClient), replace: true })
     },
   })
 

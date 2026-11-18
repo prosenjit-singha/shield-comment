@@ -11,15 +11,15 @@ import { render } from '@testing-library/react'
 import { vi } from 'vitest'
 import type { Language } from '@/lib/language'
 import { createQueryClient } from '@/lib/query-client'
-import { Route as OnboardingRoute } from '@/routes/_app/onboarding'
 import { Route as LoginRoute } from '@/routes/login'
 import { Route as RegisterRoute } from '@/routes/register'
 import { createLanguageStore, LanguageStoreContext } from '@/stores/language-store'
 
 /**
- * Test harness for the C2 auth screens (M3-T8). The real `/login`, `/register` and `/onboarding` route
- * files are mounted under a bare root (the generated tree pulls in the Start server functions, and
- * `/onboarding`'s `_app` guard is not under test here); `/`, `/dashboard` and `/orders` are stubs.
+ * Test harness for the C2 auth screens (M3-T8). The real `/login` and `/register` route files are
+ * mounted under a bare root (the generated tree pulls in the Start server functions); `/`, `/onboarding`,
+ * `/dashboard` and `/orders` are stubs (the onboarding wizard + `_app` guard are tested in
+ * `src/routes/_app/-onboarding.test.tsx`).
  * Better Auth's client runs for real against a stubbed global `fetch`.
  */
 const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({ component: Outlet })
@@ -29,7 +29,7 @@ const stub = (path: string, text: string) =>
 const routeTree = rootRoute.addChildren([
   LoginRoute.update({ id: '/login', path: '/login', getParentRoute: () => rootRoute } as never),
   RegisterRoute.update({ id: '/register', path: '/register', getParentRoute: () => rootRoute } as never),
-  OnboardingRoute.update({ id: '/onboarding', path: '/onboarding', getParentRoute: () => rootRoute } as never),
+  stub('/onboarding', 'Onboarding stub'),
   stub('/', 'Landing stub'),
   stub('/dashboard', 'Dashboard stub'),
   stub('/orders', 'Orders stub'),

@@ -38,3 +38,10 @@ export function fixedLanguageForPath(pathname: string): Language | null {
   if (pathname === '/') return 'en'
   return null
 }
+
+const BANGLA_NUMBER = new Intl.NumberFormat('bn-BD')
+
+/** A number in Bangla digits (`3` → `৩`), for the `bangla` side of `content()`. */
+export function bnNumber(value: number): string {
+  return BANGLA_NUMBER.format(value)
+}

@@ -7,6 +7,26 @@ vi.mock('@/server/session', () => ({ getServerSession: vi.fn() }))
 
 const USER = { id: 'u1', email: 'rahim@shop.bd', name: 'Rahim', emailVerified: false }
 const SESSION = { session: { id: 's1', userId: 'u1', impersonatedBy: null }, user: USER }
+const WORKSPACE_SESSION = { session: { ...SESSION.session, activeOrganizationId: 'w1' }, user: USER }
+const PAGES = '/api/workspaces/w1/pages'
+type Respond = () => Response | Promise<Response>
+const pagesWith = (activeCount: number): Respond => () => json(200, { items: [], pageLimit: { limit: 3, activeCount } })
+
+/**
+ * Sign-in succeeds; get-session answers "signed out" until then (the /login guard) and `session` after
+ * it; the D13 pages check answers with `pages`.
+ */
+function signInFlow(pages: Respond, session: Respond = () => json(200, WORKSPACE_SESSION)) {
+  let signedIn = false
+  return {
+    '/api/auth/sign-in/email': () => {
+      signedIn = true
+      return json(200, { redirect: false, token: 't', user: USER })
+    },
+    '/api/auth/get-session': () => (signedIn ? session() : json(200, null)),
+    [PAGES]: pages,
+  }
+}
 
 const copy = {
   en: {
@@ -66,6 +86,82 @@ describe.each(['en', 'bn'] as const)('/login (%s)', (language) => {
     expect(signIn).toMatchObject({ method: 'POST', body: { email: 'rahim@shop.bd', password: 'secret-password' } })
     expect(queryClient.getQueryData(['auth', 'session'])).toBeUndefined()
     expect(queryClient.getQueryData(['workspace', 'stats'])).toBeUndefined()
+    expect(callsTo(PAGES)).toHaveLength(0) // explicit ?redirect: no D13 check
+  })
+
+  describe('without ?redirect (D13 entry point)', () => {
+    it('goes to /onboarding when the active workspace has 0 active Pages', async () => {
+      mockApi(signInFlow(pagesWith(0)))
+      const { history, queryClient } = renderAuthRoute('/login', language)
+      await fillAndSubmit(language)
+
+      expect(await screen.findByText('Onboarding stub')).toBeTruthy()
+      expect(history.location.pathname).toBe('/onboarding')
+      expect(history.length).toBe(1)
+      expect(callsTo(PAGES)).toHaveLength(1)
+      expect(callsTo(PAGES)[0]!.method).toBe('GET')
+      // Cached for the `_app` guard and the wizard.
+      expect(queryClient.getQueryData(['workspace', 'w1', 'pages'])).toMatchObject({ pageLimit: { activeCount: 0 } })
+    })
+
+    it('goes to /dashboard when at least one Page is active', async () => {
+      mockApi(signInFlow(pagesWith(2)))
+      const { history } = renderAuthRoute('/login', language)
+      await fillAndSubmit(language)
+
+      expect(await screen.findByText('Dashboard stub')).toBeTruthy()
+      expect(history.location.pathname).toBe('/dashboard')
+    })
+
+    it.each<[string, Respond]>([
+      ['pages 503', () => json(503, { statusCode: 503, message: 'down' })],
+      ['pages 403 (moderator)', () => json(403, { statusCode: 403, message: 'Forbidden' })],
+      ['pages network failure', () => Promise.reject(new TypeError('Failed to fetch'))],
+    ])('falls back to /dashboard when the check fails (%s)', async (_name, pages) => {
+      mockApi(signInFlow(pages))
+      const { history } = renderAuthRoute('/login', language)
+      await fillAndSubmit(language)
+
+      expect(await screen.findByText('Dashboard stub')).toBeTruthy()
+      expect(history.location.pathname).toBe('/dashboard')
+      expect(callsTo(PAGES)).toHaveLength(1) // no retry
+    })
+
+    it('falls back to /dashboard when the session has no active workspace or get-session fails', async () => {
+      mockApi(signInFlow(pagesWith(0), () => json(200, SESSION)))
+      const first = renderAuthRoute('/login', language)
+      await fillAndSubmit(language)
+      expect(await screen.findByText('Dashboard stub')).toBeTruthy()
+      expect(first.history.location.pathname).toBe('/dashboard')
+      expect(callsTo(PAGES)).toHaveLength(0)
+      cleanup()
+
+      mockApi(signInFlow(pagesWith(0), () => new Response('down', { status: 503 })))
+      const second = renderAuthRoute('/login', language)
+      await fillAndSubmit(language)
+      expect(await screen.findByText('Dashboard stub')).toBeTruthy()
+      expect(second.history.location.pathname).toBe('/dashboard')
+      expect(callsTo(PAGES)).toHaveLength(0)
+    })
+
+    it('honours an explicit ?redirect even with 0 active Pages, without the check', async () => {
+      mockApi(signInFlow(pagesWith(0)))
+      const { history } = renderAuthRoute('/login?redirect=%2Fdashboard', language)
+      await fillAndSubmit(language)
+
+      expect(await screen.findByText('Dashboard stub')).toBeTruthy()
+      expect(history.location.pathname).toBe('/dashboard')
+      expect(callsTo(PAGES)).toHaveLength(0)
+    })
+
+    it('treats an unsafe ?redirect as none and applies the check', async () => {
+      mockApi(signInFlow(pagesWith(0)))
+      const { history } = renderAuthRoute('/login?redirect=%2F%2Fevil.example', language)
+      await fillAndSubmit(language)
+
+      expect(await screen.findByText('Onboarding stub')).toBeTruthy()
+      expect(history.location.pathname).toBe('/onboarding')
+    })
   })
 
   it('shows the pending state while signing in', async () => {
