@@ -99,7 +99,7 @@ describe('Meta schema (e2e)', () => {
       expect(row!.statusChangedAt).toBeInstanceOf(Date);
       expect(
         cipher.decrypt(
-          row!.encryptedUserAccessToken,
+          row!.encryptedUserAccessToken!,
           tokenCipherContext('meta_user_token', a.workspaceId, fbUserId),
         ),
       ).toBe('EAAG-user-token');

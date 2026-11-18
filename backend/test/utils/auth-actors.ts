@@ -12,6 +12,7 @@ import {
   dailyCommentStats,
   impersonationAuditLogs,
   metaConnections,
+  metaDataDeletionRequests,
   planAuditLogs,
   socialPages,
   ticketMessages,
@@ -64,6 +65,8 @@ export function createAuthActors(app: INestApplication<App>) {
   );
   const userIds: string[] = [];
   const workspaceIds: string[] = [];
+  /** Facebook user ids whose `meta_data_deletion_requests` rows `cleanup()` deletes (M4-T6). */
+  const facebookUserIds: string[] = [];
   const http = () => request(app.getHttpServer());
 
   async function signUp(prefix: string): Promise<Actor> {
@@ -195,6 +198,13 @@ export function createAuthActors(app: INestApplication<App>) {
       await db
         .delete(dailyCommentStats)
         .where(inArray(dailyCommentStats.workspaceId, workspaceIds));
+      // Data Deletion requests (M4-T6) have no FK: matched by the Facebook user ids of the
+      // workspaces' connections + the ids a spec tracked (the deletion job removes connections).
+      const connectionUsers = await db
+        .select({ id: metaConnections.facebookUserId })
+        .from(metaConnections)
+        .where(inArray(metaConnections.workspaceId, workspaceIds));
+      facebookUserIds.push(...connectionUsers.map((row) => row.id));
       // Meta rows (M3-T2) reference workspaces with FK restrict.
       await db
         .delete(socialPages)
@@ -204,6 +214,12 @@ export function createAuthActors(app: INestApplication<App>) {
         .where(inArray(metaConnections.workspaceId, workspaceIds));
       await db.delete(workspaces).where(inArray(workspaces.id, workspaceIds));
     }
+    if (facebookUserIds.length)
+      await db
+        .delete(metaDataDeletionRequests)
+        .where(
+          inArray(metaDataDeletionRequests.facebookUserId, facebookUserIds),
+        );
     if (userIds.length)
       await db.delete(users).where(inArray(users.id, userIds));
   }
@@ -219,6 +235,8 @@ export function createAuthActors(app: INestApplication<App>) {
     patchStoredSession,
     /** Track a user created outside `signUp` so `cleanup()` deletes it. */
     trackUser: (id: string) => userIds.push(id),
+    /** Track a Facebook user id so `cleanup()` deletes its Data Deletion requests (M4-T6). */
+    trackFacebookUser: (id: string) => facebookUserIds.push(id),
     cleanup,
   };
 }

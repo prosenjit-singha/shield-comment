@@ -21,6 +21,7 @@ import { SupportTicketsModule } from './support-tickets/support-tickets.module.j
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
 import { WebhooksModule } from './webhooks/webhooks.module.js';
 import { CommentsModule } from './comments/comments.module.js';
+import { MetaCallbacksModule } from './meta-callbacks/meta-callbacks.module.js';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { CommentsModule } from './comments/comments.module.js';
     MetaModule,
     WebhooksModule,
     CommentsModule,
+    MetaCallbacksModule,
   ],
 })
 export class AppModule {}

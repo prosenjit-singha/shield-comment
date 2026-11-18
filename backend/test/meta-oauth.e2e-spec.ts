@@ -393,7 +393,7 @@ describe('Meta OAuth connect (e2e)', () => {
       const cipher = app.get(TokenCipherService);
       expect(
         cipher.decrypt(
-          row!.encryptedUserAccessToken,
+          row!.encryptedUserAccessToken!,
           tokenCipherContext('meta_user_token', owner.workspaceId, `${base}1`),
         ),
       ).toBe(tokens.long);
@@ -435,7 +435,7 @@ describe('Meta OAuth connect (e2e)', () => {
         app
           .get(TokenCipherService)
           .decrypt(
-            row!.encryptedUserAccessToken,
+            row!.encryptedUserAccessToken!,
             tokenCipherContext(
               'meta_user_token',
               owner.workspaceId,
@@ -464,7 +464,7 @@ describe('Meta OAuth connect (e2e)', () => {
         app
           .get(TokenCipherService)
           .decrypt(
-            ownerRow!.encryptedUserAccessToken,
+            ownerRow!.encryptedUserAccessToken!,
             tokenCipherContext(
               'meta_user_token',
               other.workspaceId,

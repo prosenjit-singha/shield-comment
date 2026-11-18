@@ -20,7 +20,7 @@ import { workspaces } from './workspaces.js';
  *   webhook event routes to exactly one workspace. Pages missing on re-connect are kept with
  *   `is_active = false` and their token cleared; disconnect comes in a later module.
  * - D8: Graph error 190 sets `status = 'NEEDS_REAUTH'` (UI shows Reconnect); Deauthorize sets
- *   `REVOKED` (callback in Module 4).
+ *   `REVOKED` and clears the user + Page tokens (M4-T6, Module 4 D6).
  * - D4: Facebook Login for Business, FB + IG (IG via the Page's `instagram_business_account`),
  *   long-lived user token → non-expiring Page tokens.
  * - D2: tokens are `TokenCipherService` ciphertexts (`v1:<keyId>:<iv>:<tag>:<ct>`), AAD =
@@ -56,8 +56,11 @@ export const metaConnections = pgTable(
       .references(() => workspaces.id, { onDelete: 'restrict' }),
     /** App-scoped Facebook user id of whoever connected (the AAD subject of the user token). */
     facebookUserId: text().notNull(),
-    /** Long-lived (≈60-day) user access token, encrypted. */
-    encryptedUserAccessToken: text().notNull(),
+    /**
+     * Long-lived (≈60-day) user access token, encrypted. `null` only once Deauthorize revoked the
+     * connection (D6 "tokens cleared", M4-T6); a re-connect writes a new one.
+     */
+    encryptedUserAccessToken: text(),
     /** When the user token expires; `null` = Meta reported no expiry. */
     tokenExpiresAt: timestamptz(),
     /** Permissions the user actually granted (Meta lets them untick some). */
@@ -85,7 +88,12 @@ export const metaConnections = pgTable(
     ),
     check(
       'meta_connections_user_token_format',
-      cipherText('encrypted_user_access_token'),
+      cipherText('encrypted_user_access_token', true),
+    ),
+    // Only a REVOKED connection (Deauthorize, M4-T6) may be without a user token.
+    check(
+      'meta_connections_token_unless_revoked',
+      sql`${t.encryptedUserAccessToken} is not null or ${t.status} = 'REVOKED'`,
     ),
   ],
 );
