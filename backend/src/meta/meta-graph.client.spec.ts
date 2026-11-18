@@ -606,6 +606,82 @@ describe('MetaGraphClient', () => {
     });
   });
 
+  describe('revokePermissions (M4-T9)', () => {
+    const proof = createHmac('sha256', CONFIG.appSecret)
+      .update(USER_TOKEN)
+      .digest('hex');
+    const init = (n = 0) => fetchMock.mock.calls[n]![1]!;
+
+    it('= DELETE /me/permissions with the user token + proof in the query', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, { success: true }));
+      await expect(
+        client.revokePermissions(USER_TOKEN),
+      ).resolves.toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const url = calledUrl();
+      expect(url.origin + url.pathname).toBe(
+        'https://graph.facebook.com/v26.0/me/permissions',
+      );
+      expect(init().method).toBe('DELETE');
+      expect(init().body).toBeUndefined();
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        access_token: USER_TOKEN,
+        appsecret_proof: proof,
+      });
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/^DELETE \/me\/permissions 200 \d+ms$/),
+      );
+    });
+
+    it.each([[{ success: false }], [{}], [{ success: 'true' }], [[]]])(
+      'anything but { success: true } (%j) is unexpected_response',
+      async (body) => {
+        fetchMock.mockResolvedValueOnce(jsonResponse(200, body));
+        expect(
+          await caught(client.revokePermissions(USER_TOKEN)),
+        ).toMatchObject({ kind: 'unexpected_response', status: 200 });
+      },
+    );
+
+    it.each([
+      [190, 'token_invalid'],
+      [4, 'rate_limited'],
+      [200, 'permission'],
+      [100, 'invalid_request'],
+      [2, 'transient'],
+    ] as const)(
+      'Graph error #%i → %s, token and secret scrubbed',
+      async (code, kind) => {
+        fetchMock.mockResolvedValueOnce(
+          graphError(400, {
+            message: `bad ${USER_TOKEN} ${CONFIG.appSecret}`,
+            code,
+          }),
+        );
+        const error = await caught(client.revokePermissions(USER_TOKEN));
+        expect(error).toMatchObject({ kind, code });
+        expect(error.message).not.toContain(USER_TOKEN);
+        expect(error.message).not.toContain(CONFIG.appSecret);
+      },
+    );
+
+    it('network failure → network error without the token', async () => {
+      fetchMock.mockRejectedValue(new TypeError(`failed ${USER_TOKEN}`));
+      const error = await caught(client.revokePermissions(USER_TOKEN));
+      expect(error).toMatchObject({ kind: 'network', retryable: true });
+      expect(error.message).not.toContain(USER_TOKEN);
+      expect(error.message).toContain('me/permissions');
+    });
+
+    it('rejects an empty token / disabled client without calling fetch', async () => {
+      await expect(client.revokePermissions('')).rejects.toThrow('Token');
+      await expect(
+        new MetaGraphClient(null).revokePermissions(USER_TOKEN),
+      ).rejects.toBeInstanceOf(MetaNotConfiguredError);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe('errors', () => {
     it.each([
       [190, 463, 'token_invalid', false],

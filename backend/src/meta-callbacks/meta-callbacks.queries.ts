@@ -13,14 +13,15 @@ import {
 
 /**
  * Queries behind the Deauthorize + Data Deletion callbacks (M4-T6) and the `debug_token` check
- * (M4-T7). The only unscoped reads are the routing reads by `facebook_user_id` (ids only) and the
- * token check's system-wide page of connections; every write is scoped by `workspace_id`.
+ * (M4-T7). The only unscoped reads are the routing reads by `facebook_user_id` (ids only:
+ * connections, and since M4-T9 comments stamped by a disconnect) and the token check's
+ * system-wide page of connections; every write is scoped by `workspace_id`.
  */
 
 /** A database or a transaction. */
 export type CallbacksExecutor = Pick<
   Database,
-  'select' | 'insert' | 'update' | 'delete'
+  'select' | 'selectDistinct' | 'insert' | 'update' | 'delete'
 >;
 
 export interface ConnectionRef {
@@ -44,6 +45,29 @@ export function findConnectionsByFacebookUser(
     .from(metaConnections)
     .where(eq(metaConnections.facebookUserId, facebookUserId))
     .orderBy(asc(metaConnections.workspaceId));
+}
+
+/**
+ * Data Deletion routing read (M4-T9): every workspace that holds data of the Facebook user, i.e.
+ * a connection of theirs **or** comments a disconnect stamped with their id (the connection may be
+ * long gone). Distinct, ordered by workspace id (same lock order as every other caller).
+ */
+export async function findWorkspacesWithFacebookUserData(
+  executor: CallbacksExecutor,
+  facebookUserId: string,
+): Promise<string[]> {
+  const [connected, stamped] = await Promise.all([
+    findConnectionsByFacebookUser(executor, facebookUserId),
+    executor
+      .selectDistinct({ workspaceId: comments.workspaceId })
+      .from(comments)
+      .where(eq(comments.facebookUserId, facebookUserId)),
+  ]);
+  const ids = new Set([
+    ...connected.map((ref) => ref.workspaceId),
+    ...stamped.map((row) => row.workspaceId),
+  ]);
+  return [...ids].sort();
 }
 
 /**
@@ -168,57 +192,61 @@ export interface WorkspaceDeletionCounts {
   connections: number;
 }
 
+export interface WorkspaceDeletionTarget {
+  workspaceId: string;
+  /** The user's connection in this workspace (`null` = none any more, e.g. disconnected). */
+  connectionId: string | null;
+  /** That connection's Page row ids (empty without a connection). */
+  pageIds: string[];
+  /** The requesting user: comments a disconnect stamped with this id are deleted too (M4-T9). */
+  facebookUserId: string;
+}
+
 /**
  * Data Deletion (D6) for one workspace, inside the caller's transaction, in FK-safe order:
- * the `webhook_events` of the Pages' comments → those comments (before the Pages, else
- * `on delete set null` would keep them) → the Pages → the connection. Every statement is scoped
- * by `workspace_id`. `daily_comment_stats` stay (no personal data, D4).
+ * the `webhook_events` of the deleted comments → the comments (the Pages' comments, before the
+ * Pages, else `on delete set null` would keep them, **plus** comments a disconnect stamped with
+ * the user's Facebook id, M4-T9) → the Pages → the connection. Every statement is scoped by
+ * `workspace_id`. `daily_comment_stats` stay (no personal data, D4).
  */
 export async function deleteWorkspaceMetaData(
   tx: CallbacksExecutor,
-  workspaceId: string,
-  connectionId: string,
-  pageIds: string[],
+  target: WorkspaceDeletionTarget,
 ): Promise<WorkspaceDeletionCounts> {
-  let deletedEvents = 0;
-  let deletedComments = 0;
-  let deletedPages = 0;
-  if (pageIds.length > 0) {
-    const pageComments = tx
-      .select({ commentId: comments.commentId })
-      .from(comments)
+  const { workspaceId, connectionId, pageIds, facebookUserId } = target;
+  const commentScope = and(
+    eq(comments.workspaceId, workspaceId),
+    pageIds.length > 0
+      ? or(
+          inArray(comments.socialPageId, pageIds),
+          eq(comments.facebookUserId, facebookUserId),
+        )
+      : eq(comments.facebookUserId, facebookUserId),
+  );
+  const userComments = tx
+    .select({ commentId: comments.commentId })
+    .from(comments)
+    .where(commentScope);
+  // event_id = `<platform>:<commentId>:<verb>` (D4): the comment id is the 2nd part.
+  const deletedEvents = (
+    await tx
+      .delete(webhookEvents)
       .where(
         and(
-          eq(comments.workspaceId, workspaceId),
-          inArray(comments.socialPageId, pageIds),
+          eq(webhookEvents.workspaceId, workspaceId),
+          inArray(
+            sql`split_part(${webhookEvents.eventId}, ':', 2)`,
+            userComments,
+          ),
         ),
-      );
-    // event_id = `<platform>:<commentId>:<verb>` (D4): the comment id is the 2nd part.
-    deletedEvents = (
-      await tx
-        .delete(webhookEvents)
-        .where(
-          and(
-            eq(webhookEvents.workspaceId, workspaceId),
-            inArray(
-              sql`split_part(${webhookEvents.eventId}, ':', 2)`,
-              pageComments,
-            ),
-          ),
-        )
-        .returning({ id: webhookEvents.id })
-    ).length;
-    deletedComments = (
-      await tx
-        .delete(comments)
-        .where(
-          and(
-            eq(comments.workspaceId, workspaceId),
-            inArray(comments.socialPageId, pageIds),
-          ),
-        )
-        .returning({ id: comments.id })
-    ).length;
+      )
+      .returning({ id: webhookEvents.id })
+  ).length;
+  const deletedComments = (
+    await tx.delete(comments).where(commentScope).returning({ id: comments.id })
+  ).length;
+  let deletedPages = 0;
+  if (pageIds.length > 0) {
     deletedPages = (
       await tx
         .delete(socialPages)
@@ -231,20 +259,25 @@ export async function deleteWorkspaceMetaData(
         .returning({ id: socialPages.id })
     ).length;
   }
-  const connections = await tx
-    .delete(metaConnections)
-    .where(
-      and(
-        eq(metaConnections.workspaceId, workspaceId),
-        eq(metaConnections.id, connectionId),
-      ),
-    )
-    .returning({ id: metaConnections.id });
+  let deletedConnections = 0;
+  if (connectionId !== null) {
+    deletedConnections = (
+      await tx
+        .delete(metaConnections)
+        .where(
+          and(
+            eq(metaConnections.workspaceId, workspaceId),
+            eq(metaConnections.id, connectionId),
+          ),
+        )
+        .returning({ id: metaConnections.id })
+    ).length;
+  }
   return {
     webhookEvents: deletedEvents,
     comments: deletedComments,
     pages: deletedPages,
-    connections: connections.length,
+    connections: deletedConnections,
   };
 }
 

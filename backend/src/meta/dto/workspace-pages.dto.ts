@@ -1,6 +1,9 @@
+import type { MetaConnectionStatus } from '../../db/schema/index.js';
+
 /**
- * Response shapes of the workspace pages API (M3-T6, user decisions D5/D10 2026-11-18).
- * Tokens and ciphertexts are never part of them; `hasToken` only says whether one is stored.
+ * Response shapes of the workspace pages API (M3-T6, user decisions D5/D10 2026-11-18) and of
+ * Meta disconnect (M4-T9, Module 4 D7/D9). Tokens, ciphertexts and the Facebook user id are never
+ * part of them; `hasToken` only says whether one is stored.
  */
 
 /** One connected Facebook Page (+ its linked Instagram Business account, if any). */
@@ -25,10 +28,25 @@ export interface WorkspacePageLimit {
   activeCount: number;
 }
 
+/**
+ * The workspace's Meta connection (M4-T9, Module 4 D9). `NEEDS_REAUTH` = Meta rejected the token:
+ * webhooks are still ingested, Pages can be switched off but not on (409
+ * `CONNECTION_NEEDS_REAUTH`); `REVOKED` = the user removed the app (Deauthorize): nothing is
+ * ingested. Either way the UI shows Reconnect.
+ */
+export interface WorkspaceMetaConnection {
+  status: MetaConnectionStatus;
+  statusChangedAt: Date;
+  /** When the long-lived user token expires; `null` = no expiry reported (or REVOKED). */
+  tokenExpiresAt: Date | null;
+}
+
 /** `GET /api/workspaces/:workspaceId/pages` (sorted by `pageName`, then `pageId`). */
 export interface WorkspacePagesResponse {
   items: WorkspacePage[];
   pageLimit: WorkspacePageLimit;
+  /** `null` = Meta was never connected (or was disconnected). */
+  connection: WorkspaceMetaConnection | null;
 }
 
 /** `PATCH …/pages/:id/toggle`: same value again = `changed: false` (no write, `updatedAt` kept). */
@@ -39,6 +57,11 @@ export interface TogglePageResponse {
 
 /** `code` of the 409s / 502 from `PATCH …/pages/:id/toggle` (error body `{ …, code, details? }`). */
 export const PAGE_TOGGLE_ERROR_CODES = {
+  /**
+   * 409 (M4-T9, D9): switching on while the connection is not `ACTIVE` (`NEEDS_REAUTH`, `REVOKED`
+   * or no connection row): reconnect Facebook first. Checked before the token and limit checks.
+   */
+  connectionNeedsReauth: 'CONNECTION_NEEDS_REAUTH',
   /** Activating past the plan's `connectedPages`; `details` = `WorkspacePageLimit`. */
   limitReached: 'PAGE_LIMIT_REACHED',
   /** Activating a Page without a stored token (missing on re-connect): reconnect Meta first. */
@@ -46,3 +69,16 @@ export const PAGE_TOGGLE_ERROR_CODES = {
   /** 502 (M4-T8, D10): Graph `subscribed_apps` failed on switch-on; nothing changed. */
   subscribeFailed: 'META_SUBSCRIBE_FAILED',
 } as const;
+
+/**
+ * `DELETE /api/workspaces/:workspaceId/meta/connection` (M4-T9, D7). Idempotent: nothing to
+ * delete → `disconnected: false` and zero counts.
+ */
+export interface MetaDisconnectResponse {
+  /** `true` = a connection row and/or Pages were deleted. */
+  disconnected: boolean;
+  /** `social_pages` rows deleted (their `page_id`/`ig_business_id` are free for any workspace). */
+  pagesDeleted: number;
+  /** Comments of those Pages kept with no Page link (stamped for a later Data Deletion). */
+  commentsKept: number;
+}

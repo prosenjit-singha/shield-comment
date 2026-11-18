@@ -7,7 +7,13 @@ import {
   TokenCipherService,
   tokenCipherContext,
 } from '../src/crypto/token-cipher.service.js';
-import { plans, socialPages, workspaces } from '../src/db/schema/index.js';
+import {
+  type MetaConnectionStatus,
+  metaConnections,
+  plans,
+  socialPages,
+  workspaces,
+} from '../src/db/schema/index.js';
 import { MetaGraphClient } from '../src/meta/meta-graph.client.js';
 import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
@@ -83,6 +89,37 @@ describe('Workspace pages API (e2e)', () => {
     return row!;
   }
 
+  const CHANGED_AT = new Date('2026-11-01T08:00:00.000Z');
+  const EXPIRES_AT = new Date('2027-01-01T00:00:00.000Z');
+
+  /** A connection row (M4-T9: switching on needs an ACTIVE one, D9). */
+  async function insertConnection(
+    workspaceId: string,
+    status: MetaConnectionStatus,
+  ) {
+    seq += 1;
+    const fbUserId = `${base}${seq}`;
+    const token = `EAAuser${seq}x${base}`;
+    tokens.push(token);
+    await db()
+      .insert(metaConnections)
+      .values({
+        workspaceId,
+        facebookUserId: fbUserId,
+        encryptedUserAccessToken:
+          status === 'REVOKED'
+            ? null
+            : cipher.encrypt(
+                token,
+                tokenCipherContext('meta_user_token', workspaceId, fbUserId),
+              ),
+        tokenExpiresAt: status === 'REVOKED' ? null : EXPIRES_AT,
+        status,
+        statusChangedAt: CHANGED_AT,
+      });
+    return fbUserId;
+  }
+
   const rowOf = async (id: string) => {
     const [row] = await db()
       .select()
@@ -125,6 +162,9 @@ describe('Workspace pages API (e2e)', () => {
     superAdmin = await actors.signUpSuperAdmin('m3t6-super');
     await actors.addMember(owner.workspaceId, moderator.id, 'moderator');
     await actors.addMember(owner.workspaceId, wsAdmin.id, 'admin');
+    for (const actor of [owner, other, growth]) {
+      await insertConnection(actor.workspaceId, 'ACTIVE');
+    }
     freeLimit = await limitOf('free');
     growthLimit = await limitOf('growth');
     // The limit tests need room for at least one active Page on Free and more on Growth.
@@ -271,8 +311,18 @@ describe('Workspace pages API (e2e)', () => {
           .set('Cookie', owner.cookie)
           .expect(200),
       );
-      expect(Object.keys(res.body).sort()).toEqual(['items', 'pageLimit']);
+      expect(Object.keys(res.body).sort()).toEqual([
+        'connection',
+        'items',
+        'pageLimit',
+      ]);
       expect(res.body.pageLimit).toEqual({ limit: freeLimit, activeCount: 0 });
+      // M4-T9 (D9): status only, no Facebook user id, no token.
+      expect(res.body.connection).toEqual({
+        status: 'ACTIVE',
+        statusChangedAt: CHANGED_AT.toISOString(),
+        tokenExpiresAt: EXPIRES_AT.toISOString(),
+      });
       const items = res.body.items as Record<string, unknown>[];
       expect(items.map((p) => p.id)).toEqual([noToken, ...ownerPages]);
       expect(items.map((p) => p.pageName)).toEqual([
@@ -543,6 +593,105 @@ describe('Workspace pages API (e2e)', () => {
         limit: freeLimit,
         activeCount: freeLimit,
       });
+    });
+  });
+
+  describe('connection status + NEEDS_REAUTH soft block (D9, M4-T9)', () => {
+    let reauth: Actor;
+    let revoked: Actor;
+    let none: Actor;
+
+    beforeAll(async () => {
+      reauth = await actors.signUp('m4t9-reauth');
+      revoked = await actors.signUp('m4t9-revoked');
+      none = await actors.signUp('m4t9-none');
+      await insertConnection(reauth.workspaceId, 'NEEDS_REAUTH');
+      await insertConnection(revoked.workspaceId, 'REVOKED');
+    });
+
+    beforeEach(() => {
+      graph.subscribePageApp.mockClear();
+      graph.unsubscribePageApp.mockClear();
+    });
+
+    const listOf = async (actor: Actor) =>
+      record(
+        await http()
+          .get(listPath(actor.workspaceId))
+          .set('Cookie', actor.cookie)
+          .expect(200),
+      ).body;
+
+    it('GET shows NEEDS_REAUTH / REVOKED / no connection (null)', async () => {
+      expect((await listOf(reauth)).connection).toEqual({
+        status: 'NEEDS_REAUTH',
+        statusChangedAt: CHANGED_AT.toISOString(),
+        tokenExpiresAt: EXPIRES_AT.toISOString(),
+      });
+      expect((await listOf(revoked)).connection).toEqual({
+        status: 'REVOKED',
+        statusChangedAt: CHANGED_AT.toISOString(),
+        tokenExpiresAt: null,
+      });
+      expect(await listOf(none)).toEqual({
+        items: [],
+        pageLimit: { limit: freeLimit, activeCount: 0 },
+        connection: null,
+      });
+    });
+
+    it('NEEDS_REAUTH: switch on → 409 CONNECTION_NEEDS_REAUTH without a Graph call; switch off → 200', async () => {
+      const off = await insertPage(reauth.workspaceId, 'Off');
+      const on = await insertPage(reauth.workspaceId, 'On', { isActive: true });
+      const res = record(
+        await toggle(reauth, reauth.workspaceId, off.id, true).expect(409),
+      );
+      expect(res.body).toMatchObject({
+        statusCode: 409,
+        error: 'Conflict',
+        code: 'CONNECTION_NEEDS_REAUTH',
+      });
+      expect(res.body.message).toMatch(/reconnect/i);
+      expect(res.body).not.toHaveProperty('details');
+      expect(graph.subscribePageApp).not.toHaveBeenCalled();
+      const untouched = await rowOf(off.id);
+      expect(untouched.isActive).toBe(false);
+      expect(untouched.updatedAt).toEqual(off.updatedAt);
+
+      const offRes = record(
+        await toggle(reauth, reauth.workspaceId, on.id, false).expect(200),
+      );
+      expect(offRes.body).toMatchObject({
+        changed: true,
+        page: { isActive: false },
+      });
+      expect(graph.unsubscribePageApp).toHaveBeenCalledTimes(1);
+      // Already on stays a no-op (no 409) while NEEDS_REAUTH.
+      const still = await insertPage(reauth.workspaceId, 'Still', {
+        isActive: true,
+      });
+      const noop = record(
+        await toggle(reauth, reauth.workspaceId, still.id, true).expect(200),
+      );
+      expect(noop.body.changed).toBe(false);
+    });
+
+    it('REVOKED or no connection: switch on → 409 CONNECTION_NEEDS_REAUTH (before PAGE_TOKEN_MISSING)', async () => {
+      const revokedPage = await insertPage(revoked.workspaceId, 'R', {
+        token: false,
+      });
+      const nonePage = await insertPage(none.workspaceId, 'N');
+      for (const [actor, id] of [
+        [revoked, revokedPage.id],
+        [none, nonePage.id],
+      ] as const) {
+        const res = record(
+          await toggle(actor, actor.workspaceId, id, true).expect(409),
+        );
+        expect(res.body.code).toBe('CONNECTION_NEEDS_REAUTH');
+        expect((await rowOf(id)).isActive).toBe(false);
+      }
+      expect(graph.subscribePageApp).not.toHaveBeenCalled();
     });
   });
 

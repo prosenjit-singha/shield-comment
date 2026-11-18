@@ -18,7 +18,7 @@ import { workspaces } from './workspaces.js';
  * - D7: one `meta_connections` row per workspace (re-connect updates it in place); a Page (and its
  *   linked IG Business account) belongs to at most one workspace (globally unique ids), so every
  *   webhook event routes to exactly one workspace. Pages missing on re-connect are kept with
- *   `is_active = false` and their token cleared; disconnect comes in a later module.
+ * `is_active = false` and their token cleared; disconnect (M4-T9) hard-deletes both tables.
  * - D8: Graph error 190 sets `status = 'NEEDS_REAUTH'` (UI shows Reconnect); Deauthorize sets
  *   `REVOKED` and clears the user + Page tokens (M4-T6, Module 4 D6).
  * - D4: Facebook Login for Business, FB + IG (IG via the Page's `instagram_business_account`),

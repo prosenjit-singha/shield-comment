@@ -13,6 +13,7 @@ import type { Database } from '../db/database.js';
 import {
   PAGE_TOGGLE_ERROR_CODES,
   type TogglePageResponse,
+  type WorkspaceMetaConnection,
   type WorkspacePageLimit,
   type WorkspacePagesResponse,
 } from './dto/workspace-pages.dto.js';
@@ -21,6 +22,7 @@ import { PageSubscriptionService } from './page-subscription.service.js';
 import {
   countActivePages,
   findPlanFeatureConfig,
+  findWorkspaceConnection,
   findWorkspacePage,
   findWorkspacePlanId,
   listWorkspacePages,
@@ -51,6 +53,22 @@ export function assertCanActivate(usage: WorkspacePageLimit): void {
 
 const pageNotFound = () => new NotFoundException('Page not found');
 
+/**
+ * 409 `CONNECTION_NEEDS_REAUTH` (M4-T9, D9 soft block) unless the connection is `ACTIVE`.
+ * `REVOKED` and "no connection" are refused the same way: all three need a Facebook reconnect.
+ */
+export function assertConnectionActive(
+  connection: Pick<WorkspaceMetaConnection, 'status'> | undefined,
+): void {
+  if (connection?.status === 'ACTIVE') return;
+  throw new ConflictException({
+    message:
+      'Facebook needs to be reconnected before a page can be switched on. Reconnect Facebook and try again.',
+    error: 'Conflict',
+    code: PAGE_TOGGLE_ERROR_CODES.connectionNeedsReauth,
+  });
+}
+
 const tokenMissing = () =>
   new ConflictException({
     message:
@@ -74,11 +92,15 @@ export class SocialPagesService {
     private readonly subscriptions: PageSubscriptionService,
   ) {}
 
-  /** The workspace's Pages (no tokens) + its `connectedPages` limit and active count. */
+  /**
+   * The workspace's Pages (no tokens) + its `connectedPages` limit and active count + the Meta
+   * connection status (M4-T9, D9; `null` = not connected).
+   */
   async list(workspaceId: string): Promise<WorkspacePagesResponse> {
-    const [items, limit] = await Promise.all([
+    const [items, limit, connection] = await Promise.all([
       listWorkspacePages(this.db, workspaceId),
       this.pageLimit(this.db, workspaceId),
+      findWorkspaceConnection(this.db, workspaceId),
     ]);
     return {
       items,
@@ -86,6 +108,7 @@ export class SocialPagesService {
         limit,
         activeCount: items.filter((page) => page.isActive).length,
       },
+      connection: connection ?? null,
     };
   }
 
@@ -93,7 +116,8 @@ export class SocialPagesService {
    * Switches moderation on/off for one Page of the workspace.
    *
    * **On** (M4-T8, D10): pre-checks that need no Graph call (Page of this workspace, already on =
-   * no-op without Graph, has a token, under the limit), Meta + cipher configured (else 503),
+   * no-op without Graph, connection `ACTIVE` (M4-T9, D9: else 409 `CONNECTION_NEEDS_REAUTH`), has
+   * a token, under the limit), Meta + cipher configured (else 503),
    * decrypt the Page token, `POST /{page-id}/subscribed_apps` **outside** any transaction. Graph
    * failure → 502 `META_SUBSCRIBE_FAILED`, nothing written (a `token_invalid` also marks the
    * connection NEEDS_REAUTH); an undecryptable token → 409 `PAGE_TOKEN_MISSING` (reconnect). Then
@@ -119,6 +143,7 @@ export class SocialPagesService {
     const current = await findWorkspacePage(this.db, workspaceId, id);
     if (!current) throw pageNotFound();
     if (current.isActive) return { page: current, changed: false };
+    assertConnectionActive(await findWorkspaceConnection(this.db, workspaceId));
     if (!current.hasToken) throw tokenMissing();
     assertCanActivate({
       limit: await this.pageLimit(this.db, workspaceId),
@@ -168,8 +193,10 @@ export class SocialPagesService {
    *    workspace → page, so no deadlock between toggles);
    * 2. `FOR UPDATE` on the Page row, scoped by `workspace_id` + `id` (another workspace's id → 404);
    * 3. same value → no-op (`changed: false`, no UPDATE, `updated_at` kept);
-   * 4. activating: no stored token → 409 `PAGE_TOKEN_MISSING`; active count ≥ plan limit → 409
-   *    `PAGE_LIMIT_REACHED` with `details { limit, activeCount }`. Deactivating is always allowed.
+   * 4. activating: connection not `ACTIVE` (read under the workspace lock) → 409
+   *    `CONNECTION_NEEDS_REAUTH` (M4-T9); no stored token → 409 `PAGE_TOKEN_MISSING`; active count
+   *    ≥ plan limit → 409 `PAGE_LIMIT_REACHED` with `details { limit, activeCount }`.
+   *    Deactivating is always allowed (also while NEEDS_REAUTH/REVOKED).
    */
   private toggleInTx(
     workspaceId: string,
@@ -184,6 +211,7 @@ export class SocialPagesService {
       if (page.isActive === isActive) return { page, changed: false };
 
       if (isActive) {
+        assertConnectionActive(await findWorkspaceConnection(tx, workspaceId));
         if (!page.hasToken) throw tokenMissing();
         // Sequential: one transaction = one pg client (no concurrent queries on it).
         const limit = connectedPagesLimit(

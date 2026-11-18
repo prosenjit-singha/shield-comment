@@ -285,6 +285,24 @@ export class MetaGraphClient {
     }
   }
 
+  /**
+   * `DELETE /me/permissions` with the **user** token (+ `appsecret_proof`): revokes every
+   * permission the user granted this app, i.e. logs the app out of their Facebook account (M4-T9
+   * disconnect, Module 4 D7; best effort at the caller). Meta answers `{ success: true }`; anything
+   * else is `unexpected_response`. Parameters go in the query, like every DELETE.
+   */
+  async revokePermissions(userToken: string): Promise<void> {
+    const body = await this.requestWithToken(
+      'DELETE',
+      'me/permissions',
+      {},
+      userToken,
+    );
+    if (!isRecord(body) || body.success !== true) {
+      throw unexpected('permissions delete did not answer success');
+    }
+  }
+
   private parseToken(body: unknown): MetaAccessToken {
     if (!isRecord(body) || !nonEmpty(body.access_token)) {
       throw unexpected('no access_token in the token response');

@@ -25,7 +25,8 @@ import { workspaces } from './workspaces.js';
  * - `comments`: one row per Meta comment (`comment_id` unique). `status` is only `PENDING` until
  *   Module 5. Only `raw_payload` is cleared after 30 days (D4); text/author/status stay.
  *   D7: disconnect deletes the `social_pages` row, the comment stays with `social_page_id = null`
- *   (`on delete set null`). D6 Data Deletion must delete the comments **before** the Pages.
+ *   (`on delete set null`) and is stamped with the connection's `facebook_user_id` (M4-T9), so
+ *   D6 Data Deletion still finds it. D6 must delete the Pages' comments **before** the Pages.
  * - `daily_comment_stats`: lifetime analytics per workspace + Meta Page id + platform + Dhaka day,
  *   never purged, no personal data. Keyed by the Meta Page id (text, no FK) so the counts survive
  *   disconnect/Data Deletion and continue when the same Page is connected again.
@@ -115,6 +116,12 @@ export const comments = pgTable(
     /** The webhook change as received; cleared after 30 days (D4). */
     rawPayload: jsonb().$type<Record<string, unknown>>(),
     status: text().$type<CommentStatus>().notNull().default('PENDING'),
+    /**
+     * App-scoped Facebook user id of the connection whose disconnect orphaned this comment
+     * (M4-T9; decision 2026-11-19 "Keep FB user id on comments"): `null` while the Page is
+     * connected. A later Data Deletion request of that user still finds and deletes it.
+     */
+    facebookUserId: text(),
     /** Last `edited` verb applied. */
     editedAt: timestamptz(),
     /** Verb `remove`: the comment was deleted on Meta (never hidden later, D2). */
@@ -127,6 +134,10 @@ export const comments = pgTable(
     index().on(t.workspaceId, t.createdAt.desc()),
     // FK `on delete set null` lookups (disconnect).
     index().on(t.socialPageId),
+    // Data Deletion routing read for comments orphaned by a disconnect (M4-T9).
+    index('comments_facebook_user_id_index')
+      .on(t.facebookUserId)
+      .where(sql`${t.facebookUserId} is not null`),
     // Daily raw_payload purge (D4): only rows that still carry a payload.
     index('comments_raw_payload_purge_index')
       .on(t.createdAt)
@@ -142,6 +153,10 @@ export const comments = pgTable(
     check('comments_comment_id_format', objectId('comment_id')),
     check('comments_post_id_format', objectId('post_id')),
     check('comments_author_id_format', numericId('author_id', true)),
+    check(
+      'comments_facebook_user_id_format',
+      numericId('facebook_user_id', true),
+    ),
   ],
 );
 

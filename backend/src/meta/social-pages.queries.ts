@@ -1,7 +1,15 @@
 import { and, asc, count, eq, sql } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
-import { plans, socialPages, workspaces } from '../db/schema/index.js';
-import type { WorkspacePage } from './dto/workspace-pages.dto.js';
+import {
+  metaConnections,
+  plans,
+  socialPages,
+  workspaces,
+} from '../db/schema/index.js';
+import type {
+  WorkspaceMetaConnection,
+  WorkspacePage,
+} from './dto/workspace-pages.dto.js';
 
 /**
  * Queries behind the workspace pages API (M3-T6). Every `social_pages` query is scoped by
@@ -92,6 +100,25 @@ export async function findPlanFeatureConfig(
     )
     .limit(1);
   return row?.featureConfig;
+}
+
+/**
+ * The workspace's Meta connection status (M4-T9, D9): no token, no Facebook user id.
+ * `undefined` = no connection row.
+ */
+export async function findWorkspaceConnection(
+  executor: PagesExecutor,
+  workspaceId: string,
+): Promise<WorkspaceMetaConnection | undefined> {
+  const [row] = await executor
+    .select({
+      status: metaConnections.status,
+      statusChangedAt: metaConnections.statusChangedAt,
+      tokenExpiresAt: metaConnections.tokenExpiresAt,
+    })
+    .from(metaConnections)
+    .where(eq(metaConnections.workspaceId, workspaceId));
+  return row;
 }
 
 /** Active Pages of the workspace. */

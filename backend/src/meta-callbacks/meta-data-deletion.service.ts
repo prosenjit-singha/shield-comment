@@ -20,9 +20,9 @@ import {
   completeDeletionRequest,
   type DataDeletionRequestRow,
   deleteWorkspaceMetaData,
-  findConnectionsByFacebookUser,
   findDeletionRequestByCode,
   findPendingDeletionRequest,
+  findWorkspacesWithFacebookUserData,
   insertDeletionRequest,
   lockConnection,
   lockDeletionRequest,
@@ -125,10 +125,12 @@ export class MetaDataDeletionService {
 
   /**
    * The deletion job, in one transaction: lock the request (`FOR UPDATE`; already `COMPLETED` →
-   * nothing to do) → for every connection of the user (routing read, ordered by workspace): lock
-   * the workspace, the connection (re-checked) and its Pages, then delete webhook events →
-   * comments → Pages → connection, all scoped by `workspace_id` → mark the request `COMPLETED`.
-   * An unknown user completes with nothing deleted. Daily aggregates stay.
+   * nothing to do) → for every workspace holding the user's data (routing read: their connections
+   * + comments a disconnect stamped with their id (M4-T9), ordered by workspace): lock the
+   * workspace, the connection (re-checked; may be gone) and its Pages, then delete webhook events
+   * → comments (the Pages' + the stamped ones) → Pages → connection, all scoped by `workspace_id`
+   * → mark the request `COMPLETED`. An unknown user completes with nothing deleted. Daily
+   * aggregates stay.
    */
   async execute(
     requestId: string,
@@ -147,26 +149,27 @@ export class MetaDataDeletionService {
         pages: 0,
         connections: 0,
       };
-      const refs = await findConnectionsByFacebookUser(
+      const workspaceIds = await findWorkspacesWithFacebookUserData(
         tx,
         request.facebookUserId,
       );
-      for (const ref of refs) {
-        if (!(await lockWorkspace(tx, ref.workspaceId))) continue;
+      for (const workspaceId of workspaceIds) {
+        if (!(await lockWorkspace(tx, workspaceId))) continue;
         const connection = await lockConnection(
           tx,
-          ref.workspaceId,
+          workspaceId,
           request.facebookUserId,
         );
-        if (!connection) continue;
-        totals.connectionsSeen++;
-        const pageIds = await lockWorkspacePages(tx, ref.workspaceId);
-        const counts = await deleteWorkspaceMetaData(
-          tx,
-          ref.workspaceId,
-          connection.id,
+        if (connection) totals.connectionsSeen++;
+        const pageIds = connection
+          ? await lockWorkspacePages(tx, workspaceId)
+          : [];
+        const counts = await deleteWorkspaceMetaData(tx, {
+          workspaceId,
+          connectionId: connection?.id ?? null,
           pageIds,
-        );
+          facebookUserId: request.facebookUserId,
+        });
         totals.webhookEvents += counts.webhookEvents;
         totals.comments += counts.comments;
         totals.pages += counts.pages;

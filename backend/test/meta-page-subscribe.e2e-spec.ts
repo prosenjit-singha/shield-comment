@@ -226,19 +226,26 @@ describe('Page toggle → subscribed_apps (e2e)', () => {
     );
     expect((await pageRow(row.id)).isActive).toBe(false);
 
-    // Again: already NEEDS_REAUTH → status_changed_at kept.
-    record(await toggle(owner, owner.workspaceId, row.id, true).expect(502));
+    // Again: now NEEDS_REAUTH → 409 before Graph (M4-T9, D9), status_changed_at kept.
+    const again = record(
+      await toggle(owner, owner.workspaceId, row.id, true).expect(409),
+    );
+    expect(again.body.code).toBe('CONNECTION_NEEDS_REAUTH');
+    expect(graph.subscribePageApp).toHaveBeenCalledTimes(1);
     const second = await connectionOf(owner.workspaceId);
     expect(second.status).toBe('NEEDS_REAUTH');
     expect(second.statusChangedAt).toEqual(first.statusChangedAt);
   });
 
   it('token_invalid never overwrites a REVOKED connection', async () => {
-    const { row } = await insertPage(revoked.workspaceId);
-    graph.subscribePageApp.mockRejectedValue(tokenInvalid());
+    // M4-T9: switch-on under REVOKED is refused before Graph (409), so use the switch-off
+    // unsubscribe path (an active Page with a token under a REVOKED connection).
+    const { row } = await insertPage(revoked.workspaceId, { isActive: true });
+    graph.unsubscribePageApp.mockRejectedValue(tokenInvalid());
     record(
-      await toggle(revoked, revoked.workspaceId, row.id, true).expect(502),
+      await toggle(revoked, revoked.workspaceId, row.id, false).expect(200),
     );
+    expect(graph.unsubscribePageApp).toHaveBeenCalledTimes(1);
     const connection = await connectionOf(revoked.workspaceId);
     expect(connection.status).toBe('REVOKED');
     expect(connection.statusChangedAt).toEqual(LONG_AGO);

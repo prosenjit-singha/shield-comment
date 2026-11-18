@@ -13,7 +13,7 @@ import {
 import type { MetaDataDeletionJobData } from './meta-data-deletion.job.js';
 
 vi.mock('./meta-callbacks.queries.js', () => ({
-  findConnectionsByFacebookUser: vi.fn(),
+  findWorkspacesWithFacebookUserData: vi.fn(),
   lockWorkspace: vi.fn(),
   lockConnection: vi.fn(),
   lockWorkspacePages: vi.fn(),
@@ -150,10 +150,7 @@ describe('MetaDataDeletionService', () => {
   describe('execute', () => {
     beforeEach(() => {
       q.lockDeletionRequest.mockResolvedValue(request());
-      q.findConnectionsByFacebookUser.mockResolvedValue([
-        { id: 'c-a', workspaceId: 'ws-a' },
-        { id: 'c-b', workspaceId: 'ws-b' },
-      ]);
+      q.findWorkspacesWithFacebookUserData.mockResolvedValue(['ws-a', 'ws-b']);
       q.lockWorkspace.mockResolvedValue(true);
       q.lockConnection.mockImplementation((_tx, workspaceId) =>
         Promise.resolve({ id: `c-${workspaceId.slice(3)}`, workspaceId }),
@@ -179,19 +176,19 @@ describe('MetaDataDeletionService', () => {
         connections: 2,
       });
       expect(transaction).toHaveBeenCalledTimes(1);
-      expect(q.findConnectionsByFacebookUser).toHaveBeenCalledWith(tx, FB);
-      expect(q.deleteWorkspaceMetaData).toHaveBeenCalledWith(
-        tx,
-        'ws-a',
-        'c-a',
-        ['ws-a-p1', 'ws-a-p2'],
-      );
-      expect(q.deleteWorkspaceMetaData).toHaveBeenCalledWith(
-        tx,
-        'ws-b',
-        'c-b',
-        ['ws-b-p1', 'ws-b-p2'],
-      );
+      expect(q.findWorkspacesWithFacebookUserData).toHaveBeenCalledWith(tx, FB);
+      expect(q.deleteWorkspaceMetaData).toHaveBeenCalledWith(tx, {
+        workspaceId: 'ws-a',
+        connectionId: 'c-a',
+        pageIds: ['ws-a-p1', 'ws-a-p2'],
+        facebookUserId: FB,
+      });
+      expect(q.deleteWorkspaceMetaData).toHaveBeenCalledWith(tx, {
+        workspaceId: 'ws-b',
+        connectionId: 'c-b',
+        pageIds: ['ws-b-p1', 'ws-b-p2'],
+        facebookUserId: FB,
+      });
       const order = [
         q.lockDeletionRequest.mock.invocationCallOrder[0]!,
         q.lockWorkspace.mock.invocationCallOrder[0]!,
@@ -209,7 +206,7 @@ describe('MetaDataDeletionService', () => {
     });
 
     it('unknown user → completes with nothing deleted', async () => {
-      q.findConnectionsByFacebookUser.mockResolvedValue([]);
+      q.findWorkspacesWithFacebookUserData.mockResolvedValue([]);
       expect(await service.execute(request().id, NOW)).toMatchObject({
         kind: 'completed',
         connections: 0,
@@ -218,13 +215,41 @@ describe('MetaDataDeletionService', () => {
       expect(q.completeDeletionRequest).toHaveBeenCalled();
     });
 
-    it('skips a connection that is no longer the user’s', async () => {
+    it('no connection of the user any more (disconnected / re-connected by someone else) → only their stamped comments (M4-T9)', async () => {
+      q.findWorkspacesWithFacebookUserData.mockResolvedValue(['ws-a']);
       q.lockConnection.mockResolvedValue(undefined);
-      expect(await service.execute(request().id, NOW)).toMatchObject({
-        connectionsSeen: 0,
+      q.deleteWorkspaceMetaData.mockResolvedValue({
+        webhookEvents: 2,
+        comments: 1,
+        pages: 0,
+        connections: 0,
       });
-      expect(q.deleteWorkspaceMetaData).not.toHaveBeenCalled();
+      expect(await service.execute(request().id, NOW)).toEqual({
+        kind: 'completed',
+        connectionsSeen: 0,
+        webhookEvents: 2,
+        comments: 1,
+        pages: 0,
+        connections: 0,
+      });
+      expect(q.lockWorkspace).toHaveBeenCalledWith(tx, 'ws-a');
       expect(q.lockWorkspacePages).not.toHaveBeenCalled();
+      expect(q.deleteWorkspaceMetaData).toHaveBeenCalledWith(tx, {
+        workspaceId: 'ws-a',
+        connectionId: null,
+        pageIds: [],
+        facebookUserId: FB,
+      });
+      expect(q.completeDeletionRequest).toHaveBeenCalled();
+    });
+
+    it('a workspace that is gone is skipped', async () => {
+      q.lockWorkspace.mockImplementation(async (_tx, ws) => ws !== 'ws-a');
+      expect(await service.execute(request().id, NOW)).toMatchObject({
+        connectionsSeen: 1,
+      });
+      expect(q.deleteWorkspaceMetaData).toHaveBeenCalledTimes(1);
+      expect(q.lockConnection).not.toHaveBeenCalledWith(tx, 'ws-a', FB);
     });
 
     it('already completed → no deletes', async () => {
@@ -234,7 +259,7 @@ describe('MetaDataDeletionService', () => {
       expect(await service.execute(request().id, NOW)).toEqual({
         kind: 'already_completed',
       });
-      expect(q.findConnectionsByFacebookUser).not.toHaveBeenCalled();
+      expect(q.findWorkspacesWithFacebookUserData).not.toHaveBeenCalled();
       expect(q.completeDeletionRequest).not.toHaveBeenCalled();
     });
 
