@@ -7,13 +7,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, only the Module 4 header + decisions + its own row from TASKS.md, `docs/project-documentation/modules/module-4-webhooks-queue.md` (UI rows M4-T11/T12 also `docs/design/base.md` + `client.md`).
 - Standing approvals: admin/ + client/ changes approved for the rest of this run (user, 2026-11-18).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #3 (2026-11-19) · rows this session: 2 · estimate: 60k
+- Session: #3 (2026-11-19) · rows this session: 3 · estimate: 70k
 
 ## State
-dispatched M4-GATE (2026-11-19) · commit: "docs(progress): pass module 4 gate (M4-GATE)"
+done: Module 4 M4-T1…M4-T12 + M4-GATE (2026-11-19); M4-T13 not in this run
 
 ## Resume
-`/orchestration --continue` (session #3: M4-T11, M4-T12, then M4-GATE; no pending decision)
+Run finished. Start a new run with `/orchestration <instructions>` (e.g. M4-T13 zrok tunnel + live Meta smoke in its own session, then Module 5 planning M5-PLAN).
 
 ## Next prompt
 
@@ -67,4 +67,4 @@ RUN COMPLETE (scope M4-T1…M4-T12 + M4-GATE finished 2026-11-19; M4-T13 zrok tu
 - 2026-11-19 M4-T10 ✅ f64418e + fix d273e68 · backend 1032 + e2e 494 · e2e 2/2 (host + docker) · Better Auth client IP: socket-address fallback via the auth module `middleware` option (no `no-trusted-ip` bucket), e2e seed sends a per-run `X-Forwarded-For`
 - 2026-11-19 M4-T11 ✅ 88635b5 · client 343 (was 303) · e2e 2/2 · /pages NEEDS_REAUTH/REVOKED banner + Reconnect, 409 CONNECTION_NEEDS_REAUTH rollback, Disconnect card + confirm dialog (counts, inline errors), finding (a) closed
 - 2026-11-19 M4-T12 ✅ 7b2025f · client 399 (was 343) · e2e 2/2 · public SSR /data-deletion status page (en/bn): server-fn lookup in the server HTML, 404/429/5xx/network states + Try again, Dhaka dates, code shown
-- 2026-11-19 M4-GATE ✅ · backend 1032 unit / 494 e2e · admin 246 · client 399 · Playwright 2/2 · module 4 gate passed: 401 on bad/missing signature, signed delivery 200 in 7.8 ms with one job for 3 deliveries (live, throwaway-secret container), real queue counts on admin; no fix
+- 2026-11-19 M4-GATE ✅ 2f82d8e · backend 1032 unit / 494 e2e · admin 246 · client 399 · Playwright 2/2 · module 4 gate passed: 401 on bad/missing signature, signed delivery 200 in 7.8 ms with one job for 3 deliveries (live, throwaway-secret container), real queue counts on admin; no fix
