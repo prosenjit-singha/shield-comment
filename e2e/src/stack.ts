@@ -140,6 +140,9 @@ export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary>
         [ids, wsIds],
       );
       const plan = await db.query('delete from plan_audit_logs where admin_id = any($1::uuid[])', [ids]);
+      await db.query('delete from webhook_events where workspace_id = any($1::uuid[])', [wsIds]);
+      await db.query('delete from comments where workspace_id = any($1::uuid[])', [wsIds]);
+      await db.query('delete from daily_comment_stats where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from social_pages where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from meta_connections where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query(

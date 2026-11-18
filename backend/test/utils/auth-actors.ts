@@ -8,6 +8,8 @@ import type { BetterAuth } from '../../src/auth/better-auth.js';
 import { ensureSuperAdmin } from '../../src/auth/super-admin.js';
 import type { Database } from '../../src/db/database.js';
 import {
+  comments,
+  dailyCommentStats,
   impersonationAuditLogs,
   metaConnections,
   planAuditLogs,
@@ -18,6 +20,7 @@ import {
   workspaceMembers,
   workspaces,
   workspaceStatusAuditLogs,
+  webhookEvents,
   type WorkspaceRole,
 } from '../../src/db/schema/index.js';
 import { AUTH_SECONDARY_STORAGE } from '../../src/redis/redis-secondary-storage.js';
@@ -182,6 +185,16 @@ export function createAuthActors(app: INestApplication<App>) {
         .delete(planAuditLogs)
         .where(inArray(planAuditLogs.adminId, userIds));
     if (workspaceIds.length) {
+      // Webhook rows (M4-T2) reference workspaces (restrict) and Pages (comments: set null).
+      await db
+        .delete(webhookEvents)
+        .where(inArray(webhookEvents.workspaceId, workspaceIds));
+      await db
+        .delete(comments)
+        .where(inArray(comments.workspaceId, workspaceIds));
+      await db
+        .delete(dailyCommentStats)
+        .where(inArray(dailyCommentStats.workspaceId, workspaceIds));
       // Meta rows (M3-T2) reference workspaces with FK restrict.
       await db
         .delete(socialPages)

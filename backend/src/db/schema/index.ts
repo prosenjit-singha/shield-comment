@@ -10,3 +10,4 @@ export * from './workspace-status-audit.js';
 export * from './support-tickets.js';
 export * from './plan-audit.js';
 export * from './meta.js';
+export * from './comments.js';
