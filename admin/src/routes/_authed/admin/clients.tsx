@@ -7,13 +7,13 @@ import {
   ChevronRight,
   LogIn,
   RotateCcw,
-  Search,
   SearchX,
 } from 'lucide-react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useId, useState } from 'react'
 import { ClientStatusDialog, type StatusChange } from '@/components/clients/client-status-dialog'
 import { useLoginAsClient } from '@/components/clients/use-login-as-client'
 import { PageHeader } from '@/components/placeholder-page'
+import { SearchInput } from '@/components/search-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -57,8 +57,6 @@ export const Route = createFileRoute('/_authed/admin/clients')({
   },
   component: ClientsPage,
 })
-
-const SEARCH_DEBOUNCE_MS = 300
 
 /**
  * The actions column stays pinned to the right edge while the table scrolls inside its card, so
@@ -179,7 +177,12 @@ function Toolbar({
   return (
     <div className="flex flex-col gap-3 p-4 md:p-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <SearchInput value={search.q ?? ''} onSearch={(q) => setFilters({ q: q || undefined })} />
+        <SearchInput
+          value={search.q ?? ''}
+          onSearch={(q) => setFilters({ q: q || undefined })}
+          label="Search clients"
+          placeholder="Search name, slug, owner email or name"
+        />
         <div className="flex flex-wrap items-center gap-2">
           <Tabs
             value={search.status ?? 'ALL'}
@@ -265,53 +268,6 @@ function Toolbar({
           </Button>
         )}
       </div>
-    </div>
-  )
-}
-
-/**
- * Debounced search box. The URL is the source of truth; the box only holds what is being typed.
- * `lastSent` tells our own URL updates apart from outside ones (back button, Clear filters).
- */
-function SearchInput({ value, onSearch }: { value: string; onSearch: (q: string) => void }) {
-  const [text, setText] = useState(value)
-  const lastSent = useRef(value)
-  const onSearchRef = useRef(onSearch)
-  useEffect(() => {
-    onSearchRef.current = onSearch
-  })
-
-  useEffect(() => {
-    if (value === lastSent.current) return
-    lastSent.current = value
-    setText(value)
-  }, [value])
-
-  useEffect(() => {
-    const q = text.trim()
-    if (q === lastSent.current) return
-    const timer = setTimeout(() => {
-      lastSent.current = q
-      onSearchRef.current(q)
-    }, SEARCH_DEBOUNCE_MS)
-    return () => clearTimeout(timer)
-  }, [text])
-
-  return (
-    <div className="relative min-w-0 flex-1">
-      <Search
-        className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-        aria-hidden
-      />
-      <Input
-        type="search"
-        aria-label="Search clients"
-        placeholder="Search name, slug, owner email or name"
-        className="h-9 pl-9"
-        value={text}
-        maxLength={100}
-        onChange={(e) => setText(e.target.value)}
-      />
     </div>
   )
 }
