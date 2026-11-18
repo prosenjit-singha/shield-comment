@@ -56,11 +56,6 @@ You are implementing exactly ONE task row, **M4-T11**, in the ShieldComment BD r
 3. Commit everything, journal included, as `feat(client): add meta reconnect banner and disconnect on pages (M4-T11)` with an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
 
-## Choices to confirm` as `- M4-T10: …`;
-   - **replace** the `## Next prompt` section with the M4-T11 prompt in the format of `.claude/skills/orchestration/subagent-prompt.md` (M4-T11 = client `/pages` needs-reauth/revoked banner + Reconnect, Disconnect with confirm dialog, finding (a); uses the M4-T9 `connection` field, 409 `CONNECTION_NEEDS_REAUTH` and `DELETE …/meta/connection` → `{ disconnected, pagesDeleted, commentsKept }`).
-3. Commit everything, journal included, as `fix(backend): fall back to the socket address for rate-limit ips (M4-T10)` with an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
-4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
-
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
 - M3-T9: no separate Log out while impersonating (Exit only) · close-tab screen has no login link / no `window.close()` · banner `bg-secondary`, "Changes you make here are real" · failed normal log-out now shows an alert
