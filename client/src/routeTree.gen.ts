@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as BnRouteImport } from './routes/bn'
+import { Route as ImpersonateRouteImport } from './routes/impersonate'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
@@ -28,6 +29,11 @@ const AppRoute = AppRouteImport.update({
 const BnRoute = BnRouteImport.update({
   id: '/bn',
   path: '/bn',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ImpersonateRoute = ImpersonateRouteImport.update({
+  id: '/impersonate',
+  path: '/impersonate',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -49,6 +55,7 @@ const ApiSplatRoute = ApiSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/bn': typeof BnRoute
+  '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/dashboard': typeof AppDashboardRoute
   '/api/$': typeof ApiSplatRoute
@@ -56,6 +63,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/bn': typeof BnRoute
+  '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/dashboard': typeof AppDashboardRoute
   '/api/$': typeof ApiSplatRoute
@@ -65,23 +73,32 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/bn': typeof BnRoute
+  '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/api/$': typeof ApiSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/bn' | '/login' | '/dashboard' | '/api/$'
+  fullPaths: '/' | '/bn' | '/impersonate' | '/login' | '/dashboard' | '/api/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/bn' | '/login' | '/dashboard' | '/api/$'
+  to: '/' | '/bn' | '/impersonate' | '/login' | '/dashboard' | '/api/$'
   id:
-    '__root__' | '/' | '/_app' | '/bn' | '/login' | '/_app/dashboard' | '/api/$'
+    | '__root__'
+    | '/'
+    | '/_app'
+    | '/bn'
+    | '/impersonate'
+    | '/login'
+    | '/_app/dashboard'
+    | '/api/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   BnRoute: typeof BnRoute
+  ImpersonateRoute: typeof ImpersonateRoute
   LoginRoute: typeof LoginRoute
   ApiSplatRoute: typeof ApiSplatRoute
 }
@@ -107,6 +124,13 @@ declare module '@tanstack/react-router' {
       path: '/bn'
       fullPath: '/bn'
       preLoaderRoute: typeof BnRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/impersonate': {
+      id: '/impersonate'
+      path: '/impersonate'
+      fullPath: '/impersonate'
+      preLoaderRoute: typeof ImpersonateRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -147,6 +171,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   BnRoute: BnRoute,
+  ImpersonateRoute: ImpersonateRoute,
   LoginRoute: LoginRoute,
   ApiSplatRoute: ApiSplatRoute,
 }
