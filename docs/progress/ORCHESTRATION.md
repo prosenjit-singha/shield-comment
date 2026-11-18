@@ -7,10 +7,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, only the Module 4 header + decisions + its own row from TASKS.md, `docs/project-documentation/modules/module-4-webhooks-queue.md` (UI rows M4-T11/T12 also `docs/design/base.md` + `client.md`).
 - Standing approvals: admin/ + client/ changes approved for the rest of this run (user, 2026-11-18).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #2 (2026-11-18) · rows this session: 3 · estimate: 104k
+- Session: #2 (2026-11-18) · rows this session: 4 · estimate: 120k
 
 ## State
-dispatched M4-T4 (2026-11-18) · commit: "feat(backend): add meta webhook receiver and comment ingest enqueue (M4-T4)"
+verified M4-T4
 
 ## Resume
 `/orchestration --continue`
@@ -55,6 +55,9 @@ You are implementing exactly ONE task row, **M4-T5**, in the ShieldComment BD re
 3. Commit everything, journal included, as `feat(backend): add comment ingest worker (M4-T5)` with an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
 
+### Decisions added by orchestrator
+- 2026-11-18 (user, M4-T5 pre-check) `edited`/`remove` for a comment with no row yet (out-of-order delivery or dropped `add`) → "Edit inserts, remove marks (Recommended)": `edited` with no row creates the comment from the payload as PENDING, so a scam edit still gets moderated. `remove` with no row stores a deleted placeholder, so a late `add` won't bring it back. Counts move as for a normal edit/remove. Record it in TASKS.md Module 4 decisions (answered 2026-11-18, M4-T5). Note: a late `add` after a placeholder must not un-delete it.
+
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
 - M3-T9: no separate Log out while impersonating (Exit only) · close-tab screen has no login link / no `window.close()` · banner `bg-secondary`, "Changes you make here are real" · failed normal log-out now shows an alert
@@ -70,6 +73,7 @@ You are implementing exactly ONE task row, **M4-T5**, in the ShieldComment BD re
 - 2026-11-18 M3-T10: D13 0-Pages redirect → entry points only (recorded in TASKS.md D13)
 - 2026-11-18 Module 4 run: app approval → "Both, rest of run (Recommended)" (admin/ + client/ approved for every Module 4 row in this run)
 - 2026-11-18 M4-T4/M4-T5 (from M4-T2 OPEN a): repeated `edited` dedupe → "Add payload hash (Recommended)": for `edited`, add a short hash of the new message to the jobId and event_id (`<platform>:<commentId>:edited:<hash>`); exact retries still ignored, every different edit stored; `add` and `remove` keep the D3/D4 format. **Add to the M4-T4 prompt under "### Decisions added by orchestrator" (and carry into M4-T5).** Orchestrator implementation note: BullMQ accepts `:` only in 3-part ids (M4-T1) and `webhook_events.event_id` has a format check (M4-T2), so keep 3 colon parts, e.g. `<platform>:<commentId>:edited-<hash>`, extend `commentJobId()` and relax the check with a reviewed migration.
+- 2026-11-18 M4-T5 pre-check: `edited`/`remove` with no comment row → "Edit inserts, remove marks (Recommended)": `edited` with no row creates the comment from the payload as PENDING, so a scam edit still gets moderated. `remove` with no row stores a deleted placeholder, so a late `add` won't bring it back. Counts move as for a normal edit/remove.
 
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
@@ -82,4 +86,4 @@ You are implementing exactly ONE task row, **M4-T5**, in the ShieldComment BD re
 - 2026-11-18 M4-T1 ✅ b4aca20 · backend 597 + e2e 383 · BullMQ QueueModule (3 D3 queues), eviction warning, real admin queue counts, e2e FakeQueue
 - 2026-11-18 M4-T2 ✅ 8e672fc · backend 605 + e2e 397 · e2e 2/2 · webhook_events/comments/daily_comment_stats schema (0011) + comments.queries helpers
 - 2026-11-18 M4-T3 ✅ bede928 · backend 645 + e2e 415 · e2e 2/2 · GET/POST /api/webhooks/meta: verify handshake, raw-body capture, X-Hub-Signature-256 guard (stub receiver)
-- 2026-11-18 M4-T4 ✅ · backend 696 + e2e 425 · e2e 2/2 · webhook receiver: envelope parser → one `comment-ingest` addBulk per delivery (150 ms, 503 on failure), edited-hash job ids (migration 0012)
+- 2026-11-18 M4-T4 ✅ 7a0df2a · backend 696 + e2e 425 · e2e 2/2 · webhook receiver: envelope parser → one `comment-ingest` addBulk per delivery (150 ms, 503 on failure), edited-hash job ids (migration 0012)
