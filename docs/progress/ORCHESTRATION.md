@@ -10,47 +10,14 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Session: #3 (2026-11-19) · rows this session: 2 · estimate: 60k
 
 ## State
-verified M4-T12
+dispatched M4-GATE (2026-11-19) · commit: "docs(progress): pass module 4 gate (M4-GATE)"
 
 ## Resume
 `/orchestration --continue` (session #3: M4-T11, M4-T12, then M4-GATE; no pending decision)
 
-## Next prompt (M4-GATE)
+## Next prompt
 
-You are implementing exactly ONE task row, **M4-GATE**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
-
-**Read first (only these)**
-1. `AGENTS.md`.
-2. `docs/progress/MEMORY.md` (all; esp. "Queues (M4-T1)", "Meta webhook endpoint (M4-T3)", "Webhook receiver (M4-T4)", "Ingest worker (M4-T5)", "System health (M2-T10)", "Gate E2E suite (M3-T12)", "Browser checks").
-3. From `docs/progress/TASKS.md` (use `grep -n`/`sed -n`; the file is large): the `## Module 4` header paragraph, decisions **D1** (routes, 401), **D3** (queues, jobId), **D4** (event ids, dedupe), the M4-T12 row (previous, for context), the **M4-GATE** row, and the M3-GATE row (format of a passed gate row). M4-T13 (zrok + live Meta smoke) is **not** part of this gate run (`## Run` scope; D12 live check stays skipped).
-4. Spec: `docs/project-documentation/modules/module-4-webhooks-queue.md` § "Agent Test & Verification Gate" only.
-5. Evidence to check (read only what you need): backend `test/meta-webhook.e2e-spec.ts` (verify + signature 401), `test/meta-webhook-receiver.e2e-spec.ts` (200 in < 200 ms, jobs, 503 on queue failure), `test/comment-ingest.e2e-spec.ts` (worker dedupe by `event_id`/`comment_id`), `test/admin-system.e2e-spec.ts` (queue counts), unit specs in `src/webhooks/` + `src/comments/`; fixtures `test/fixtures/meta-webhook-payloads.ts` (`metaWebhookSignature`). Admin `/admin/system` `QueuesCard` (`admin/src/routes/_authed/admin/system.tsx`).
-
-**Task (M4-GATE): Module 4 spec gate**
-- Gate (1): an invalid / missing `X-Hub-Signature-256` on `POST /api/webhooks/meta` returns **401** (D1). Show the e2e evidence and repeat it live on the compose backend (`curl` with a wrong signature → 401; `META_APP_SECRET` unset → 503 is also acceptable evidence of the guard, say which you saw).
-- Gate (2): a valid signed payload returns **200 in < 200 ms**, enqueues a BullMQ job on `comment-ingest`, and a duplicate delivery (same `comment_id` + verb) is ignored (same job id; the worker's `webhook_events.event_id` dedupe). Evidence from e2e + a live check on the compose stack if `META_APP_SECRET` is set there (sign with it; never print it); time the request (`curl -w '%{time_total}'`), read the job / counts from Redis or admin `/api/admin/system/health` `queues`, post the same body twice and show one job. A webhook for an unknown Page is dropped by the worker (D4): that's fine for the gate; don't insert fake Pages into the compose DB unless you delete them afterwards. If the compose stack has no `META_APP_SECRET`, do **not** add secrets to `.env`: rely on the e2e evidence and say so.
-- Full runs: backend `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test`, `npm run test:e2e`, `npm run lint`, prettier check; admin + client `npm run build`, `npm test`, `npm run lint`; `docker compose up --build -d` healthy (migrate applied, backend/admin/client healthy, 0 error lines in backend logs); admin `/admin/system` shows **real** queue counts for the 3 queues (headless check or the API as super admin); `cd e2e && E2E_CHROMIUM_PATH=~/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome npm test` 2/2 (+ `npm run test:docker` if any image changed). Test DB after the e2e run: only the 4 `plans` rows; compose DB + Redis `auth:*` back to baseline.
-- If a gate item fails: don't patch silently. Fix it only if it is a small, clear bug inside Module 4 scope (list it as a gate fix), otherwise stop and report `STATUS: blocked` with the finding (a new `M4-FIX1` row is the orchestrator's call).
-- Open items to mention (not to fix here): the backend `ThrottlerGuard` keys on `req.ip` without trust proxy, so every `/data-deletion` lookup through the client server (and every proxied call) shares one 30/min bucket (M4-T6 choice, M4-T12 OPEN); M4-T13 (zrok tunnel + live smoke) still pending.
-
-**Rules:** TS strict, ESM, no `any`. Vitest. No live external calls in tests (Meta mocked); tests must fail on unexpected requests. Every tenant query is scoped by `workspace_id`. Frontend: TanStack Query for all API calls, client copy via `content(en, bn)`, shadcn OKLCH tokens, `rounded-full` buttons/inputs/pills, `rounded-2xl`/`3xl` cards. A new shadcn component needs `shadcn add` + `animate all` in BOTH apps. Never commit `.env*` (except `.env.example`) or build/test output. **Never stop or kill the user's own processes** (local Postgres 5432, Redis 6379, dev servers); on a port clash use env overrides or stop and report.
-
-**Verify** (run what applies; report real numbers):
-- backend: `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test`, `npm run test:e2e`, `npm run lint`, `npx prettier --check "src/**/*.ts" "test/**/*.ts"`. The test DB must end empty except the 4 `plans` rows.
-- admin/client: `npm run build`, `npm test`, `npm run lint` in each app.
-- e2e/: `cd e2e && npm test` (+ `npm run test:docker` when an image changes). The DB must return to its baseline.
-- Current test counts: backend unit 1032 · backend e2e 494 · admin 246 · client 399 · e2e 2/2.
-
-**If a decision is missing:** if THIS row needs a product decision that is not recorded in TASKS.md/MEMORY.md/this prompt, STOP without coding that part. Report `STATUS: needs-decision` with the question and 2–4 options (recommended first). M4-GATE is the last row of this run's scope (`## Run`): when it passes, the next prompt is `RUN COMPLETE`.
-
-**Finish (in this order)**
-1. TASKS.md: the M4-GATE row → `✅ <date>` + concise evidence per gate item (like the M3-GATE row). Add a Verification log entry at the TOP of `## Verification log`. Add short lasting facts to MEMORY.md ("**Module 4 gate passed <date>**") and point its "Next:" phrase at M4-T13 (zrok + live smoke, own session) then Module 5 planning.
-2. Journal `docs/progress/ORCHESTRATION.md`:
-   - append one `## Log` line (`- <date> M4-GATE ✅ · <tests> · <1-line summary>`); the orchestrator adds the commit hash;
-   - append your choices under `## Choices to confirm` as `- M4-GATE: …` (if any);
-   - **replace** the `## Next prompt` section with `## Next prompt` + `RUN COMPLETE` (scope M4-T1…M4-T12 + M4-GATE finished; M4-T13 is not in this run).
-3. Commit everything, journal included, as `docs(progress): pass module 4 gate (M4-GATE)` (or `fix(<scope>): … (M4-GATE)` if a gate fix was needed) with an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
-4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
+RUN COMPLETE (scope M4-T1…M4-T12 + M4-GATE finished 2026-11-19; M4-T13 zrok tunnel + live Meta smoke is not in this run: own session later, then Module 5 planning).
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -70,6 +37,7 @@ You are implementing exactly ONE task row, **M4-GATE**, in the ShieldComment BD 
 - M4-T10: hook = the `@thallesp/nestjs-better-auth` `middleware` option (auth routes only, before the handler), not a Nest/`configureApp` middleware and not `trust proxy` (throttler `req.ip` unchanged) · "usable header" = exactly Better Auth's `getIPFromHeader` (`@better-auth/core` added as a direct dep at 1.7.25) · an unusable header (missing/empty/garbage/**multi-value list**) is **overwritten** with the socket address, so session `ipAddress` also becomes the socket address for direct callers · spoofed lists through nginx/`proxyToApi` (`a, b`) now share the proxy's socket bucket instead of `no-trusted-ip` (no `trustedProxies`: would widen trust) · a direct caller can still choose its bucket with one valid XFF IP (unchanged) · seed IP = per-run `198.18.x.y` (RFC 2544, sha256 of run id); teardown deletes its `auth:<seedIp>|*` keys · e2e spec listens on `::1` to tell the socket bucket apart from Better Auth's test-env 127.0.0.1 fallback; rate limit switched on via `$context.rateLimit.enabled`
 - M4-T11: moderators not special-cased (`GET …/pages` is owner/admin-only, so a loaded list implies the role; a DELETE 403 is mapped in the dialog) · Disconnect lives in a "Facebook connection" card at the bottom of /pages (destructive button, existing `dialog.tsx`, no new shadcn component) · REVOKED banner = error tone (`role=alert`), NEEDS_REAUTH = warning · header Reconnect hidden while the banner shows (one Reconnect) · switches not pre-disabled for NEEDS_REAUTH/REVOKED (409 message + banner explain) · dialog can't be closed while the DELETE runs; reopening clears the last error · `disconnected: false` → "already disconnected" notice · `?meta=` return notices hidden after a disconnect · impersonated empty state: CTA removed + owner-has-to-connect text (notice stays above) · /onboarding unchanged (already hid connect while impersonated) · dialog copy: permission revoked "unless another ShieldComment workspace still uses the same Facebook account" (D7 exception)
 - M4-T12: SSR via a server-only loader `prefetchQuery` → server fn → backend direct (forwards X-Forwarded-* + visitor IP, UA, accept-language; no cookie), browser via `/api` `apiFetch` · 404 = query data `{ kind: 'unknown' }` (not an error) so it dehydrates; 429/5xx/network on the server render the loading state and the browser retries once on mount · `retry: false` (no auto retry on 429), Try again = one refetch · no polling while PENDING ("open this page again later") · malformed `?code=` → treated as missing, router 307s to `/data-deletion` (no request) · one "no valid code" message for missing + malformed · page frame = `AuthScreen` card (EN/BN switch, footer link home) + `MetaNotice` (PENDING info, COMPLETED success, unknown + failures error) · dates hand-formatted at fixed UTC+6, 24 h, `19 Nov 2026, 15:05 (Bangladesh time)` / Bangla month names + digits (no `Intl`, so SSR = hydration) · code shown in a pill ("quote this code if you contact our support"; no support address yet) · title English-only like /login, `noindex` · all-digit codes (≈1e-18 chance) would be JSON-parsed by the router and shown as missing (accepted)
+- M4-GATE: live gate checks on a throwaway backend container (compose image, `docker compose run --no-deps -p 3999`, random `META_APP_SECRET` + placeholder META app vars via `-e`, never in `.env`; container, job and secret file removed) instead of e2e-only evidence, since compose has no `META_APP_SECRET` (compose itself answered 503) · admin queue counts proven real with a temporary `comment-moderation` probe job (waiting 1 → removed → 0) via a throwaway super admin (deleted with its sessions + `auth:*` keys) · the 4 backend error-level log lines are my deliberate 503 probes (`AllExceptionsFilter` logs every 5xx at error), not faults · no gate fix
 
 ## Decisions asked
 - 2026-11-18 M3-T10: D13 0-Pages redirect → entry points only (recorded in TASKS.md D13)
@@ -99,3 +67,4 @@ You are implementing exactly ONE task row, **M4-GATE**, in the ShieldComment BD 
 - 2026-11-19 M4-T10 ✅ f64418e + fix d273e68 · backend 1032 + e2e 494 · e2e 2/2 (host + docker) · Better Auth client IP: socket-address fallback via the auth module `middleware` option (no `no-trusted-ip` bucket), e2e seed sends a per-run `X-Forwarded-For`
 - 2026-11-19 M4-T11 ✅ 88635b5 · client 343 (was 303) · e2e 2/2 · /pages NEEDS_REAUTH/REVOKED banner + Reconnect, 409 CONNECTION_NEEDS_REAUTH rollback, Disconnect card + confirm dialog (counts, inline errors), finding (a) closed
 - 2026-11-19 M4-T12 ✅ 7b2025f · client 399 (was 343) · e2e 2/2 · public SSR /data-deletion status page (en/bn): server-fn lookup in the server HTML, 404/429/5xx/network states + Try again, Dhaka dates, code shown
+- 2026-11-19 M4-GATE ✅ · backend 1032 unit / 494 e2e · admin 246 · client 399 · Playwright 2/2 · module 4 gate passed: 401 on bad/missing signature, signed delivery 200 in 7.8 ms with one job for 3 deliveries (live, throwaway-secret container), real queue counts on admin; no fix
