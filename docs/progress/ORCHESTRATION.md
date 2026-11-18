@@ -7,10 +7,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, only the Module 4 header + decisions + its own row from TASKS.md, `docs/project-documentation/modules/module-4-webhooks-queue.md` (UI rows M4-T11/T12 also `docs/design/base.md` + `client.md`).
 - Standing approvals: admin/ + client/ changes approved for the rest of this run (user, 2026-11-18).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #2 (2026-11-18) · rows this session: 5 · estimate: 136k
+- Session: #2 (2026-11-18) · rows this session: 6 · estimate: 153k
 
 ## State
-dispatched M4-T6 (2026-11-18) · commit: "feat(backend): add meta deauthorize and data deletion callbacks (M4-T6)"
+verified M4-T6
 
 ## Resume
 `/orchestration --continue`
@@ -85,4 +85,4 @@ You are implementing exactly ONE task row, **M4-T7**, in the ShieldComment BD re
 - 2026-11-18 M4-T3 ✅ bede928 · backend 645 + e2e 415 · e2e 2/2 · GET/POST /api/webhooks/meta: verify handshake, raw-body capture, X-Hub-Signature-256 guard (stub receiver)
 - 2026-11-18 M4-T4 ✅ 7a0df2a · backend 696 + e2e 425 · e2e 2/2 · webhook receiver: envelope parser → one `comment-ingest` addBulk per delivery (150 ms, 503 on failure), edited-hash job ids (migration 0012)
 - 2026-11-18 M4-T5 ✅ a093d70 · backend 774 + e2e 437 · e2e 2/2 · comment-ingest worker: routing/drop rules, one-tx event + comment + stats, out-of-order edit/remove, FakeWorker e2e double
-- 2026-11-18 M4-T6 ✅ · backend 849 + e2e 460 · e2e 2/2 · Meta Deauthorize + Data Deletion callbacks: signed_request helper, REVOKED + tokens cleared (migration 0013), deletion requests + `data-deletion` job on meta-token-check, status lookup, throttler
+- 2026-11-18 M4-T6 ✅ 03f3427 · backend 849 + e2e 460 · e2e 2/2 · Meta Deauthorize + Data Deletion callbacks: signed_request helper, REVOKED + tokens cleared (migration 0013), deletion requests + `data-deletion` job on meta-token-check, status lookup, throttler
