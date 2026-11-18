@@ -25,8 +25,17 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
+ * 5xx `code`s a client may see (opt-in, each one deliberate): the toggle's 502 when Graph
+ * `subscribed_apps` fails (M4-T8, D10). Other 5xx never carry `code`; `details` stay 4xx-only.
+ */
+export const PUBLIC_SERVER_ERROR_CODES: ReadonlySet<string> = new Set([
+  'META_SUBSCRIBE_FAILED',
+]);
+
+/**
  * Normalises every error into one JSON shape; never leaks internals on 5xx. A 4xx `HttpException`
- * whose body carries `code` (string) and/or `details` (object) keeps them (M3-T6 page limit 409).
+ * whose body carries `code` (string) and/or `details` (object) keeps them (M3-T6 page limit 409);
+ * a 5xx keeps only a `code` listed in `PUBLIC_SERVER_ERROR_CODES`.
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -62,6 +71,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
         if (statusCode < 500) {
           if (typeof b.code === 'string') code = b.code;
           if (isPlainObject(b.details)) details = b.details;
+        } else if (
+          typeof b.code === 'string' &&
+          PUBLIC_SERVER_ERROR_CODES.has(b.code)
+        ) {
+          code = b.code;
         }
       }
     }

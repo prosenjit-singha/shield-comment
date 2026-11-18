@@ -16,7 +16,8 @@ export interface PageToggleError {
 
 /**
  * One Page (`<li>`): identity, pills, protection `Switch`, then an optional hint and the failed toggle's
- * message (409 `PAGE_LIMIT_REACHED` / `PAGE_TOKEN_MISSING` / other). Used by `/onboarding` and `/pages`.
+ * message (409 `PAGE_LIMIT_REACHED` / `PAGE_TOKEN_MISSING`, 502 `META_SUBSCRIBE_FAILED`, other). Used by `/onboarding`
+ * and `/pages`.
  */
 export function PageToggleRow({
   page,

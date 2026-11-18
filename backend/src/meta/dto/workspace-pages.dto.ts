@@ -37,10 +37,12 @@ export interface TogglePageResponse {
   changed: boolean;
 }
 
-/** `code` of the 409s from `PATCH …/pages/:id/toggle` (error body `{ …, code, details? }`). */
+/** `code` of the 409s / 502 from `PATCH …/pages/:id/toggle` (error body `{ …, code, details? }`). */
 export const PAGE_TOGGLE_ERROR_CODES = {
   /** Activating past the plan's `connectedPages`; `details` = `WorkspacePageLimit`. */
   limitReached: 'PAGE_LIMIT_REACHED',
   /** Activating a Page without a stored token (missing on re-connect): reconnect Meta first. */
   tokenMissing: 'PAGE_TOKEN_MISSING',
+  /** 502 (M4-T8, D10): Graph `subscribed_apps` failed on switch-on; nothing changed. */
+  subscribeFailed: 'META_SUBSCRIBE_FAILED',
 } as const;

@@ -30,7 +30,8 @@
     "neon:smoke": "node --env-file=.env --env-file=.env.neon dist/scripts/neon-smoke.js",
     "neon:smoke:staging": "node --env-file=.env --env-file=.env.staging dist/scripts/neon-smoke.js",
     "db:studio": "drizzle-kit studio",
-    "create-super-admin": "node --env-file-if-exists=.env dist/scripts/create-super-admin.js"
+    "create-super-admin": "node --env-file-if-exists=.env dist/scripts/create-super-admin.js",
+    "meta:subscribe-pages": "node --env-file-if-exists=.env dist/scripts/subscribe-active-pages.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1170.0",

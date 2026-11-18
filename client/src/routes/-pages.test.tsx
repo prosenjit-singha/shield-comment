@@ -48,6 +48,8 @@ const copy = {
     noInstagram: 'No Instagram account linked',
     reconnect: 'Reconnect Facebook',
     reconnectHint: 'Facebook no longer gives us access to this Page. Reconnect Facebook and include this Page, then switch it on.',
+    subscribeFailed:
+      'Facebook didn’t confirm the connection for this Page, so protection is still off. Try again in a moment. If it keeps failing, reconnect Facebook.',
     impersonated: 'Connecting Facebook is turned off during Admin Impersonation',
     connectedNotice: 'Facebook connected. Switch on protection for the Pages you want below.',
     skipped: '2 Pages were skipped because they are already connected to another ShieldComment workspace.',
@@ -91,6 +93,8 @@ const copy = {
     noInstagram: 'কোনো ইনস্টাগ্রাম অ্যাকাউন্ট যুক্ত নেই',
     reconnect: 'আবার ফেসবুক কানেক্ট করুন',
     reconnectHint: 'ফেসবুক এই পেজে আর অ্যাক্সেস দিচ্ছে না। ফেসবুক আবার কানেক্ট করুন এবং এই পেজটি সিলেক্ট করুন, তারপর চালু করুন।',
+    subscribeFailed:
+      'ফেসবুক এই পেজের সংযোগ নিশ্চিত করেনি, তাই সুরক্ষা এখনও বন্ধ আছে। একটু পরে আবার চেষ্টা করুন। বারবার ব্যর্থ হলে ফেসবুক আবার কানেক্ট করুন।',
     impersonated: 'অ্যাডমিন ইমপারসোনেশনের সময় ফেসবুক কানেক্ট করা বন্ধ থাকে',
     connectedNotice: 'ফেসবুক কানেক্ট হয়েছে। নিচে যে পেজগুলো সুরক্ষিত রাখতে চান সেগুলো চালু করুন।',
     skipped: '২টি পেজ বাদ দেওয়া হয়েছে, কারণ সেগুলো আগে থেকেই অন্য একটি ShieldComment ওয়ার্কস্পেসে কানেক্ট করা আছে।',
@@ -371,6 +375,38 @@ describe.each(['en', 'bn'] as const)('/pages (%s)', (language) => {
       await waitFor(() => expect(callsTo(PAGES)).toHaveLength(2))
       refetch.release()
       expect(screen.getByRole('button', { name: t.reconnect })).toBeTruthy()
+    })
+
+    it('rolls back on 502 META_SUBSCRIBE_FAILED with the subscribe message', async () => {
+      const gate = deferred()
+      const refetch = deferred()
+      mockApi({
+        '/api/auth/get-session': () => json(200, SESSION),
+        ...holdRefetch(
+          pagesApi(
+            [page()],
+            3,
+            gatedToggle(gate.promise, () =>
+              json(502, { statusCode: 502, message: 'backend text never shown', code: 'META_SUBSCRIBE_FAILED' }),
+            ),
+          ),
+          refetch.promise,
+        ),
+      })
+      renderPages('/pages', language)
+
+      fireEvent.click(await switchFor('Rahim Fashion'))
+      await waitFor(async () => expect(await checked('Rahim Fashion')).toBe('true'))
+      gate.release()
+
+      const alert = await screen.findByRole('alert')
+      expect(alert.dataset.kind).toBe('subscribe-failed')
+      expect(alert.textContent).toBe(t.subscribeFailed)
+      // Rolled back before the refetch answers.
+      expect(await checked('Rahim Fashion')).toBe('false')
+      expect(limitText()).toBe(t.limit(0, 3))
+      await waitFor(() => expect(callsTo(PAGES)).toHaveLength(2))
+      refetch.release()
     })
 
     it.each([

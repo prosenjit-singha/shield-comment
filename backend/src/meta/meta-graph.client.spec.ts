@@ -486,6 +486,126 @@ describe('MetaGraphClient', () => {
     });
   });
 
+  describe('subscribePageApp / unsubscribePageApp (M4-T8)', () => {
+    const PAGE_ID = '1010000000000001';
+    const proof = createHmac('sha256', CONFIG.appSecret)
+      .update(PAGE_TOKEN)
+      .digest('hex');
+    const init = (n = 0) => fetchMock.mock.calls[n]![1]!;
+
+    it('subscribe = POST /{page-id}/subscribed_apps, form body with feed + Page token + proof', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, { success: true }));
+      await expect(
+        client.subscribePageApp(PAGE_ID, PAGE_TOKEN),
+      ).resolves.toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const url = calledUrl();
+      expect(url.origin + url.pathname).toBe(
+        `https://graph.facebook.com/v26.0/${PAGE_ID}/subscribed_apps`,
+      );
+      // Nothing in the URL: the token travels in the body.
+      expect(url.search).toBe('');
+      expect(init().method).toBe('POST');
+      expect(init().headers).toMatchObject({
+        'Content-Type': 'application/x-www-form-urlencoded',
+      });
+      const sent = init().body;
+      expect(typeof sent).toBe('string');
+      const body = new URLSearchParams(sent as string);
+      expect(Object.fromEntries(body)).toEqual({
+        subscribed_fields: 'feed',
+        access_token: PAGE_TOKEN,
+        appsecret_proof: proof,
+      });
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringMatching(
+          new RegExp(`^POST /${PAGE_ID}/subscribed_apps 200 \\d+ms$`),
+        ),
+      );
+    });
+
+    it('unsubscribe = DELETE /{page-id}/subscribed_apps with token + proof in the query', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, { success: true }));
+      await expect(
+        client.unsubscribePageApp(PAGE_ID, PAGE_TOKEN),
+      ).resolves.toBeUndefined();
+      const url = calledUrl();
+      expect(url.pathname).toBe(`/v26.0/${PAGE_ID}/subscribed_apps`);
+      expect(init().method).toBe('DELETE');
+      expect(init().body).toBeUndefined();
+      expect(url.searchParams.get('access_token')).toBe(PAGE_TOKEN);
+      expect(url.searchParams.get('appsecret_proof')).toBe(proof);
+      expect(url.searchParams.has('subscribed_fields')).toBe(false);
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/^DELETE \/\d+\/subscribed_apps 200 \d+ms$/),
+      );
+    });
+
+    it.each([[{ success: false }], [{}], [{ success: 'true' }], [[]]])(
+      'anything but { success: true } (%j) is unexpected_response',
+      async (body) => {
+        for (const call of [
+          () => client.subscribePageApp(PAGE_ID, PAGE_TOKEN),
+          () => client.unsubscribePageApp(PAGE_ID, PAGE_TOKEN),
+        ]) {
+          fetchMock.mockResolvedValueOnce(jsonResponse(200, body));
+          expect(await caught(call())).toMatchObject({
+            kind: 'unexpected_response',
+            status: 200,
+          });
+        }
+      },
+    );
+
+    it.each([
+      [190, 'token_invalid'],
+      [4, 'rate_limited'],
+      [200, 'permission'],
+      [100, 'invalid_request'],
+      [2, 'transient'],
+    ] as const)(
+      'Graph error #%i → %s, token and secret scrubbed',
+      async (code, kind) => {
+        for (const call of [
+          () => client.subscribePageApp(PAGE_ID, PAGE_TOKEN),
+          () => client.unsubscribePageApp(PAGE_ID, PAGE_TOKEN),
+        ]) {
+          fetchMock.mockResolvedValueOnce(
+            graphError(400, {
+              message: `bad ${PAGE_TOKEN} ${CONFIG.appSecret}`,
+              code,
+            }),
+          );
+          const error = await caught(call());
+          expect(error).toMatchObject({ kind, code });
+          expect(error.message).not.toContain(PAGE_TOKEN);
+          expect(error.message).not.toContain(CONFIG.appSecret);
+        }
+      },
+    );
+
+    it('network failure → network error without the token', async () => {
+      fetchMock.mockRejectedValue(new TypeError(`failed ${PAGE_TOKEN}`));
+      const error = await caught(client.subscribePageApp(PAGE_ID, PAGE_TOKEN));
+      expect(error).toMatchObject({ kind: 'network', retryable: true });
+      expect(error.message).not.toContain(PAGE_TOKEN);
+      expect(error.message).toContain('subscribed_apps');
+    });
+
+    it('rejects an empty token or a non-numeric Page id without calling fetch', async () => {
+      await expect(client.subscribePageApp(PAGE_ID, '')).rejects.toThrow(
+        'Token',
+      );
+      await expect(
+        client.unsubscribePageApp('../me', PAGE_TOKEN),
+      ).rejects.toThrow('Page id');
+      await expect(
+        new MetaGraphClient(null).subscribePageApp(PAGE_ID, PAGE_TOKEN),
+      ).rejects.toBeInstanceOf(MetaNotConfiguredError);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe('errors', () => {
     it.each([
       [190, 463, 'token_invalid', false],

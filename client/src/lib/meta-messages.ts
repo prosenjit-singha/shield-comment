@@ -187,7 +187,7 @@ export function pageNeedsReconnectMessage(content: ContentFn): string {
   )
 }
 
-/** `PATCH …/pages/:id/toggle` failures, incl. the 409 plan-limit / missing-token cases. */
+/** `PATCH …/pages/:id/toggle` failures, incl. the 409 plan-limit / missing-token and 502 subscribe cases. */
 export function pageToggleErrorMessage(failure: PageToggleFailure, isActive: boolean, content: ContentFn): string {
   switch (failure.kind) {
     case 'limit-reached': {
@@ -205,6 +205,11 @@ export function pageToggleErrorMessage(failure: PageToggleFailure, isActive: boo
     }
     case 'token-missing':
       return pageNeedsReconnectMessage(content)
+    case 'subscribe-failed':
+      return content(
+        'Facebook didn’t confirm the connection for this Page, so protection is still off. Try again in a moment. If it keeps failing, reconnect Facebook.',
+        'ফেসবুক এই পেজের সংযোগ নিশ্চিত করেনি, তাই সুরক্ষা এখনও বন্ধ আছে। একটু পরে আবার চেষ্টা করুন। বারবার ব্যর্থ হলে ফেসবুক আবার কানেক্ট করুন।',
+      )
     case 'other':
       if (failure.error.status === 404) {
         return content(

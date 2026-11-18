@@ -69,6 +69,11 @@ describe('pageToggleFailure', () => {
       activeCount: undefined,
     })
     expect(pageToggleFailure(new ApiError(409, 'x', { code: 'PAGE_TOKEN_MISSING' }))).toEqual({ kind: 'token-missing' })
+    expect(pageToggleFailure(new ApiError(502, 'x', { code: 'META_SUBSCRIBE_FAILED' }))).toEqual({
+      kind: 'subscribe-failed',
+    })
+    const bareBadGateway = new ApiError(502, 'x')
+    expect(pageToggleFailure(bareBadGateway)).toEqual({ kind: 'other', error: bareBadGateway })
     const other = new ApiError(409, 'x', { code: 'SOMETHING_ELSE' })
     expect(pageToggleFailure(other)).toEqual({ kind: 'other', error: other })
   })

@@ -39,7 +39,9 @@ export class SocialPagesController {
 
   /**
    * `{ isActive }` → `{ page, changed }`. 400 non-uuid id / bad body, 404 not this workspace's Page,
-   * 409 `code: PAGE_TOKEN_MISSING` or `PAGE_LIMIT_REACHED` (`details: { limit, activeCount }`).
+   * 409 `code: PAGE_TOKEN_MISSING` or `PAGE_LIMIT_REACHED` (`details: { limit, activeCount }`),
+   * switch-on only (M4-T8): 502 `code: META_SUBSCRIBE_FAILED` (Graph `subscribed_apps` failed,
+   * nothing changed), 503 when Meta or the token cipher is not configured.
    */
   @Patch(':id/toggle')
   toggle(

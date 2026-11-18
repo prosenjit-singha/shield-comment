@@ -8,8 +8,10 @@ import {
   tokenCipherContext,
 } from '../src/crypto/token-cipher.service.js';
 import { plans, socialPages, workspaces } from '../src/db/schema/index.js';
+import { MetaGraphClient } from '../src/meta/meta-graph.client.js';
 import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
+import { fakePageSubscriptionGraph } from './utils/fake-meta-graph.js';
 
 /** Every response's headers and body, to prove no token or ciphertext ever leaks. */
 const seen: string[] = [];
@@ -20,12 +22,15 @@ const record = (res: request.Response) => {
 
 /**
  * M3-T6: workspace pages API (user decisions D3/D5/D7/D10 2026-11-18). Real Postgres + real
- * token cipher; `social_pages` rows are inserted directly with real ciphertexts. No Meta call.
+ * token cipher; `social_pages` rows are inserted directly with real ciphertexts. Switch-on calls
+ * Graph `subscribed_apps` since M4-T8: a fake answers it (Graph failure cases are in
+ * `meta-page-subscribe.e2e-spec.ts`); any other Graph call fails the spec.
  */
 describe('Workspace pages API (e2e)', () => {
   let app: INestApplication<App>;
   let actors: ReturnType<typeof createAuthActors>;
   let cipher: TokenCipherService;
+  const graph = fakePageSubscriptionGraph();
   let owner: Actor;
   let other: Actor;
   let growth: Actor;
@@ -106,7 +111,9 @@ describe('Workspace pages API (e2e)', () => {
       .send({ isActive });
 
   beforeAll(async () => {
-    app = await createTestApp();
+    app = await createTestApp((builder) =>
+      builder.overrideProvider(MetaGraphClient).useValue(graph),
+    );
     actors = createAuthActors(app);
     cipher = app.get(TokenCipherService);
     owner = await actors.signUp('m3t6-owner');

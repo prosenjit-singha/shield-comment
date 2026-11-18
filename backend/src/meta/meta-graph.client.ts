@@ -15,6 +15,13 @@ const ACCOUNTS_PAGE_SIZE = 100;
 const MAX_ACCOUNT_PAGES = 50;
 const ACCOUNT_FIELDS =
   'id,name,access_token,instagram_business_account{id,username}';
+/**
+ * `subscribed_fields` for `POST /{page-id}/subscribed_apps` (Module 4 D2: `feed`). Instagram
+ * `comments` arrive through the app's `instagram` webhook object for the IG account linked to the
+ * Page; Meta only asks that the app be installed on that Page with **any** Page field, so `feed`
+ * covers both (M4-T8).
+ */
+export const PAGE_SUBSCRIBED_FIELDS = 'feed';
 
 export interface MetaAccessToken {
   accessToken: string;
@@ -53,6 +60,7 @@ export interface MetaPermissions {
 }
 
 type Query = Record<string, string>;
+type HttpMethod = 'GET' | 'POST' | 'DELETE';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -248,6 +256,35 @@ export class MetaGraphClient {
     return { isValid: data.is_valid, expiresAt, scopes };
   }
 
+  /**
+   * `POST /{page-id}/subscribed_apps` with the **Page** token (+ `appsecret_proof`) and
+   * `subscribed_fields=feed` (M4-T8, D2/D10): installs the app on the Page so Meta sends its
+   * webhooks. Idempotent on Meta's side. Anything but `{ success: true }` is `unexpected_response`.
+   * Parameters go in a form body, not the URL.
+   */
+  async subscribePageApp(pageId: string, pageToken: string): Promise<void> {
+    const body = await this.withPageToken(
+      'POST',
+      pageId,
+      { subscribed_fields: PAGE_SUBSCRIBED_FIELDS },
+      pageToken,
+    );
+    if (!isRecord(body) || body.success !== true) {
+      throw unexpected('subscribed_apps did not answer success');
+    }
+  }
+
+  /**
+   * `DELETE /{page-id}/subscribed_apps` with the Page token (+ `appsecret_proof`): stops the Page's
+   * webhooks for this app (M4-T8 switch-off, best effort at the caller). `{ success: true }` only.
+   */
+  async unsubscribePageApp(pageId: string, pageToken: string): Promise<void> {
+    const body = await this.withPageToken('DELETE', pageId, {}, pageToken);
+    if (!isRecord(body) || body.success !== true) {
+      throw unexpected('subscribed_apps delete did not answer success');
+    }
+  }
+
   private parseToken(body: unknown): MetaAccessToken {
     if (!isRecord(body) || !nonEmpty(body.access_token)) {
       throw unexpected('no access_token in the token response');
@@ -296,12 +333,38 @@ export class MetaGraphClient {
     query: Query,
     accessToken: string,
   ): Promise<unknown> {
+    return this.requestWithToken('GET', path, query, accessToken);
+  }
+
+  /** `/{page-id}/subscribed_apps` with a Page token (the id is checked: it becomes a URL segment). */
+  private withPageToken(
+    method: 'POST' | 'DELETE',
+    pageId: string,
+    params: Query,
+    pageToken: string,
+  ): Promise<unknown> {
+    if (!isGraphId(pageId)) throw new Error('Page id must be a Graph id');
+    return this.requestWithToken(
+      method,
+      `${pageId}/subscribed_apps`,
+      params,
+      pageToken,
+    );
+  }
+
+  private requestWithToken(
+    method: HttpMethod,
+    path: string,
+    params: Query,
+    accessToken: string,
+  ): Promise<unknown> {
     const config = this.requireConfig();
     if (!nonEmpty(accessToken)) throw new Error('Token must not be empty');
-    return this.get(
+    return this.request(
+      method,
       path,
       {
-        ...query,
+        ...params,
         access_token: accessToken,
         appsecret_proof: appSecretProof(accessToken, config.appSecret),
       },
@@ -309,22 +372,45 @@ export class MetaGraphClient {
     );
   }
 
-  /** One GET. `secrets` are scrubbed from error messages. Logs path, status and time only. */
-  private async get(
+  private get(
     path: string,
     query: Query,
     secrets: readonly string[],
   ): Promise<unknown> {
+    return this.request('GET', path, query, secrets);
+  }
+
+  /**
+   * One Graph call. GET/DELETE send `params` in the query string, POST as a form body.
+   * `secrets` are scrubbed from error messages. Logs method, path, status and time only.
+   */
+  private async request(
+    method: HttpMethod,
+    path: string,
+    params: Query,
+    secrets: readonly string[],
+  ): Promise<unknown> {
     const config = this.requireConfig();
     const url = new URL(`${GRAPH_HOST}/${config.graphApiVersion}/${path}`);
-    url.search = new URLSearchParams(query).toString();
+    const encoded = new URLSearchParams(params).toString();
+    const init: RequestInit = {
+      method,
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    };
+    if (method === 'POST') {
+      init.headers = {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      };
+      init.body = encoded;
+    } else {
+      url.search = encoded;
+    }
     const started = performance.now();
     let res: Response;
     try {
-      res = await fetch(url, {
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
-      });
+      res = await fetch(url, init);
     } catch (error) {
       // Never pass the original error on: some fetch errors include the URL (tokens in the query).
       const reason =
@@ -335,7 +421,7 @@ export class MetaGraphClient {
     }
     const body: unknown = await res.json().catch(() => undefined);
     this.logger.debug(
-      `GET /${path} ${res.status} ${Math.round(performance.now() - started)}ms`,
+      `${method} /${path} ${res.status} ${Math.round(performance.now() - started)}ms`,
     );
     if (!res.ok) throw graphErrorFromResponse(res.status, body, secrets);
     if (body === undefined) throw unexpected(`non-JSON body from /${path}`);

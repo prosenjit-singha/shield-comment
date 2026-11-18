@@ -142,14 +142,17 @@ export function goToExternalUrl(url: string): void {
 export type PageToggleFailure =
   | { kind: 'limit-reached'; limit: number | undefined; activeCount: number | undefined }
   | { kind: 'token-missing' }
+  /** 502 `META_SUBSCRIBE_FAILED` (M4-T8): Facebook didn't confirm the webhook subscription; nothing changed. */
+  | { kind: 'subscribe-failed' }
   | { kind: 'other'; error: ApiError }
 
-/** Reads the toggle's 409 `code` / `details` (`PAGE_LIMIT_REACHED`, `PAGE_TOKEN_MISSING`). */
+/** Reads the toggle's error `code` / `details` (409 `PAGE_LIMIT_REACHED` / `PAGE_TOKEN_MISSING`, 502 `META_SUBSCRIBE_FAILED`). */
 export function pageToggleFailure(error: ApiError): PageToggleFailure {
   if (error.status === 409 && error.code === 'PAGE_LIMIT_REACHED') {
     const number = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : undefined)
     return { kind: 'limit-reached', limit: number(error.details?.limit), activeCount: number(error.details?.activeCount) }
   }
   if (error.status === 409 && error.code === 'PAGE_TOKEN_MISSING') return { kind: 'token-missing' }
+  if (error.status === 502 && error.code === 'META_SUBSCRIBE_FAILED') return { kind: 'subscribe-failed' }
   return { kind: 'other', error }
 }

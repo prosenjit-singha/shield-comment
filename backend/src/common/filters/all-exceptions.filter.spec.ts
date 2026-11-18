@@ -78,12 +78,33 @@ describe('AllExceptionsFilter', () => {
     expect(body).not.toHaveProperty('secret');
   });
 
-  it('never passes code/details on 5xx', () => {
+  it('never passes other codes or details on 5xx', () => {
     const { status, body } = run(
       new HttpException({ message: 'boom', code: 'X', details: { a: 1 } }, 503),
     );
     expect(status).toBe(503);
     expect(body).not.toHaveProperty('code');
+    expect(body).not.toHaveProperty('details');
+  });
+
+  it('keeps an allow-listed code on 5xx (502 META_SUBSCRIBE_FAILED), never details', () => {
+    const { status, body } = run(
+      new HttpException(
+        {
+          message: 'Facebook did not confirm',
+          error: 'Bad Gateway',
+          code: 'META_SUBSCRIBE_FAILED',
+          details: { a: 1 },
+        },
+        502,
+      ),
+    );
+    expect(status).toBe(502);
+    expect(body).toMatchObject({
+      statusCode: 502,
+      error: 'Bad Gateway',
+      code: 'META_SUBSCRIBE_FAILED',
+    });
     expect(body).not.toHaveProperty('details');
   });
 

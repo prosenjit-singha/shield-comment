@@ -1,6 +1,14 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  ConflictException,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import type { Database } from '../db/database.js';
 import type { WorkspacePage } from './dto/workspace-pages.dto.js';
+import * as subscriptionQueries from './page-subscription.queries.js';
+import type { PageSubscriptionService } from './page-subscription.service.js';
 import * as queries from './social-pages.queries.js';
 import {
   assertCanActivate,
@@ -17,7 +25,12 @@ vi.mock('./social-pages.queries.js', () => ({
   setPageActive: vi.fn(),
 }));
 
+vi.mock('./page-subscription.queries.js', () => ({
+  findWorkspacePageToken: vi.fn(),
+}));
+
 const q = vi.mocked(queries);
+const sq = vi.mocked(subscriptionQueries);
 const WS = '019a0000-0000-7000-8000-000000000001';
 const PAGE = '019a0000-0000-7000-8000-0000000000a1';
 const PLAN = '019a0000-0000-7000-8000-0000000000c1';
@@ -40,20 +53,41 @@ const page = (patch: Partial<WorkspacePage> = {}): WorkspacePage => ({
   ...patch,
 });
 
-function setup() {
+function setup(options: { configured?: boolean } = {}) {
   const tx = { tag: 'tx' };
   let transactions = 0;
+  /** Order of Graph calls vs transactions, e.g. ['subscribe', 'tx']. */
+  const order: string[] = [];
   const db = {
     tag: 'db',
     transaction: async <T>(fn: (t: typeof tx) => Promise<T>) => {
       transactions++;
+      order.push('tx');
       return fn(tx);
     },
   };
+  const subs = {
+    configured: options.configured ?? true,
+    subscribe: vi.fn<PageSubscriptionService['subscribe']>(async () => {
+      order.push('subscribe');
+      return { kind: 'subscribed' as const };
+    }),
+    unsubscribeBestEffort: vi.fn<
+      PageSubscriptionService['unsubscribeBestEffort']
+    >(async () => {
+      order.push('unsubscribe');
+      return true;
+    }),
+  };
   return {
-    svc: new SocialPagesService(db as unknown as Database),
+    svc: new SocialPagesService(
+      db as unknown as Database,
+      subs as unknown as PageSubscriptionService,
+    ),
     db,
     tx,
+    subs,
+    order,
     transactions: () => transactions,
   };
 }
@@ -70,6 +104,7 @@ async function conflictBody(promise: Promise<unknown>) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
 });
 
 describe('connectedPagesLimit', () => {
@@ -150,6 +185,8 @@ describe('SocialPagesService.list', () => {
 });
 
 describe('SocialPagesService.toggle', () => {
+  const CIPHERTEXT = 'v1:k1:iv:tag:ct';
+
   function arm(options: {
     workspace?: { planId: string | null } | undefined;
     current?: WorkspacePage | undefined;
@@ -167,23 +204,142 @@ describe('SocialPagesService.toggle', () => {
     q.setPageActive.mockImplementation(async (_e, _w, _id, isActive) =>
       page({ isActive, updatedAt: new Date('2026-11-18T01:00:00.000Z') }),
     );
+    sq.findWorkspacePageToken.mockResolvedValue({
+      id: PAGE,
+      workspaceId: WS,
+      pageId: '1001',
+      isActive: false,
+      encryptedPageAccessToken: CIPHERTEXT,
+    });
   }
 
-  it('activates under the limit: locks workspace then page in one tx, then updates', async () => {
-    const { svc, tx, transactions } = setup();
+  it('activates under the limit: pre-checks, subscribes, then locks workspace → page in one tx', async () => {
+    const { svc, db, tx, subs, order, transactions } = setup();
     arm({ limit: 1, activeCount: 0 });
     const result = await svc.toggle(WS, PAGE, true);
     expect(result.changed).toBe(true);
     expect(result.page.isActive).toBe(true);
     expect(transactions()).toBe(1);
+    // Pre-checks on the db (no locks), then Graph, then the tx.
+    expect(q.findWorkspacePage).toHaveBeenNthCalledWith(1, db, WS, PAGE);
+    expect(q.countActivePages).toHaveBeenNthCalledWith(1, db, WS);
+    expect(sq.findWorkspacePageToken).toHaveBeenCalledWith(db, WS, PAGE);
+    expect(subs.subscribe).toHaveBeenCalledWith({
+      id: PAGE,
+      workspaceId: WS,
+      pageId: '1001',
+      isActive: false,
+      encryptedPageAccessToken: CIPHERTEXT,
+    });
+    expect(order).toEqual(['subscribe', 'tx']);
     expect(q.findWorkspacePlanId).toHaveBeenCalledWith(tx, WS, true);
     expect(q.findWorkspacePage).toHaveBeenCalledWith(tx, WS, PAGE, true);
-    expect(q.findWorkspacePlanId.mock.invocationCallOrder[0]!).toBeLessThan(
-      q.findWorkspacePage.mock.invocationCallOrder[0]!,
-    );
+    const txCall = (mock: { mock: { calls: unknown[][] } }) =>
+      mock.mock.calls.findIndex((args) => args[0] === tx);
+    const planIdx = txCall(q.findWorkspacePlanId);
+    const pageIdx = txCall(q.findWorkspacePage);
+    expect(
+      q.findWorkspacePlanId.mock.invocationCallOrder[planIdx]!,
+    ).toBeLessThan(q.findWorkspacePage.mock.invocationCallOrder[pageIdx]!);
     expect(q.findPlanFeatureConfig).toHaveBeenCalledWith(tx, null);
     expect(q.countActivePages).toHaveBeenCalledWith(tx, WS);
     expect(q.setPageActive).toHaveBeenCalledWith(tx, WS, PAGE, true);
+    expect(subs.unsubscribeBestEffort).not.toHaveBeenCalled();
+  });
+
+  it('502 META_SUBSCRIBE_FAILED when Graph fails: no tx, no update', async () => {
+    const { svc, subs, transactions } = setup();
+    arm({});
+    subs.subscribe.mockResolvedValue({
+      kind: 'graph_failed',
+      errorKind: 'transient',
+      connectionMarked: false,
+    });
+    const error = await svc.toggle(WS, PAGE, true).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(BadGatewayException);
+    expect((error as BadGatewayException).getStatus()).toBe(502);
+    expect((error as BadGatewayException).getResponse()).toMatchObject({
+      error: 'Bad Gateway',
+      code: 'META_SUBSCRIBE_FAILED',
+    });
+    expect(transactions()).toBe(0);
+    expect(q.setPageActive).not.toHaveBeenCalled();
+    expect(subs.unsubscribeBestEffort).not.toHaveBeenCalled();
+  });
+
+  it('token_invalid is still a 502 (the subscription service marked the connection)', async () => {
+    const { svc, subs, transactions } = setup();
+    arm({});
+    subs.subscribe.mockResolvedValue({
+      kind: 'graph_failed',
+      errorKind: 'token_invalid',
+      connectionMarked: true,
+    });
+    await expect(svc.toggle(WS, PAGE, true)).rejects.toBeInstanceOf(
+      BadGatewayException,
+    );
+    expect(transactions()).toBe(0);
+  });
+
+  it('409 PAGE_TOKEN_MISSING when the stored token can’t be decrypted (reconnect), no tx', async () => {
+    const { svc, subs, transactions } = setup();
+    arm({});
+    subs.subscribe.mockResolvedValue({ kind: 'undecryptable' });
+    const body = await conflictBody(svc.toggle(WS, PAGE, true));
+    expect(body).toMatchObject({ code: 'PAGE_TOKEN_MISSING' });
+    expect(transactions()).toBe(0);
+  });
+
+  it('503 when Meta or the cipher is not configured, before any Graph call', async () => {
+    const { svc, subs, transactions } = setup({ configured: false });
+    arm({});
+    await expect(svc.toggle(WS, PAGE, true)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(subs.subscribe).not.toHaveBeenCalled();
+    expect(transactions()).toBe(0);
+  });
+
+  it('404 when the Page disappears between the pre-check and the token read', async () => {
+    const { svc, subs } = setup();
+    arm({});
+    sq.findWorkspacePageToken.mockResolvedValue(undefined);
+    await expect(svc.toggle(WS, PAGE, true)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(subs.subscribe).not.toHaveBeenCalled();
+  });
+
+  it('tx refuses after a successful subscribe (limit raced) → 409 + best-effort unsubscribe', async () => {
+    const { svc, tx, subs, order } = setup();
+    arm({ limit: 1 });
+    // Pre-check sees 0 active; under the lock another Page is already on.
+    q.countActivePages.mockImplementation(async (executor) =>
+      (executor as unknown) === tx ? 1 : 0,
+    );
+    const body = await conflictBody(svc.toggle(WS, PAGE, true));
+    expect(body).toMatchObject({ code: 'PAGE_LIMIT_REACHED' });
+    expect(order).toEqual(['subscribe', 'tx', 'unsubscribe']);
+    expect(subs.unsubscribeBestEffort).toHaveBeenCalledWith(WS, PAGE);
+    expect(q.setPageActive).not.toHaveBeenCalled();
+  });
+
+  it('switch off: tx first, then best-effort unsubscribe; its failure leaves the response', async () => {
+    const { svc, tx, subs, order } = setup();
+    arm({ current: page({ isActive: true }) });
+    subs.unsubscribeBestEffort.mockImplementation(async () => {
+      order.push('unsubscribe');
+      return false;
+    });
+    const result = await svc.toggle(WS, PAGE, false);
+    expect(result).toMatchObject({ changed: true, page: { isActive: false } });
+    expect(order).toEqual(['tx', 'unsubscribe']);
+    expect(subs.unsubscribeBestEffort).toHaveBeenCalledWith(WS, PAGE);
+    expect(subs.subscribe).not.toHaveBeenCalled();
+    expect(q.setPageActive).toHaveBeenCalledWith(tx, WS, PAGE, false);
   });
 
   it('uses the workspace plan’s limit when it has one', async () => {
@@ -195,8 +351,8 @@ describe('SocialPagesService.toggle', () => {
     expect(q.findPlanFeatureConfig).toHaveBeenCalledWith(tx, PLAN);
   });
 
-  it('409 PAGE_LIMIT_REACHED at the limit (no plan → Free limit), no update', async () => {
-    const { svc } = setup();
+  it('409 PAGE_LIMIT_REACHED at the limit (no plan → Free limit): pre-check, no Graph, no tx', async () => {
+    const { svc, subs, transactions } = setup();
     arm({ workspace: { planId: null }, limit: 1, activeCount: 1 });
     const body = await conflictBody(svc.toggle(WS, PAGE, true));
     expect(body).toMatchObject({
@@ -204,6 +360,8 @@ describe('SocialPagesService.toggle', () => {
       details: { limit: 1, activeCount: 1 },
     });
     expect(q.setPageActive).not.toHaveBeenCalled();
+    expect(subs.subscribe).not.toHaveBeenCalled();
+    expect(transactions()).toBe(0);
   });
 
   it('409 when the plan row is missing (limit 0, fail closed)', async () => {
@@ -215,13 +373,14 @@ describe('SocialPagesService.toggle', () => {
   });
 
   it('409 PAGE_TOKEN_MISSING when activating a Page without a token, before the limit check', async () => {
-    const { svc } = setup();
+    const { svc, subs } = setup();
     arm({ current: page({ hasToken: false }) });
     const body = await conflictBody(svc.toggle(WS, PAGE, true));
     expect(body).toMatchObject({ code: 'PAGE_TOKEN_MISSING' });
     expect(body.message).toMatch(/reconnect/i);
     expect(q.countActivePages).not.toHaveBeenCalled();
     expect(q.setPageActive).not.toHaveBeenCalled();
+    expect(subs.subscribe).not.toHaveBeenCalled();
   });
 
   it('deactivates without any limit or token check (even over the limit)', async () => {
@@ -242,10 +401,10 @@ describe('SocialPagesService.toggle', () => {
     });
   });
 
-  it('same value = no-op: changed false, no update, row returned as is', async () => {
-    const { svc } = setup();
+  it('same value = no-op: changed false, no update, no Graph call, row returned as is', async () => {
     for (const isActive of [true, false]) {
       vi.resetAllMocks();
+      const { svc, subs } = setup();
       const current = page({ isActive, hasToken: isActive });
       arm({ current, limit: 0, activeCount: 5 });
       await expect(svc.toggle(WS, PAGE, isActive)).resolves.toEqual({
@@ -254,6 +413,8 @@ describe('SocialPagesService.toggle', () => {
       });
       expect(q.setPageActive).not.toHaveBeenCalled();
       expect(q.countActivePages).not.toHaveBeenCalled();
+      expect(subs.subscribe).not.toHaveBeenCalled();
+      expect(subs.unsubscribeBestEffort).not.toHaveBeenCalled();
     }
   });
 
@@ -275,12 +436,21 @@ describe('SocialPagesService.toggle', () => {
     expect(q.findWorkspacePage).not.toHaveBeenCalled();
   });
 
-  it('404 when the UPDATE matches no row', async () => {
-    const { svc } = setup();
+  it('404 when the UPDATE matches no row (after subscribe → unsubscribe attempted)', async () => {
+    const { svc, subs } = setup();
     arm({});
     q.setPageActive.mockResolvedValue(undefined);
     await expect(svc.toggle(WS, PAGE, true)).rejects.toBeInstanceOf(
       NotFoundException,
     );
+    expect(subs.unsubscribeBestEffort).toHaveBeenCalledWith(WS, PAGE);
+  });
+
+  it('a non-HTTP error from the tx (DB down) is rethrown without unsubscribing', async () => {
+    const { svc, subs } = setup();
+    arm({});
+    q.setPageActive.mockRejectedValue(new Error('connection lost'));
+    await expect(svc.toggle(WS, PAGE, true)).rejects.toThrow('connection lost');
+    expect(subs.unsubscribeBestEffort).not.toHaveBeenCalled();
   });
 });
