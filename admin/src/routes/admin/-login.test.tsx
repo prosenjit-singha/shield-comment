@@ -119,6 +119,13 @@ describe('/admin/login', () => {
     expect(alert.textContent).toContain("Can't reach the server.")
   })
 
+  it('drops a non-string ?redirect= (the router JSON-parses ?redirect=123 into a number)', async () => {
+    const { router } = renderLogin('/admin/login?redirect=123')
+    await screen.findByLabelText('Email')
+    const login = router.state.matches.find((m) => m.routeId === '/admin/login')
+    expect(login?.search).toHaveProperty('redirect', undefined)
+  })
+
   it('signs a super admin in, clears the session query and goes to ?redirect', async () => {
     auth.signInEmail.mockImplementation(async () => {
       auth.getSession.mockResolvedValue(sessionFor('super_admin'))

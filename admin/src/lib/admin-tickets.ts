@@ -92,20 +92,23 @@ function oneOf<T extends string>(values: readonly T[], value: unknown): T | unde
   return values.find((v) => v === value)
 }
 
-/** `validateSearch` for the route: drops anything malformed instead of throwing. */
+/**
+ * `validateSearch` for the route: drops anything malformed instead of throwing. Every key is
+ * returned (`undefined` when missing or malformed): TanStack Router merges the raw search under
+ * this result, so an omitted key would let a malformed value through (`?page=abc` → `skip=NaN`).
+ */
 export function validateTicketsSearch(raw: Record<string, unknown>): TicketsSearch {
-  const search: TicketsSearch = {}
-  const status = oneOf(TICKET_STATUSES, raw.status)
-  if (status) search.status = status
-  const priority = oneOf(TICKET_PRIORITIES, raw.priority)
-  if (priority) search.priority = priority
-  const category = oneOf(TICKET_CATEGORIES, raw.category)
-  if (category) search.category = category
-  if (typeof raw.q === 'string' && raw.q.trim()) search.q = raw.q.trim().slice(0, TICKET_SEARCH_MAX)
   const page = typeof raw.page === 'number' ? raw.page : Number(raw.page)
-  if (Number.isInteger(page) && page > 1) search.page = page
-  if (typeof raw.ticket === 'string' && UUID.test(raw.ticket)) search.ticket = raw.ticket
-  return search
+  // The router JSON-parses search values, so a hand-typed `?q=123` arrives as a number.
+  const q = typeof raw.q === 'number' && Number.isFinite(raw.q) ? String(raw.q) : raw.q
+  return {
+    status: oneOf(TICKET_STATUSES, raw.status),
+    priority: oneOf(TICKET_PRIORITIES, raw.priority),
+    category: oneOf(TICKET_CATEGORIES, raw.category),
+    q: typeof q === 'string' && q.trim() ? q.trim().slice(0, TICKET_SEARCH_MAX) : undefined,
+    page: Number.isInteger(page) && page > 1 ? page : undefined,
+    ticket: typeof raw.ticket === 'string' && UUID.test(raw.ticket) ? raw.ticket : undefined,
+  }
 }
 
 /** Query string for `GET /api/admin/tickets` (the open ticket is not a list filter). */

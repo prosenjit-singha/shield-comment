@@ -12,6 +12,42 @@ describe('validateTicketsSearch', () => {
     ).toEqual({})
     expect(validateTicketsSearch({ q: 'x'.repeat(150) }).q).toHaveLength(100)
   })
+
+  it('returns every key, undefined when missing (router merges raw search under the result)', () => {
+    const search = validateTicketsSearch({})
+    expect(Object.keys(search).sort()).toEqual(['category', 'page', 'priority', 'q', 'status', 'ticket'])
+    expect(Object.values(search).every((v) => v === undefined)).toBe(true)
+  })
+
+  it.each([
+    ['page', 'abc'],
+    ['page', -1],
+    ['page', 0],
+    ['page', 1],
+    ['page', 2.5],
+    ['page', 'Infinity'],
+    ['page', ''],
+    ['page', null],
+    ['status', 'BOGUS'],
+    ['status', 'open'],
+    ['status', 1],
+    ['priority', 'URGENT'],
+    ['category', ['BILLING']],
+    ['q', '   '],
+    ['q', { a: 1 }],
+    ['ticket', 'not-a-uuid'],
+    ['ticket', `${'0199b000-0000-7000-8000-000000000001'}x`],
+    ['ticket', 42],
+  ])('maps a malformed %s=%j to undefined (key kept)', (key, value) => {
+    const search = validateTicketsSearch({ [key]: value })
+    expect(search).toHaveProperty(key, undefined)
+    expect(ticketListParams(search).toString()).toBe('skip=0&take=20')
+  })
+
+  it('reads a numeric ?q= (router JSON-parses the URL) as text', () => {
+    expect(validateTicketsSearch({ q: 123 }).q).toBe('123')
+    expect(validateTicketsSearch({ q: Number.NaN }).q).toBeUndefined()
+  })
 })
 
 describe('ticketListParams', () => {

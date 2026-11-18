@@ -116,6 +116,22 @@ describe('URL search ↔ API params', () => {
     })
   })
 
+  it('returns every key, undefined when unused or malformed (router merges raw search under it)', () => {
+    for (const raw of [{}, { range: 'bogus' }, { range: '7d' }, { from: '2026-11-01', to: 'nope' }]) {
+      expect(Object.keys(validateDashboardSearch(raw)).sort()).toEqual(['from', 'range', 'to'])
+    }
+    expect(validateDashboardSearch({ range: 'bogus', from: '2026-11-01' })).toStrictEqual({
+      range: undefined,
+      from: undefined,
+      to: undefined,
+    })
+    expect(validateDashboardSearch({ from: '2026-11-01', to: '2026-11-18', range: '7d' })).toStrictEqual({
+      range: undefined,
+      from: '2026-11-01',
+      to: '2026-11-18',
+    })
+  })
+
   it('maps search to API params, picker selection and query key', () => {
     expect(dashboardParams({})).toEqual({ range: '30d' })
     expect(dashboardParams({ range: '12m' })).toEqual({ range: '12m' })

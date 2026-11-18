@@ -28,6 +28,7 @@ describe('validateClientsSearch', () => {
       sort: 'name',
       page: 3,
     })
+    expect(validateClientsSearch({ q: 123 }).q).toBe('123') // router JSON-parses `?q=123`
     expect(validateClientsSearch({ plan: 'none' }).plan).toBe('none')
     expect(validateClientsSearch({ plan: 'pro-annual' }).plan).toBe('pro-annual')
   })

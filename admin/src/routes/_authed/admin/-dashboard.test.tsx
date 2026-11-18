@@ -321,6 +321,17 @@ describe('/admin/dashboard range picker', () => {
     expect((screen.getByLabelText('From') as HTMLInputElement).value).toBe('2026-11-01')
   })
 
+  it.each([
+    ['/admin/dashboard?range=bogus', '30d', {}, 'Last 30 days'],
+    ['/admin/dashboard?range=30d&from=2026-11-01', '30d', {}, 'Last 30 days'],
+    ['/admin/dashboard?range=7d&from=nope&to=2026-11-18', '7d', { range: '7d' }, 'Last 7 days'],
+  ])('drops malformed params from %s instead of sending them', async (path, range, search, selected) => {
+    const { router } = await renderDashboard(path)
+    expect(statsCalls()).toEqual([{ range }])
+    expect(router.state.location.search).toEqual(search)
+    expect(tab(selected).getAttribute('aria-selected')).toBe('true')
+  })
+
   it('blocks an invalid custom range client-side', async () => {
     const { router } = await renderDashboard()
     selectTab('Custom')

@@ -220,6 +220,29 @@ describe('/admin/tickets queue', () => {
     await waitFor(() => expect(router.state.location.search).toEqual({}))
   })
 
+  it.each([
+    '/admin/tickets?page=abc',
+    '/admin/tickets?page=-1',
+    '/admin/tickets?page=2.5&q=%20%20',
+    '/admin/tickets?status=BOGUS&priority=urgent&category=billing',
+    '/admin/tickets?ticket=not-a-uuid',
+    '/admin/tickets?page=abc&status=BOGUS&ticket=nope',
+  ])('falls back to the defaults for malformed params: %s', async (path) => {
+    const { router, queryClient } = renderAt(path)
+    expect(await screen.findByText('bKash payment not reflected')).toBeTruthy()
+    // Only the default list request goes out: no NaN skip, no bogus filter, no thread fetch.
+    expect(listCalls().map((p) => p.toString())).toEqual(['skip=0&take=20'])
+    expect(fetchMock.mock.calls.every(([input]) => !String(input).includes('/admin/tickets/'))).toBe(true)
+    const keys = queryClient.getQueryCache().findAll({ queryKey: ['admin', 'tickets'] }).map((q) => q.queryKey)
+    expect(keys).toEqual([['admin', 'tickets', 'list', 'skip=0&take=20']])
+    expect(router.state.location.search).toEqual({})
+    expect(screen.getByRole('tab', { name: 'All' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Priority: All' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Category: All' })).toBeTruthy()
+    expect((screen.getByLabelText('Search tickets') as HTMLInputElement).value).toBe('')
+    expect(screen.getByText('Pick a ticket')).toBeTruthy()
+  })
+
   it('shows a filtered empty state and the unfiltered one', async () => {
     handlers['GET /api/admin/tickets'] = (url) =>
       json(url.searchParams.has('status') ? { items: [], total: 0, skip: 0, take: 20 } : list)

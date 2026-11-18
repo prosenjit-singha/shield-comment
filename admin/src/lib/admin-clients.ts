@@ -74,8 +74,10 @@ function isValidDay(value: unknown): value is string {
  */
 export function validateClientsSearch(raw: Record<string, unknown>): ClientsSearch {
   const page = typeof raw.page === 'number' ? raw.page : Number(raw.page)
+  // The router JSON-parses search values, so a hand-typed `?q=123` arrives as a number.
+  const q = typeof raw.q === 'number' && Number.isFinite(raw.q) ? String(raw.q) : raw.q
   return {
-    q: typeof raw.q === 'string' && raw.q.trim() ? raw.q.trim().slice(0, 100) : undefined,
+    q: typeof q === 'string' && q.trim() ? q.trim().slice(0, 100) : undefined,
     status: raw.status === 'ACTIVE' || raw.status === 'SUSPENDED' ? raw.status : undefined,
     plan: isPlanFilter(raw.plan) ? raw.plan : undefined,
     from: isValidDay(raw.from) ? raw.from : undefined,

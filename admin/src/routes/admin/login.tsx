@@ -23,8 +23,10 @@ interface LoginSearch {
 }
 
 export const Route = createFileRoute('/admin/login')({
-  validateSearch: (search: Record<string, unknown>): LoginSearch =>
-    typeof search.redirect === 'string' ? { redirect: search.redirect } : {},
+  // Return the key even when invalid: the router merges the raw search under this result.
+  validateSearch: (search: Record<string, unknown>): LoginSearch => ({
+    redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
+  }),
   beforeLoad: async ({ context, search }) => {
     let session: AuthSession | null = null
     try {

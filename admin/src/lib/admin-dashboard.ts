@@ -116,11 +116,15 @@ export interface DashboardSearch {
   to?: string
 }
 
-/** `validateSearch`: keeps well-formed values only. Cross-field rules are the API's (400). */
+/**
+ * `validateSearch`: keeps well-formed values only. Cross-field rules are the API's (400). Every key
+ * is returned (`undefined` when unused or malformed): TanStack Router merges the raw search under
+ * this result, so an omitted key would let e.g. `?range=bogus` through to the API.
+ */
 export function validateDashboardSearch(raw: Record<string, unknown>): DashboardSearch {
-  if (isDateKey(raw.from) && isDateKey(raw.to)) return { from: raw.from, to: raw.to }
-  if (raw.range === '7d' || raw.range === '90d' || raw.range === '12m') return { range: raw.range }
-  return {}
+  if (isDateKey(raw.from) && isDateKey(raw.to)) return { range: undefined, from: raw.from, to: raw.to }
+  const range = raw.range === '7d' || raw.range === '90d' || raw.range === '12m' ? raw.range : undefined
+  return { range, from: undefined, to: undefined }
 }
 
 export type DashboardParams = { range: DashboardPreset } | { from: string; to: string }

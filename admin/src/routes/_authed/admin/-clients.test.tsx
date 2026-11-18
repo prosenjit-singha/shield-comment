@@ -179,6 +179,16 @@ describe('/admin/clients list', () => {
     expect(screen.getByRole('button', { name: 'Plan: All plans' })).toBeTruthy()
   })
 
+  it.each([
+    '/admin/clients?page=-1&status=BOGUS',
+    '/admin/clients?page=abc&plan=%20&sort=random',
+    '/admin/clients?from=2026-13-40&to=nope&q=%20',
+  ])('falls back to the defaults for malformed params: %s', async (path) => {
+    const { router } = await renderList(path)
+    expect(listCalls().map((p) => p.toString())).toEqual(['sort=newest&skip=0&take=20'])
+    expect(router.state.location.search).toEqual({})
+  })
+
   it('debounces the search box into ?q= and the API query', async () => {
     const { router } = await renderList()
     const calls = listCalls().length
