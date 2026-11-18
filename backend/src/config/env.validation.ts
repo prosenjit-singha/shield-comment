@@ -8,8 +8,17 @@ import {
   Max,
   Min,
   MinLength,
+  ValidateBy,
+  ValidateIf,
   validateSync,
 } from 'class-validator';
+import {
+  AES_256_KEY_BYTES,
+  decodeAes256Key,
+  isValidTokenKeyId,
+  parsePreviousTokenKeys,
+  TOKEN_KEY_ID_PATTERN,
+} from '../crypto/token-keyring.js';
 
 export enum NodeEnv {
   Development = 'development',
@@ -65,7 +74,11 @@ export class EnvironmentVariables {
    * (`<origin>/impersonate?token=…`). Defaults to the dev URL `http://app.localhost:5174`.
    */
   @IsOptional()
-  @IsUrl({ require_tld: false, require_protocol: true, protocols: ['http', 'https'] })
+  @IsUrl({
+    require_tld: false,
+    require_protocol: true,
+    protocols: ['http', 'https'],
+  })
   CLIENT_APP_URL?: string;
 
   // --- Neon Object Storage (S3-compatible). Optional: StorageService is disabled without them.
@@ -105,6 +118,74 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   AI_GATEWAY_MODEL?: string;
+
+  // --- Token cipher (AES-256-GCM for Meta access tokens at rest, M3-T1, decision D2).
+  // Optional: TokenCipherService is disabled when all three are unset. KEY + KEY_ID go together.
+  /** Base64 of exactly 32 bytes: `openssl rand -base64 32`. Encrypts new tokens. */
+  @ValidateIf((env: EnvironmentVariables) => hasTokenCipherEnv(env))
+  @ValidateBy({
+    name: 'isAes256Key',
+    validator: {
+      validate: (value: unknown) =>
+        typeof value === 'string' && decodeAes256Key(value) !== null,
+      defaultMessage: () =>
+        `TOKEN_ENCRYPTION_KEY must be base64 of exactly ${AES_256_KEY_BYTES} bytes (set together with TOKEN_ENCRYPTION_KEY_ID)`,
+    },
+  })
+  TOKEN_ENCRYPTION_KEY?: string;
+
+  /** Id of the current key, stored in every ciphertext (`v1:<keyId>:…`), e.g. `k2026a`. */
+  @ValidateIf((env: EnvironmentVariables) => hasTokenCipherEnv(env))
+  @ValidateBy({
+    name: 'isTokenKeyId',
+    validator: {
+      validate: (value: unknown) =>
+        typeof value === 'string' && isValidTokenKeyId(value),
+      defaultMessage: () =>
+        `TOKEN_ENCRYPTION_KEY_ID must match ${TOKEN_KEY_ID_PATTERN} (set together with TOKEN_ENCRYPTION_KEY)`,
+    },
+  })
+  TOKEN_ENCRYPTION_KEY_ID?: string;
+
+  /** Old keys, decrypt only: `id:base64,id:base64`. Ids unique and not the current id. */
+  @IsOptional()
+  @ValidateBy({
+    name: 'isPreviousTokenKeys',
+    validator: {
+      validate: (value: unknown, args) =>
+        previousTokenKeysError(value, args?.object) === null,
+      defaultMessage: (args) =>
+        `TOKEN_ENCRYPTION_PREVIOUS_KEYS: ${previousTokenKeysError(args?.value, args?.object) ?? 'invalid'}`,
+    },
+  })
+  TOKEN_ENCRYPTION_PREVIOUS_KEYS?: string;
+}
+
+function hasTokenCipherEnv(env: EnvironmentVariables): boolean {
+  return (
+    env.TOKEN_ENCRYPTION_KEY !== undefined ||
+    env.TOKEN_ENCRYPTION_KEY_ID !== undefined ||
+    env.TOKEN_ENCRYPTION_PREVIOUS_KEYS !== undefined
+  );
+}
+
+/** `null` when valid; the message never contains key material. */
+function previousTokenKeysError(
+  value: unknown,
+  env: object | undefined,
+): string | null {
+  if (typeof value !== 'string') return 'must be a string';
+  try {
+    const keys = parsePreviousTokenKeys(value);
+    const currentId = (env as EnvironmentVariables | undefined)
+      ?.TOKEN_ENCRYPTION_KEY_ID;
+    if (currentId !== undefined && keys.some((k) => k.id === currentId)) {
+      return `must not reuse the current key id "${currentId}"`;
+    }
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : 'invalid';
+  }
 }
 
 /** Fails fast at boot if required env vars are missing or malformed. */
@@ -116,7 +197,14 @@ export function validateEnv(
   });
   const errors = validateSync(validated, { skipMissingProperties: false });
   if (errors.length > 0) {
-    throw new Error(`Invalid environment configuration:\n${errors.toString()}`);
+    // Property + constraint messages only: messages never include values (no secrets in logs).
+    const details = errors
+      .map(
+        (error) =>
+          `- ${error.property}: ${Object.values(error.constraints ?? {}).join('; ')}`,
+      )
+      .join('\n');
+    throw new Error(`Invalid environment configuration:\n${details}`);
   }
   return validated;
 }
