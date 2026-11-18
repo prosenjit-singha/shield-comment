@@ -1,12 +1,15 @@
 /**
  * Query keys whose values must never reach logs or error bodies: the Meta OAuth callback carries a
- * one-time `code` and our `state` (M3-T4); token-ish names are covered defensively.
+ * one-time `code` and our `state` (M3-T4); the Meta webhook handshake carries `hub.verify_token` and
+ * `hub.challenge` (M4-T3); token-ish names are covered defensively.
  */
 export const SENSITIVE_QUERY_KEYS: ReadonlySet<string> = new Set([
   'code',
   'state',
   'token',
   'access_token',
+  'hub.verify_token',
+  'hub.challenge',
 ]);
 
 const REDACTED = '[Redacted]';

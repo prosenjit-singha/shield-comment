@@ -19,6 +19,7 @@ import { MeModule } from './me/me.module.js';
 import { MetaModule } from './meta/meta.module.js';
 import { SupportTicketsModule } from './support-tickets/support-tickets.module.js';
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
+import { WebhooksModule } from './webhooks/webhooks.module.js';
 
 @Module({
   imports: [
@@ -34,7 +35,12 @@ import { WorkspacesModule } from './workspaces/workspaces.module.js';
         return {
           pinoHttp: {
             level: config.get('LOG_LEVEL', { infer: true }),
-            redact: ['req.headers.authorization', 'req.headers.cookie'],
+            redact: [
+              'req.headers.authorization',
+              'req.headers.cookie',
+              // Meta webhook HMAC (M4-T3).
+              'req.headers["x-hub-signature-256"]',
+            ],
             autoLogging: { ignore: (req) => isHealthProbe(req.url) },
             // OAuth `code`/`state` in callback URLs never reach the logs (M3-T4).
             serializers: { req: redactRequestSerializer },
@@ -57,6 +63,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module.js';
     AdminModule,
     SupportTicketsModule,
     MetaModule,
+    WebhooksModule,
   ],
 })
 export class AppModule {}

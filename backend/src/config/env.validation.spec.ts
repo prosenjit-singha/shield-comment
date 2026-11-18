@@ -147,3 +147,36 @@ describe('validateEnv: Meta app', () => {
     expect(message).not.toContain(`${value} `);
   });
 });
+
+describe('validateEnv: Meta webhook verify token', () => {
+  const TOKEN = 'verify-token-0123456789abcdef';
+
+  function tokenError(value: string): string {
+    try {
+      validateEnv({ ...BASE, META_WEBHOOK_VERIFY_TOKEN: value });
+    } catch (error) {
+      return (error as Error).message;
+    }
+    return '';
+  }
+
+  it('is optional and independent of the Meta app vars', () => {
+    expect(validateEnv(BASE).META_WEBHOOK_VERIFY_TOKEN).toBeUndefined();
+    expect(
+      validateEnv({ ...BASE, META_WEBHOOK_VERIFY_TOKEN: TOKEN })
+        .META_WEBHOOK_VERIFY_TOKEN,
+    ).toBe(TOKEN);
+  });
+
+  it.each([
+    ['too short', 'short-token'],
+    ['with a space', 'verify token 0123456789'],
+    ['non-ASCII', 'verify-token-০১২৩৪৫৬৭৮৯'],
+    ['empty', ''],
+    ['too long', 'x'.repeat(257)],
+  ])('rejects a token %s without echoing it', (_label, value) => {
+    const message = tokenError(value);
+    expect(message).toContain('- META_WEBHOOK_VERIFY_TOKEN:');
+    if (value) expect(message).not.toContain(value);
+  });
+});

@@ -20,6 +20,14 @@ describe('redact-query', () => {
     expect(out).not.toMatch(/=a\b|=b\b|EAAtoken/);
   });
 
+  it('redacts the Meta webhook verify token and challenge, keeps hub.mode', () => {
+    const out = redactUrlQuery(
+      '/api/webhooks/meta?hub.mode=subscribe&hub.verify_token=secret-token&hub.challenge=1158201444',
+    );
+    expect(out).not.toMatch(/secret-token|1158201444/);
+    expect(out).toContain('hub.mode=subscribe');
+  });
+
   it('leaves URLs without sensitive params untouched', () => {
     expect(redactUrlQuery('/api/health')).toBe('/api/health');
     expect(redactUrlQuery('/api/x?returnTo=%2Fpages')).toBe(

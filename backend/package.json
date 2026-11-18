@@ -48,6 +48,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "drizzle-orm": "^0.45.4",
+    "express": "^5.3.0",
     "ioredis": "^6.0.0",
     "nestjs-pino": "^5.3.2",
     "pg": "^8.23.1",

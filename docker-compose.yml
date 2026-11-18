@@ -68,7 +68,8 @@ services:
       CLIENT_APP_URL: ${CLIENT_PUBLIC_URL:-http://app.localhost:5174}
       # Meta connect (Module 3). Optional: no value here = passed through only when set in the root
       # .env or the shell (an empty value would fail env validation). Without them the app starts and
-      # GET /api/workspaces/:id/meta/oauth/url answers 503. See backend/.env.example.
+      # GET /api/workspaces/:id/meta/oauth/url answers 503 (webhooks: /api/webhooks/meta 503, Module 4).
+      # See backend/.env.example.
       TOKEN_ENCRYPTION_KEY:
       TOKEN_ENCRYPTION_KEY_ID:
       TOKEN_ENCRYPTION_PREVIOUS_KEYS:
@@ -77,6 +78,7 @@ services:
       META_LOGIN_CONFIG_ID:
       META_OAUTH_REDIRECT_URI:
       META_GRAPH_API_VERSION:
+      META_WEBHOOK_VERIFY_TOKEN:
     ports:
       - "${BACKEND_HOST_PORT:-3000}:3000"
     depends_on:

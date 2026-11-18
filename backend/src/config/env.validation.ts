@@ -209,6 +209,18 @@ export class EnvironmentVariables {
     message: 'META_GRAPH_API_VERSION must look like v26.0',
   })
   META_GRAPH_API_VERSION?: string;
+
+  /**
+   * Meta webhook subscription handshake (`GET /api/webhooks/meta`, Module 4 D1): Meta echoes it as
+   * `hub.verify_token`. Optional and independent of the app group: unset → the handshake answers 503.
+   * 16–256 printable ASCII characters, no spaces (`openssl rand -hex 24`).
+   */
+  @IsOptional()
+  @Matches(/^[!-~]{16,256}$/, {
+    message:
+      'META_WEBHOOK_VERIFY_TOKEN must be 16-256 printable ASCII characters without spaces',
+  })
+  META_WEBHOOK_VERIFY_TOKEN?: string;
 }
 
 function hasMetaAppEnv(env: EnvironmentVariables): boolean {
