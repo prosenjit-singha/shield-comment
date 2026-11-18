@@ -1,13 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import { sql } from 'drizzle-orm';
 import type { EnvironmentVariables } from '../config/env.validation.js';
 import type { Database } from '../db/database.js';
 import { MIGRATIONS_FOLDER } from '../db/migrator.js';
+import { withTimeout } from '../common/async/with-timeout.js';
 import { HealthService } from '../health/health.service.js';
+import { QueueRegistry } from '../queue/queue.registry.js';
 import type {
   MigrationStatus,
   QueueStats,
@@ -20,10 +22,12 @@ import {
   type JournalEntry,
   parseJournal,
   parseVersion,
+  queueStats,
   UNKNOWN_MIGRATIONS,
 } from './system-health.js';
 
 const MIGRATIONS_TIMEOUT_MS = 3000;
+const QUEUE_COUNTS_TIMEOUT_MS = 3000;
 
 function readText(path: string): string {
   try {
@@ -41,6 +45,7 @@ function readText(path: string): string {
  */
 @Injectable()
 export class AdminSystemService {
+  private readonly logger = new Logger(AdminSystemService.name);
   /** `backend/package.json` from both `src/admin/` (tests) and `dist/admin/` (Docker image). */
   private readonly version = parseVersion(
     readText(join(import.meta.dirname, '..', '..', 'package.json')),
@@ -53,6 +58,7 @@ export class AdminSystemService {
     private readonly healthService: HealthService,
     @InjectDrizzle() private readonly db: Database,
     private readonly config: ConfigService<EnvironmentVariables, true>,
+    private readonly queueRegistry: QueueRegistry,
   ) {}
 
   async health(): Promise<SystemHealthResponse> {
@@ -87,17 +93,35 @@ export class AdminSystemService {
   }
 
   /**
-   * BullMQ counts per queue. No queues exist until the moderation pipeline (Module 4+): it adds
-   * `getJobCounts('waiting', 'active', 'failed')` per registered queue here.
+   * BullMQ `waiting/active/failed` per registered queue (M4-T1), in registry order. A queue whose
+   * counts fail or take > 3 s (Redis down) is left out, so the endpoint stays 200; the Redis probe
+   * on the same page shows the outage.
    */
-  private queues(): Promise<QueueStats[]> {
-    return Promise.resolve([]);
+  private async queues(): Promise<QueueStats[]> {
+    const failed: string[] = [];
+    const rows = await Promise.all(
+      this.queueRegistry.all().map(async ({ name, queue }) => {
+        try {
+          const counts = await withTimeout(
+            queue.getJobCounts('waiting', 'active', 'failed'),
+            QUEUE_COUNTS_TIMEOUT_MS,
+          );
+          return [queueStats(name, counts)];
+        } catch {
+          failed.push(name);
+          return [];
+        }
+      }),
+    );
+    if (failed.length > 0) {
+      this.logger.warn(`Queue counts unavailable: ${failed.join(', ')}`);
+    }
+    return rows.flat();
   }
 
   private async migrations(): Promise<MigrationStatus> {
-    let timer: NodeJS.Timeout | undefined;
     try {
-      const result = await Promise.race([
+      const result = await withTimeout(
         this.db.execute<{
           applied: number;
           hash: string | null;
@@ -111,13 +135,8 @@ export class AdminSystemService {
             limit 1
           ) m on true
         `),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error('timeout')),
-            MIGRATIONS_TIMEOUT_MS,
-          );
-        }),
-      ]);
+        MIGRATIONS_TIMEOUT_MS,
+      );
       const row = result.rows[0];
       if (!row) return UNKNOWN_MIGRATIONS;
       const applied: AppliedMigrations = {
@@ -136,8 +155,6 @@ export class AdminSystemService {
     } catch {
       // Journal table missing (never migrated) or the DB dropped between the probes.
       return UNKNOWN_MIGRATIONS;
-    } finally {
-      clearTimeout(timer);
     }
   }
 }

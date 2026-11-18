@@ -1,5 +1,6 @@
 import type {
   MigrationStatus,
+  QueueStats,
   SystemProcessInfo,
 } from './dto/system-health.dto.js';
 
@@ -109,4 +110,21 @@ export function parseVersion(text: string): string {
   } catch {
     return '0.0.0';
   }
+}
+
+/** One `QueuesCard` row from BullMQ `getJobCounts('waiting', 'active', 'failed')` (missing → 0). */
+export function queueStats(
+  name: string,
+  counts: Readonly<Record<string, number | undefined>>,
+): QueueStats {
+  const count = (key: string) => {
+    const value = counts[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  };
+  return {
+    name,
+    waiting: count('waiting'),
+    active: count('active'),
+    failed: count('failed'),
+  };
 }

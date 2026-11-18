@@ -21,8 +21,9 @@ export default defineConfig({
       DATABASE_URL: TEST_DATABASE_URL,
       // Locally the direct and pooled URLs are the same database.
       DIRECT_URL: process.env.TEST_DIRECT_URL ?? TEST_DATABASE_URL,
-      // Redis is stubbed in e2e specs; this only satisfies env validation.
-      REDIS_URL: 'redis://localhost:6379',
+      // Redis (and every BullMQ queue) is stubbed in e2e specs; this only satisfies env validation.
+      // Port 1 has no server, so an accidental real connection fails instead of touching a dev Redis.
+      REDIS_URL: 'redis://127.0.0.1:1',
       BETTER_AUTH_SECRET: 'e2e-better-auth-secret-0123456789abcdef',
       BETTER_AUTH_URL: 'http://localhost:3000',
       TRUSTED_ORIGINS: 'http://localhost:5173,http://localhost:5174',

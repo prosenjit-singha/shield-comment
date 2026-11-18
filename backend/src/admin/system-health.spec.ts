@@ -7,7 +7,9 @@ import type { ConfigService } from '@nestjs/config';
 import type { EnvironmentVariables } from '../config/env.validation.js';
 import type { Database } from '../db/database.js';
 import { MIGRATIONS_FOLDER } from '../db/migrator.js';
+import { Logger } from '@nestjs/common';
 import type { HealthReport, HealthService } from '../health/health.service.js';
+import type { QueueRegistry } from '../queue/queue.registry.js';
 import { AdminSystemService } from './admin-system.service.js';
 import { SystemHealthQueryDto } from './dto/system-health.dto.js';
 import {
@@ -15,6 +17,7 @@ import {
   describeProcess,
   parseJournal,
   parseVersion,
+  queueStats,
   UNKNOWN_MIGRATIONS,
 } from './system-health.js';
 
@@ -157,9 +160,13 @@ describe('parseVersion', () => {
 });
 
 describe('AdminSystemService', () => {
+  type Counts = Record<string, number>;
+  type GetJobCounts = (...types: string[]) => Promise<Counts>;
+
   function makeService(
     report: Partial<HealthReport>,
     execute: () => Promise<unknown>,
+    queueCounts: Record<string, GetJobCounts> = {},
   ) {
     const full: HealthReport = {
       status: 'ok',
@@ -177,10 +184,94 @@ describe('AdminSystemService', () => {
     const config = {
       get: vi.fn(() => 'test'),
     } as unknown as ConfigService<EnvironmentVariables, true>;
-    return { service: new AdminSystemService(health, db, config), exec };
+    const getJobCounts = Object.fromEntries(
+      Object.entries(queueCounts).map(([name, fn]) => [
+        name,
+        vi.fn<GetJobCounts>(fn),
+      ]),
+    );
+    const registry = {
+      all: vi.fn(() =>
+        Object.entries(getJobCounts).map(([name, fn]) => ({
+          name,
+          queue: { getJobCounts: fn },
+        })),
+      ),
+    } as unknown as QueueRegistry;
+    return {
+      service: new AdminSystemService(health, db, config, registry),
+      exec,
+      getJobCounts,
+    };
   }
 
-  it('ok: probes, process, empty queues, latest migration from the DB row', async () => {
+  const okMigrations = async () => ({
+    rows: [{ applied: 1, hash: 'h0', created_at: '1794931785688' }],
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('queues: one row per registered queue, in registry order, from waiting/active/failed', async () => {
+    const { service, getJobCounts } = makeService({}, okMigrations, {
+      'comment-ingest': async () => ({ waiting: 3, active: 1, failed: 0 }),
+      'comment-moderation': async () => ({ waiting: 0, active: 0, failed: 0 }),
+      'meta-token-check': async () => ({ waiting: 0, active: 2, failed: 7 }),
+    });
+    const res = await service.health();
+    expect(res.queues).toEqual([
+      { name: 'comment-ingest', waiting: 3, active: 1, failed: 0 },
+      { name: 'comment-moderation', waiting: 0, active: 0, failed: 0 },
+      { name: 'meta-token-check', waiting: 0, active: 2, failed: 7 },
+    ]);
+    expect(getJobCounts['comment-ingest']).toHaveBeenCalledWith(
+      'waiting',
+      'active',
+      'failed',
+    );
+  });
+
+  it('queues: a failing count leaves that queue out, logs it, and the report still resolves', async () => {
+    const warn = vi
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { service } = makeService({ redis: 'down' }, okMigrations, {
+      'comment-ingest': async () => ({ waiting: 1, active: 0, failed: 0 }),
+      'comment-moderation': async () => {
+        throw new Error('Connection is closed.');
+      },
+      'meta-token-check': async () => ({ waiting: 0, active: 0, failed: 2 }),
+    });
+    const res = await service.health();
+    expect(res.status).toBe('degraded');
+    expect(res.queues).toEqual([
+      { name: 'comment-ingest', waiting: 1, active: 0, failed: 0 },
+      { name: 'meta-token-check', waiting: 0, active: 0, failed: 2 },
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      'Queue counts unavailable: comment-moderation',
+    );
+  });
+
+  it('queues: a hanging count (Redis down, commands queued) times out after 3 s → empty list', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const hang = () => new Promise<Counts>(() => undefined);
+    const { service } = makeService({}, okMigrations, {
+      'comment-ingest': hang,
+      'comment-moderation': hang,
+      'meta-token-check': hang,
+    });
+    const pending = service.health();
+    await vi.advanceTimersByTimeAsync(3000);
+    const res = await pending;
+    expect(res.queues).toEqual([]);
+    expect(res.migrations.known).toBe(true);
+  });
+
+  it('ok: probes, process, no queues registered, latest migration from the DB row', async () => {
     const { service } = makeService({}, async () => ({
       rows: [{ applied: 1, hash: 'h0', created_at: '1794931785688' }],
     }));
@@ -230,5 +321,23 @@ describe('AdminSystemService', () => {
       throw new Error('relation "drizzle.__drizzle_migrations" does not exist');
     });
     expect((await service.health()).migrations).toEqual(UNKNOWN_MIGRATIONS);
+  });
+});
+
+describe('queueStats', () => {
+  it('maps BullMQ counts to a QueuesCard row', () => {
+    expect(
+      queueStats('comment-ingest', { waiting: 4, active: 2, failed: 1 }),
+    ).toEqual({ name: 'comment-ingest', waiting: 4, active: 2, failed: 1 });
+  });
+
+  it('missing or non-finite counts become 0; extra keys are ignored', () => {
+    expect(
+      queueStats('meta-token-check', {
+        waiting: Number.NaN,
+        failed: Number.POSITIVE_INFINITY,
+        delayed: 9,
+      }),
+    ).toEqual({ name: 'meta-token-check', waiting: 0, active: 0, failed: 0 });
   });
 });

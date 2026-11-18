@@ -1,0 +1,68 @@
+import {
+  ALL_QUEUE_NAMES,
+  bullRootOptions,
+  commentJobId,
+  DEFAULT_JOB_OPTIONS,
+  QUEUE_NAMES,
+} from './queue.constants.js';
+
+describe('queue constants (D3)', () => {
+  it('names the three D3 queues', () => {
+    expect(QUEUE_NAMES).toEqual({
+      commentIngest: 'comment-ingest',
+      commentModeration: 'comment-moderation',
+      metaTokenCheck: 'meta-token-check',
+    });
+    expect(ALL_QUEUE_NAMES).toEqual([
+      'comment-ingest',
+      'comment-moderation',
+      'meta-token-check',
+    ]);
+    // BullMQ rejects queue names with `:`.
+    for (const name of ALL_QUEUE_NAMES) expect(name).not.toContain(':');
+  });
+
+  it('default job options: 5 attempts, exponential 2 s, bounded history', () => {
+    expect(DEFAULT_JOB_OPTIONS).toEqual({
+      attempts: 5,
+      backoff: { type: 'exponential', delay: 2000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 604800, count: 1000 },
+    });
+  });
+
+  it('root options: REDIS_URL connection with maxRetriesPerRequest null + the defaults', () => {
+    const options = bullRootOptions('rediss://default:pw@redis.example:6380');
+    expect(options.connection).toEqual({
+      url: 'rediss://default:pw@redis.example:6380',
+      maxRetriesPerRequest: null,
+    });
+    expect(options.defaultJobOptions).toEqual(DEFAULT_JOB_OPTIONS);
+    // A copy: BullMQ may mutate options it is given.
+    expect(options.defaultJobOptions).not.toBe(DEFAULT_JOB_OPTIONS);
+  });
+
+  describe('commentJobId', () => {
+    it('builds <platform>:<commentId>:<verb> (3 parts, which BullMQ accepts)', () => {
+      const id = commentJobId('FACEBOOK', '123456_789', 'add');
+      expect(id).toBe('FACEBOOK:123456_789:add');
+      expect(id.split(':')).toHaveLength(3);
+      expect(commentJobId('INSTAGRAM', '17890', 'remove')).toBe(
+        'INSTAGRAM:17890:remove',
+      );
+    });
+
+    it.each([
+      ['', '1_2', 'add', 'platform'],
+      ['FACEBOOK', '', 'add', 'commentId'],
+      ['FACEBOOK', '1_2', '', 'verb'],
+      ['FACE:BOOK', '1_2', 'add', 'platform'],
+      ['FACEBOOK', '1:2', 'add', 'commentId'],
+      ['FACEBOOK', '1_2', 'ed:ited', 'verb'],
+    ])('rejects %j / %j / %j (bad %s)', (platform, commentId, verb, label) => {
+      expect(() => commentJobId(platform, commentId, verb)).toThrow(
+        `Invalid ${label} for a comment job id`,
+      );
+    });
+  });
+});

@@ -24,7 +24,8 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    # BullMQ needs noeviction (a full Redis must refuse writes, never drop job keys); prod Redis Cloud too.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     ports:
       - "${REDIS_HOST_PORT:-6379}:6379"
     volumes:

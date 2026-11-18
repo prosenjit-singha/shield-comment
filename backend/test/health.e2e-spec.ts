@@ -8,7 +8,11 @@ import { createTestApp } from './utils/create-test-app.js';
 describe('GET /api/health (e2e)', () => {
   let app: INestApplication<App>;
   const db = { execute: vi.fn() };
-  const redis = { ping: vi.fn(), onModuleDestroy: vi.fn() };
+  const redis = {
+    ping: vi.fn(),
+    evictionPolicy: vi.fn().mockResolvedValue('noeviction'),
+    onModuleDestroy: vi.fn(),
+  };
 
   beforeAll(async () => {
     app = await createTestApp((b) =>

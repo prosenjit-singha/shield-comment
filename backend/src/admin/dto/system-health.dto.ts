@@ -32,8 +32,8 @@ export interface SystemProcessInfo {
 }
 
 /**
- * BullMQ queue counts. The list is `[]` until the moderation queues exist (Module 4+), which then
- * fill it with one row per queue.
+ * BullMQ counts, one row per registered queue (M4-T1: `comment-ingest`, `comment-moderation`,
+ * `meta-token-check`). A queue whose counts fail (Redis down) is left out.
  */
 export interface QueueStats {
   name: string;

@@ -1,15 +1,19 @@
 import type { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types.js';
 import type { SystemHealthResponse } from '../src/admin/dto/system-health.dto.js';
+import { ALL_QUEUE_NAMES, QUEUE_NAMES } from '../src/queue/queue.constants.js';
+import { QueueRegistry } from '../src/queue/queue.registry.js';
 import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
+import { FakeQueue, fakeQueue } from './utils/fake-queue.js';
 
 const HEALTH = '/api/admin/system/health';
 
 /**
  * M2-T10: `GET /api/admin/system/health` (A6). DB + Redis probes, process info, queue counts
- * (`[]` until BullMQ queues exist) and the latest applied Drizzle migration (user decision
- * 2026-11-18). The e2e app stubs Redis, so only the shape of its probe is checked.
+ * and the latest applied Drizzle migration (user decision 2026-11-18). The e2e app stubs Redis, so
+ * only the shape of its probe is checked. M4-T1: the three D3 queues report BullMQ counts; here
+ * they come from the in-memory `FakeQueue`s (no Redis).
  */
 describe('Admin system health (e2e)', () => {
   let app: INestApplication<App>;
@@ -65,6 +69,11 @@ describe('Admin system health (e2e)', () => {
     let body: SystemHealthResponse;
 
     beforeAll(async () => {
+      fakeQueue(app, QUEUE_NAMES.commentIngest).setCounts({
+        waiting: 4,
+        active: 1,
+      });
+      fakeQueue(app, QUEUE_NAMES.metaTokenCheck).setCounts({ failed: 2 });
       const res = await http()
         .get(HEALTH)
         .set('Cookie', superAdmin.cookie)
@@ -110,8 +119,12 @@ describe('Admin system health (e2e)', () => {
       );
     });
 
-    it('returns an empty queue list until BullMQ queues exist', () => {
-      expect(body.queues).toEqual([]);
+    it('lists the three D3 queues with their counts (from the fake queues)', () => {
+      expect(body.queues).toEqual([
+        { name: 'comment-ingest', waiting: 4, active: 1, failed: 0 },
+        { name: 'comment-moderation', waiting: 0, active: 0, failed: 0 },
+        { name: 'meta-token-check', waiting: 0, active: 0, failed: 2 },
+      ]);
     });
 
     it('reports the latest applied migration (test DB is fully migrated)', () => {
@@ -122,6 +135,67 @@ describe('Admin system health (e2e)', () => {
       expect(m.pending).toBe(0);
       expect(m.latest?.tag).toMatch(/^\d{4}_/);
       expect(m.latest?.hash).toMatch(/^[0-9a-f]{64}$/);
+    });
+  });
+
+  describe('queues', () => {
+    beforeEach(() => {
+      for (const name of ALL_QUEUE_NAMES) fakeQueue(app, name).reset();
+    });
+
+    it('uses in-memory fakes for every queue (no Redis connection in e2e)', () => {
+      const registry = app.get(QueueRegistry);
+      for (const { queue } of registry.all()) {
+        expect(queue).toBeInstanceOf(FakeQueue);
+      }
+    });
+
+    it('counts added jobs as waiting; a duplicate jobId is not counted twice', async () => {
+      const ingest = fakeQueue(app, QUEUE_NAMES.commentIngest);
+      await ingest.add('comment', { n: 1 }, { jobId: 'FACEBOOK:1_2:add' });
+      await ingest.add('comment', { n: 1 }, { jobId: 'FACEBOOK:1_2:add' });
+      await ingest.add('comment', { n: 2 }, { jobId: 'FACEBOOK:1_3:add' });
+      const res = await http()
+        .get(HEALTH)
+        .set('Cookie', superAdmin.cookie)
+        .expect(200);
+      const body = res.body as SystemHealthResponse;
+      expect(body.queues[0]).toEqual({
+        name: 'comment-ingest',
+        waiting: 2,
+        active: 0,
+        failed: 0,
+      });
+      expect(ingest.jobs[0]?.opts).toMatchObject({
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 2000 },
+      });
+    });
+
+    it('a queue whose counts fail is left out and the endpoint stays 200', async () => {
+      fakeQueue(app, QUEUE_NAMES.commentModeration).failCounts(
+        new Error('Connection is closed.'),
+      );
+      const res = await http()
+        .get(HEALTH)
+        .set('Cookie', superAdmin.cookie)
+        .expect(200);
+      const body = res.body as SystemHealthResponse;
+      expect(body.queues.map((q) => q.name)).toEqual([
+        'comment-ingest',
+        'meta-token-check',
+      ]);
+    });
+
+    it('every queue failing (Redis down) → empty list, still 200', async () => {
+      for (const name of ALL_QUEUE_NAMES) {
+        fakeQueue(app, name).failCounts(new Error('ECONNREFUSED'));
+      }
+      const res = await http()
+        .get(HEALTH)
+        .set('Cookie', superAdmin.cookie)
+        .expect(200);
+      expect((res.body as SystemHealthResponse).queues).toEqual([]);
     });
   });
 

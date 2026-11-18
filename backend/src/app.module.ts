@@ -11,6 +11,7 @@ import { isHealthProbe } from './health/health-probe.js';
 import { redactRequestSerializer } from './common/logging/redact-query.js';
 import { DbModule } from './db/db.module.js';
 import { RedisModule } from './redis/redis.module.js';
+import { QueueModule } from './queue/queue.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { AiGatewayModule } from './ai-gateway/ai-gateway.module.js';
 import { AdminModule } from './admin/admin.module.js';
@@ -46,6 +47,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module.js';
     }),
     DbModule,
     RedisModule,
+    QueueModule,
     AuthModule,
     HealthModule,
     StorageModule,
