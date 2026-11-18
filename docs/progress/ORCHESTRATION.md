@@ -7,13 +7,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, only the Module 4 header + D1/D5/D6/D12 + the M4-T13 row from TASKS.md, `docs/project-documentation/modules/module-4-webhooks-queue.md` (tunnel / webhook setup parts).
 - Standing approvals: none needed (no admin/ or client/ changes). Tunnel: the sub-agent may create the zrok2 name `shield-comment-dev` if missing and start/stop the public share briefly to check it; nothing left running (user, 2026-11-19).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #4 (2026-11-19) · rows this session: 0 · estimate: 40k
+- Session: #4 (2026-11-19) · rows this session: 1 · estimate: 55k
 
 ## State
-dispatched M4-T13 (2026-11-19) · commit: "feat(scripts): add zrok2 tunnel script and meta webhook setup docs (M4-T13)"
+done: M4-T13 only (script + docs; live Meta smoke pending) (2026-11-19)
 
 ## Resume
-`/orchestration --continue` (session #4: M4-T13 script + docs only; no pending decision)
+Run finished. Start a new run with `/orchestration <instructions>` (next: Module 5 planning M5-PLAN; the live Meta smoke runs once the Meta test app exists).
 
 ## Next prompt
 RUN COMPLETE (scope M4-T13 only). Next: Module 5 planning (M5-PLAN), new run; the live Meta smoke (checklist in `docs/project-documentation/meta-webhooks-local.md`) runs whenever the Meta test app exists.
@@ -69,4 +69,4 @@ RUN COMPLETE (scope M4-T13 only). Next: Module 5 planning (M5-PLAN), new run; th
 - 2026-11-19 M4-T11 ✅ 88635b5 · client 343 (was 303) · e2e 2/2 · /pages NEEDS_REAUTH/REVOKED banner + Reconnect, 409 CONNECTION_NEEDS_REAUTH rollback, Disconnect card + confirm dialog (counts, inline errors), finding (a) closed
 - 2026-11-19 M4-T12 ✅ 7b2025f · client 399 (was 343) · e2e 2/2 · public SSR /data-deletion status page (en/bn): server-fn lookup in the server HTML, 404/429/5xx/network states + Try again, Dhaka dates, code shown
 - 2026-11-19 M4-GATE ✅ 2f82d8e · backend 1032 unit / 494 e2e · admin 246 · client 399 · Playwright 2/2 · module 4 gate passed: 401 on bad/missing signature, signed delivery 200 in 7.8 ms with one job for 3 deliveries (live, throwaway-secret container), real queue counts on admin; no fix
-- 2026-11-19 M4-T13 ✅ · bash -n ✅ · shellcheck n/a · --check exit 0 · live tunnel: public /api/health/live 200, verify/unsigned POST/deauthorize 503 (no META_* in compose), share stopped · backend/admin/client untouched · `scripts/tunnel.sh` (zrok2 `public:shield-comment-dev` created + reserved) + Meta webhook setup guide with live-smoke checklist + root README; live Meta smoke still skipped (D12)
+- 2026-11-19 M4-T13 ✅ 14da883 · bash -n ✅ · shellcheck n/a · --check exit 0 · live tunnel: public /api/health/live 200, verify/unsigned POST/deauthorize 503 (no META_* in compose), share stopped · backend/admin/client untouched · `scripts/tunnel.sh` (zrok2 `public:shield-comment-dev` created + reserved) + Meta webhook setup guide with live-smoke checklist + root README; live Meta smoke still skipped (D12)
