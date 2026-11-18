@@ -7,3 +7,5 @@ coverage
 *.log
 *.tsbuildinfo
 .neon
+# Playwright CLI output (may contain credentials)
+.playwright-cli/

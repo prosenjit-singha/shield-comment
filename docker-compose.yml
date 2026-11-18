@@ -1,6 +1,7 @@
 # ShieldComment BD — one command for the whole stack.
 #   Everything:        docker compose up --build
 #   Infra only (dev):  docker compose up -d postgres redis
+#   Gate E2E suite:    npm --prefix e2e run test:docker   (profile e2e; see the e2e services below)
 #   Host ports: if a local Postgres/Redis already uses 5432/6379, set POSTGRES_HOST_PORT=5433 / REDIS_HOST_PORT=6380 in .env.
 name: shield-comment
 
@@ -112,6 +113,55 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  # ---- Gate E2E suite (M3-T12). Optional: profile `e2e`, so a plain `docker compose up` never starts it.
+  #   npm --prefix e2e run test:docker   (= E2E_RUN_ID=<now> docker compose --profile e2e run --rm --build e2e)
+  # The suite deletes everything it created (DB rows + Better Auth Redis keys) in its global teardown.
+  # One-off: creates the run's super admin with the backend's own script, then exits.
+  e2e-seed:
+    profiles: [e2e]
+    build:
+      context: ./backend
+      target: runtime
+    command: ["node", "dist/scripts/create-super-admin.js"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-shield}:${POSTGRES_PASSWORD:-shield}@postgres:5432/${POSTGRES_DB:-shield_comment}?schema=public
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+      SUPER_ADMIN_EMAIL: e2e-${E2E_RUN_ID:-docker}-admin@shield.test
+      SUPER_ADMIN_PASSWORD: ${E2E_SUPER_ADMIN_PASSWORD:-e2e-dev-only-Admin-123}
+      SUPER_ADMIN_NAME: E2E Super Admin
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Playwright runner (e2e/Dockerfile, also has playwright-cli). The browser keeps the trusted origins
+  # admin.localhost:5173 / app.localhost:5174 and maps them to the admin/client containers.
+  e2e:
+    profiles: [e2e]
+    build:
+      context: ./e2e
+    init: true
+    ipc: host
+    environment:
+      E2E_RUN_ID: ${E2E_RUN_ID:-docker}
+      E2E_SUPER_ADMIN_SEED: external
+      E2E_SUPER_ADMIN_PASSWORD: ${E2E_SUPER_ADMIN_PASSWORD:-e2e-dev-only-Admin-123}
+      E2E_OWNER_PASSWORD: ${E2E_OWNER_PASSWORD:-e2e-dev-only-Owner-123}
+      E2E_ADMIN_URL: http://admin.localhost:5173
+      E2E_CLIENT_URL: http://app.localhost:5174
+      E2E_API_URL: http://backend:3000
+      E2E_DATABASE_URL: postgresql://${POSTGRES_USER:-shield}:${POSTGRES_PASSWORD:-shield}@postgres:5432/${POSTGRES_DB:-shield_comment}
+      E2E_REDIS_URL: redis://redis:6379
+      E2E_HOST_RESOLVER_RULES: MAP admin.localhost admin, MAP app.localhost client
+    depends_on:
+      e2e-seed:
+        condition: service_completed_successfully
+      backend:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+      client:
+        condition: service_healthy
 
 volumes:
   pgdata:

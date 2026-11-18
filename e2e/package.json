@@ -1,0 +1,24 @@
+{
+  "name": "shield-comment-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Playwright gate suite for ShieldComment BD, run against the docker compose stack",
+  "scripts": {
+    "test": "playwright test",
+    "test:docker": "cd .. && E2E_RUN_ID=${E2E_RUN_ID:-$(date +%s)} docker compose --profile e2e run --rm --build e2e",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "report": "playwright show-report"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@types/node": "^24.19.2",
+    "@types/pg": "^8.23.1",
+    "ioredis": "^6.0.0",
+    "pg": "^8.23.1",
+    "typescript": "^6.0.3"
+  }
+}
