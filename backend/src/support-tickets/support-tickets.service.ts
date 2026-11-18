@@ -144,7 +144,8 @@ export class SupportTicketsService {
 
   /**
    * Adds a thread message and applies `statusAfterReply()` in one transaction (the ticket row is
-   * locked first). After the commit, emits `ticket.replied`. Used by the admin reply endpoint now
+   * locked first; "first public admin reply" is derived from the existing `ticket_messages`, no
+   * extra column). After the commit, emits `ticket.replied`. Used by the admin reply endpoint now
    * and by the client reply endpoint later (a client reply reopens a RESOLVED ticket).
    */
   async addMessage(
@@ -167,6 +168,24 @@ export class SupportTicketsService {
           .where(eq(tickets.id, ticketId))
           .for('update');
         if (!current) throw notFound();
+        // Read before the insert and under the row lock, so concurrent first replies serialise:
+        // the second one sees the first one's committed message.
+        const hadPublicAdminReply =
+          input.senderRole === 'ADMIN' && !input.isInternalNote
+            ? (
+                await tx
+                  .select({ id: ticketMessages.id })
+                  .from(ticketMessages)
+                  .where(
+                    and(
+                      eq(ticketMessages.ticketId, current.id),
+                      eq(ticketMessages.senderRole, 'ADMIN'),
+                      eq(ticketMessages.isInternalNote, false),
+                    ),
+                  )
+                  .limit(1)
+              ).length > 0
+            : false;
         const [message] = await tx
           .insert(ticketMessages)
           .values({
@@ -177,11 +196,11 @@ export class SupportTicketsService {
             isInternalNote: input.isInternalNote,
           })
           .returning({ id: ticketMessages.id });
-        const next = statusAfterReply(
-          current.status,
-          input.senderRole,
-          input.isInternalNote,
-        );
+        const next = statusAfterReply(current.status, {
+          senderRole: input.senderRole,
+          isInternalNote: input.isInternalNote,
+          hadPublicAdminReply,
+        });
         if (next !== current.status)
           await tx
             .update(tickets)

@@ -19,20 +19,33 @@ export function adminStatusChange(
   return { status: next, changed: current !== next };
 }
 
+/** What `statusAfterReply()` needs to know about the new thread message. */
+export interface TicketReply {
+  senderRole: TicketSenderRole;
+  isInternalNote: boolean;
+  /**
+   * Whether the ticket already had a public (non-internal) ADMIN message before this one. Only
+   * read for public admin replies; derived from `ticket_messages` under the ticket's row lock.
+   */
+  hadPublicAdminReply: boolean;
+}
+
 /**
- * The ticket status after a new thread message:
+ * The ticket status after a new thread message (M2-T14, user decision 2026-11-18):
  * - internal notes never change the status;
- * - an admin reply on an OPEN ticket moves it to IN_PROGRESS (the first reply that finds it OPEN,
- *   including after a reopen); admin replies change nothing else;
+ * - only the **first** public admin reply a ticket ever gets moves it OPEN → IN_PROGRESS; after
+ *   that no admin reply changes the status (even after an admin reopens it: later moves are
+ *   manual only). A first reply that finds the ticket in any other status changes nothing;
  * - a client reply reopens a RESOLVED ticket (→ OPEN); client replies change nothing else.
  */
 export function statusAfterReply(
   current: TicketStatus,
-  senderRole: TicketSenderRole,
-  isInternalNote: boolean,
+  reply: TicketReply,
 ): TicketStatus {
-  if (isInternalNote) return current;
-  if (senderRole === 'ADMIN')
-    return current === 'OPEN' ? 'IN_PROGRESS' : current;
+  if (reply.isInternalNote) return current;
+  if (reply.senderRole === 'ADMIN')
+    return current === 'OPEN' && !reply.hadPublicAdminReply
+      ? 'IN_PROGRESS'
+      : current;
   return REOPENED_BY_CLIENT_REPLY.includes(current) ? 'OPEN' : current;
 }

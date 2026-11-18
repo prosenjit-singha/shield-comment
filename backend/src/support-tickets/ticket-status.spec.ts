@@ -21,11 +21,22 @@ describe('adminStatusChange (free moves)', () => {
   });
 });
 
-describe('statusAfterReply', () => {
-  it.each(TICKET_STATUSES)(
-    'internal notes never change the status (%s)',
-    (status) => {
-      expect(statusAfterReply(status, 'ADMIN', true)).toBe(status);
+describe('statusAfterReply (M2-T14: only the first public admin reply moves OPEN)', () => {
+  const admin = (isInternalNote: boolean, hadPublicAdminReply: boolean) => ({
+    senderRole: 'ADMIN' as const,
+    isInternalNote,
+    hadPublicAdminReply,
+  });
+  const client = { senderRole: 'CLIENT' as const, isInternalNote: false };
+
+  it.each(
+    TICKET_STATUSES.flatMap((status) =>
+      [false, true].map((had) => [status, had] as const),
+    ),
+  )(
+    'internal notes never change the status (%s, earlier admin reply: %s)',
+    (status, had) => {
+      expect(statusAfterReply(status, admin(true, had))).toBe(status);
     },
   );
 
@@ -33,15 +44,25 @@ describe('statusAfterReply', () => {
     ['OPEN', 'IN_PROGRESS'],
     ['IN_PROGRESS', 'IN_PROGRESS'],
     ['RESOLVED', 'RESOLVED'],
-  ])('admin reply: %s → %s', (from, to) => {
-    expect(statusAfterReply(from, 'ADMIN', false)).toBe(to);
+  ])('first public admin reply: %s → %s', (from, to) => {
+    expect(statusAfterReply(from, admin(false, false))).toBe(to);
   });
+
+  it.each(TICKET_STATUSES)(
+    'later public admin replies never change the status (%s, incl. OPEN after a reopen)',
+    (status) => {
+      expect(statusAfterReply(status, admin(false, true))).toBe(status);
+    },
+  );
 
   it.each<[TicketStatus, TicketStatus]>([
     ['RESOLVED', 'OPEN'],
     ['OPEN', 'OPEN'],
     ['IN_PROGRESS', 'IN_PROGRESS'],
   ])('client reply: %s → %s (reopens resolved tickets)', (from, to) => {
-    expect(statusAfterReply(from, 'CLIENT', false)).toBe(to);
+    for (const hadPublicAdminReply of [false, true])
+      expect(statusAfterReply(from, { ...client, hadPublicAdminReply })).toBe(
+        to,
+      );
   });
 });

@@ -320,7 +320,8 @@ describe('reply box', () => {
       body: 'We are checking with bKash now.',
       isInternalNote: false,
     })
-    // Optimistic: in the thread before the server answered, box cleared.
+    // Optimistic: in the thread before the server answered, box cleared. The status is not
+    // flipped optimistically (only the first public admin reply moves it, M2-T14).
     const pending = await screen.findByRole('listitem', { name: 'Message from Root Admin' })
     expect(within(pending).getByText('Sending…')).toBeTruthy()
     expect((replyBox() as HTMLTextAreaElement).value).toBe('')
@@ -345,6 +346,47 @@ describe('reply box', () => {
     expect(screen.getByText('Status moved to In progress.')).toBeTruthy()
     expect(screen.queryByText('Sending…')).toBeNull()
     expect(screen.getAllByRole('listitem', { name: /from Root Admin/ })).toHaveLength(2)
+  })
+
+  it('hint: the first public reply on an OPEN ticket moves it; notes never do', async () => {
+    await renderThread()
+    expect(
+      conversation().getByText('The client sees this. The first reply moves the ticket to In progress.'),
+    ).toBeTruthy()
+    fireEvent.click(conversation().getByRole('switch'))
+    expect(conversation().getByText('Only admins see notes. The status stays the same.')).toBeTruthy()
+  })
+
+  it('an OPEN ticket that already had a public admin reply stays OPEN on the next reply (M2-T14)', async () => {
+    const earlier: TicketMessage = {
+      id: 'm0',
+      senderRole: 'ADMIN',
+      sender: rootAdmin,
+      body: 'Looking into it.',
+      isInternalNote: false,
+      createdAt: '2026-11-17T04:30:00.000Z',
+    }
+    handlers[`GET /api/admin/tickets/${T1}`] = () =>
+      json({ ...thread, messageCount: 3, messages: [clientMessage, earlier, note] })
+    handlers[`POST /api/admin/tickets/${T1}/reply`] = () =>
+      json(
+        {
+          message: { ...earlier, id: 'm5', body: 'Any update?', createdAt: '2026-11-18T06:00:00.000Z' },
+          ticket: { ...bkash, messageCount: 4, lastMessageAt: '2026-11-18T06:00:00.000Z' },
+        },
+        201,
+      )
+    await renderThread()
+    expect(conversation().getByText('The client sees this reply. The status stays the same.')).toBeTruthy()
+    // Sonner toasts outlive tests: compare counts instead of asserting absence.
+    const sent = screen.queryAllByText('Reply sent.').length
+    const moved = screen.queryAllByText('Status moved to In progress.').length
+    fireEvent.change(replyBox(), { target: { value: 'Any update?' } })
+    fireEvent.click(sendButton())
+
+    await waitFor(() => expect(screen.queryAllByText('Reply sent.')).toHaveLength(sent + 1))
+    expect(screen.queryAllByText('Status moved to In progress.')).toHaveLength(moved)
+    expect(conversation().getByRole('button', { name: 'Status: Open' })).toBeTruthy()
   })
 
   it('sends an internal note with isInternalNote: true and keeps the status', async () => {

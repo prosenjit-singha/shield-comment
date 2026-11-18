@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { formatQueueTime, replyError, ticketListParams, validateTicketsSearch } from '@/lib/admin-tickets'
+import {
+  firstReplyMovesToInProgress,
+  formatQueueTime,
+  replyError,
+  type TicketMessage,
+  type TicketThread,
+  ticketListParams,
+  validateTicketsSearch,
+} from '@/lib/admin-tickets'
 
 describe('validateTicketsSearch', () => {
   it('keeps valid params and drops malformed ones', () => {
@@ -64,6 +72,28 @@ describe('replyError', () => {
     expect(replyError('  ')).toBe('Write a message first.')
     expect(replyError(` ${'x'.repeat(5000)} `)).toBeNull()
     expect(replyError('x'.repeat(5001))).toMatch(/5000/)
+  })
+})
+
+describe('firstReplyMovesToInProgress (M2-T14)', () => {
+  const person = { id: 'u', name: 'U', email: 'u@x.bd' }
+  const msg = (senderRole: 'ADMIN' | 'CLIENT', isInternalNote = false): TicketMessage => ({
+    id: `${senderRole}${isInternalNote}`,
+    senderRole,
+    sender: person,
+    body: 'x',
+    isInternalNote,
+    createdAt: '2026-11-18T00:00:00.000Z',
+  })
+  const thread = (status: TicketThread['status'], messages: TicketMessage[]) =>
+    ({ status, messages }) as TicketThread
+
+  it('is true only for an OPEN ticket without a public admin reply', () => {
+    expect(firstReplyMovesToInProgress(thread('OPEN', []))).toBe(true)
+    expect(firstReplyMovesToInProgress(thread('OPEN', [msg('CLIENT'), msg('ADMIN', true)]))).toBe(true)
+    expect(firstReplyMovesToInProgress(thread('OPEN', [msg('CLIENT'), msg('ADMIN')]))).toBe(false)
+    expect(firstReplyMovesToInProgress(thread('IN_PROGRESS', []))).toBe(false)
+    expect(firstReplyMovesToInProgress(thread('RESOLVED', [msg('CLIENT')]))).toBe(false)
   })
 })
 

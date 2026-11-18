@@ -25,6 +25,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ApiError } from '@/lib/api'
 import {
   categoryLabels,
+  firstReplyMovesToInProgress,
   formatDhakaDateTime,
   REPLY_MAX,
   replyError,
@@ -277,9 +278,9 @@ function ReplyBox({ ticket, me }: { ticket: Thread; me: TicketPerson }) {
 
   const hint = internal
     ? 'Only admins see notes. The status stays the same.'
-    : ticket.status === 'OPEN'
-      ? 'The client sees this. Replying moves the ticket to In progress.'
-      : 'The client sees this reply.'
+    : firstReplyMovesToInProgress(ticket)
+      ? 'The client sees this. The first reply moves the ticket to In progress.'
+      : 'The client sees this reply. The status stays the same.'
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-2 border-t p-3 md:p-4">

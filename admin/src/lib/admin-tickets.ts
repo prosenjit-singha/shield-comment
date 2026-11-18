@@ -167,6 +167,19 @@ export function replyError(body: string): string | null {
   return null
 }
 
+/**
+ * Whether a public reply now would move the ticket OPEN → IN_PROGRESS. Mirrors the backend's
+ * `statusAfterReply()` (M2-T14): only the first public admin reply a ticket ever gets moves it, so
+ * an OPEN thread that already has one (e.g. reopened by an admin) stays OPEN. The thread carries
+ * every message, so this is exact; it only drives the reply-box hint (status comes from the server).
+ */
+export function firstReplyMovesToInProgress(thread: TicketThread): boolean {
+  return (
+    thread.status === 'OPEN' &&
+    !thread.messages.some((m) => m.senderRole === 'ADMIN' && !m.isInternalNote)
+  )
+}
+
 /** Last activity on a ticket: newest message (notes included), else when it was opened. */
 export const lastActivity = (ticket: TicketListItem) => ticket.lastMessageAt ?? ticket.createdAt
 

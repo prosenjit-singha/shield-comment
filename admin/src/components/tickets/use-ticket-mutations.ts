@@ -59,8 +59,10 @@ export interface ReplyInput {
 
 /**
  * Reply / internal note. The message shows at once (optimistic); the server's response then
- * replaces it and supplies the ticket, including the OPEN → IN_PROGRESS move a public reply makes.
- * On error the thread is rolled back and a toast explains why.
+ * replaces it and supplies the ticket. The status is never flipped optimistically: only the first
+ * public admin reply moves OPEN → IN_PROGRESS (M2-T14), so the status (and the "Status moved"
+ * toast) always comes from the response `ticket`. On error the thread is rolled back and a toast
+ * explains why.
  */
 export function useReplyMutation(me: TicketPerson) {
   const queryClient = useQueryClient()

@@ -21,19 +21,32 @@ const MESSAGE = '019a0000-0000-7000-8000-0000000000ee';
 /** Just enough of a Drizzle transaction for `addMessage` / `updateStatus`. */
 function fakeDb(
   current: { status: TicketStatus } | undefined,
-  opts: { failInsert?: boolean } = {},
+  opts: { failInsert?: boolean; hadPublicAdminReply?: boolean } = {},
 ) {
   const updates: unknown[] = [];
   const inserts: unknown[] = [];
+  /** Order of the transaction's statements (lock → prior-reply lookup → insert → update). */
+  const steps: string[] = [];
   let committed = false;
   const tx = {
     select: () => ({
       from: (table: unknown) => {
+        if (table === ticketMessages)
+          return {
+            where: () => ({
+              limit: async (n: number) => {
+                expect(n).toBe(1);
+                steps.push('prior-admin-reply');
+                return opts.hadPublicAdminReply ? [{ id: 'earlier' }] : [];
+              },
+            }),
+          };
         expect(table).toBe(tickets);
         return {
           where: () => ({
             for: async (mode: string) => {
               expect(mode).toBe('update');
+              steps.push('lock');
               return current
                 ? [{ id: TICKET, workspaceId: WS, status: current.status }]
                 : [];
@@ -46,6 +59,7 @@ function fakeDb(
       values: (values: unknown) => ({
         returning: async () => {
           if (opts.failInsert) throw new Error('insert failed');
+          steps.push('insert');
           inserts.push({ table, values });
           return [{ id: MESSAGE }];
         },
@@ -54,6 +68,7 @@ function fakeDb(
     update: (table: unknown) => ({
       set: (patch: unknown) => ({
         where: async () => {
+          steps.push('update');
           updates.push({ table, patch });
         },
       }),
@@ -70,6 +85,7 @@ function fakeDb(
     db: db as unknown as Database,
     updates,
     inserts,
+    steps,
     committed: () => committed,
   };
 }
@@ -102,7 +118,7 @@ const reply = (overrides: Partial<{ isInternalNote: boolean }> = {}) => ({
 });
 
 describe('SupportTicketsService.addMessage', () => {
-  it('admin reply on an OPEN ticket: inserts the message and moves it to IN_PROGRESS in the same transaction', async () => {
+  it('first public admin reply on an OPEN ticket: inserts the message and moves it to IN_PROGRESS in the same transaction', async () => {
     const fake = fakeDb({ status: 'OPEN' });
     const { svc, ticket, message } = service(fake);
     await expect(svc.addMessage(TICKET, reply())).resolves.toEqual({
@@ -124,10 +140,17 @@ describe('SupportTicketsService.addMessage', () => {
     expect(fake.updates).toEqual([
       { table: tickets, patch: { status: 'IN_PROGRESS' } },
     ]);
+    // The earlier-reply lookup runs under the row lock, before the new message is inserted.
+    expect(fake.steps).toEqual([
+      'lock',
+      'prior-admin-reply',
+      'insert',
+      'update',
+    ]);
   });
 
   it.each<TicketStatus>(['IN_PROGRESS', 'RESOLVED'])(
-    'admin reply on %s: no status change',
+    'first public admin reply on %s: no status change',
     async (status) => {
       const fake = fakeDb({ status });
       const { svc } = service(fake);
@@ -137,12 +160,24 @@ describe('SupportTicketsService.addMessage', () => {
     },
   );
 
-  it('internal note on an OPEN ticket: no status change', async () => {
+  it.each<TicketStatus>(['OPEN', 'IN_PROGRESS', 'RESOLVED'])(
+    'later public admin reply on %s (the ticket already had one): no status change',
+    async (status) => {
+      const fake = fakeDb({ status }, { hadPublicAdminReply: true });
+      const { svc } = service(fake);
+      await svc.addMessage(TICKET, reply());
+      expect(fake.steps).toEqual(['lock', 'prior-admin-reply', 'insert']);
+      expect(fake.updates).toEqual([]);
+    },
+  );
+
+  it('internal note on an OPEN ticket: no status change, no earlier-reply lookup', async () => {
     const fake = fakeDb({ status: 'OPEN' });
     const { svc } = service(fake);
     await svc.addMessage(TICKET, reply({ isInternalNote: true }));
     expect(fake.inserts).toHaveLength(1);
     expect(fake.updates).toEqual([]);
+    expect(fake.steps).toEqual(['lock', 'insert']);
   });
 
   it('client reply reopens a RESOLVED ticket (reusable for the client endpoint)', async () => {
@@ -157,6 +192,7 @@ describe('SupportTicketsService.addMessage', () => {
     expect(fake.updates).toEqual([
       { table: tickets, patch: { status: 'OPEN' } },
     ]);
+    expect(fake.steps).toEqual(['lock', 'insert', 'update']);
     expect(fired[0]?.event.senderRole).toBe('CLIENT');
   });
 

@@ -446,7 +446,7 @@ describe('Admin support tickets (e2e)', () => {
   });
 
   describe('POST /api/admin/tickets/:id/reply', () => {
-    it('admin reply on an OPEN ticket moves it to IN_PROGRESS and emits ticket.replied', async () => {
+    it('first public admin reply on an OPEN ticket moves it to IN_PROGRESS and emits ticket.replied', async () => {
       events.length = 0;
       const res = await reply(t.t5, { body: '  We are checking it  ' }).expect(
         201,
@@ -478,12 +478,25 @@ describe('Admin support tickets (e2e)', () => {
         },
       ]);
       // The next reply leaves IN_PROGRESS alone.
-      await reply(t.t5, { body: 'Fixed?' }).expect(201);
+      const second = await reply(t.t5, { body: 'Fixed?' }).expect(201);
+      expect(second.body).toMatchObject({ ticket: { status: 'IN_PROGRESS' } });
       expect(await statusOf(t.t5)).toBe('IN_PROGRESS');
       expect(await messageCount(t.t5)).toBe(2);
     });
 
-    it('internal note does not change the status', async () => {
+    it('after an admin sets it back to OPEN, later replies keep it OPEN (M2-T14)', async () => {
+      await setStatus(t.t5, { status: 'OPEN' }).expect(200);
+      const res = await reply(t.t5, { body: 'Looking again' }).expect(201);
+      expect(res.body).toMatchObject({
+        ticket: { id: t.t5, status: 'OPEN', messageCount: 3 },
+      });
+      expect(await statusOf(t.t5)).toBe('OPEN');
+      // Notes don't change it either.
+      await reply(t.t5, { body: 'Ping dev', isInternalNote: true }).expect(201);
+      expect(await statusOf(t.t5)).toBe('OPEN');
+    });
+
+    it('internal note does not change the status; the first public reply after it does', async () => {
       events.length = 0;
       const res = await reply(t.t4, {
         body: 'Asked billing',
@@ -497,6 +510,13 @@ describe('Admin support tickets (e2e)', () => {
       expect(events).toEqual([
         expect.objectContaining({ ticketId: t.t4, isInternalNote: true }),
       ]);
+      // A note is not a reply: the first public admin reply still moves it (other tickets'
+      // earlier admin replies don't count either).
+      const first = await reply(t.t4, { body: 'Billing says yes' }).expect(201);
+      expect(first.body).toMatchObject({
+        ticket: { id: t.t4, status: 'IN_PROGRESS', messageCount: 2 },
+      });
+      expect(await statusOf(t.t4)).toBe('IN_PROGRESS');
     });
 
     it('reply on a RESOLVED ticket keeps it RESOLVED', async () => {
@@ -558,6 +578,13 @@ describe('Admin support tickets (e2e)', () => {
       });
     });
 
+    it('a reopened ticket whose first admin reply came while RESOLVED stays OPEN on the next reply', async () => {
+      // t3 got its first public admin reply while RESOLVED (no move) and was reopened above.
+      expect(await statusOf(t.t3)).toBe('OPEN');
+      await reply(t.t3, { body: 'Still there?' }).expect(201);
+      expect(await statusOf(t.t3)).toBe('OPEN');
+    });
+
     it('free moves: OPEN → RESOLVED → IN_PROGRESS → OPEN', async () => {
       for (const status of ['RESOLVED', 'IN_PROGRESS', 'OPEN'] as const) {
         const res = await setStatus(t.t1, { status }).expect(200);
@@ -583,7 +610,7 @@ describe('Admin support tickets (e2e)', () => {
 
   describe('dashboard openTickets', () => {
     it('counts OPEN + IN_PROGRESS tickets', async () => {
-      // Now: t1 OPEN, t2 IN_PROGRESS, t3 OPEN, t4 OPEN, t5 IN_PROGRESS.
+      // Now: t1 OPEN, t2 IN_PROGRESS, t3 OPEN, t4 IN_PROGRESS, t5 OPEN.
       expect(await unresolvedInDb()).toBe(5);
       expect(await openTicketsKpi()).toBe(5);
       await setStatus(t.t3, { status: 'RESOLVED' }).expect(200);
