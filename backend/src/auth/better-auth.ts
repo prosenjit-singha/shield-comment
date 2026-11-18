@@ -5,6 +5,7 @@ import { admin, organization } from 'better-auth/plugins';
 import { uuidv7 } from 'uuidv7';
 import type { Database } from '../db/database.js';
 import * as schema from '../db/schema/index.js';
+import { CLIENT_IP_HEADER } from './client-ip.js';
 import {
   firstWorkspaceName,
   parseWorkspaceName,
@@ -135,6 +136,8 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
       },
     },
     advanced: {
+      // Only this header; src/auth/client-ip.ts fills it with the socket address when unusable.
+      ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
       // Same UUIDv7 ids as every other table (src/db/schema/columns.ts).
       database: { generateId: () => uuidv7() },
     },

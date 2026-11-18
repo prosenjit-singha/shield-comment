@@ -9,6 +9,7 @@ import {
 import type { Database } from '../db/database.js';
 import { AUTH_SECONDARY_STORAGE } from '../redis/redis-secondary-storage.js';
 import { createBetterAuth } from './better-auth.js';
+import { clientIpMiddleware } from './client-ip.js';
 import { PasswordService } from './password.service.js';
 
 /**
@@ -20,6 +21,8 @@ import { PasswordService } from './password.service.js';
  * - The integration's `AuthGuard` is the global guard: every route needs a session unless it
  *   (or its controller) has `@Public()` (src/auth/decorators/public.decorator.ts).
  * - `AUTH_SECONDARY_STORAGE` comes from the global RedisModule.
+ * - Client IP (rate limit, session `ipAddress`): `X-Forwarded-For`, else the socket address
+ *   (src/auth/client-ip.ts).
  */
 export const AuthModule = BetterAuthModule.forRootAsync({
   inject: [getDrizzleToken(), ConfigService, AUTH_SECONDARY_STORAGE],
@@ -38,6 +41,9 @@ export const AuthModule = BetterAuthModule.forRootAsync({
       rateLimit: config.get('NODE_ENV', { infer: true }) !== NodeEnv.Test,
     }),
     disableTrustedOriginsCors: true,
+    // Fills a missing/unusable X-Forwarded-For with the socket address before Better Auth reads
+    // it, so direct callers never share the `no-trusted-ip` rate-limit bucket (M4-T10, D11).
+    middleware: clientIpMiddleware,
   }),
 });
 

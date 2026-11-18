@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -86,10 +87,21 @@ export const env = {
   repoRoot: resolve(dirname(rootEnvFile)),
 } as const;
 
+/**
+ * Per-run client IP the seed sends as `X-Forwarded-For` (backend M4-T10), so its sign-up gets its own
+ * Better Auth rate-limit bucket (`auth:<ip>|<path>`) instead of sharing one with other direct callers.
+ * Taken from 198.18.0.0/15 (RFC 2544 benchmarking, never routed); same run id → same IP.
+ */
+function seedClientIp(id: string): string {
+  const [a = 0, b = 0, c = 0] = createHash('sha256').update(id).digest();
+  return `198.${18 + (a & 1)}.${b}.${c}`;
+}
+
 /** Emails + names for one run. The same `E2E_RUN_ID` gives the same emails (compose seed + suite). */
 export function runIdentity(id: string = runId()) {
   return {
     runId: id,
+    seedIp: seedClientIp(id),
     superAdmin: { email: `e2e-${id}-admin@shield.test`, name: 'E2E Super Admin' },
     owner: {
       email: `e2e-${id}-owner@shield.test`,

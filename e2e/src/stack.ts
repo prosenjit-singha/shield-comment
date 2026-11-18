@@ -73,6 +73,8 @@ export async function signUpOwner(identity: RunIdentity): Promise<void> {
       'content-type': 'application/json',
       // Better Auth answers 403 to an untrusted (or missing) Origin.
       origin: env.clientUrl,
+      // Own rate-limit bucket per run (cleanupRun deletes it); without it the backend uses the socket address.
+      'x-forwarded-for': identity.seedIp,
     },
     body: JSON.stringify({
       email: identity.owner.email,
@@ -116,7 +118,8 @@ export interface CleanupSummary {
 /**
  * Deletes the run's users and their workspaces (FK order: audit rows → Meta rows → members/invitations
  * → workspaces → sessions/accounts → users), then their Better Auth Redis keys (`auth:<token>` +
- * `auth:active-sessions-<userId>`, plus any other `auth:*` value naming the user). Idempotent.
+ * `auth:active-sessions-<userId>`, plus any other `auth:*` value naming the user) and the seed IP's
+ * rate-limit keys (`auth:<seedIp>|<path>`). Idempotent.
  */
 export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary> {
   const emails = [identity.superAdmin.email, identity.owner.email];
@@ -170,7 +173,10 @@ export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary>
     }
   });
 
-  const redisKeys = userIds.length ? await withRedis((redis) => deleteAuthKeys(redis, userIds)) : 0;
+  const redisKeys = await withRedis(async (redis) => {
+    const userKeys = userIds.length ? await deleteAuthKeys(redis, userIds) : 0;
+    return userKeys + (await deleteRateLimitKeys(redis, identity.seedIp));
+  });
   return { userIds, users: userIds.length, workspaces, auditRows, redisKeys };
 }
 
@@ -186,6 +192,23 @@ async function deleteAuthKeys(redis: Redis, userIds: string[]): Promise<number> 
   for (const key of await authKeysMentioning(redis, userIds)) doomed.add(key);
   const keys = [...doomed];
   return keys.length ? redis.del(...keys) : 0;
+}
+
+/** Better Auth rate-limit counters of one client IP (`auth:<ip>|<path>`, 60 s TTL). */
+async function deleteRateLimitKeys(redis: Redis, ip: string): Promise<number> {
+  const keys = await scanKeys(redis, `auth:${ip}|*`);
+  return keys.length ? redis.del(...keys) : 0;
+}
+
+async function scanKeys(redis: Redis, pattern: string): Promise<string[]> {
+  const found: string[] = [];
+  let cursor = '0';
+  do {
+    const [next, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 500);
+    cursor = next;
+    found.push(...keys);
+  } while (cursor !== '0');
+  return found;
 }
 
 function sessionTokens(raw: string | null): string[] {
@@ -233,7 +256,10 @@ export async function assertRunGone(identity: RunIdentity, userIds: string[]): P
     );
     return rows[0];
   });
-  const keys = userIds.length ? await withRedis((redis) => authKeysMentioning(redis, userIds)) : [];
+  const keys = await withRedis(async (redis) => [
+    ...(userIds.length ? await authKeysMentioning(redis, userIds) : []),
+    ...(await scanKeys(redis, `auth:${identity.seedIp}|*`)),
+  ]);
   if (Number(leftovers?.users) || Number(leftovers?.workspaces) || keys.length) {
     throw new Error(
       `E2E cleanup left data behind: users=${leftovers?.users} workspaces=${leftovers?.workspaces} redisKeys=${keys.length}`,
