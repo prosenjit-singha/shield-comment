@@ -7,10 +7,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, only the Module 4 header + decisions + its own row from TASKS.md, `docs/project-documentation/modules/module-4-webhooks-queue.md` (UI rows M4-T11/T12 also `docs/design/base.md` + `client.md`).
 - Standing approvals: admin/ + client/ changes approved for the rest of this run (user, 2026-11-18).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #3 (2026-11-19) · rows this session: 0 · estimate: 40k
+- Session: #3 (2026-11-19) · rows this session: 1 · estimate: 50k
 
 ## State
-dispatched M4-T11 (2026-11-19) · commit: "feat(client): add meta reconnect banner and disconnect on pages (M4-T11)"
+verified M4-T11
 
 ## Resume
 `/orchestration --continue` (session #3: M4-T11, M4-T12, then M4-GATE; no pending decision)
@@ -97,4 +97,4 @@ You are implementing exactly ONE task row, **M4-T12**, in the ShieldComment BD r
 - 2026-11-19 M4-T8 ✅ c2570a8 · backend 964 + e2e 477 · client 303 · e2e 2/2 · subscribed_apps on the Page toggle (subscribe before tx, 502 META_SUBSCRIBE_FAILED, NEEDS_REAUTH on token_invalid, best-effort unsubscribe) + backfill script
 - 2026-11-19 M4-T9 ✅ a64e807 · backend 1001 + e2e 488 · e2e 2/2 · connection status in pages list, 409 CONNECTION_NEEDS_REAUTH on switch-on, DELETE …/meta/connection (stamp + hard delete + best-effort unsubscribe/revoke), Data Deletion covers stamped comments (migration 0014)
 - 2026-11-19 M4-T10 ✅ f64418e + fix d273e68 · backend 1032 + e2e 494 · e2e 2/2 (host + docker) · Better Auth client IP: socket-address fallback via the auth module `middleware` option (no `no-trusted-ip` bucket), e2e seed sends a per-run `X-Forwarded-For`
-- 2026-11-19 M4-T11 ✅ · client 343 (was 303) · e2e 2/2 · /pages NEEDS_REAUTH/REVOKED banner + Reconnect, 409 CONNECTION_NEEDS_REAUTH rollback, Disconnect card + confirm dialog (counts, inline errors), finding (a) closed
+- 2026-11-19 M4-T11 ✅ 88635b5 · client 343 (was 303) · e2e 2/2 · /pages NEEDS_REAUTH/REVOKED banner + Reconnect, 409 CONNECTION_NEEDS_REAUTH rollback, Disconnect card + confirm dialog (counts, inline errors), finding (a) closed
