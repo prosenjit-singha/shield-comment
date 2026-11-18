@@ -3,21 +3,20 @@
 Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committed. Resume with `/orchestration --continue`. No secrets here.
 
 ## Run
-- Scope: Module 4: rows M4-T1 … M4-T12 in order, then M4-GATE (stop there). **Not** M4-T13 (zrok tunnel + live Meta smoke: own session later; live Meta check stays skipped, D12). Decisions D1–D13 + gate finding (a) + run scope answered 2026-11-18 (TASKS.md "## Module 4", MEMORY.md): final. New product calls → "Choices to confirm", never guessed. No live Meta calls: extend `MetaGraphClient`, fake it in tests.
-- Sub-agent reads: AGENTS.md, MEMORY.md, only the Module 4 header + decisions + its own row from TASKS.md, `docs/project-documentation/modules/module-4-webhooks-queue.md` (UI rows M4-T11/T12 also `docs/design/base.md` + `client.md`).
-- Standing approvals: admin/ + client/ changes approved for the rest of this run (user, 2026-11-18).
+- Scope: **M4-T13 only** (user, 2026-11-19: "M4-T13 only: zrok tunnel + live Meta smoke (D12), then stop."). Pre-check answer 2026-11-19: **script + docs only**, the live Meta smoke stays skipped (D12) because no Meta test app credentials exist yet. Then stop (next: Module 5 planning, new run).
+- Sub-agent reads: AGENTS.md, MEMORY.md, only the Module 4 header + D1/D5/D6/D12 + the M4-T13 row from TASKS.md, `docs/project-documentation/modules/module-4-webhooks-queue.md` (tunnel / webhook setup parts).
+- Standing approvals: none needed (no admin/ or client/ changes). Tunnel: the sub-agent may create the zrok2 name `shield-comment-dev` if missing and start/stop the public share briefly to check it; nothing left running (user, 2026-11-19).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #3 (2026-11-19) · rows this session: 3 · estimate: 70k
+- Session: #4 (2026-11-19) · rows this session: 0 · estimate: 40k
 
 ## State
-done: Module 4 M4-T1…M4-T12 + M4-GATE (2026-11-19); M4-T13 not in this run
+dispatched M4-T13 (2026-11-19) · commit: "feat(scripts): add zrok2 tunnel script and meta webhook setup docs (M4-T13)"
 
 ## Resume
-Run finished. Start a new run with `/orchestration <instructions>` (e.g. M4-T13 zrok tunnel + live Meta smoke in its own session, then Module 5 planning M5-PLAN).
+`/orchestration --continue` (session #4: M4-T13 script + docs only; no pending decision)
 
 ## Next prompt
-
-RUN COMPLETE (scope M4-T1…M4-T12 + M4-GATE finished 2026-11-19; M4-T13 zrok tunnel + live Meta smoke is not in this run: own session later, then Module 5 planning).
+RUN COMPLETE (scope M4-T13 only). Next: Module 5 planning (M5-PLAN), new run; the live Meta smoke (checklist in `docs/project-documentation/meta-webhooks-local.md`) runs whenever the Meta test app exists.
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -38,6 +37,7 @@ RUN COMPLETE (scope M4-T1…M4-T12 + M4-GATE finished 2026-11-19; M4-T13 zrok tu
 - M4-T11: moderators not special-cased (`GET …/pages` is owner/admin-only, so a loaded list implies the role; a DELETE 403 is mapped in the dialog) · Disconnect lives in a "Facebook connection" card at the bottom of /pages (destructive button, existing `dialog.tsx`, no new shadcn component) · REVOKED banner = error tone (`role=alert`), NEEDS_REAUTH = warning · header Reconnect hidden while the banner shows (one Reconnect) · switches not pre-disabled for NEEDS_REAUTH/REVOKED (409 message + banner explain) · dialog can't be closed while the DELETE runs; reopening clears the last error · `disconnected: false` → "already disconnected" notice · `?meta=` return notices hidden after a disconnect · impersonated empty state: CTA removed + owner-has-to-connect text (notice stays above) · /onboarding unchanged (already hid connect while impersonated) · dialog copy: permission revoked "unless another ShieldComment workspace still uses the same Facebook account" (D7 exception)
 - M4-T12: SSR via a server-only loader `prefetchQuery` → server fn → backend direct (forwards X-Forwarded-* + visitor IP, UA, accept-language; no cookie), browser via `/api` `apiFetch` · 404 = query data `{ kind: 'unknown' }` (not an error) so it dehydrates; 429/5xx/network on the server render the loading state and the browser retries once on mount · `retry: false` (no auto retry on 429), Try again = one refetch · no polling while PENDING ("open this page again later") · malformed `?code=` → treated as missing, router 307s to `/data-deletion` (no request) · one "no valid code" message for missing + malformed · page frame = `AuthScreen` card (EN/BN switch, footer link home) + `MetaNotice` (PENDING info, COMPLETED success, unknown + failures error) · dates hand-formatted at fixed UTC+6, 24 h, `19 Nov 2026, 15:05 (Bangladesh time)` / Bangla month names + digits (no `Intl`, so SSR = hydration) · code shown in a pill ("quote this code if you contact our support"; no support address yet) · title English-only like /login, `noindex` · all-digit codes (≈1e-18 chance) would be JSON-parsed by the router and shown as missing (accepted)
 - M4-GATE: live gate checks on a throwaway backend container (compose image, `docker compose run --no-deps -p 3999`, random `META_APP_SECRET` + placeholder META app vars via `-e`, never in `.env`; container, job and secret file removed) instead of e2e-only evidence, since compose has no `META_APP_SECRET` (compose itself answered 503) · admin queue counts proven real with a temporary `comment-moderation` probe job (waiting 1 → removed → 0) via a throwaway super admin (deleted with its sessions + `auth:*` keys) · the 4 backend error-level log lines are my deliberate 503 probes (`AllExceptionsFilter` logs every 5xx at error), not faults · no gate fix
+- M4-T13: `--check` is read-only (doesn't create the name) · script always passes `--force-local` (a running zrok2 agent would otherwise keep the share after Ctrl-C) and adds `--headless` without a TTY · extra `zrok2 share public` flags after `--` · env overrides `TUNNEL_NAME`/`TUNNEL_NAMESPACE`/`TUNNEL_PORT`/`TUNNEL_HOST` (+ `CLIENT_PUBLIC_URL` for the OAuth hint) · public host read from `zrok2 list namespaces --json` (not hard-coded); JSON parsed with node (no jq dependency) · enabled check = `zrok2 status` shows `EnvZId <<SET>>` (output never printed) · backend checks warn only: `/api/health/live` + a wrong-token verify probe (403 = token set, 503 = unset) · OAuth redirect printed as the client origin (M3 D6), not the tunnel · guide at `docs/project-documentation/meta-webhooks-local.md` (one page: setup, env names, dashboard steps, connect + backfill, checklist, troubleshooting) · root `README.md` created (apps, commands, doc links)
 
 ## Decisions asked
 - 2026-11-18 M3-T10: D13 0-Pages redirect → entry points only (recorded in TASKS.md D13)
@@ -46,6 +46,7 @@ RUN COMPLETE (scope M4-T1…M4-T12 + M4-GATE finished 2026-11-19; M4-T13 zrok tu
 - 2026-11-18 M4-T5 pre-check: `edited`/`remove` with no comment row → "Edit inserts, remove marks (Recommended)": `edited` with no row creates the comment from the payload as PENDING, so a scam edit still gets moderated. `remove` with no row stores a deleted placeholder, so a late `add` won't bring it back. Counts move as for a normal edit/remove.
 - 2026-11-19 M4-T9 (from M4-T6 OPEN b): orphaned comments vs Data Deletion → "Keep FB user id on comments (Recommended)": Comments keep D7's behaviour (kept on disconnect), but disconnect stamps each orphaned comment with the connection's facebook_user_id, so a later Data Deletion still finds and deletes them. Daily counts stay. **Add to the M4-T9 prompt under "### Decisions added by orchestrator"** (orchestrator note: needs a nullable comments column + reviewed migration, and the M4-T6 `data-deletion` worker must also delete comments matched by that id + their `webhook_events`).
 - 2026-11-19 M4-T9 choice 4 (D7 exception): `DELETE /me/permissions` skipped while the same FB user still has a token-holding connection in another workspace → "Keep the exception (Recommended)": Revoke app permissions on disconnect only when the Facebook user has no other workspace still connected. The other workspace keeps working. This is what was built. (Record in TASKS.md D7 at the next row or the gate.)
+- 2026-11-19 M4-T13 pre-check: scope → "Script + docs only (Recommended)" (live Meta smoke stays skipped, D12; no test-app credentials yet) · tunnel → "Yes, start/stop it (Recommended)" (may create `shield-comment-dev`, start the share briefly, stop it)
 
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
@@ -68,3 +69,4 @@ RUN COMPLETE (scope M4-T1…M4-T12 + M4-GATE finished 2026-11-19; M4-T13 zrok tu
 - 2026-11-19 M4-T11 ✅ 88635b5 · client 343 (was 303) · e2e 2/2 · /pages NEEDS_REAUTH/REVOKED banner + Reconnect, 409 CONNECTION_NEEDS_REAUTH rollback, Disconnect card + confirm dialog (counts, inline errors), finding (a) closed
 - 2026-11-19 M4-T12 ✅ 7b2025f · client 399 (was 343) · e2e 2/2 · public SSR /data-deletion status page (en/bn): server-fn lookup in the server HTML, 404/429/5xx/network states + Try again, Dhaka dates, code shown
 - 2026-11-19 M4-GATE ✅ 2f82d8e · backend 1032 unit / 494 e2e · admin 246 · client 399 · Playwright 2/2 · module 4 gate passed: 401 on bad/missing signature, signed delivery 200 in 7.8 ms with one job for 3 deliveries (live, throwaway-secret container), real queue counts on admin; no fix
+- 2026-11-19 M4-T13 ✅ · bash -n ✅ · shellcheck n/a · --check exit 0 · live tunnel: public /api/health/live 200, verify/unsigned POST/deauthorize 503 (no META_* in compose), share stopped · backend/admin/client untouched · `scripts/tunnel.sh` (zrok2 `public:shield-comment-dev` created + reserved) + Meta webhook setup guide with live-smoke checklist + root README; live Meta smoke still skipped (D12)

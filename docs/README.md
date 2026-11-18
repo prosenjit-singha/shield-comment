@@ -14,6 +14,7 @@ docs/
 │   ├── base.md
 │   ├── tech-stack.md
 │   ├── screens-inventory.md
+│   ├── meta-webhooks-local.md
 │   └── modules/
 │       ├── module-0-scaffolding.md
 │       ├── module-1-auth-rbac.md
@@ -40,6 +41,7 @@ docs/
 
 - **Project Brief & Architecture Rules:** [`./project-documentation/base.md`](./project-documentation/base.md)
 - **Tech Stack, Hosting & Auth Design (source of truth):** [`./project-documentation/tech-stack.md`](./project-documentation/tech-stack.md) — NestJS · Drizzle ORM · Neon · Redis/BullMQ · Better Auth · TanStack Router (admin) · TanStack Start (client)
+- **Meta test app + local webhook tunnel (zrok2, live-smoke checklist):** [`./project-documentation/meta-webhooks-local.md`](./project-documentation/meta-webhooks-local.md)
 - **All 20 Screens (7 Admin + 13 Client):** [`./project-documentation/screens-inventory.md`](./project-documentation/screens-inventory.md)
 - **Shared UI Tokens, Animate UI, Zustand & TanStack Query:** [`./design/base.md`](./design/base.md)
 - **Super Admin Panel UI & Charts Spec:** [`./design/admin.md`](./design/admin.md)
