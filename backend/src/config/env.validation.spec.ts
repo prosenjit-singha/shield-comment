@@ -93,3 +93,57 @@ describe('validateEnv: token cipher', () => {
     );
   });
 });
+
+describe('validateEnv: Meta app', () => {
+  const SECRET = 'meta-app-secret-0123456789abcdef';
+  const META = {
+    META_APP_ID: '1234567890',
+    META_APP_SECRET: SECRET,
+    META_LOGIN_CONFIG_ID: '987654321',
+    META_OAUTH_REDIRECT_URI:
+      'http://app.localhost:5174/api/meta/oauth/callback',
+  };
+
+  function metaError(env: Record<string, unknown>): string {
+    try {
+      validateEnv({ ...BASE, ...env });
+    } catch (error) {
+      return (error as Error).message;
+    }
+    return '';
+  }
+
+  it('accepts no Meta env (client disabled) and the full set', () => {
+    expect(validateEnv(BASE).META_APP_ID).toBeUndefined();
+    const env = validateEnv({
+      ...BASE,
+      ...META,
+      META_GRAPH_API_VERSION: 'v27.0',
+    });
+    expect(env.META_APP_ID).toBe('1234567890');
+    expect(env.META_GRAPH_API_VERSION).toBe('v27.0');
+  });
+
+  it('requires all four app vars together', () => {
+    const message = metaError({ META_APP_ID: '1234567890' });
+    expect(message).toContain('META_APP_SECRET');
+    expect(message).toContain('META_LOGIN_CONFIG_ID');
+    expect(message).toContain('META_OAUTH_REDIRECT_URI');
+    expect(message).not.toContain('- META_APP_ID');
+  });
+
+  it.each([
+    ['META_APP_ID', 'abc'],
+    ['META_LOGIN_CONFIG_ID', '12a'],
+    ['META_APP_SECRET', 'short'],
+    ['META_OAUTH_REDIRECT_URI', '/api/meta/oauth/callback'],
+    ['META_GRAPH_API_VERSION', '26.0'],
+    ['META_GRAPH_API_VERSION', 'v26'],
+  ])('rejects a bad %s', (field, value) => {
+    const message = metaError({ ...META, [field]: value });
+    expect(message).toContain(`- ${field}:`);
+    // Messages never echo values (the secret above all).
+    expect(message).not.toContain(SECRET);
+    expect(message).not.toContain(`${value} `);
+  });
+});

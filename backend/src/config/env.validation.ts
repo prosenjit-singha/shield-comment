@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  Matches,
   Max,
   Min,
   MinLength,
@@ -159,6 +160,64 @@ export class EnvironmentVariables {
     },
   })
   TOKEN_ENCRYPTION_PREVIOUS_KEYS?: string;
+
+  // --- Meta app (Facebook Login for Business + Graph API, M3-T3, decisions D1/D9).
+  // Optional: MetaGraphClient is disabled when all four are unset; set all four together.
+  // Local/staging use the Meta *test app*, production the live app (D1).
+  /** Numeric Meta app id. */
+  @ValidateIf((env: EnvironmentVariables) => hasMetaAppEnv(env))
+  @Matches(/^[0-9]{1,32}$/, {
+    message:
+      'META_APP_ID must be the numeric Meta app id (set together with the other META_* app vars)',
+  })
+  META_APP_ID?: string;
+
+  /** App secret: server-side only, signs `appsecret_proof` on every token call. */
+  @ValidateIf((env: EnvironmentVariables) => hasMetaAppEnv(env))
+  @IsString({
+    message: 'META_APP_SECRET is required with the other META_* app vars',
+  })
+  @MinLength(16, { message: 'META_APP_SECRET looks too short' })
+  META_APP_SECRET?: string;
+
+  /** Facebook Login for Business configuration id (user access token config, scopes per D4). */
+  @ValidateIf((env: EnvironmentVariables) => hasMetaAppEnv(env))
+  @Matches(/^[0-9]{1,32}$/, {
+    message:
+      'META_LOGIN_CONFIG_ID must be the numeric Login for Business config id (set together with the other META_* app vars)',
+  })
+  META_LOGIN_CONFIG_ID?: string;
+
+  /** Full OAuth callback URL, exactly as allow-listed in the Meta app (host per D6). */
+  @ValidateIf((env: EnvironmentVariables) => hasMetaAppEnv(env))
+  @IsUrl(
+    {
+      require_tld: false,
+      require_protocol: true,
+      protocols: ['http', 'https'],
+    },
+    {
+      message:
+        'META_OAUTH_REDIRECT_URI must be an absolute http(s) URL (set together with the other META_* app vars)',
+    },
+  )
+  META_OAUTH_REDIRECT_URI?: string;
+
+  /** Overrides the pinned Graph API version (`DEFAULT_GRAPH_API_VERSION`), e.g. `v27.0`. */
+  @IsOptional()
+  @Matches(/^v[0-9]{1,3}\.[0-9]$/, {
+    message: 'META_GRAPH_API_VERSION must look like v26.0',
+  })
+  META_GRAPH_API_VERSION?: string;
+}
+
+function hasMetaAppEnv(env: EnvironmentVariables): boolean {
+  return (
+    env.META_APP_ID !== undefined ||
+    env.META_APP_SECRET !== undefined ||
+    env.META_LOGIN_CONFIG_ID !== undefined ||
+    env.META_OAUTH_REDIRECT_URI !== undefined
+  );
 }
 
 function hasTokenCipherEnv(env: EnvironmentVariables): boolean {
