@@ -5,8 +5,9 @@ import { ApiError, apiFetch } from '@/lib/api'
  * Meta (FB/IG) connection + workspace Pages, mirroring the backend contracts (M3-T4…T6):
  * - `GET /api/workspaces/:id/meta/oauth/url?returnTo=` → `{ url }` (the Meta dialog)
  * - callback lands on `returnTo` with `?meta=connected[&skipped=N]` or `?meta=error&reason=…`
- * - `GET /api/workspaces/:id/pages` → `{ items, pageLimit }`
+ * - `GET /api/workspaces/:id/pages` → `{ items, pageLimit, connection }` (`connection` since M4-T9)
  * - `PATCH /api/workspaces/:id/pages/:pageRowId/toggle` `{ isActive }` → `{ page, changed }`
+ * - `DELETE /api/workspaces/:id/meta/connection` → `{ disconnected, pagesDeleted, commentsKept }` (M4-T9, D7)
  * Shared by `/onboarding` (C3) and `/pages` (C6).
  */
 
@@ -29,9 +30,29 @@ export interface WorkspacePageLimit {
   activeCount: number
 }
 
+/** `meta_connections.status` (D9): NEEDS_REAUTH = soft block (no switching on), REVOKED = app removed on Facebook. */
+export type MetaConnectionStatus = 'ACTIVE' | 'NEEDS_REAUTH' | 'REVOKED'
+
+/** `WorkspaceMetaConnection` in `backend/src/meta/dto/workspace-pages.dto.ts`. */
+export interface WorkspaceMetaConnection {
+  status: MetaConnectionStatus
+  statusChangedAt: string
+  /** `null` = no expiry reported (or REVOKED). */
+  tokenExpiresAt: string | null
+}
+
 export interface WorkspacePagesResponse {
   items: WorkspacePage[]
   pageLimit: WorkspacePageLimit
+  /** `null` = Facebook was never connected, or was disconnected. */
+  connection: WorkspaceMetaConnection | null
+}
+
+/** `MetaDisconnectResponse`: `disconnected: false` (zeros) when nothing was connected (idempotent). */
+export interface MetaDisconnectResponse {
+  disconnected: boolean
+  pagesDeleted: number
+  commentsKept: number
 }
 
 export interface TogglePageResponse {
@@ -114,6 +135,7 @@ export function setPageActive(
   if (!data || !target || target.isActive === isActive) return data
   const activeCount = Math.max(0, data.pageLimit.activeCount + (isActive ? 1 : -1))
   return {
+    ...data,
     items: data.items.map((item) => (item.id === pageRowId ? { ...item, isActive } : item)),
     pageLimit: { ...data.pageLimit, activeCount },
   }
@@ -125,6 +147,19 @@ export function togglePage(workspaceId: string, pageRowId: string, isActive: boo
     { method: 'PATCH', body: { isActive } },
   )
 }
+
+/**
+ * D7 disconnect (owner/admin; 403 while impersonated): removes the connection and its Pages, keeps the
+ * comments, and revokes the app on Facebook unless another workspace still uses that Facebook account.
+ */
+export function disconnectMeta(workspaceId: string): Promise<MetaDisconnectResponse> {
+  return apiFetch<MetaDisconnectResponse>(`/api/workspaces/${encodeURIComponent(workspaceId)}/meta/connection`, {
+    method: 'DELETE',
+  })
+}
+
+/** `useMutation` key of the disconnect. */
+export const metaDisconnectMutationKey = (workspaceId: string) => ['workspace', workspaceId, 'meta', 'disconnect'] as const
 
 export async function fetchMetaOAuthUrl(workspaceId: string, returnTo: MetaReturnPath): Promise<string> {
   const query = new URLSearchParams({ returnTo })
@@ -144,15 +179,21 @@ export type PageToggleFailure =
   | { kind: 'token-missing' }
   /** 502 `META_SUBSCRIBE_FAILED` (M4-T8): Facebook didn't confirm the webhook subscription; nothing changed. */
   | { kind: 'subscribe-failed' }
+  /** 409 `CONNECTION_NEEDS_REAUTH` (M4-T9, D9): the connection isn't ACTIVE (or is gone), reconnect first. */
+  | { kind: 'connection-needs-reauth' }
   | { kind: 'other'; error: ApiError }
 
-/** Reads the toggle's error `code` / `details` (409 `PAGE_LIMIT_REACHED` / `PAGE_TOKEN_MISSING`, 502 `META_SUBSCRIBE_FAILED`). */
+/**
+ * Reads the toggle's error `code` / `details` (409 `PAGE_LIMIT_REACHED` / `PAGE_TOKEN_MISSING` /
+ * `CONNECTION_NEEDS_REAUTH`, 502 `META_SUBSCRIBE_FAILED`).
+ */
 export function pageToggleFailure(error: ApiError): PageToggleFailure {
   if (error.status === 409 && error.code === 'PAGE_LIMIT_REACHED') {
     const number = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : undefined)
     return { kind: 'limit-reached', limit: number(error.details?.limit), activeCount: number(error.details?.activeCount) }
   }
   if (error.status === 409 && error.code === 'PAGE_TOKEN_MISSING') return { kind: 'token-missing' }
+  if (error.status === 409 && error.code === 'CONNECTION_NEEDS_REAUTH') return { kind: 'connection-needs-reauth' }
   if (error.status === 502 && error.code === 'META_SUBSCRIBE_FAILED') return { kind: 'subscribe-failed' }
   return { kind: 'other', error }
 }

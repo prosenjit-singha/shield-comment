@@ -3,12 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Language } from '@/lib/language'
 import type { MetaOAuthErrorReason, WorkspacePage } from '@/lib/meta-pages'
 import {
+  DISCONNECT,
   IMPERSONATED,
   META_DIALOG,
   OAUTH_URL,
   PAGES,
   SECOND,
   SESSION,
+  connection,
   page,
   pagesApi,
   renderAppRoute,
@@ -67,6 +69,27 @@ const copy = {
     loadFailed: 'Couldn’t load your Pages.',
     retry: 'Try again',
     noWorkspace: 'Your account has no active workspace yet',
+    bannerReauth: 'Your Facebook connection needs to be renewed.',
+    bannerRevoked: 'ShieldComment was removed from your Facebook account',
+    reauthToggle:
+      'Facebook needs to be reconnected before protection can be switched on. Reconnect Facebook, then try again.',
+    impersonatedEmpty: 'The workspace owner has to connect Facebook before Pages show up here.',
+    disconnect: 'Disconnect Facebook',
+    dialogTitle: 'Disconnect Facebook?',
+    effects: [
+      'Your Pages and their linked Instagram accounts are removed from this workspace.',
+      'Comments ShieldComment already collected are kept.',
+      'unless another ShieldComment workspace still uses the same Facebook account',
+    ],
+    cancel: 'Cancel',
+    confirm: 'Yes, disconnect',
+    disconnecting: 'Disconnecting…',
+    disconnected: 'Facebook disconnected. 2 Pages were removed and 15 comments were kept.',
+    disconnectedOne: 'Facebook disconnected. 1 Page was removed and 1 comment was kept.',
+    alreadyDisconnected: 'Facebook was already disconnected. Nothing was removed.',
+    disconnectFailed: 'Facebook wasn’t disconnected.',
+    disconnect403: 'Only workspace owners and admins can disconnect Facebook, and not during Admin Impersonation.',
+    disconnect404: 'This workspace couldn’t be found.',
     reasons: {
       access_denied: 'You cancelled the Facebook window',
       invalid_state: 'The connection link expired or was already used.',
@@ -112,6 +135,26 @@ const copy = {
     loadFailed: 'আপনার পেজগুলো লোড করা যায়নি।',
     retry: 'আবার চেষ্টা করুন',
     noWorkspace: 'আপনার অ্যাকাউন্টে এখনো কোনো সক্রিয় ওয়ার্কস্পেস নেই',
+    bannerReauth: 'আপনার ফেসবুক কানেকশন নবায়ন করা দরকার।',
+    bannerRevoked: 'আপনার ফেসবুক অ্যাকাউন্ট থেকে ShieldComment সরিয়ে দেওয়া হয়েছে',
+    reauthToggle: 'সুরক্ষা চালু করার আগে ফেসবুক আবার কানেক্ট করতে হবে। ফেসবুক আবার কানেক্ট করুন, তারপর আবার চেষ্টা করুন।',
+    impersonatedEmpty: 'এখানে পেজ দেখাতে হলে ওয়ার্কস্পেসের মালিককে ফেসবুক কানেক্ট করতে হবে।',
+    disconnect: 'ফেসবুক ডিসকানেক্ট করুন',
+    dialogTitle: 'ফেসবুক ডিসকানেক্ট করবেন?',
+    effects: [
+      'আপনার পেজ ও সেগুলোর সাথে যুক্ত ইনস্টাগ্রাম অ্যাকাউন্ট এই ওয়ার্কস্পেস থেকে সরে যাবে।',
+      'ShieldComment আগে যে কমেন্টগুলো সংগ্রহ করেছে সেগুলো থেকে যাবে।',
+      'যদি না একই ফেসবুক অ্যাকাউন্ট অন্য কোনো ShieldComment ওয়ার্কস্পেসে এখনো ব্যবহার হয়',
+    ],
+    cancel: 'বাতিল',
+    confirm: 'হ্যাঁ, ডিসকানেক্ট করুন',
+    disconnecting: 'ডিসকানেক্ট হচ্ছে…',
+    disconnected: `ফেসবুক ডিসকানেক্ট হয়েছে। ${bnDigits(2)}টি পেজ সরানো হয়েছে এবং ${bnDigits(15)}টি কমেন্ট রাখা হয়েছে।`,
+    disconnectedOne: `ফেসবুক ডিসকানেক্ট হয়েছে। ${bnDigits(1)}টি পেজ সরানো হয়েছে এবং ${bnDigits(1)}টি কমেন্ট রাখা হয়েছে।`,
+    alreadyDisconnected: 'ফেসবুক আগেই ডিসকানেক্ট করা ছিল। কিছু সরানো হয়নি।',
+    disconnectFailed: 'ফেসবুক ডিসকানেক্ট হয়নি।',
+    disconnect403: 'শুধু ওয়ার্কস্পেসের মালিক ও অ্যাডমিন ফেসবুক ডিসকানেক্ট করতে পারেন, অ্যাডমিন ইমপারসোনেশনের সময় নয়।',
+    disconnect404: 'এই ওয়ার্কস্পেসটি খুঁজে পাওয়া যায়নি।',
     reasons: {
       access_denied: 'আপনি ফেসবুকের উইন্ডোটি বাতিল করেছেন',
       invalid_state: 'কানেকশন লিংকের মেয়াদ শেষ হয়ে গেছে',
@@ -199,8 +242,9 @@ describe.each(['en', 'bn'] as const)('/pages (%s)', (language) => {
       expect(await checked('Rahim Fashion')).toBe('true')
       expect(await checked('Shop Two')).toBe('false')
       expect(screen.getByRole('button', { name: t.reconnect })).toBeTruthy()
-      // D7: no disconnect · D14: no boosted posts here.
-      expect(screen.queryByRole('button', { name: /disconnect|ডিসকানেক্ট/i })).toBeNull()
+      // M4-T11 (D7): Disconnect for owners/admins · ACTIVE: no banner · D14: no boosted posts here.
+      expect(screen.getByRole('button', { name: t.disconnect })).toBeTruthy()
+      expect(document.querySelector('[data-kind^="connection:"]')).toBeNull()
       expect(screen.queryByText(/boost/i)).toBeNull()
     })
 
@@ -213,9 +257,27 @@ describe.each(['en', 'bn'] as const)('/pages (%s)', (language) => {
       expect(limitText()).toBe(t.limit(0, 1))
       expect(screen.queryByRole('button', { name: t.reconnect })).toBeNull()
 
+      expect(within(empty).queryByText(t.impersonatedEmpty)).toBeNull()
+
       fireEvent.click(within(empty).getByRole('link', { name: t.emptyCta }))
       expect(await screen.findByRole('heading', { name: t.onboarding })).toBeTruthy()
       expect(history.location.pathname).toBe('/onboarding')
+    })
+
+    it('finding (a): the impersonated empty state has no Connect CTA, only the impersonation notice', async () => {
+      mockApi({ '/api/auth/get-session': () => json(200, IMPERSONATED), ...pagesApi([], 1, undefined, { connection: null }) })
+      renderPages('/pages', language)
+
+      const empty = await screen.findByTestId('pages-empty')
+      expect(within(empty).getByRole('heading', { name: t.empty })).toBeTruthy()
+      expect(within(empty).getByText(t.impersonatedEmpty)).toBeTruthy()
+      expect(within(empty).queryByRole('link')).toBeNull()
+      expect(screen.queryByRole('link', { name: t.emptyCta })).toBeNull()
+      expect(screen.queryByRole('button', { name: t.reconnect })).toBeNull()
+      const notice = screen.getByText((_, node) => node?.tagName === 'P' && node.textContent?.startsWith(t.impersonated) === true)
+      expect(notice.closest('[data-kind]')?.getAttribute('data-kind')).toBe('impersonation-connect-blocked')
+      expect(screen.queryByRole('button', { name: t.disconnect })).toBeNull()
+      expect(callsTo(OAUTH_URL)).toHaveLength(0)
     })
 
     it('explains a failed list load and retries', async () => {
@@ -505,6 +567,287 @@ describe.each(['en', 'bn'] as const)('/pages (%s)', (language) => {
       await waitFor(() => expect(callsTo(toggleUrl('p1'))).toHaveLength(1))
       await waitFor(async () => expect(await checked('Rahim Fashion')).toBe('true'))
       expect(callsTo(OAUTH_URL)).toHaveLength(0)
+    })
+  })
+
+  describe('connection banner (D9)', () => {
+    const bannerText = (status: 'NEEDS_REAUTH' | 'REVOKED') => (status === 'REVOKED' ? t.bannerRevoked : t.bannerReauth)
+
+    it.each(['NEEDS_REAUTH', 'REVOKED'] as const)('%s: banner with its own Reconnect (returnTo=/pages)', async (status) => {
+      mockApi({
+        '/api/auth/get-session': () => json(200, SESSION),
+        ...pagesApi([page({ isActive: status === 'NEEDS_REAUTH' }), SECOND], 3, undefined, { connection: connection(status) }),
+        [OAUTH_URL]: () => json(200, { url: META_DIALOG }),
+      })
+      renderPages('/pages', language)
+
+      const banner = await waitFor(() => {
+        const node = document.querySelector<HTMLElement>(`[data-kind="connection:${status}"]`)
+        expect(node).not.toBeNull()
+        return node!
+      })
+      expect(banner.dataset.tone).toBe(status === 'REVOKED' ? 'error' : 'warning')
+      expect(banner.textContent).toContain(bannerText(status))
+      expect(document.querySelector(`[data-kind="connection:${status === 'REVOKED' ? 'NEEDS_REAUTH' : 'REVOKED'}"]`)).toBeNull()
+      // Exactly one Reconnect: the banner's (the header one is hidden).
+      const buttons = screen.getAllByRole('button', { name: t.reconnect })
+      expect(buttons).toHaveLength(1)
+      expect(banner.contains(buttons[0]!)).toBe(true)
+      const location = { href: 'http://localhost/pages' }
+      vi.stubGlobal('location', location)
+
+      fireEvent.click(buttons[0]!)
+
+      await waitFor(() => expect(location.href).toBe(META_DIALOG))
+      expect(callsTo(OAUTH_URL)).toHaveLength(1)
+      const [call] = fetchMock.mock.calls.filter(([input]) => String(input).startsWith(OAUTH_URL))
+      expect(new URL(String(call![0]), 'http://localhost').searchParams.get('returnTo')).toBe('/pages')
+    })
+
+    it.each([
+      ['ACTIVE', connection('ACTIVE')],
+      ['no connection', null],
+    ] as const)('%s: no banner, the header Reconnect stays', async (_, value) => {
+      mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...pagesApi([page()], 3, undefined, { connection: value }) })
+      renderPages('/pages', language)
+
+      expect(await screen.findByRole('button', { name: t.reconnect })).toBeTruthy()
+      expect(document.querySelector('[data-kind^="connection:"]')).toBeNull()
+      expect(screen.queryByText(t.bannerReauth)).toBeNull()
+      expect(screen.queryByText((text) => text.includes(t.bannerRevoked))).toBeNull()
+    })
+
+    it.each(['NEEDS_REAUTH', 'REVOKED'] as const)('impersonated %s: banner text without Reconnect', async (status) => {
+      mockApi({
+        '/api/auth/get-session': () => json(200, IMPERSONATED),
+        ...pagesApi([page()], 3, undefined, { connection: connection(status) }),
+      })
+      renderPages('/pages', language)
+
+      const banner = await waitFor(() => {
+        const node = document.querySelector<HTMLElement>(`[data-kind="connection:${status}"]`)
+        expect(node).not.toBeNull()
+        return node!
+      })
+      expect(banner.textContent).toContain(bannerText(status))
+      expect(within(banner).queryByRole('button')).toBeNull()
+      expect(screen.queryByRole('button', { name: t.reconnect })).toBeNull()
+      expect(document.querySelector('[data-kind="impersonation-connect-blocked"]')).not.toBeNull()
+      expect(callsTo(OAUTH_URL)).toHaveLength(0)
+    })
+
+    it('rolls back on 409 CONNECTION_NEEDS_REAUTH with the reconnect message; the refetch brings the banner', async () => {
+      const gate = deferred()
+      const refetch = deferred()
+      const handlers = pagesApi(
+        [page()],
+        3,
+        gatedToggle(gate.promise, () =>
+          json(409, { statusCode: 409, message: 'backend text never shown', code: 'CONNECTION_NEEDS_REAUTH' }),
+        ),
+      )
+      let listCalls = 0
+      mockApi({
+        '/api/auth/get-session': () => json(200, SESSION),
+        ...handlers,
+        // First GET: ACTIVE (stale); the refetch after the 409 says NEEDS_REAUTH.
+        [PAGES]: async () => {
+          listCalls += 1
+          if (listCalls === 1) return handlers[PAGES]!()
+          await refetch.promise
+          return json(200, {
+            items: [page()],
+            pageLimit: { limit: 3, activeCount: 0 },
+            connection: connection('NEEDS_REAUTH'),
+          })
+        },
+      })
+      renderPages('/pages', language)
+
+      fireEvent.click(await switchFor('Rahim Fashion'))
+      await waitFor(async () => expect(await checked('Rahim Fashion')).toBe('true'))
+      gate.release()
+
+      const alert = await screen.findByRole('alert')
+      expect(alert.dataset.kind).toBe('connection-needs-reauth')
+      expect(alert.textContent).toBe(t.reauthToggle)
+      expect(alert.closest('li')?.textContent).toContain('Rahim Fashion')
+      // Rolled back before the refetch answers.
+      expect(await checked('Rahim Fashion')).toBe('false')
+      expect(limitText()).toBe(t.limit(0, 3))
+      await waitFor(() => expect(callsTo(PAGES)).toHaveLength(2))
+      refetch.release()
+
+      await waitFor(() => expect(document.querySelector('[data-kind="connection:NEEDS_REAUTH"]')).not.toBeNull())
+      expect(screen.getAllByRole('button', { name: t.reconnect })).toHaveLength(1)
+    })
+  })
+
+  describe('disconnect (D7)', () => {
+    const dialog = () => screen.findByRole('dialog', { name: t.dialogTitle })
+    const disconnectBody = (body: { disconnected: boolean; pagesDeleted: number; commentsKept: number }) => () =>
+      json(200, body)
+
+    it.each([
+      ['impersonated', IMPERSONATED, [page()], connection()],
+      ['nothing connected', SESSION, [], null],
+    ] as const)('is hidden when %s', async (_, session, items, value) => {
+      mockApi({ '/api/auth/get-session': () => json(200, session), ...pagesApi([...items], 1, undefined, { connection: value }) })
+      renderPages('/pages', language)
+
+      await waitFor(() => expect(callsTo(PAGES)).toHaveLength(1))
+      expect(await screen.findByRole('heading', { level: 1, name: t.title })).toBeTruthy()
+      await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).toBeNull())
+      expect(screen.queryByRole('button', { name: t.disconnect })).toBeNull()
+      expect(screen.queryByTestId('meta-connection-card')).toBeNull()
+    })
+
+    it.each([
+      ['Pages without a connection row', [page()], null],
+      ['a connection without Pages', [], connection('REVOKED')],
+    ] as const)('is shown for %s', async (_, items, value) => {
+      mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...pagesApi([...items], 1, undefined, { connection: value }) })
+      renderPages('/pages', language)
+
+      expect(await screen.findByRole('button', { name: t.disconnect })).toBeTruthy()
+    })
+
+    it('opens a confirm dialog that explains the effects; Cancel sends nothing', async () => {
+      mockApi({
+        '/api/auth/get-session': () => json(200, SESSION),
+        ...pagesApi([page()], 3, undefined, { onDisconnect: disconnectBody({ disconnected: true, pagesDeleted: 1, commentsKept: 0 }) }),
+      })
+      renderPages('/pages', language)
+
+      fireEvent.click(await screen.findByRole('button', { name: t.disconnect }))
+      const box = await dialog()
+      for (const effect of t.effects) expect(box.textContent).toContain(effect)
+
+      fireEvent.click(within(box).getByRole('button', { name: t.cancel }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      expect(callsTo(DISCONNECT)).toHaveLength(0)
+      expect(callsTo(PAGES)).toHaveLength(1)
+      expect(await switchFor('Rahim Fashion')).toBeTruthy()
+    })
+
+    it('confirm → one DELETE → list refetched → success counts, empty state, no Disconnect', async () => {
+      const gate = deferred()
+      mockApi({
+        '/api/auth/get-session': () => json(200, SESSION),
+        ...pagesApi([page({ isActive: true }), SECOND], 3, undefined, {
+          onDisconnect: async () => {
+            await gate.promise
+            return json(200, { disconnected: true, pagesDeleted: 2, commentsKept: 15 })
+          },
+        }),
+      })
+      renderPages('/pages?meta=connected', language)
+      expect(await screen.findByText(t.connectedNotice)).toBeTruthy()
+
+      fireEvent.click(await screen.findByRole('button', { name: t.disconnect }))
+      const box = await dialog()
+      fireEvent.click(within(box).getByRole('button', { name: t.confirm }))
+
+      // While the DELETE runs: busy button, Cancel disabled.
+      const busy = await within(box).findByRole('button', { name: t.disconnecting })
+      expect(busy).toHaveProperty('disabled', true)
+      expect(within(box).getByRole('button', { name: t.cancel })).toHaveProperty('disabled', true)
+      await waitFor(() => expect(callsTo(DISCONNECT)).toHaveLength(1))
+      expect(callsTo(DISCONNECT)[0]).toEqual({ path: DISCONNECT, method: 'DELETE', body: undefined })
+      gate.release()
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      const notice = await screen.findByText(t.disconnected)
+      expect(notice.closest('[data-kind]')?.getAttribute('data-kind')).toBe('disconnected')
+      await waitFor(() => expect(callsTo(PAGES)).toHaveLength(2))
+      expect(await screen.findByTestId('pages-empty')).toBeTruthy()
+      expect(screen.queryByRole('button', { name: t.disconnect })).toBeNull()
+      expect(screen.queryByText(t.connectedNotice)).toBeNull()
+      expect(callsTo(DISCONNECT)).toHaveLength(1)
+    })
+
+    it('uses the singular and says so when nothing was connected any more', async () => {
+      let body = { disconnected: true, pagesDeleted: 1, commentsKept: 1 }
+      mockApi({
+        '/api/auth/get-session': () => json(200, SESSION),
+        ...pagesApi([page()], 3, undefined, { onDisconnect: () => json(200, body) }),
+      })
+      renderPages('/pages', language)
+
+      fireEvent.click(await screen.findByRole('button', { name: t.disconnect }))
+      fireEvent.click(within(await dialog()).getByRole('button', { name: t.confirm }))
+      expect(await screen.findByText(t.disconnectedOne)).toBeTruthy()
+
+      // Idempotent backend: `disconnected: false` (e.g. another tab already disconnected).
+      body = { disconnected: false, pagesDeleted: 0, commentsKept: 0 }
+      mockApi({
+        '/api/auth/get-session': () => json(200, SESSION),
+        ...pagesApi([page()], 3, undefined, { onDisconnect: () => json(200, body) }),
+      })
+      cleanup()
+      renderPages('/pages', language)
+      fireEvent.click(await screen.findByRole('button', { name: t.disconnect }))
+      fireEvent.click(within(await dialog()).getByRole('button', { name: t.confirm }))
+      expect(await screen.findByText(t.alreadyDisconnected)).toBeTruthy()
+    })
+
+    it.each([403, 404, 500, 0] as const)('keeps the dialog open on %s with an inline alert, then retries', async (status) => {
+      let fail = true
+      mockApi({
+        '/api/auth/get-session': () => json(200, SESSION),
+        ...pagesApi([page()], 3, undefined, {
+          onDisconnect: () =>
+            !fail
+              ? json(200, { disconnected: true, pagesDeleted: 1, commentsKept: 1 })
+              : status === 0
+                ? Promise.reject(new TypeError('Failed to fetch'))
+                : json(status, { statusCode: status, message: 'backend text never shown' }),
+        }),
+      })
+      renderPages('/pages', language)
+
+      fireEvent.click(await screen.findByRole('button', { name: t.disconnect }))
+      const box = await dialog()
+      fireEvent.click(within(box).getByRole('button', { name: t.confirm }))
+
+      const alert = await within(box).findByRole('alert')
+      expect(alert.dataset.kind).toBe(`disconnect:${status}`)
+      expect(alert.textContent).toContain(t.disconnectFailed)
+      expect(alert.textContent).toContain(
+        status === 403 ? t.disconnect403 : status === 404 ? t.disconnect404 : status === 0 ? t.network : t.server,
+      )
+      expect(alert.textContent).not.toContain('backend text')
+      expect(screen.getByRole('dialog')).toBe(box)
+      expect(within(box).getByRole('button', { name: t.confirm })).toHaveProperty('disabled', false)
+      expect(callsTo(DISCONNECT)).toHaveLength(1)
+      expect(callsTo(PAGES)).toHaveLength(1)
+
+      // Usable again: the retry succeeds and clears the alert.
+      fail = false
+      fireEvent.click(within(box).getByRole('button', { name: t.confirm }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      expect(await screen.findByText(t.disconnectedOne)).toBeTruthy()
+      expect(callsTo(DISCONNECT)).toHaveLength(2)
+    })
+
+    it('starts without the last error when opened again', async () => {
+      mockApi({
+        '/api/auth/get-session': () => json(200, SESSION),
+        ...pagesApi([page()], 3, undefined, { onDisconnect: () => json(500, { statusCode: 500, message: 'x' }) }),
+      })
+      renderPages('/pages', language)
+
+      fireEvent.click(await screen.findByRole('button', { name: t.disconnect }))
+      let box = await dialog()
+      fireEvent.click(within(box).getByRole('button', { name: t.confirm }))
+      expect(await within(box).findByRole('alert')).toBeTruthy()
+      fireEvent.click(within(box).getByRole('button', { name: t.cancel }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+      fireEvent.click(await screen.findByRole('button', { name: t.disconnect }))
+      box = await dialog()
+      expect(within(box).queryByRole('alert')).toBeNull()
+      expect(callsTo(DISCONNECT)).toHaveLength(1)
     })
   })
 

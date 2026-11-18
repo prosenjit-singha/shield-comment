@@ -10,7 +10,7 @@ import {
 import { render } from '@testing-library/react'
 import { vi } from 'vitest'
 import type { Language } from '@/lib/language'
-import type { WorkspacePage } from '@/lib/meta-pages'
+import type { WorkspaceMetaConnection, WorkspacePage } from '@/lib/meta-pages'
 import { createQueryClient } from '@/lib/query-client'
 import { Route as AppRoute } from '@/routes/_app'
 import { Route as DashboardRoute } from '@/routes/_app/dashboard'
@@ -46,6 +46,7 @@ export const IMPERSONATED = { session: { ...SESSION.session, id: 's2', impersona
 export const PAGES = '/api/workspaces/w1/pages'
 export const OAUTH_URL = '/api/workspaces/w1/meta/oauth/url'
 export const toggleUrl = (id: string) => `${PAGES}/${id}/toggle`
+export const DISCONNECT = '/api/workspaces/w1/meta/connection'
 export const META_DIALOG = 'https://www.facebook.com/v26.0/dialog/oauth?client_id=1&state=abc'
 
 export function page(overrides: Partial<WorkspacePage> = {}): WorkspacePage {
@@ -65,6 +66,22 @@ export function page(overrides: Partial<WorkspacePage> = {}): WorkspacePage {
 
 export const SECOND = page({ id: 'p2', pageId: '1002', pageName: 'Shop Two', igBusinessId: null, igUsername: null })
 
+export const connection = (status: WorkspaceMetaConnection['status'] = 'ACTIVE'): WorkspaceMetaConnection => ({
+  status,
+  statusChangedAt: '2026-11-19T00:00:00.000Z',
+  tokenExpiresAt: status === 'REVOKED' ? null : '2027-01-18T00:00:00.000Z',
+})
+
+export interface PagesApiOptions {
+  /** The list's `connection` (M4-T9); default ACTIVE. */
+  connection?: WorkspaceMetaConnection | null
+  /**
+   * Adds `DELETE …/meta/connection`: answers with this; a 2xx answer empties the list and sets
+   * `connection: null` for the next GET (as the backend does).
+   */
+  onDisconnect?: () => Response | Promise<Response>
+}
+
 /**
  * A stateful pages API: GET lists `items`; PATCH …/toggle flips the Page (or answers with `onToggle`,
  * which gets the stored row) and the next GET reflects it.
@@ -73,11 +90,28 @@ export function pagesApi(
   items: WorkspacePage[],
   limit = 3,
   onToggle?: (item: WorkspacePage) => Response | Promise<Response>,
+  options: PagesApiOptions = {},
 ) {
   const state = items.map((item) => ({ ...item }))
+  let current = options.connection === undefined ? connection() : options.connection
   const list = () =>
-    json(200, { items: state, pageLimit: { limit, activeCount: state.filter((item) => item.isActive).length } })
+    json(200, {
+      items: state,
+      pageLimit: { limit, activeCount: state.filter((item) => item.isActive).length },
+      connection: current,
+    })
   const handlers: Record<string, () => Response | Promise<Response>> = { [PAGES]: list }
+  const { onDisconnect } = options
+  if (onDisconnect) {
+    handlers[DISCONNECT] = async () => {
+      const response = await onDisconnect()
+      if (response.ok) {
+        state.length = 0
+        current = null
+      }
+      return response
+    }
+  }
   for (const item of state) {
     handlers[toggleUrl(item.id)] = () => {
       if (onToggle) return onToggle(item)

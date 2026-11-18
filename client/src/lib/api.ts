@@ -53,7 +53,7 @@ async function errorFromResponse(response: Response): Promise<ApiError> {
   })
 }
 
-export async function apiFetch<T>(path: string, options: { method?: 'GET' | 'POST' | 'PATCH'; body?: unknown } = {}): Promise<T> {
+export async function apiFetch<T>(path: string, options: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown } = {}): Promise<T> {
   const { method = 'GET', body } = options
   let response: Response
   try {

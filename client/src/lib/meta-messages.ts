@@ -1,7 +1,12 @@
 import type { ApiError } from '@/lib/api'
 import type { ContentFn } from '@/lib/auth-errors'
 import { bnNumber } from '@/lib/language'
-import type { MetaOAuthErrorReason, MetaReturnSearch, PageToggleFailure } from '@/lib/meta-pages'
+import type {
+  MetaDisconnectResponse,
+  MetaOAuthErrorReason,
+  MetaReturnSearch,
+  PageToggleFailure,
+} from '@/lib/meta-pages'
 
 /**
  * Bilingual copy for the Meta connect flow and the Pages API (M3-T10; reused by `/pages` in M3-T11).
@@ -205,6 +210,8 @@ export function pageToggleErrorMessage(failure: PageToggleFailure, isActive: boo
     }
     case 'token-missing':
       return pageNeedsReconnectMessage(content)
+    case 'connection-needs-reauth':
+      return connectionNeedsReauthToggleMessage(content)
     case 'subscribe-failed':
       return content(
         'Facebook didn’t confirm the connection for this Page, so protection is still off. Try again in a moment. If it keeps failing, reconnect Facebook.',
@@ -223,4 +230,57 @@ export function pageToggleErrorMessage(failure: PageToggleFailure, isActive: boo
           : content('Couldn’t switch protection off.', 'সুরক্ষা বন্ধ করা যায়নি।')
       } ${failure.error.status === 403 ? pagesLoadErrorMessage(failure.error, content) : genericFailure(failure.error, content)}`
   }
+}
+
+/** Toggle refused with 409 `CONNECTION_NEEDS_REAUTH` (D9 soft block). */
+export function connectionNeedsReauthToggleMessage(content: ContentFn): string {
+  return content(
+    'Facebook needs to be reconnected before protection can be switched on. Reconnect Facebook, then try again.',
+    'সুরক্ষা চালু করার আগে ফেসবুক আবার কানেক্ট করতে হবে। ফেসবুক আবার কানেক্ট করুন, তারপর আবার চেষ্টা করুন।',
+  )
+}
+
+/** `/pages` banner for a connection that isn't ACTIVE (D9). */
+export function connectionBannerMessage(status: 'NEEDS_REAUTH' | 'REVOKED', content: ContentFn): string {
+  if (status === 'REVOKED') {
+    return content(
+      'ShieldComment was removed from your Facebook account, so protection is off on every Page and new comments aren’t coming in. Reconnect Facebook to turn protection back on.',
+      'আপনার ফেসবুক অ্যাকাউন্ট থেকে ShieldComment সরিয়ে দেওয়া হয়েছে, তাই সব পেজে সুরক্ষা বন্ধ এবং নতুন কমেন্ট আসছে না। সুরক্ষা আবার চালু করতে ফেসবুক আবার কানেক্ট করুন।',
+    )
+  }
+  return content(
+    'Your Facebook connection needs to be renewed. Pages that are on stay on, but no Page can be switched on until you reconnect Facebook.',
+    'আপনার ফেসবুক কানেকশন নবায়ন করা দরকার। চালু থাকা পেজগুলো চালু থাকবে, কিন্তু ফেসবুক আবার কানেক্ট না করা পর্যন্ত নতুন কোনো পেজ চালু করা যাবে না।',
+  )
+}
+
+/** `DELETE …/meta/connection` failures (shown inside the confirm dialog). */
+export function disconnectErrorMessage(error: ApiError, content: ContentFn): string {
+  const prefix = content('Facebook wasn’t disconnected.', 'ফেসবুক ডিসকানেক্ট হয়নি।')
+  if (error.status === 403) {
+    return `${prefix} ${content(
+      'Only workspace owners and admins can disconnect Facebook, and not during Admin Impersonation.',
+      'শুধু ওয়ার্কস্পেসের মালিক ও অ্যাডমিন ফেসবুক ডিসকানেক্ট করতে পারেন, অ্যাডমিন ইমপারসোনেশনের সময় নয়।',
+    )}`
+  }
+  if (error.status === 404) {
+    return `${prefix} ${content('This workspace couldn’t be found.', 'এই ওয়ার্কস্পেসটি খুঁজে পাওয়া যায়নি।')}`
+  }
+  return `${prefix} ${genericFailure(error, content)}`
+}
+
+/** After a successful disconnect (`disconnected: false` = nothing was connected any more). */
+export function disconnectSuccessMessage(result: MetaDisconnectResponse, content: ContentFn): string {
+  if (!result.disconnected) {
+    return content(
+      'Facebook was already disconnected. Nothing was removed.',
+      'ফেসবুক আগেই ডিসকানেক্ট করা ছিল। কিছু সরানো হয়নি।',
+    )
+  }
+  const pages = result.pagesDeleted
+  const comments = result.commentsKept
+  return content(
+    `Facebook disconnected. ${pages} ${pages === 1 ? 'Page was' : 'Pages were'} removed and ${comments} ${comments === 1 ? 'comment was' : 'comments were'} kept.`,
+    `ফেসবুক ডিসকানেক্ট হয়েছে। ${bnNumber(pages)}টি পেজ সরানো হয়েছে এবং ${bnNumber(comments)}টি কমেন্ট রাখা হয়েছে।`,
+  )
 }

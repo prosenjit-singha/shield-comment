@@ -59,7 +59,7 @@ describe('metaReturnNotices', () => {
 })
 
 describe('pageToggleFailure', () => {
-  it('reads PAGE_LIMIT_REACHED details and PAGE_TOKEN_MISSING', () => {
+  it('reads PAGE_LIMIT_REACHED details, PAGE_TOKEN_MISSING, META_SUBSCRIBE_FAILED and CONNECTION_NEEDS_REAUTH', () => {
     expect(
       pageToggleFailure(new ApiError(409, 'x', { code: 'PAGE_LIMIT_REACHED', details: { limit: 3, activeCount: 3 } })),
     ).toEqual({ kind: 'limit-reached', limit: 3, activeCount: 3 })
@@ -72,6 +72,11 @@ describe('pageToggleFailure', () => {
     expect(pageToggleFailure(new ApiError(502, 'x', { code: 'META_SUBSCRIBE_FAILED' }))).toEqual({
       kind: 'subscribe-failed',
     })
+    expect(pageToggleFailure(new ApiError(409, 'x', { code: 'CONNECTION_NEEDS_REAUTH' }))).toEqual({
+      kind: 'connection-needs-reauth',
+    })
+    const wrongStatus = new ApiError(400, 'x', { code: 'CONNECTION_NEEDS_REAUTH' })
+    expect(pageToggleFailure(wrongStatus)).toEqual({ kind: 'other', error: wrongStatus })
     const bareBadGateway = new ApiError(502, 'x')
     expect(pageToggleFailure(bareBadGateway)).toEqual({ kind: 'other', error: bareBadGateway })
     const other = new ApiError(409, 'x', { code: 'SOMETHING_ELSE' })
@@ -91,13 +96,19 @@ describe('setPageActive (C6 optimistic toggle)', () => {
     createdAt: '',
     updatedAt: '',
   })
-  const data: WorkspacePagesResponse = { items: [row('a', true), row('b', false)], pageLimit: { limit: 3, activeCount: 1 } }
+  const connection = { status: 'NEEDS_REAUTH', statusChangedAt: '', tokenExpiresAt: null } as const
+  const data: WorkspacePagesResponse = {
+    items: [row('a', true), row('b', false)],
+    pageLimit: { limit: 3, activeCount: 1 },
+    connection,
+  }
 
   it('moves the row and the active count together, leaving other rows as they are', () => {
     const on = setPageActive(data, 'b', true)!
     expect(on.items.map((item) => item.isActive)).toEqual([true, true])
     expect(on.pageLimit).toEqual({ limit: 3, activeCount: 2 })
     expect(on.items[0]).toBe(data.items[0])
+    expect(on.connection).toBe(connection) // kept (M4-T9)
     expect(data.items[1]!.isActive).toBe(false) // not mutated
     const back = setPageActive(on, 'b', false)!
     expect(back.items.map((item) => item.isActive)).toEqual([true, false])
