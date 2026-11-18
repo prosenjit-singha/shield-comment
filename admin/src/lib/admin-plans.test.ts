@@ -15,6 +15,7 @@ import {
   validatePlanDraft,
 } from './admin-plans'
 
+// Starter as 0007 seeded it, before the 0008 launch offer (a plain, offer-free fixture).
 const starter: AdminPlan = {
   id: '019a0000-0000-7000-8000-000000000002',
   slug: 'starter',
@@ -224,5 +225,19 @@ describe('formatters', () => {
       badge: 'Hot',
       discountPercent: null,
     })
+  })
+
+  it('previews the seeded launch offers (0008) from the stored plans', () => {
+    const seeded = (originalPriceBdt: number, offerPriceBdt: number | null, offerBadge: string | null) =>
+      pricePreview(draftFromPlan({ ...starter, originalPriceBdt, offerPriceBdt, offerBadge }))
+    expect(seeded(0, null, null)).toEqual({ price: 0, struck: null, badge: null, discountPercent: null })
+    expect(seeded(999, 499, '50% Launch Offer')).toEqual({
+      price: 499,
+      struck: 999,
+      badge: '50% Launch Offer',
+      discountPercent: 50,
+    })
+    expect(seeded(2499, 1499, '40% Off')).toEqual({ price: 1499, struck: 2499, badge: '40% Off', discountPercent: 40 })
+    expect(seeded(5999, 3999, '33% Off')).toEqual({ price: 3999, struck: 5999, badge: '33% Off', discountPercent: 33 })
   })
 })

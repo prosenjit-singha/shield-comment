@@ -60,6 +60,7 @@ export function PlanEditorCard({
       queryClient.setQueryData<AdminPlansResponse>(plansListKey, (old) => replacePlanInList(old, saved))
       onDraftChange(undefined)
       toast.success(`${saved.name} saved.`)
+      // `['admin','plans']` = the list and every plan audit history page (the new entry shows up).
       void queryClient.invalidateQueries({ queryKey: adminPlansKey })
     },
     onError: (err) => {

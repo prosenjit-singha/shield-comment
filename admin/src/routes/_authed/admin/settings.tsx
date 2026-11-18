@@ -3,6 +3,7 @@ import { createFileRoute, useBlocker } from '@tanstack/react-router'
 import { RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 import { PageHeader } from '@/components/placeholder-page'
+import { PlanAuditHistory } from '@/components/settings/plan-audit-history'
 import { PlanEditorCard } from '@/components/settings/plan-editor-card'
 import { Button } from '@/components/ui/button'
 import {
@@ -14,12 +15,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { planAuditQueryOptions } from '@/lib/admin-plan-audit'
 import { isDraftDirty, type PlanDraft, plansQueryOptions } from '@/lib/admin-plans'
 
 export const Route = createFileRoute('/_authed/admin/settings')({
   // Warm the cache without blocking the screen; the cards show skeletons meanwhile.
   loader: ({ context }) => {
     void context.queryClient.prefetchQuery(plansQueryOptions())
+    void context.queryClient.prefetchQuery(planAuditQueryOptions({ page: 1 }))
   },
   component: SettingsPage,
 })
@@ -27,6 +30,8 @@ export const Route = createFileRoute('/_authed/admin/settings')({
 /**
  * A7 (M2-T12): one editor card per plan, saved one plan at a time (`PATCH …/plans/:planId`).
  * Drafts live here, keyed by plan id, so leaving the page with unsaved changes can be blocked.
+ * Below the cards, the plan audit history (M2-T16); a save invalidates `['admin','plans']`, which
+ * covers the history queries too, so the new entry shows up.
  */
 function SettingsPage() {
   const query = useQuery(plansQueryOptions())
@@ -87,6 +92,8 @@ function SettingsPage() {
         Prices are monthly, in whole taka. The pricing page shows the original price struck through when an
         offer is set.
       </p>
+
+      <PlanAuditHistory plans={items ?? []} />
 
       <Dialog open={blocker.status === 'blocked'} onOpenChange={(open) => !open && blocker.reset?.()}>
         <DialogContent className="rounded-2xl sm:max-w-md">
