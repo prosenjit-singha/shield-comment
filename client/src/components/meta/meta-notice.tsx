@@ -1,7 +1,11 @@
-import { CircleAlert, CircleCheck, Info, TriangleAlert, WifiOff } from 'lucide-react'
+import { CircleAlert, CircleCheck, Info, RotateCw, TriangleAlert, WifiOff } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
+import { useLanguage } from '@/hooks/use-language'
+import { toApiError } from '@/lib/api'
+import { metaReturnNotices, pagesLoadErrorMessage, type NoticeTone } from '@/lib/meta-messages'
+import type { MetaReturnSearch } from '@/lib/meta-pages'
 import { cn } from '@/lib/utils'
-import type { NoticeTone } from '@/lib/meta-messages'
 
 const TONE_CLASS: Record<NoticeTone, string> = {
   success: 'border-primary/30 bg-primary/10',
@@ -50,5 +54,44 @@ export function MetaNotice({
         {action}
       </div>
     </div>
+  )
+}
+
+/** The notices for `?meta=connected[&skipped=N]` / `?meta=error&reason=` (D6 callback return). */
+export function MetaReturnNotices({ search }: { search: MetaReturnSearch }) {
+  const { content } = useLanguage()
+  return metaReturnNotices(search, content).map((notice) => (
+    <MetaNotice key={notice.kind} tone={notice.tone} kind={notice.kind}>
+      {notice.text}
+    </MetaNotice>
+  ))
+}
+
+/** `GET …/pages` failed: message + Try again (refetch). */
+export function PagesLoadErrorNotice({
+  error,
+  retrying,
+  onRetry,
+}: {
+  error: unknown
+  retrying: boolean
+  onRetry: () => void
+}) {
+  const { content } = useLanguage()
+  const apiError = toApiError(error)
+  return (
+    <MetaNotice
+      tone="error"
+      kind="pages-load"
+      network={apiError.isNetwork}
+      action={
+        <Button variant="outline" size="sm" className="h-9 shrink-0 px-4" onClick={onRetry} disabled={retrying}>
+          <RotateCw aria-hidden />
+          {content('Try again', 'আবার চেষ্টা করুন')}
+        </Button>
+      }
+    >
+      {pagesLoadErrorMessage(apiError, content)}
+    </MetaNotice>
   )
 }

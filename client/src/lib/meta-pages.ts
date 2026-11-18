@@ -97,6 +97,28 @@ export function workspacePagesQueryOptions(workspaceId: string) {
   })
 }
 
+/** `useMutation` key of every Page toggle in a workspace (`/pages` counts the ones in flight). */
+export const pageToggleMutationKey = (workspaceId: string) => ['workspace', workspaceId, 'pages', 'toggle'] as const
+
+/**
+ * The cached list with one Page switched to `isActive` and `pageLimit.activeCount` moved with it (C6
+ * optimistic toggle). Unchanged data when the Page is missing or already in that state, so the same
+ * call rolls back (`!isActive`) without touching rows other toggles changed meanwhile.
+ */
+export function setPageActive(
+  data: WorkspacePagesResponse | undefined,
+  pageRowId: string,
+  isActive: boolean,
+): WorkspacePagesResponse | undefined {
+  const target = data?.items.find((item) => item.id === pageRowId)
+  if (!data || !target || target.isActive === isActive) return data
+  const activeCount = Math.max(0, data.pageLimit.activeCount + (isActive ? 1 : -1))
+  return {
+    items: data.items.map((item) => (item.id === pageRowId ? { ...item, isActive } : item)),
+    pageLimit: { ...data.pageLimit, activeCount },
+  }
+}
+
 export function togglePage(workspaceId: string, pageRowId: string, isActive: boolean): Promise<TogglePageResponse> {
   return apiFetch<TogglePageResponse>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/pages/${encodeURIComponent(pageRowId)}/toggle`,

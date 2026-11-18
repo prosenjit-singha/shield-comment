@@ -1,104 +1,27 @@
-import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
-import {
-  createMemoryHistory,
-  createRootRouteWithContext,
-  createRoute,
-  createRouter,
-  Outlet,
-  RouterProvider,
-} from '@tanstack/react-router'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Language } from '@/lib/language'
-import type { MetaOAuthErrorReason, WorkspacePage } from '@/lib/meta-pages'
-import { createQueryClient } from '@/lib/query-client'
-import { createLanguageStore, LanguageStoreContext } from '@/stores/language-store'
-import { useUiStore } from '@/stores/ui-store'
+import type { MetaOAuthErrorReason } from '@/lib/meta-pages'
+import {
+  IMPERSONATED,
+  META_DIALOG,
+  OAUTH_URL,
+  PAGES,
+  SECOND,
+  SESSION,
+  page,
+  pagesApi,
+  renderAppRoute,
+  stubAppGlobals,
+  toggleUrl,
+} from '@/test/app-routes'
 import { apiCalls, callsTo, fetchMock, json, mockApi } from '@/test/auth-routes'
-import { Route as AppRoute } from './_app'
-import { Route as DashboardRoute } from './_app/dashboard'
-import { Route as OnboardingRoute } from './_app/onboarding'
 
 // The server-render session function needs the Start compiler; the browser path never calls it.
 vi.mock('@/server/session', () => ({ getServerSession: vi.fn() }))
 
-// The real `_app` layout + `/onboarding` + `/dashboard` route files under a bare root (the generated
-// tree pulls in the Start server functions), with a stub /login.
-const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({ component: Outlet })
-const appRoute = AppRoute.update({ id: '/_app', getParentRoute: () => rootRoute } as never)
-const onboardingRoute = OnboardingRoute.update({
-  id: '/onboarding',
-  path: '/onboarding',
-  getParentRoute: () => appRoute,
-} as never)
-const dashboardRoute = DashboardRoute.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => appRoute,
-} as never)
-const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: '/login', component: () => <p>Login stub</p> })
-const routeTree = rootRoute.addChildren([appRoute.addChildren([onboardingRoute, dashboardRoute]), loginRoute])
-
-const USER = { id: 'u1', email: 'owner@shop.bd', name: 'Rahim', emailVerified: false }
-const SESSION = { session: { id: 's1', userId: 'u1', impersonatedBy: null, activeOrganizationId: 'w1' }, user: USER }
-const IMPERSONATED = { session: { ...SESSION.session, id: 's2', impersonatedBy: 'admin-1' }, user: USER }
-
-const PAGES = '/api/workspaces/w1/pages'
-const OAUTH_URL = '/api/workspaces/w1/meta/oauth/url'
-const toggleUrl = (id: string) => `${PAGES}/${id}/toggle`
-const META_DIALOG = 'https://www.facebook.com/v26.0/dialog/oauth?client_id=1&state=abc'
-
-function page(overrides: Partial<WorkspacePage> = {}): WorkspacePage {
-  return {
-    id: 'p1',
-    pageId: '1001',
-    pageName: 'Rahim Fashion',
-    igBusinessId: '17841',
-    igUsername: 'rahimfashion',
-    isActive: false,
-    hasToken: true,
-    createdAt: '2026-11-18T00:00:00.000Z',
-    updatedAt: '2026-11-18T00:00:00.000Z',
-    ...overrides,
-  }
-}
-
-const SECOND = page({ id: 'p2', pageId: '1002', pageName: 'Shop Two', igBusinessId: null, igUsername: null })
-
-/**
- * A stateful pages API: GET lists `items`; PATCH …/toggle flips the Page (or answers with `onToggle`)
- * and the next GET reflects it.
- */
-function pagesApi(items: WorkspacePage[], limit = 3, onToggle?: () => Response) {
-  const state = items.map((item) => ({ ...item }))
-  const list = () =>
-    json(200, { items: state, pageLimit: { limit, activeCount: state.filter((item) => item.isActive).length } })
-  const handlers: Record<string, () => Response> = { [PAGES]: list }
-  for (const item of state) {
-    handlers[toggleUrl(item.id)] = () => {
-      if (onToggle) return onToggle()
-      item.isActive = !item.isActive
-      return json(200, { page: item, changed: true })
-    }
-  }
-  return handlers
-}
-
-function renderOnboarding(path = '/onboarding', language: Language = 'en') {
-  const queryClient = createQueryClient()
-  const defaults = queryClient.getDefaultOptions()
-  queryClient.setDefaultOptions({ ...defaults, queries: { ...defaults.queries, retry: false } })
-  const history = createMemoryHistory({ initialEntries: [path] })
-  const router = createRouter({ routeTree, history, context: { queryClient } })
-  render(
-    <LanguageStoreContext value={createLanguageStore(language)}>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
-    </LanguageStoreContext>,
-  )
-  return { router, history, queryClient }
-}
+// Real `_app` + `/onboarding` + `/dashboard` (harness: `src/test/app-routes.tsx`).
+const renderOnboarding = (path = '/onboarding', language: Language = 'en') => renderAppRoute(path, language)
 
 const copy = {
   en: {
@@ -206,15 +129,7 @@ const switchFor = (name: string, language: Language) =>
 beforeEach(() => {
   fetchMock.mockReset()
   vi.stubGlobal('fetch', fetchMock)
-  vi.stubGlobal('scrollTo', () => {})
-  // jsdom has no matchMedia; the top bar's theme toggle resolves 'system' with it.
-  vi.stubGlobal('matchMedia', (query: string) => ({
-    matches: false,
-    media: query,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }))
-  useUiStore.setState({ theme: 'light' })
+  stubAppGlobals()
 })
 afterEach(() => {
   cleanup()

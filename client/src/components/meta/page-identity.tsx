@@ -1,6 +1,8 @@
 import { Badge } from '@/components/ui/badge'
 import { useLanguage } from '@/hooks/use-language'
-import type { WorkspacePage } from '@/lib/meta-pages'
+import { bnNumber } from '@/lib/language'
+import type { WorkspacePage, WorkspacePageLimit } from '@/lib/meta-pages'
+import { cn } from '@/lib/utils'
 import { FacebookIcon, InstagramIcon } from './brand-icons'
 
 /** Facebook Page name + its linked Instagram account (D4: IG comes through the Page). */
@@ -46,5 +48,37 @@ export function PageStatusPill({ page }: { page: WorkspacePage }) {
     <Badge variant="outline" data-status="off">
       {content('Off', 'বন্ধ')}
     </Badge>
+  )
+}
+
+/** Instagram linked / not linked (D4: the IG Business account comes through the Page). */
+export function InstagramPill({ page }: { page: WorkspacePage }) {
+  const { content } = useLanguage()
+  return page.igBusinessId ? (
+    <Badge variant="secondary" data-instagram="linked">
+      <InstagramIcon data-icon="inline-start" />
+      {content('Instagram linked', 'ইনস্টাগ্রাম যুক্ত')}
+    </Badge>
+  ) : (
+    <Badge variant="outline" data-instagram="none" className="text-muted-foreground">
+      <InstagramIcon data-icon="inline-start" />
+      {content('No Instagram', 'ইনস্টাগ্রাম নেই')}
+    </Badge>
+  )
+}
+
+/** `activeCount / limit` of the plan's `connectedPages` (D10). */
+export function PageLimitPill({ pageLimit, className }: { pageLimit: WorkspacePageLimit; className?: string }) {
+  const { content } = useLanguage()
+  return (
+    <span
+      data-testid="page-limit"
+      className={cn('rounded-full border bg-muted px-3 py-1 text-xs font-medium whitespace-nowrap text-foreground', className)}
+    >
+      {content(
+        `${pageLimit.activeCount} / ${pageLimit.limit} Pages on`,
+        `${bnNumber(pageLimit.activeCount)} / ${bnNumber(pageLimit.limit)}টি পেজ চালু`,
+      )}
+    </span>
   )
 }

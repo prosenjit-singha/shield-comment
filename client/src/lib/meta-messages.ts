@@ -179,6 +179,14 @@ export function pagesLoadErrorMessage(error: ApiError, content: ContentFn): stri
   return `${content('Couldn’t load your Pages.', 'আপনার পেজগুলো লোড করা যায়নি।')} ${genericFailure(error, content)}`
 }
 
+/** A Page without a stored token (`hasToken: false`, or the toggle's 409 `PAGE_TOKEN_MISSING`). */
+export function pageNeedsReconnectMessage(content: ContentFn): string {
+  return content(
+    'Facebook no longer gives us access to this Page. Reconnect Facebook and include this Page, then switch it on.',
+    'ফেসবুক এই পেজে আর অ্যাক্সেস দিচ্ছে না। ফেসবুক আবার কানেক্ট করুন এবং এই পেজটি সিলেক্ট করুন, তারপর চালু করুন।',
+  )
+}
+
 /** `PATCH …/pages/:id/toggle` failures, incl. the 409 plan-limit / missing-token cases. */
 export function pageToggleErrorMessage(failure: PageToggleFailure, isActive: boolean, content: ContentFn): string {
   switch (failure.kind) {
@@ -196,10 +204,7 @@ export function pageToggleErrorMessage(failure: PageToggleFailure, isActive: boo
       )
     }
     case 'token-missing':
-      return content(
-        'Facebook no longer gives us access to this Page. Reconnect Facebook and include this Page, then switch it on.',
-        'ফেসবুক এই পেজে আর অ্যাক্সেস দিচ্ছে না। ফেসবুক আবার কানেক্ট করুন এবং এই পেজটি সিলেক্ট করুন, তারপর চালু করুন।',
-      )
+      return pageNeedsReconnectMessage(content)
     case 'other':
       if (failure.error.status === 404) {
         return content(

@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '@/lib/api'
 import { metaReturnNotices } from '@/lib/meta-messages'
-import { META_OAUTH_ERROR_REASONS, pageToggleFailure, validateMetaReturnSearch } from '@/lib/meta-pages'
+import {
+  META_OAUTH_ERROR_REASONS,
+  pageToggleFailure,
+  setPageActive,
+  validateMetaReturnSearch,
+  type WorkspacePage,
+  type WorkspacePagesResponse,
+} from '@/lib/meta-pages'
 
 const en = (english: string) => english
 const bn = (_: string, bangla: string) => bangla
@@ -64,5 +71,37 @@ describe('pageToggleFailure', () => {
     expect(pageToggleFailure(new ApiError(409, 'x', { code: 'PAGE_TOKEN_MISSING' }))).toEqual({ kind: 'token-missing' })
     const other = new ApiError(409, 'x', { code: 'SOMETHING_ELSE' })
     expect(pageToggleFailure(other)).toEqual({ kind: 'other', error: other })
+  })
+})
+
+describe('setPageActive (C6 optimistic toggle)', () => {
+  const row = (id: string, isActive: boolean): WorkspacePage => ({
+    id,
+    pageId: '1',
+    pageName: id,
+    igBusinessId: null,
+    igUsername: null,
+    isActive,
+    hasToken: true,
+    createdAt: '',
+    updatedAt: '',
+  })
+  const data: WorkspacePagesResponse = { items: [row('a', true), row('b', false)], pageLimit: { limit: 3, activeCount: 1 } }
+
+  it('moves the row and the active count together, leaving other rows as they are', () => {
+    const on = setPageActive(data, 'b', true)!
+    expect(on.items.map((item) => item.isActive)).toEqual([true, true])
+    expect(on.pageLimit).toEqual({ limit: 3, activeCount: 2 })
+    expect(on.items[0]).toBe(data.items[0])
+    expect(data.items[1]!.isActive).toBe(false) // not mutated
+    const back = setPageActive(on, 'b', false)!
+    expect(back.items.map((item) => item.isActive)).toEqual([true, false])
+    expect(back.pageLimit.activeCount).toBe(1)
+  })
+
+  it('returns the same data when nothing changes (already in that state, unknown row, no cache)', () => {
+    expect(setPageActive(data, 'a', true)).toBe(data)
+    expect(setPageActive(data, 'zzz', true)).toBe(data)
+    expect(setPageActive(undefined, 'a', false)).toBeUndefined()
   })
 })

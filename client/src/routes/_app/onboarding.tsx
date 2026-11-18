@@ -1,27 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowRight, Check, LoaderCircle, RotateCw } from 'lucide-react'
-import { FacebookIcon } from '@/components/meta/brand-icons'
-import { MetaNotice } from '@/components/meta/meta-notice'
-import { PageIdentity, PageStatusPill } from '@/components/meta/page-identity'
+import { ArrowRight, Check } from 'lucide-react'
+import {
+  ImpersonationConnectNotice,
+  MetaConnectButton,
+  MetaConnectError,
+} from '@/components/meta/meta-connect'
+import { MetaNotice, MetaReturnNotices, PagesLoadErrorNotice } from '@/components/meta/meta-notice'
+import { PageLimitPill } from '@/components/meta/page-identity'
+import { PageToggleRow } from '@/components/meta/page-toggle-row'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
 import { useLanguage } from '@/hooks/use-language'
-import { toApiError, type ApiError } from '@/lib/api'
-import { bnNumber } from '@/lib/language'
+import { useMetaConnect } from '@/hooks/use-meta-connect'
+import type { ApiError } from '@/lib/api'
 import {
-  connectErrorMessage,
-  impersonationConnectNotice,
-  metaReturnNotices,
-  pageToggleErrorMessage,
-  pagesLoadErrorMessage,
-} from '@/lib/meta-messages'
-import {
-  fetchMetaOAuthUrl,
-  goToExternalUrl,
-  pageToggleFailure,
   togglePage,
   validateMetaReturnSearch,
   workspacePagesQueryKey,
@@ -101,10 +95,7 @@ function OnboardingWizard({
   const queryClient = useQueryClient()
   const pages = useQuery(workspacePagesQueryOptions(workspaceId))
 
-  const connect = useMutation<string, ApiError>({
-    mutationFn: () => fetchMetaOAuthUrl(workspaceId, '/onboarding'),
-    onSuccess: (url) => goToExternalUrl(url),
-  })
+  const connect = useMetaConnect(workspaceId, '/onboarding')
 
   // No optimistic update here (that's C6): the switch moves once the refetched list says so. The PATCH
   // answer has no `pageLimit`, so the list (+ count) is always refetched, after errors too (a 409 means
@@ -119,17 +110,12 @@ function OnboardingWizard({
   const connected = items.length > 0
   const activeCount = pageLimit?.activeCount ?? 0
   const currentStep = !connected ? 1 : activeCount === 0 ? 2 : 3
-  const notices = metaReturnNotices(search, content)
 
   return (
     <>
       <Stepper current={currentStep} />
 
-      {notices.map((notice) => (
-        <MetaNotice key={notice.kind} tone={notice.tone} kind={notice.kind}>
-          {notice.text}
-        </MetaNotice>
-      ))}
+      <MetaReturnNotices search={search} />
 
       <Card className="gap-4 rounded-3xl">
         <CardHeader className="gap-1.5">
@@ -170,35 +156,21 @@ function OnboardingWizard({
             </ul>
           )}
           {impersonated ? (
-            <MetaNotice tone="info" kind="impersonation-connect-blocked">
-              {impersonationConnectNotice(content)}
-            </MetaNotice>
+            <ImpersonationConnectNotice />
           ) : (
             <div>
-              <Button
+              <MetaConnectButton
+                connect={connect}
                 variant={connected ? 'outline' : 'default'}
-                className="h-11 px-6"
-                disabled={connect.isPending || connect.isSuccess}
-                onClick={() => connect.mutate()}
-              >
-                {connect.isPending || connect.isSuccess ? (
-                  <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden />
-                ) : (
-                  <FacebookIcon className="size-4" />
-                )}
-                {connect.isPending || connect.isSuccess
-                  ? content('Opening Facebook…', 'ফেসবুক খোলা হচ্ছে…')
-                  : connected
+                label={
+                  connected
                     ? content('Reconnect Facebook', 'আবার ফেসবুক কানেক্ট করুন')
-                    : content('Continue with Facebook', 'ফেসবুক দিয়ে চালিয়ে যান')}
-              </Button>
+                    : content('Continue with Facebook', 'ফেসবুক দিয়ে চালিয়ে যান')
+                }
+              />
             </div>
           )}
-          {connect.error && !connect.isPending ? (
-            <MetaNotice tone="error" kind={`connect:${connect.error.status}`} network={connect.error.isNetwork}>
-              {connectErrorMessage(connect.error, content)}
-            </MetaNotice>
-          ) : null}
+          <MetaConnectError connect={connect} />
         </CardContent>
       </Card>
 
@@ -217,17 +189,7 @@ function OnboardingWizard({
                 'নতুন পেজ বন্ধ অবস্থায় থাকে। যেগুলো ShieldComment নজরে রাখবে সেগুলো চালু করুন।',
               )}
             </span>
-            {pageLimit ? (
-              <span
-                data-testid="page-limit"
-                className="rounded-full border bg-muted px-3 py-1 text-xs font-medium text-foreground"
-              >
-                {content(
-                  `${pageLimit.activeCount} / ${pageLimit.limit} Pages on`,
-                  `${bnNumber(pageLimit.activeCount)} / ${bnNumber(pageLimit.limit)}টি পেজ চালু`,
-                )}
-              </span>
-            ) : null}
+            {pageLimit ? <PageLimitPill pageLimit={pageLimit} /> : null}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -237,25 +199,7 @@ function OnboardingWizard({
               <Skeleton className="h-16 w-full rounded-2xl" />
             </div>
           ) : pages.isError ? (
-            <MetaNotice
-              tone="error"
-              kind="pages-load"
-              network={toApiError(pages.error).isNetwork}
-              action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 shrink-0 px-4"
-                  onClick={() => void pages.refetch()}
-                  disabled={pages.isFetching}
-                >
-                  <RotateCw aria-hidden />
-                  {content('Try again', 'আবার চেষ্টা করুন')}
-                </Button>
-              }
-            >
-              {pagesLoadErrorMessage(toApiError(pages.error), content)}
-            </MetaNotice>
+            <PagesLoadErrorNotice error={pages.error} retrying={pages.isFetching} onRetry={() => void pages.refetch()} />
           ) : items.length === 0 ? (
             <p className="rounded-2xl border border-dashed px-4 py-6 text-center text-sm text-pretty text-muted-foreground">
               {search.meta === 'connected'
@@ -274,10 +218,13 @@ function OnboardingWizard({
                 <PageToggleRow
                   key={page.id}
                   page={page}
-                  busy={toggle.isPending}
+                  disabled={toggle.isPending}
                   pending={toggle.isPending && toggle.variables?.page.id === page.id}
-                  error={!toggle.isPending && toggle.variables?.page.id === page.id ? toggle.error : null}
-                  failedTarget={toggle.variables?.isActive ?? true}
+                  failure={
+                    !toggle.isPending && toggle.error && toggle.variables?.page.id === page.id
+                      ? { error: toggle.error, target: toggle.variables.isActive }
+                      : null
+                  }
                   onToggle={(isActive) => toggle.mutate({ page, isActive })}
                 />
               ))}
@@ -288,50 +235,6 @@ function OnboardingWizard({
 
       <WizardFooter canFinish={activeCount > 0} />
     </>
-  )
-}
-
-function PageToggleRow({
-  page,
-  busy,
-  pending,
-  error,
-  failedTarget,
-  onToggle,
-}: {
-  page: WorkspacePage
-  busy: boolean
-  pending: boolean
-  error: ApiError | null
-  failedTarget: boolean
-  onToggle: (isActive: boolean) => void
-}) {
-  const { content } = useLanguage()
-  const failure = error ? pageToggleFailure(error) : null
-  return (
-    <li className="flex flex-col gap-2">
-      <div className="flex items-center gap-3 rounded-2xl border bg-card p-3 sm:p-4">
-        <PageIdentity page={page} />
-        <PageStatusPill page={page} />
-        {pending ? <LoaderCircle className="size-4 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden /> : null}
-        <Switch
-          checked={page.isActive}
-          disabled={busy}
-          aria-busy={pending || undefined}
-          aria-label={content(`Protect ${page.pageName}`, `${page.pageName} সুরক্ষিত রাখুন`)}
-          onCheckedChange={(checked) => onToggle(checked)}
-        />
-      </div>
-      {failure && error ? (
-        <MetaNotice
-          tone="error"
-          kind={failure.kind === 'other' ? `toggle:${error.status}` : failure.kind}
-          network={error.isNetwork}
-        >
-          {pageToggleErrorMessage(failure, failedTarget, content)}
-        </MetaNotice>
-      ) : null}
-    </li>
   )
 }
 
