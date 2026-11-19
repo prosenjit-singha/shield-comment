@@ -32,7 +32,6 @@ export interface AiUsageRow {
   calls: number;
   inputTokens: number;
   outputTokens: number;
-  credits: number;
   failedCalls: number;
   failuresByKind: Readonly<Record<string, number>>;
   latencyMsSum: number;
@@ -70,7 +69,6 @@ interface Accumulator {
   failuresByKind: Record<string, number>;
   inputTokens: number;
   outputTokens: number;
-  credits: number;
   latencyMsSum: number;
   latencyMsMax: number;
 }
@@ -82,7 +80,6 @@ function emptyAccumulator(): Accumulator {
     failuresByKind: {},
     inputTokens: 0,
     outputTokens: 0,
-    credits: 0,
     latencyMsSum: 0,
     latencyMsMax: 0,
   };
@@ -98,7 +95,6 @@ function add(
   acc.failedCalls += row.failedCalls;
   acc.inputTokens += row.inputTokens;
   acc.outputTokens += row.outputTokens;
-  acc.credits += row.credits;
   acc.latencyMsSum += row.latencyMsSum;
   acc.latencyMsMax = Math.max(acc.latencyMsMax, row.latencyMsMax);
   for (const [kind, n] of Object.entries(row.failuresByKind)) {
@@ -124,7 +120,6 @@ function stats(
     ),
     inputTokens: acc.inputTokens,
     outputTokens: acc.outputTokens,
-    credits: acc.credits,
     avgLatencyMs:
       acc.calls > 0 ? Math.round(acc.latencyMsSum / acc.calls) : null,
     maxLatencyMs: acc.calls > 0 ? acc.latencyMsMax : null,

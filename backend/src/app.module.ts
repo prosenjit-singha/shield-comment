@@ -23,7 +23,6 @@ import { WebhooksModule } from './webhooks/webhooks.module.js';
 import { CommentsModule } from './comments/comments.module.js';
 import { MetaCallbacksModule } from './meta-callbacks/meta-callbacks.module.js';
 import { ModerationModule } from './moderation/moderation.module.js';
-import { CreditsModule } from './credits/credits.module.js';
 import { WalletModule } from './wallet/wallet.module.js';
 import { BillingModule } from './billing/billing.module.js';
 import { PlansModule } from './plans/plans.module.js';
@@ -74,7 +73,6 @@ import { PlansModule } from './plans/plans.module.js';
     CommentsModule,
     MetaCallbacksModule,
     ModerationModule,
-    CreditsModule,
     WalletModule,
     BillingModule,
     PlansModule,

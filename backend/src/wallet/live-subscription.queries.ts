@@ -53,8 +53,11 @@ const liveColumns = {
   trialCommentLimit: plans.trialCommentLimit,
 };
 
-/** A subscription row that is live at `now`: TRIALING / ACTIVE and `now < current_term_end`. */
-function isLiveAt(now: Date) {
+/**
+ * A subscription row that is live at `now`: TRIALING / ACTIVE and `now < current_term_end`. Also
+ * used as a SQL condition by the admin reads (PW-T6b: client plan filter, dashboard plan tiers).
+ */
+export function isLiveAt(now: Date) {
   return and(
     inArray(subscriptions.status, [...LIVE_SUBSCRIPTION_STATUSES]),
     gt(subscriptions.currentTermEnd, now),

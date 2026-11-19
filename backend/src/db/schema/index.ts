@@ -16,5 +16,4 @@ export * from './meta-data-deletion.js';
 export * from './ai-settings.js';
 export * from './moderation.js';
 export * from './post-contexts.js';
-export * from './credits.js';
 export * from './wallet.js';

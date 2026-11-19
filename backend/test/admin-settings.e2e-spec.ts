@@ -8,7 +8,7 @@ import type {
   AdminPlansResponse,
   AdminPlanUpdateResponse,
 } from '../src/admin/dto/plans.dto.js';
-import { planAuditLogs, plans, workspaces } from '../src/db/schema/index.js';
+import { planAuditLogs, plans } from '../src/db/schema/index.js';
 import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
 
@@ -946,26 +946,13 @@ describe('Admin plan settings (e2e)', () => {
     });
   });
 
-  describe('workspaces.plan_id', () => {
-    it('is null by default and a plan in use cannot be deleted (FK restrict)', async () => {
-      const [ws] = await actors.db
-        .select({ planId: workspaces.planId })
-        .from(workspaces)
-        .where(eq(workspaces.id, client.workspaceId));
-      expect(ws).toEqual({ planId: null });
-
-      const free = planBySlug('free');
-      await actors.db
-        .update(workspaces)
-        .set({ planId: free.id })
-        .where(eq(workspaces.id, client.workspaceId));
+  describe('plans in use', () => {
+    it('a plan with subscriptions cannot be deleted (FK restrict; PW-T6b dropped workspaces.plan_id)', async () => {
+      // Every sign-up runs a Starter trial (PW-T3).
+      const starter = planBySlug('starter');
       await expect(
-        actors.db.delete(plans).where(eq(plans.id, free.id)),
+        actors.db.delete(plans).where(eq(plans.id, starter.id)),
       ).rejects.toThrow();
-      await actors.db
-        .update(workspaces)
-        .set({ planId: null })
-        .where(eq(workspaces.id, client.workspaceId));
     });
   });
 });

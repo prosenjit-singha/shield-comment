@@ -66,8 +66,9 @@ export interface CommentsPoint {
 }
 
 /**
- * Donut: ACTIVE clients per plan right now (M2-T12b). Only plans with ≥ 1 client, by plan
- * `sortOrder`; workspaces without a plan are not counted, so `[]` until Module 8 assigns plans.
+ * Donut: ACTIVE clients per plan right now (M2-T12b), the plan of each workspace's **live**
+ * subscription (PW-T6b; a trial counts as Starter). Only plans with ≥ 1 client, by plan
+ * `sortOrder`; workspaces without a live plan (no account, ended) are not counted.
  */
 export interface PlanTierSlice {
   /** Plan name. */

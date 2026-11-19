@@ -160,7 +160,7 @@ export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
   }),
 }));
 
-/** Reverse side of `subscriptions.plan` (merged with `plansRelations` in workspaces.ts). */
+/** Reverse side of `subscriptions.plan` (the only `plans` relations since PW-T6b). */
 export const planSubscriptionsRelations = relations(plans, ({ many }) => ({
   subscriptions: many(subscriptions),
 }));

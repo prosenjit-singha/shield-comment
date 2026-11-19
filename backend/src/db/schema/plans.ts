@@ -12,8 +12,9 @@ import { id, timestamps } from './columns.js';
 /**
  * Subscription plans (M2-T11, user decision 2026-11-18). Built in Module 2 so the A7 Settings
  * screen can edit prices and limits; Module 8 adds subscriptions/payments on top. A workspace
- * points at its plan through the nullable `workspaces.plan_id` (`null` = no plan yet); the
- * relations live in workspaces.ts so this file has no imports from other schema files.
+ * gets its plan from its billing account's live subscription (PW-T3…T6b; `workspaces.plan_id`
+ * was dropped by migration 0025); the relations live in billing.ts so this file has no imports
+ * from other schema files.
  *
  * The four tiers (free/starter/growth/pro) are seeded by migration `0007_seed_plans` with
  * `ON CONFLICT (slug) DO NOTHING`, so admin edits are never overwritten. `0008_plan_launch_offers`

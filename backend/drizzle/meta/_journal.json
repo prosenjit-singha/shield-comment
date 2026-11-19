@@ -176,6 +176,13 @@
       "when": 1795108933382,
       "tag": "0024_comments_drop_credits_charged",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1795111398509,
+      "tag": "0025_drop_plan_id_and_credits",
+      "breakpoints": true
     }
   ]
 }

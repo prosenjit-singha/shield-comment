@@ -305,8 +305,8 @@ export function listCommentModerationActions(
 }
 
 /**
- * One AI usage observation (or a batch) for `daily_ai_usage` (D14). No credits since PW-T4
- * (PW-D1): the `credits` column keeps its default 0 until PW-T6b drops it.
+ * One AI usage observation (or a batch) for `daily_ai_usage` (D14). No credits (PW-D1: PW-T4
+ * stopped writing them, PW-T6b / migration 0025 dropped the column).
  */
 export interface DailyAiUsageDelta {
   /** Dhaka day (`dhakaDayKey()`). */

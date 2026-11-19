@@ -340,7 +340,6 @@ describe('AdminSystemService', () => {
       calls: 10,
       inputTokens: 1_000_000,
       outputTokens: 100_000,
-      credits: 12,
       failedCalls: 1,
       failuresByKind: { timeout: 1 },
       latencyMsSum: 5000,

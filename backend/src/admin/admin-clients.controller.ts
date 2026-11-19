@@ -32,10 +32,11 @@ export class AdminClientsController {
   ) {}
 
   /**
-   * `{ items: [{ id, name, slug, status, createdAt, plan, owner, memberCount }], total, skip, take }`
-   * (`plan` = `{ id, slug, name } | null`). Filters: `q` (name/slug/owner email/owner name),
-   * `status`, `createdFrom`/`createdTo`, `plan` (slug or `none`; unknown slug → 400);
-   * `sort` = newest (default) | oldest | name.
+   * `{ items: [{ id, name, slug, status, createdAt, plan, subscription, comments, owner,
+   * memberCount }], total, skip, take }` (PW-T6b: `plan` = the live subscription's
+   * `{ id, slug, name } | null`, see `ClientBilling`). Filters: `q` (name/slug/owner email/owner
+   * name), `status`, `createdFrom`/`createdTo`, `plan` (slug on the live subscription, or `none` =
+   * no live plan; unknown slug → 400); `sort` = newest (default) | oldest | name.
    */
   @Get()
   list(@Query() query: ListClientsQueryDto) {

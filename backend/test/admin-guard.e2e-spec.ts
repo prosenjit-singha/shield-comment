@@ -87,8 +87,8 @@ describe('Super admin guard (e2e)', () => {
     expect(mine).toBeDefined();
     for (const item of res.body.items as Record<string, unknown>[]) {
       expect(Object.keys(item).sort()).toEqual([
+        'comments',
         'createdAt',
-        'credits',
         'id',
         'memberCount',
         'name',
@@ -96,6 +96,7 @@ describe('Super admin guard (e2e)', () => {
         'plan',
         'slug',
         'status',
+        'subscription',
       ]);
       if (item.plan !== null) {
         expect(Object.keys(item.plan as object).sort()).toEqual([

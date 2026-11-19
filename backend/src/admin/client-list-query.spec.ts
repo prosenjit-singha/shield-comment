@@ -82,19 +82,41 @@ describe('clientListWhere', () => {
   });
 });
 
-describe('clientListWhere plan filter', () => {
+describe('clientListWhere plan filter (live subscription, PW-T6b)', () => {
   const PLAN = '019a0000-0000-7000-8000-0000000000b1';
+  const NOW = new Date('2026-11-20T06:00:00.000Z');
+  const where = (filters: Parameters<typeof clientListWhere>[1]) =>
+    db
+      .select({ id: workspaces.id })
+      .from(workspaces)
+      .where(clientListWhere(db, filters, NOW))
+      .toSQL();
+  const live =
+    'select 1 from "subscriptions" where ("subscriptions"."billing_account_id" = "workspaces"."billing_account_id" and ("subscriptions"."status" in ($1, $2) and "subscriptions"."current_term_end" > $3)';
 
-  it('null = workspaces without a plan, an id = that plan, undefined = any', () => {
-    expect(whereSql({ planId: null }).sql).toContain(
-      'where "workspaces"."plan_id" is null',
+  it('an id = the account has a live subscription on that plan', () => {
+    const { sql, params } = where({ planId: PLAN, status: 'ACTIVE' });
+    expect(sql).toContain(
+      'where ("workspaces"."status" = $1 and exists (select 1 from "subscriptions" where ("subscriptions"."billing_account_id" = "workspaces"."billing_account_id" and ("subscriptions"."status" in ($2, $3) and "subscriptions"."current_term_end" > $4) and "subscriptions"."plan_id" = $5)))',
     );
-    const byId = whereSql({ planId: PLAN, status: 'ACTIVE' });
-    expect(byId.sql).toContain(
-      'where ("workspaces"."status" = $1 and "workspaces"."plan_id" = $2)',
-    );
-    expect(byId.params).toEqual(['ACTIVE', PLAN]);
-    expect(clientListWhere(db, { planId: undefined })).toBeUndefined();
+    expect(params).toEqual([
+      'ACTIVE',
+      'TRIALING',
+      'ACTIVE',
+      NOW.toISOString(),
+      PLAN,
+    ]);
+    expect(sql).not.toContain('plan_id" is null');
+  });
+
+  it('null (`none`) = no live subscription: no account, ended or never', () => {
+    const { sql, params } = where({ planId: null });
+    expect(sql).toContain(`where not exists (${live}))`);
+    expect(params).toEqual(['TRIALING', 'ACTIVE', NOW.toISOString()]);
+  });
+
+  it('undefined = any plan (no condition)', () => {
+    expect(clientListWhere(db, { planId: undefined }, NOW)).toBeUndefined();
   });
 });
 

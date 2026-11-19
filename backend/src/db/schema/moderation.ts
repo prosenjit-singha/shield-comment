@@ -243,7 +243,6 @@ export const dailyAiUsage = pgTable(
     calls: integer().notNull().default(0),
     inputTokens: bigint({ mode: 'number' }).notNull().default(0),
     outputTokens: bigint({ mode: 'number' }).notNull().default(0),
-    credits: bigint({ mode: 'number' }).notNull().default(0),
     /** Failed calls in total (= sum of `failures_by_kind`). */
     failedCalls: integer().notNull().default(0),
     failuresByKind: jsonb().$type<AiFailureCounts>().notNull().default({}),
@@ -266,7 +265,6 @@ export const dailyAiUsage = pgTable(
           'calls',
           'input_tokens',
           'output_tokens',
-          'credits',
           'failed_calls',
           'latency_ms_sum',
           'latency_ms_max',

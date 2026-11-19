@@ -20,7 +20,6 @@ function row(day: string, overrides: Partial<AiUsageRow> = {}): AiUsageRow {
     calls: 4,
     inputTokens: 2000,
     outputTokens: 400,
-    credits: 5,
     failedCalls: 0,
     failuresByKind: {},
     latencyMsSum: 2000,
@@ -78,7 +77,6 @@ describe('summarizeAiUsageWindow', () => {
         failuresByKind: {},
         inputTokens: 0,
         outputTokens: 0,
-        credits: 0,
         avgLatencyMs: null,
         maxLatencyMs: null,
         estimatedCostUsd: 0,
@@ -105,7 +103,6 @@ describe('summarizeAiUsageWindow', () => {
         failuresByKind: {},
         inputTokens: 4000,
         outputTokens: 800,
-        credits: 10,
         avgLatencyMs: 500,
         maxLatencyMs: 1500,
         // 4000 × 0.4 + 800 × 1.6 = 2880 / 1M.
@@ -121,6 +118,13 @@ describe('summarizeAiUsageWindow', () => {
       estimatedCostBdt: 0.35,
       unpricedModels: 0,
     });
+  });
+
+  it('has no credits figure (PW-T6b, PW-D1): a stray old `credits` value is not passed on', () => {
+    const old = { ...row('2026-11-18'), credits: 9 } as AiUsageRow;
+    const w = summarizeAiUsageWindow([old], window, PRICES, 122);
+    expect(w.totals).not.toHaveProperty('credits');
+    expect(w.models[0]).not.toHaveProperty('credits');
   });
 
   it('an unknown model has cost null and is left out of the total (counted as unpriced)', () => {

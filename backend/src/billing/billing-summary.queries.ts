@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import {
   plans,
@@ -52,4 +52,59 @@ export async function findSummarySubscription(
   if (!row) return undefined;
   const { planSlug, planName, ...rest } = row;
   return { ...rest, plan: { slug: planSlug, name: planName } };
+}
+
+/** A described subscription of one billing account, with the plan id too (PW-T6b admin list). */
+export interface AccountSummarySubscription extends Omit<
+  SummarySubscription,
+  'plan'
+> {
+  billingAccountId: string;
+  plan: { id: string; slug: string; name: string };
+}
+
+/**
+ * `findSummarySubscription` for many accounts in one query (PW-T6b: admin clients list, no N+1).
+ * Per account: the live subscription when its id is in `liveSubscriptionIds`, else the most
+ * recently created one (`created_at`, then id). Accounts that never had a subscription are not in
+ * the map. Scoped by the given account ids.
+ */
+export async function findSummarySubscriptions(
+  db: Pick<Database, 'selectDistinctOn'>,
+  billingAccountIds: readonly string[],
+  liveSubscriptionIds: readonly string[],
+): Promise<Map<string, AccountSummarySubscription>> {
+  const accounts = [...new Set(billingAccountIds)];
+  if (accounts.length === 0) return new Map();
+  // Live first (only when there is one: Postgres rejects a constant ORDER BY key).
+  const liveFirst = liveSubscriptionIds.length
+    ? [desc(sql`${inArray(subscriptions.id, [...liveSubscriptionIds])}`)]
+    : [];
+  const rows = await db
+    .selectDistinctOn([subscriptions.billingAccountId], {
+      billingAccountId: subscriptions.billingAccountId,
+      id: subscriptions.id,
+      status: subscriptions.status,
+      interval: subscriptions.interval,
+      trialEndsAt: subscriptions.trialEndsAt,
+      currentTermEnd: subscriptions.currentTermEnd,
+      planId: plans.id,
+      planSlug: plans.slug,
+      planName: plans.name,
+    })
+    .from(subscriptions)
+    .innerJoin(plans, eq(plans.id, subscriptions.planId))
+    .where(inArray(subscriptions.billingAccountId, accounts))
+    .orderBy(
+      subscriptions.billingAccountId,
+      ...liveFirst,
+      desc(subscriptions.createdAt),
+      desc(subscriptions.id),
+    );
+  return new Map(
+    rows.map(({ planId, planSlug, planName, ...rest }) => [
+      rest.billingAccountId,
+      { ...rest, plan: { id: planId, slug: planSlug, name: planName } },
+    ]),
+  );
 }

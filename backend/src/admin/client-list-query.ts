@@ -6,14 +6,20 @@ import {
   exists,
   gte,
   ilike,
-  isNull,
   lt,
+  not,
   or,
   type SQL,
   sql,
 } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
-import { users, workspaceMembers, workspaces } from '../db/schema/index.js';
+import {
+  subscriptions,
+  users,
+  workspaceMembers,
+  workspaces,
+} from '../db/schema/index.js';
+import { isLiveAt } from '../wallet/live-subscription.queries.js';
 import type {
   ClientSort,
   WorkspaceStatus,
@@ -25,8 +31,10 @@ export interface ClientListFilters {
   createdFrom?: string;
   createdTo?: string;
   /**
-   * Resolved plan filter (M2-T12b): a plan id, or `null` for workspaces without a plan.
-   * `undefined` = any plan. The service turns the `plan` slug (or `none`) into this.
+   * Resolved plan filter (M2-T12b; live subscription since PW-T6b): a plan id = the workspace's
+   * billing account has a live subscription on that plan; `null` = no live plan (no account,
+   * ended or never subscribed). `undefined` = any. The service turns the `plan` slug (or `none`)
+   * into this.
    */
   planId?: string | null;
 }
@@ -59,11 +67,13 @@ export function createdRange(
 
 /**
  * WHERE for the super admin client list (M2-T3). `q` matches, case-insensitively and partially,
- * the workspace name or slug, or the email or name of **any** owner of the workspace.
+ * the workspace name or slug, or the email or name of **any** owner of the workspace. The plan
+ * filter reads the live subscription at `now` (PW-T6b, same rule as `findLiveSubscription`).
  */
 export function clientListWhere(
   db: Database,
   filters: ClientListFilters,
+  now: Date = new Date(),
 ): SQL | undefined {
   const conditions: SQL[] = [];
   if (filters.q) {
@@ -88,9 +98,21 @@ export function clientListWhere(
     );
   }
   if (filters.status) conditions.push(eq(workspaces.status, filters.status));
-  if (filters.planId === null) conditions.push(isNull(workspaces.planId));
-  else if (filters.planId)
-    conditions.push(eq(workspaces.planId, filters.planId));
+  if (filters.planId !== undefined) {
+    const live = db
+      .select({ one: sql`1` })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.billingAccountId, workspaces.billingAccountId),
+          isLiveAt(now),
+          filters.planId === null
+            ? undefined
+            : eq(subscriptions.planId, filters.planId),
+        ),
+      );
+    conditions.push(filters.planId === null ? not(exists(live)) : exists(live));
+  }
   const { from, before } = createdRange(filters.createdFrom, filters.createdTo);
   if (from) conditions.push(gte(workspaces.createdAt, from));
   if (before) conditions.push(lt(workspaces.createdAt, before));

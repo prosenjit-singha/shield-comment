@@ -32,7 +32,7 @@ export function commentsPoint(
   };
 }
 
-/** ACTIVE workspaces per plan, as counted by the database (M2-T12b). */
+/** ACTIVE workspaces per live-subscription plan, as counted by the database (M2-T12b, PW-T6b). */
 export interface PlanTierCount {
   name: string;
   sortOrder: number;
@@ -48,7 +48,7 @@ export interface DashboardSources {
   openTickets: number;
   /** New workspaces per bucket key; missing keys = 0. */
   newClients: Readonly<Record<string, number>>;
-  /** ACTIVE workspaces per plan right now (workspaces without a plan are not included). */
+  /** ACTIVE workspaces per live plan right now (workspaces without a live plan are not included). */
   planTiers: readonly PlanTierCount[];
   /** `daily_comment_stats` sums per bucket key, all workspaces (M5-T13); missing keys = 0. */
   comments?: Readonly<Record<string, CommentCounts>>;
@@ -56,7 +56,7 @@ export interface DashboardSources {
 
 /**
  * Donut slices: plans with at least one client, by `sortOrder` (then name), `tier` = plan name.
- * `[]` when no workspace has a plan.
+ * `[]` when no workspace has a live plan.
  */
 export function planTierSlices(
   counts: readonly PlanTierCount[],

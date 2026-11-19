@@ -236,7 +236,6 @@ describe('Admin system health (e2e)', () => {
       const base = {
         inputTokens: 0,
         outputTokens: 0,
-        credits: 0,
         failedCalls: 0,
         failuresByKind: {},
         latencyMsSum: 0,
@@ -252,7 +251,6 @@ describe('Admin system health (e2e)', () => {
           calls: 10,
           inputTokens: 1_000_000,
           outputTokens: 250_000,
-          credits: 12,
           failedCalls: 2,
           failuresByKind: { timeout: 1, rate_limited: 1 },
           latencyMsSum: 6000,
@@ -266,7 +264,6 @@ describe('Admin system health (e2e)', () => {
           calls: 4,
           inputTokens: 4000,
           outputTokens: 800,
-          credits: 4,
           failedCalls: 1,
           failuresByKind: { timeout: 1 },
           latencyMsSum: 2000,
@@ -281,7 +278,6 @@ describe('Admin system health (e2e)', () => {
           calls: 2,
           inputTokens: 1000,
           outputTokens: 100,
-          credits: 2,
           latencyMsSum: 1000,
           latencyMsMax: 600,
         },
@@ -336,7 +332,6 @@ describe('Admin system health (e2e)', () => {
           failuresByKind: { timeout: 1 },
           inputTokens: 4000,
           outputTokens: 800,
-          credits: 4,
           avgLatencyMs: 500,
           maxLatencyMs: 700,
           estimatedCostUsd: null,
@@ -351,7 +346,6 @@ describe('Admin system health (e2e)', () => {
           failuresByKind: { rate_limited: 1, timeout: 1 },
           inputTokens: 1_000_000,
           outputTokens: 250_000,
-          credits: 12,
           avgLatencyMs: 600,
           maxLatencyMs: 1400,
           estimatedCostUsd: Math.round(usd * 1e6) / 1e6,
@@ -366,7 +360,6 @@ describe('Admin system health (e2e)', () => {
         failuresByKind: { rate_limited: 1, timeout: 2 },
         inputTokens: 1_004_000,
         outputTokens: 250_800,
-        credits: 16,
         avgLatencyMs: Math.round(8000 / 14),
         maxLatencyMs: 1400,
         estimatedCostUsd: Math.round(usd * 1e6) / 1e6,
@@ -375,12 +368,19 @@ describe('Admin system health (e2e)', () => {
       expect(ai!.last7Days.totals).toMatchObject({
         calls: 16,
         inputTokens: 1_005_000,
-        credits: 18,
         maxLatencyMs: 1400,
       });
       expect(
         ai!.last7Days.models.find((m) => m.model === MODEL_PRICED)?.calls,
       ).toBe(12);
+      // PW-T6b (PW-D1): the AI card has no credits figure any more.
+      for (const stats of [
+        ai!.today.totals,
+        ai!.last7Days.totals,
+        ...ai!.today.models,
+        ...ai!.last7Days.models,
+      ])
+        expect(stats).not.toHaveProperty('credits');
     });
 
     it('the window moves at Dhaka midnight (2031-03-04 drops out)', async () => {

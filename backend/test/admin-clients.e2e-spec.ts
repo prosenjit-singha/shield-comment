@@ -1,11 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
 import { normalizeFeatureConfig } from '../src/admin/plan-rules.js';
-import { dhakaMonthKey } from '../src/credits/credit-period.js';
 import {
-  monthlyCreditUsage,
   plans,
   users,
   workspaces,
@@ -13,6 +11,7 @@ import {
 } from '../src/db/schema/index.js';
 import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
+import { WalletService } from '../src/wallet/wallet.service.js';
 
 const CLIENTS = '/api/admin/clients';
 const UNKNOWN_ID = '019a0000-0000-7000-8000-00000000dead';
@@ -26,14 +25,28 @@ interface Item {
   plan: { id: string; slug: string; name: string } | null;
   owner: { id: string; email: string; name: string } | null;
   memberCount: number;
-  credits: { used: number; limit: number; period: string } | null;
+  subscription: {
+    status: string;
+    interval: string;
+    trialEndsAt: string | null;
+    termEndsAt: string;
+  } | null;
+  comments: { used: number; limit: number; resetsAt: string | null } | null;
 }
 
-/** Credits of a workspace without usage this month (limit from its plan, checked separately). */
-const noCreditsUsed = () => ({
-  used: 0,
-  limit: expect.any(Number) as number,
-  period: dhakaMonthKey(),
+/** The billing fields of an untouched sign-up (PW-T3: live 7-day Starter trial, 300 comments). */
+const signUpTrial = () => ({
+  subscription: {
+    status: 'TRIALING',
+    interval: 'month',
+    trialEndsAt: expect.any(String) as string,
+    termEndsAt: expect.any(String) as string,
+  },
+  comments: {
+    used: 0,
+    limit: 300,
+    resetsAt: expect.any(String) as string,
+  },
 });
 
 /**
@@ -203,11 +216,12 @@ describe('Admin clients: list filters + status (e2e)', () => {
         slug: `ws-${T}-a`,
         status: 'ACTIVE',
         createdAt: '2026-01-15T12:00:00.000Z',
-        plan: null,
+        plan: { id: expect.any(String), slug: 'starter', name: 'Starter' },
         owner: { id: a.id, email: a.email, name: `Owner ${T} A` },
         memberCount: 2,
-        credits: noCreditsUsed(),
+        ...signUpTrial(),
       });
+      expect(body.items[0]).not.toHaveProperty('credits');
     });
 
     it.each([
@@ -319,129 +333,143 @@ describe('Admin clients: list filters + status (e2e)', () => {
     });
   });
 
-  /** M2-T12b: `plan` on every item (LEFT JOIN `workspaces.plan_id`) + the `plan` filter. */
-  describe('plans', () => {
+  /**
+   * M2-T12b, PW-T6b: `plan` = the live subscription's plan, `subscription` (same status rule as the
+   * client billing summary), `comments` from the pooled wallet, and the `plan` filter on the live
+   * subscription. A + D on Growth (A's account pools a second workspace), B on the sign-up trial,
+   * C expired, M without a billing account.
+   */
+  describe('plans, subscriptions + comments (PW-T6b)', () => {
     type PlanRef = { id: string; slug: string; name: string };
     let plan: Record<string, PlanRef>;
-    const setPlan = (workspaceIds: string[], planId: string | null) =>
-      db()
-        .update(workspaces)
-        .set({ planId })
-        .where(inArray(workspaces.id, workspaceIds));
+    let growthLimit: number;
+    let pooled: string;
+    // Its own random tag (the list's `q` is case-insensitive, so no `T` in its name or slug).
+    const P = `pw${randomBytes(4).toString('hex')}`;
 
     beforeAll(async () => {
       const rows = await db()
-        .select({ id: plans.id, slug: plans.slug, name: plans.name })
+        .select({
+          id: plans.id,
+          slug: plans.slug,
+          name: plans.name,
+          featureConfig: plans.featureConfig,
+        })
         .from(plans);
-      plan = Object.fromEntries(rows.map((r) => [r.slug, r]));
-      expect(Object.keys(plan).sort()).toEqual([
-        'free',
-        'growth',
-        'pro',
-        'starter',
-      ]);
-      // A + D on Growth, B on Starter; C (suspended) and M have no plan.
-      await setPlan([a.workspaceId, d.workspaceId], plan.growth!.id);
-      await setPlan([b.workspaceId], plan.starter!.id);
+      plan = Object.fromEntries(
+        rows.map(({ id, slug, name }) => [slug, { id, slug, name }]),
+      );
+      growthLimit = normalizeFeatureConfig(
+        rows.find((r) => r.slug === 'growth')!.featureConfig,
+      ).limits.monthlyComments;
+      await actors.activatePlan(a, 'growth');
+      await actors.activatePlan(d, 'growth');
+      await actors.expirePlan(c);
+      await actors.removeBilling(mod);
+      // A second workspace on A's account, outside the tagged list scope.
+      const [row] = await db()
+        .insert(workspaces)
+        .values({
+          name: `Pooled ${P}`,
+          slug: `pooled-${P}`,
+          billingAccountId: await actors.accountIdOf(a),
+        })
+        .returning({ id: workspaces.id });
+      pooled = row!.id;
+      actors.trackWorkspace(pooled);
+      const wallet = app.get(WalletService);
+      for (const [ws, n] of [
+        [a.workspaceId, 5],
+        [pooled, 2],
+      ] as const) {
+        expect(await wallet.consume(ws, 'monthlyComments', n)).toBe('ok');
+      }
     });
 
-    afterAll(async () => {
-      await setPlan([a.workspaceId, b.workspaceId, d.workspaceId], null);
-    });
-
-    it('every item carries { id, slug, name } of its plan, or null', async () => {
+    it('plan + subscription + comments per item: Growth, trial, expired, Growth, no account', async () => {
       const body = await list(`q=${T}&sort=oldest`);
-      expect(body.items.map((i) => [i.id, i.plan])).toEqual([
-        [a.workspaceId, plan.growth],
-        [b.workspaceId, plan.starter],
-        [c.workspaceId, null],
-        [d.workspaceId, plan.growth],
-        [mod.workspaceId, null],
-      ]);
+      const byId = new Map(body.items.map((i) => [i.id, i]));
+      const growth = {
+        plan: plan.growth,
+        subscription: {
+          status: 'ACTIVE',
+          interval: 'month',
+          trialEndsAt: null,
+          termEndsAt: expect.any(String),
+        },
+      };
+      expect(byId.get(a.workspaceId)).toMatchObject({
+        ...growth,
+        comments: { used: 7, limit: growthLimit },
+      });
+      expect(byId.get(d.workspaceId)).toMatchObject({
+        ...growth,
+        comments: { used: 0, limit: growthLimit },
+      });
+      for (const ws of [a.workspaceId, d.workspaceId]) {
+        const { comments, subscription } = byId.get(ws)!;
+        const resetsAt = new Date(comments!.resetsAt!).getTime();
+        expect(resetsAt).toBeGreaterThan(Date.now());
+        expect(resetsAt).toBeLessThanOrEqual(
+          new Date(subscription!.termEndsAt).getTime(),
+        );
+      }
+      const trial = byId.get(b.workspaceId)!;
+      expect(trial).toMatchObject({ plan: plan.starter, ...signUpTrial() });
+      expect(trial.subscription!.trialEndsAt).toBe(
+        trial.subscription!.termEndsAt,
+      );
+      expect(trial.comments!.resetsAt).toBe(trial.subscription!.trialEndsAt);
+      expect(byId.get(c.workspaceId)).toMatchObject({
+        plan: null,
+        subscription: {
+          status: 'EXPIRED',
+          interval: 'month',
+          trialEndsAt: expect.any(String),
+          termEndsAt: expect.any(String),
+        },
+        comments: { used: 0, limit: 0, resetsAt: null },
+      });
+      expect(byId.get(mod.workspaceId)).toMatchObject({
+        plan: null,
+        subscription: null,
+        comments: { used: 0, limit: 0, resetsAt: null },
+      });
+      for (const item of body.items) expect(item).not.toHaveProperty('credits');
+    });
+
+    it("pooled: the account's other workspace shows the same plan and comments", async () => {
+      const [first] = (await list(`q=pooled-${P}`)).items;
+      const [owner] = (
+        await list(`q=${encodeURIComponent(`Zeta Store ${T}x1`)}`)
+      ).items;
+      expect(first).toMatchObject({
+        id: pooled,
+        plan: plan.growth,
+        owner: null,
+        memberCount: 0,
+      });
+      expect(first!.subscription).toEqual(owner!.subscription);
+      expect(first!.comments).toEqual(owner!.comments);
+      expect(first!.comments).toMatchObject({ used: 7 });
     });
 
     it.each([
       ['plan=growth', () => [a, d]],
       ['plan=starter', () => [b]],
       ['plan=pro', () => []],
+      // C expired, M has no billing account.
       ['plan=none', () => [c, mod]],
       ['plan=none&status=ACTIVE', () => [mod]],
       ['plan=growth&createdFrom=2026-02-01', () => [d]],
-    ])('filters %s', async (query, expected) => {
+    ])('filters %s on the live subscription', async (query, expected) => {
       expect(await ids(`${query}&sort=oldest`)).toEqual(
         expected().map((x) => x.workspaceId),
       );
     });
 
-    /** M5-T13 (D14/D15): `credits` = this Dhaka month's `used / limit` (no plan = Free). */
-    describe('credits (M5-T13)', () => {
-      const month = dhakaMonthKey();
-      const limitOf = async (slug: string) => {
-        const [row] = await db()
-          .select({ featureConfig: plans.featureConfig })
-          .from(plans)
-          .where(eq(plans.slug, slug));
-        return normalizeFeatureConfig(row!.featureConfig).limits
-          .monthlyComments;
-      };
-
-      beforeAll(async () => {
-        await db()
-          .insert(monthlyCreditUsage)
-          .values([
-            { workspaceId: a.workspaceId, month, used: 42 },
-            // Another month: not this period.
-            { workspaceId: a.workspaceId, month: '2020-01', used: 99 },
-            { workspaceId: c.workspaceId, month, used: 3 },
-          ]);
-      });
-
-      afterAll(async () => {
-        await db()
-          .delete(monthlyCreditUsage)
-          .where(
-            inArray(monthlyCreditUsage.workspaceId, [
-              a.workspaceId,
-              c.workspaceId,
-            ]),
-          );
-      });
-
-      it('every item carries { used, limit, period } of the current Dhaka month', async () => {
-        const [growth, starter, free] = await Promise.all([
-          limitOf('growth'),
-          limitOf('starter'),
-          limitOf('free'),
-        ]);
-        expect(growth).toBeGreaterThan(starter);
-        const body = await list(`q=${T}&sort=oldest`);
-        expect(body.items.map((i) => [i.id, i.credits])).toEqual([
-          [a.workspaceId, { used: 42, limit: growth, period: month }],
-          [b.workspaceId, { used: 0, limit: starter, period: month }],
-          [c.workspaceId, { used: 3, limit: free, period: month }],
-          [d.workspaceId, { used: 0, limit: growth, period: month }],
-          [mod.workspaceId, { used: 0, limit: free, period: month }],
-        ]);
-      });
-
-      it('PATCH status answers with the credits too', async () => {
-        const res = await patchStatus(a.workspaceId, {
-          status: 'ACTIVE',
-          reason: 'credits check',
-        }).expect(200);
-        expect(res.body.client.credits).toEqual({
-          used: 42,
-          limit: await limitOf('growth'),
-          period: month,
-        });
-      });
-
-      it('403 for a normal user', async () => {
-        await http()
-          .get(`${CLIENTS}?q=${T}`)
-          .set('Cookie', a.cookie)
-          .expect(403);
-      });
+    it('plan=free (inactive, never live) → no rows, not a 400', async () => {
+      expect(await ids('plan=free')).toEqual([]);
     });
 
     it('400 for an unknown plan slug', async () => {
@@ -455,18 +483,27 @@ describe('Admin clients: list filters + status (e2e)', () => {
       });
     });
 
-    it('PATCH status answers with the same item shape (plan included)', async () => {
-      const res = await patchStatus(b.workspaceId, {
+    it('PATCH status answers with the same item shape (plan, subscription, comments)', async () => {
+      const res = await patchStatus(a.workspaceId, {
         status: 'ACTIVE',
         reason: 'no-op check',
       }).expect(200);
       expect(res.body).toEqual({
         changed: false,
-        client: (await list(`q=${encodeURIComponent(`alpha shop ${T}`)}`))
+        client: (await list(`q=${encodeURIComponent(`Zeta Store ${T}x1`)}`))
           .items[0],
       });
-      expect(res.body.client.plan).toEqual(plan.starter);
-      expect(await auditRows(b.workspaceId)).toEqual([]);
+      expect(res.body.client).toMatchObject({
+        plan: plan.growth,
+        subscription: { status: 'ACTIVE' },
+        comments: { used: 7, limit: growthLimit },
+      });
+      expect(res.body.client).not.toHaveProperty('credits');
+      expect(await auditRows(a.workspaceId)).toEqual([]);
+    });
+
+    it('403 for a normal user', async () => {
+      await http().get(`${CLIENTS}?q=${T}`).set('Cookie', a.cookie).expect(403);
     });
   });
 
@@ -571,10 +608,10 @@ describe('Admin clients: list filters + status (e2e)', () => {
           slug: expect.any(String),
           status: 'SUSPENDED',
           createdAt: expect.any(String),
-          plan: null,
+          plan: { id: expect.any(String), slug: 'starter', name: 'Starter' },
           owner: { id: target.id, email: target.email, name: 'm2t3-target' },
           memberCount: 2,
-          credits: noCreditsUsed(),
+          ...signUpTrial(),
         },
       });
       expect(await statusOf(target.workspaceId)).toBe('SUSPENDED');

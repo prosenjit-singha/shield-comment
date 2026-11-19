@@ -234,6 +234,66 @@ describe('Moderation schema (e2e)', () => {
       );
       expect(checks.rows).toEqual([]);
     });
+
+    it('PW-T6b: migration 0025 dropped monthly_credit_usage, workspaces.plan_id and daily_ai_usage.credits', async () => {
+      const journal = JSON.parse(
+        readFileSync(
+          new URL('../drizzle/meta/_journal.json', import.meta.url),
+          'utf8',
+        ),
+      ) as { entries: { tag: string }[] };
+      expect(journal.entries.map((e) => e.tag)).toContain(
+        '0025_drop_plan_id_and_credits',
+      );
+      const applied = await db().execute<{ n: number }>(
+        sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
+      );
+      expect(applied.rows[0]?.n).toBe(journal.entries.length);
+      const tables = await db().execute<{ t: string | null }>(
+        sql`select to_regclass('public.monthly_credit_usage')::text as t`,
+      );
+      expect(tables.rows).toEqual([{ t: null }]);
+      const columns = await db().execute<{ c: string }>(
+        sql`select table_name || '.' || column_name as c
+            from information_schema.columns
+            where table_schema = 'public'
+              and ((table_name = 'workspaces' and column_name in ('plan_id', 'billing_account_id'))
+                or (table_name = 'daily_ai_usage' and column_name in ('credits', 'calls')))
+            order by 1`,
+      );
+      expect(columns.rows.map((r) => r.c)).toEqual([
+        'daily_ai_usage.calls',
+        'workspaces.billing_account_id',
+      ]);
+      const gone = await db().execute<{ name: string }>(
+        sql`select conname as name from pg_constraint
+              where conname in ('workspaces_plan_id_plans_id_fk', 'monthly_credit_usage_used_check')
+            union all
+            select indexname from pg_indexes where indexname = 'workspaces_plan_id_index'`,
+      );
+      expect(gone.rows).toEqual([]);
+      // The counts check is recreated without `credits` and still guards the other counters.
+      const [check] = (
+        await db().execute<{ def: string }>(
+          sql`select pg_get_constraintdef(oid) as def from pg_constraint
+              where conname = 'daily_ai_usage_counts_check'`,
+        )
+      ).rows;
+      expect(check?.def).toContain('input_tokens >= 0');
+      expect(check?.def).not.toContain('credits');
+      expect(
+        await pgCode(
+          db()
+            .insert(dailyAiUsage)
+            .values({
+              day: '2031-01-01',
+              provider: 'openai',
+              model: `pwt6b-${Date.now()}`,
+              calls: -1,
+            }),
+        ),
+      ).toBe('23514');
+    });
   });
 
   describe('moderation_policies (D5 lazy defaults)', () => {
@@ -614,13 +674,13 @@ describe('Moderation schema (e2e)', () => {
         calls: 10,
         inputTokens: 1100,
         outputTokens: 120,
-        // PW-T4: credits are no longer written (column default 0 until PW-T6b drops it).
-        credits: 0,
         failedCalls: 5,
         failuresByKind: { timeout: 4, invalid_output: 1 },
         latencyMsSum: 500 + 8 * 100 + 28 + 2000,
         latencyMsMax: 2000,
       });
+      // PW-T6b: no credits column any more (PW-D1).
+      expect(row).not.toHaveProperty('credits');
       // Another provider + model = another row.
       await recordDailyAiUsage(db(), {
         day,

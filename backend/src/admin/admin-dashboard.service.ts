@@ -5,10 +5,12 @@ import type { Database } from '../db/database.js';
 import {
   dailyCommentStats,
   plans,
+  subscriptions,
   tickets,
   UNRESOLVED_TICKET_STATUSES,
   workspaces,
 } from '../db/schema/index.js';
+import { isLiveAt } from '../wallet/live-subscription.queries.js';
 import {
   type DashboardRangeQuery,
   type Granularity,
@@ -24,6 +26,33 @@ const BUCKET_FORMAT: Record<Granularity, string> = {
 };
 
 /**
+ * Plan tiers (M2-T12b; PW-T6b): ACTIVE workspaces per **live-subscription** plan at `now` (each
+ * workspace of a pooled account counts; a trial counts as its plan, Starter). Workspaces without a
+ * live plan (no billing account, ended, never) are not counted. Same live rule as
+ * `findLiveSubscription`.
+ */
+export function planTiersQuery(db: Database, now: Date) {
+  return db
+    .select({
+      name: plans.name,
+      sortOrder: plans.sortOrder,
+      clients: count(),
+    })
+    .from(workspaces)
+    .innerJoin(
+      subscriptions,
+      and(
+        eq(subscriptions.billingAccountId, workspaces.billingAccountId),
+        isLiveAt(now),
+      ),
+    )
+    .innerJoin(plans, eq(plans.id, subscriptions.planId))
+    .where(eq(workspaces.status, 'ACTIVE'))
+    .groupBy(plans.id)
+    .orderBy(asc(plans.sortOrder), asc(plans.name));
+}
+
+/**
  * Platform-wide dashboard numbers for super admins (M2-T5; comments M5-T13). Cross-tenant by
  * design: only reachable through `SuperAdminGuard`.
  */
@@ -35,7 +64,8 @@ export class AdminDashboardService {
   constructor(@InjectDrizzle() private readonly db: Database) {}
 
   async stats(query: DashboardRangeQuery): Promise<DashboardStatsResponse> {
-    const range = resolveDashboardRange(query, this.now());
+    const now = this.now();
+    const range = resolveDashboardRange(query, now);
     const format = sql.raw(`'${BUCKET_FORMAT[range.granularity]}'`);
     const bucket = sql<string>`to_char(${workspaces.createdAt} at time zone 'Asia/Dhaka', ${format})`;
     // `daily_comment_stats.day` is already a Dhaka date.
@@ -66,18 +96,7 @@ export class AdminDashboardService {
           .select({ n: count() })
           .from(tickets)
           .where(inArray(tickets.status, [...UNRESOLVED_TICKET_STATUSES])),
-        // Plan tiers (M2-T12b): ACTIVE workspaces per plan now; no plan = not counted.
-        this.db
-          .select({
-            name: plans.name,
-            sortOrder: plans.sortOrder,
-            clients: count(),
-          })
-          .from(workspaces)
-          .innerJoin(plans, eq(plans.id, workspaces.planId))
-          .where(eq(workspaces.status, 'ACTIVE'))
-          .groupBy(plans.id)
-          .orderBy(asc(plans.sortOrder), asc(plans.name)),
+        planTiersQuery(this.db, now),
         // Comments (M5-T13, D14): every workspace's daily counters in the range's Dhaka days.
         this.db
           .select({

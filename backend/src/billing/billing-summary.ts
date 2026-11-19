@@ -28,18 +28,27 @@ const isLiveStatus = (status: string): boolean =>
   (LIVE_SUBSCRIPTION_STATUSES as readonly string[]).includes(status);
 
 /**
+ * The summary status rule (PW-T6; reused by the admin clients list, PW-T6b): the live status;
+ * without a live plan the described subscription's ended status (a live status whose term is
+ * over reads `EXPIRED`), or `NONE` when there is no subscription.
+ */
+export function summaryStatus(
+  live: Pick<LiveSubscription, 'status'> | null,
+  subscription: Pick<SummarySubscription, 'status'> | null,
+): BillingSummaryStatus {
+  if (live) return live.status;
+  if (!subscription) return 'NONE';
+  return isLiveStatus(subscription.status) ? 'EXPIRED' : subscription.status;
+}
+
+/**
  * Pure response mapping of the client billing summary (PW-T6, plan §3.7). Status: the live one;
  * without a live plan the latest subscription's ended status (a live status whose term is over
  * reads `EXPIRED`), or `NONE`. Limits come from the live plan only (0 without one).
  */
 export function toBillingSummary(input: BillingSummaryInput): BillingSummary {
   const { live, subscription, balance } = input;
-  let status: BillingSummaryStatus = 'NONE';
-  if (live) status = live.status;
-  else if (subscription)
-    status = isLiveStatus(subscription.status)
-      ? 'EXPIRED'
-      : subscription.status;
+  const status = summaryStatus(live, subscription);
   const comments =
     live && balance
       ? {

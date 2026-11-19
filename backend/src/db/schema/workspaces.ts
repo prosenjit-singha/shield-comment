@@ -11,7 +11,6 @@ import {
 import { users } from './auth.js';
 import { billingAccounts } from './billing.js';
 import { id, timestamps, timestamptz } from './columns.js';
-import { plans } from './plans.js';
 
 /**
  * Better Auth `organization` plugin tables, renamed: organization → `workspaces`,
@@ -44,21 +43,17 @@ export const workspaces = pgTable(
     /** Extra field (`additionalFields.status`). SUSPENDED workspaces are locked by `WorkspaceAccessGuard` (M1-T1). */
     status: workspaceStatus().notNull().default('ACTIVE'),
     /**
-     * Current plan (M2-T11). `null` = no plan yet (every workspace until Module 8 assigns one).
-     * Not a Better Auth field: the organization plugin never reads or writes it.
-     */
-    planId: uuid().references(() => plans.id, { onDelete: 'restrict' }),
-    /**
      * The billing account (PW-T1) whose plan and pooled limits this workspace uses: the creator's,
      * set at creation and kept for life (PW-T3). Nullable: a member-less workspace has no account
-     * (= no live plan). Not a Better Auth field.
+     * (= no live plan). Not a Better Auth field. The plan comes from the account's live
+     * subscription (`findLiveSubscription`); the old `plan_id` column was dropped in PW-T6b (0025).
      */
     billingAccountId: uuid().references(() => billingAccounts.id, {
       onDelete: 'restrict',
     }),
     ...timestamps,
   },
-  (t) => [index().on(t.planId), index().on(t.billingAccountId)],
+  (t) => [index().on(t.billingAccountId)],
 );
 
 export const workspaceMembers = pgTable(
@@ -110,7 +105,6 @@ export const workspaceInvitations = pgTable(
 );
 
 export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
-  plan: one(plans, { fields: [workspaces.planId], references: [plans.id] }),
   billingAccount: one(billingAccounts, {
     fields: [workspaces.billingAccountId],
     references: [billingAccounts.id],
@@ -146,10 +140,6 @@ export const workspaceInvitationsRelations = relations(
     }),
   }),
 );
-
-export const plansRelations = relations(plans, ({ many }) => ({
-  workspaces: many(workspaces),
-}));
 
 /** Reverse side of `workspaces.billingAccount` (merged with `billingAccountsRelations` in billing.ts). */
 export const billingAccountWorkspacesRelations = relations(

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import { and, asc, count, eq, inArray } from 'drizzle-orm';
-import { CreditService, type CreditUsage } from '../credits/credit.service.js';
+import { findSummarySubscriptions } from '../billing/billing-summary.queries.js';
 import type { Database } from '../db/database.js';
 import {
   plans,
@@ -15,6 +15,9 @@ import {
   workspaces,
   workspaceStatusAuditLogs,
 } from '../db/schema/index.js';
+import { findLiveSubscriptions } from '../wallet/live-subscription.queries.js';
+import { type WalletBalance, WalletService } from '../wallet/wallet.service.js';
+import { type ClientBilling, toClientBilling } from './client-billing.js';
 import {
   type ClientListFilters,
   clientListOrder,
@@ -39,15 +42,8 @@ export interface ClientListQuery extends Omit<ClientListFilters, 'planId'> {
   skip: number;
   take: number;
   sort: ClientSort;
-  /** Plan slug, or `none` for workspaces without a plan. */
+  /** Plan slug (live subscription), or `none` for workspaces without a live plan. */
   plan?: string;
-}
-
-/** The workspace's plan (M2-T12b), `null` until one is assigned (Module 8). */
-export interface ClientPlan {
-  id: string;
-  slug: string;
-  name: string;
 }
 
 interface WorkspaceRow {
@@ -56,18 +52,18 @@ interface WorkspaceRow {
   slug: string;
   status: WorkspaceStatus;
   createdAt: Date;
-  plan: ClientPlan | null;
+  billingAccountId: string | null;
 }
 
-export interface ClientItem extends WorkspaceRow {
+/**
+ * One client (workspace) of the super admin list. `plan`, `subscription` and `comments` come from
+ * the billing account's subscriptions + wallet (PW-T6b; see `ClientBilling`).
+ */
+export interface ClientItem
+  extends Omit<WorkspaceRow, 'billingAccountId'>, ClientBilling {
   /** Oldest owner membership, or `null` if the workspace has none. */
   owner: ClientOwner | null;
   memberCount: number;
-  /**
-   * AI credits of the current Asia/Dhaka month (M5-T13, D14/D15): `used / limit` of the plan
-   * (no plan = Free). `null` when the credit read failed (the list still answers).
-   */
-  credits: CreditUsage | null;
 }
 
 const workspaceColumns = {
@@ -76,8 +72,7 @@ const workspaceColumns = {
   slug: workspaces.slug,
   status: workspaces.status,
   createdAt: workspaces.createdAt,
-  // LEFT JOIN plans: Drizzle returns `null` for the nested object when no plan matched.
-  plan: { id: plans.id, slug: plans.slug, name: plans.name },
+  billingAccountId: workspaces.billingAccountId,
 };
 
 /**
@@ -87,10 +82,12 @@ const workspaceColumns = {
 @Injectable()
 export class AdminClientsService {
   private readonly logger = new Logger(AdminClientsService.name);
+  /** Overridable clock (tests). */
+  now: () => Date = () => new Date();
 
   constructor(
     @InjectDrizzle() private readonly db: Database,
-    private readonly credits: CreditService,
+    private readonly wallet: WalletService,
   ) {}
 
   /** `{ items, total, skip, take }`; `total` counts every match of the filters. */
@@ -101,12 +98,12 @@ export class AdminClientsService {
       throw new BadRequestException('createdFrom must not be after createdTo');
     }
     const planId = await this.resolvePlanFilter(query.plan);
-    const where = clientListWhere(this.db, { ...query, planId });
+    const now = this.now();
+    const where = clientListWhere(this.db, { ...query, planId }, now);
     const [page, [totals]] = await Promise.all([
       this.db
         .select(workspaceColumns)
         .from(workspaces)
-        .leftJoin(plans, eq(plans.id, workspaces.planId))
         .where(where)
         .orderBy(...clientListOrder(sort))
         .offset(skip)
@@ -114,7 +111,7 @@ export class AdminClientsService {
       this.db.select({ total: count() }).from(workspaces).where(where),
     ]);
     return {
-      items: await this.withOwnersAndCounts(page),
+      items: await this.withDetails(page, now),
       total: totals?.total ?? 0,
       skip,
       take,
@@ -166,16 +163,16 @@ export class AdminClientsService {
     const rows = await this.db
       .select(workspaceColumns)
       .from(workspaces)
-      .leftJoin(plans, eq(plans.id, workspaces.planId))
       .where(eq(workspaces.id, workspaceId))
       .limit(1);
-    const [item] = await this.withOwnersAndCounts(rows);
+    const [item] = await this.withDetails(rows, this.now());
     return item;
   }
 
   /**
    * `plan` query value → `ClientListFilters.planId`: `undefined` (no filter), `null` (`none` =
-   * no plan) or the plan's id. An unknown slug is a 400 (any plan, active or not, is accepted).
+   * no live plan) or the plan's id. An unknown slug is a 400 (any plan, active or not, is
+   * accepted).
    */
   private async resolvePlanFilter(
     plan: string | undefined,
@@ -191,12 +188,20 @@ export class AdminClientsService {
     return row.id;
   }
 
-  private async withOwnersAndCounts(
+  /**
+   * Owners, member counts and billing for a page of workspaces: a fixed number of batched queries
+   * scoped by the page's workspace ids and their billing accounts (no N+1).
+   */
+  private async withDetails(
     page: WorkspaceRow[],
+    now: Date,
   ): Promise<ClientItem[]> {
     const ids = page.map((w) => w.id);
     if (!ids.length) return [];
-    const [owners, memberCounts, credits] = await Promise.all([
+    const accountIds = page.flatMap((w) =>
+      w.billingAccountId ? [w.billingAccountId] : [],
+    );
+    const [owners, memberCounts, subs, balances] = await Promise.all([
       this.db
         .select({
           workspaceId: workspaceMembers.workspaceId,
@@ -221,7 +226,8 @@ export class AdminClientsService {
         .from(workspaceMembers)
         .where(inArray(workspaceMembers.workspaceId, ids))
         .groupBy(workspaceMembers.workspaceId),
-      this.creditsOf(ids),
+      this.subscriptionsOf(ids, accountIds, now),
+      this.balancesOf(ids, now),
     ]);
 
     // Oldest owner wins if a workspace has several.
@@ -232,23 +238,47 @@ export class AdminClientsService {
     const membersOf = new Map(
       memberCounts.map((m) => [m.workspaceId, m.total]),
     );
-    return page.map((w) => ({
+    return page.map(({ billingAccountId, ...w }) => ({
       ...w,
       owner: ownerOf.get(w.id) ?? null,
       memberCount: membersOf.get(w.id) ?? 0,
-      credits: credits?.get(w.id) ?? null,
+      ...toClientBilling({
+        live: subs.lives.get(w.id) ?? null,
+        subscription:
+          (billingAccountId && subs.byAccount.get(billingAccountId)) || null,
+        balance: balances ? (balances.get(w.id) ?? null) : undefined,
+      }),
     }));
   }
 
-  /** This Dhaka month's credits per workspace; `null` (logged) when the read fails. */
-  private async creditsOf(
+  /** Live subscriptions per workspace + the described subscription per account (2 queries). */
+  private async subscriptionsOf(
     ids: readonly string[],
-  ): Promise<Map<string, CreditUsage> | null> {
+    accountIds: readonly string[],
+    now: Date,
+  ) {
+    const lives = await findLiveSubscriptions(this.db, ids, now);
+    const byAccount = await findSummarySubscriptions(
+      this.db,
+      accountIds,
+      [...lives.values()].map((l) => l.subscriptionId),
+    );
+    return { lives, byAccount };
+  }
+
+  /**
+   * This period's pooled `monthlyComments` balance per workspace (`null` = no live plan); the
+   * whole map is `null` (logged) when the wallet read fails, so the list still answers.
+   */
+  private async balancesOf(
+    ids: readonly string[],
+    now: Date,
+  ): Promise<Map<string, WalletBalance | null> | null> {
     try {
-      return await this.credits.usageMany(ids);
+      return await this.wallet.balanceMany(ids, 'monthlyComments', now);
     } catch (error) {
       this.logger.warn(
-        `Credit usage unavailable for ${ids.length} clients: ${error instanceof Error ? error.name : 'unknown error'}`,
+        `Comment usage unavailable for ${ids.length} clients: ${error instanceof Error ? error.name : 'unknown error'}`,
       );
       return null;
     }

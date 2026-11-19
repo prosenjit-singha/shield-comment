@@ -6,6 +6,7 @@ import type { DashboardStatsResponse } from '../src/admin/dto/dashboard-stats.dt
 import {
   dailyCommentStats,
   plans,
+  subscriptions,
   tickets,
   UNRESOLVED_TICKET_STATUSES,
   workspaces,
@@ -117,6 +118,9 @@ describe('Admin dashboard stats (e2e)', () => {
         .where(eq(workspaces.id, actor.workspaceId));
       edge[name] = actor;
     }
+    // PW-T6b: planTiers reads live subscriptions; end the sign-up trials so it starts at [].
+    for (const x of [superAdmin, client, ...Object.values(edge)])
+      await actors.expirePlan(x);
   });
 
   afterAll(async () => {
@@ -365,12 +369,15 @@ describe('Admin dashboard stats (e2e)', () => {
     });
   });
 
-  /** M2-T12b: ACTIVE workspaces per plan now (only plans with ≥ 1, by sortOrder, tier = name). */
+  /**
+   * M2-T12b, PW-T6b: ACTIVE workspaces per **live-subscription** plan now (only plans with ≥ 1, by
+   * sortOrder, tier = name; a trial counts as Starter; no live plan = not counted).
+   */
   describe('planTiers', () => {
-    const setPlan = (actors_: Actor[], planId: string | null) =>
+    const setStatus = (actors_: Actor[], status: 'ACTIVE' | 'SUSPENDED') =>
       db()
         .update(workspaces)
-        .set({ planId })
+        .set({ status })
         .where(
           inArray(
             workspaces.id,
@@ -378,16 +385,11 @@ describe('Admin dashboard stats (e2e)', () => {
           ),
         );
 
-    it('is [] while no workspace has a plan', async () => {
-      const [withPlan] = await db()
-        .select({ n: count() })
-        .from(workspaces)
-        .innerJoin(plans, eq(plans.id, workspaces.planId));
-      expect(withPlan!.n).toBe(0);
+    it('is [] while no workspace has a live plan (ended trials only)', async () => {
       expect((await stats('range=7d')).series.planTiers).toEqual([]);
     });
 
-    it('counts ACTIVE workspaces per plan, ordered by sortOrder, for any range', async () => {
+    it('counts ACTIVE workspaces per live-subscription plan, ordered by sortOrder, for any range', async () => {
       const rows = await db()
         .select({ id: plans.id, slug: plans.slug, name: plans.name })
         .from(plans)
@@ -399,52 +401,63 @@ describe('Admin dashboard stats (e2e)', () => {
         'pro',
       ]);
       const bySlug = Object.fromEntries(rows.map((r) => [r.slug, r]));
-      const all = [client, ...Object.values(edge)];
+      const all = [superAdmin, client, ...Object.values(edge)];
+      let pooled: string | undefined;
       try {
-        // Growth ×3 (inserted before Starter on purpose), Pro ×1, Starter ×1; the only Free
-        // workspace is SUSPENDED (not counted) and aprFirst has no plan.
-        await setPlan(
-          [edge.janLast!, edge.febFirst!, client],
-          bySlug.growth!.id,
-        );
-        await setPlan([edge.feb29!], bySlug.pro!.id);
-        await setPlan([edge.feb28!], bySlug.starter!.id);
-        await setPlan([edge.marLast!], bySlug.free!.id);
+        // Growth ×3 accounts (activated before Starter on purpose) + a second workspace on the
+        // client's Growth account (pooled: each workspace counts) = 4; Pro ×1; Starter ×1 as a
+        // live trial. marLast is on Pro but SUSPENDED (not counted); aprFirst + superAdmin have
+        // only ended trials.
+        for (const x of [edge.janLast!, edge.febFirst!, client])
+          await actors.activatePlan(x, 'growth');
+        await actors.activatePlan(edge.feb29!, 'pro');
+        await actors.activatePlan(edge.marLast!, 'pro');
+        await setStatus([edge.marLast!], 'SUSPENDED');
+        const start = new Date(Date.now() - 60_000);
+        const trialEnd = new Date(start.getTime() + 7 * 24 * 3_600_000);
         await db()
-          .update(workspaces)
-          .set({ status: 'SUSPENDED' })
-          .where(eq(workspaces.id, edge.marLast!.workspaceId));
+          .insert(subscriptions)
+          .values({
+            billingAccountId: await actors.accountIdOf(edge.feb28!),
+            planId: bySlug.starter!.id,
+            interval: 'month',
+            status: 'TRIALING',
+            startedAt: start,
+            trialEndsAt: trialEnd,
+            currentTermStart: start,
+            currentTermEnd: trialEnd,
+          });
+        const [ws] = await db()
+          .insert(workspaces)
+          .values({
+            name: 'm2t5 pooled',
+            slug: `m2t5-pooled-${Date.now()}`,
+            billingAccountId: await actors.accountIdOf(client),
+          })
+          .returning({ id: workspaces.id });
+        pooled = ws!.id;
 
         const expected = [
           { tier: bySlug.starter!.name, clients: 1 },
-          { tier: bySlug.growth!.name, clients: 3 },
+          { tier: bySlug.growth!.name, clients: 4 },
           { tier: bySlug.pro!.name, clients: 1 },
         ];
         expectShape(await stats('range=7d'), 7, expected);
         expectShape(await stats('range=12m'), 12, expected);
         expectShape(await stats('from=2024-02-29&to=2024-02-29'), 1, expected);
 
-        // A suspended Growth client drops out; a plan whose last client goes is omitted.
-        await db()
-          .update(workspaces)
-          .set({ status: 'SUSPENDED' })
-          .where(eq(workspaces.id, client.workspaceId));
-        await setPlan([edge.feb29!], null);
+        // A suspended Growth client drops out; a plan whose last live subscription ends is omitted.
+        await setStatus([client], 'SUSPENDED');
+        await actors.expirePlan(edge.feb29!);
         expect((await stats('range=7d')).series.planTiers).toEqual([
           { tier: bySlug.starter!.name, clients: 1 },
-          { tier: bySlug.growth!.name, clients: 2 },
+          { tier: bySlug.growth!.name, clients: 3 },
         ]);
       } finally {
-        await setPlan(all, null);
-        await db()
-          .update(workspaces)
-          .set({ status: 'ACTIVE' })
-          .where(
-            inArray(
-              workspaces.id,
-              all.map((x) => x.workspaceId),
-            ),
-          );
+        if (pooled)
+          await db().delete(workspaces).where(eq(workspaces.id, pooled));
+        await setStatus(all, 'ACTIVE');
+        for (const x of all) await actors.expirePlan(x);
       }
       expect((await stats('range=7d')).series.planTiers).toEqual([]);
     });

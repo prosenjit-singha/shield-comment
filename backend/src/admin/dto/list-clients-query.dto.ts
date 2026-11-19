@@ -29,7 +29,7 @@ export type WorkspaceStatus = (typeof WORKSPACE_STATUSES)[number];
 export const ISO_DATE_OR_DATE_TIME =
   /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2}))?$/;
 
-/** `plan` filter value for workspaces without a plan (no seeded plan uses this slug). */
+/** `plan` filter value for workspaces without a live plan (no seeded plan uses this slug). */
 export const NO_PLAN = 'none';
 
 /** A plan slug (same format as the `plans_slug_format` check) or `none`. */
@@ -92,7 +92,7 @@ export class ListClientsQueryDto {
   @IsISO8601({ strict: true })
   createdTo?: string;
 
-  /** Plan slug (`growth`) or `none` (workspaces without a plan). Case-sensitive, not trimmed. */
+  /** Live plan slug (`growth`) or `none` (no live plan). Case-sensitive, not trimmed. */
   @IsOptional()
   @IsString()
   @MaxLength(PLAN_FILTER_MAX)
