@@ -6,6 +6,7 @@ import {
   LifeBuoy,
   ServerCog,
   Settings,
+  TicketPercent,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -14,17 +15,19 @@ export interface NavItem {
     | '/admin/dashboard'
     | '/admin/clients'
     | '/admin/billing'
+    | '/admin/promotions'
     | '/admin/tickets'
     | '/admin/system'
     | '/admin/settings'
   icon: LucideIcon
 }
 
-/** Sidebar navigation for screens A2–A7 (`docs/design/admin.md`). */
+/** Sidebar navigation for screens A2–A7 + Promotions (PR-T5b) (`docs/design/admin.md`). */
 export const navItems: readonly NavItem[] = [
   { label: 'Dashboard', to: '/admin/dashboard', icon: LayoutDashboard },
   { label: 'Clients', to: '/admin/clients', icon: Building2 },
   { label: 'Billing', to: '/admin/billing', icon: CreditCard },
+  { label: 'Promotions', to: '/admin/promotions', icon: TicketPercent },
   { label: 'Tickets', to: '/admin/tickets', icon: LifeBuoy },
   { label: 'System', to: '/admin/system', icon: ServerCog },
   { label: 'Settings', to: '/admin/settings', icon: Settings },

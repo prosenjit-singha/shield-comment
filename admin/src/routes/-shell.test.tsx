@@ -43,13 +43,14 @@ const nav = [
   ['Dashboard', '/admin/dashboard'],
   ['Clients', '/admin/clients'],
   ['Billing', '/admin/billing'],
+  ['Promotions', '/admin/promotions'],
   ['Tickets', '/admin/tickets'],
   ['System', '/admin/system'],
   ['Settings', '/admin/settings'],
 ] as const
 
 describe('_authed sidebar shell', () => {
-  it('shows all six nav links to a super admin and highlights the active one', async () => {
+  it('shows all seven nav links to a super admin and highlights the active one', async () => {
     renderAt('/admin/dashboard')
     const navigation = await screen.findByRole('navigation', { name: 'Admin' })
     const links = within(navigation).getAllByRole('link')

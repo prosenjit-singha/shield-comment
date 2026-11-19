@@ -11,12 +11,15 @@
 export class ApiError extends Error {
   readonly status: number
   readonly code: string | undefined
+  /** The backend's 4xx `{ details }` object (e.g. `PROMOTION_TERMS_LOCKED` → `{ fields }`). */
+  readonly details: Record<string, unknown> | undefined
 
-  constructor(status: number, message: string, code?: string) {
+  constructor(status: number, message: string, code?: string, details?: Record<string, unknown>) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.details = details
   }
 }
 
@@ -24,6 +27,14 @@ function errorCode(body: unknown): string | undefined {
   if (body && typeof body === 'object' && 'code' in body) {
     const { code } = body as { code: unknown }
     if (typeof code === 'string' && code) return code
+  }
+  return undefined
+}
+
+function errorDetails(body: unknown): Record<string, unknown> | undefined {
+  if (body && typeof body === 'object' && 'details' in body) {
+    const { details } = body as { details: unknown }
+    if (details && typeof details === 'object' && !Array.isArray(details)) return details as Record<string, unknown>
   }
   return undefined
 }
@@ -52,6 +63,6 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
       body = null
     }
   }
-  if (!res.ok) throw new ApiError(res.status, errorMessage(body, res.status), errorCode(body))
+  if (!res.ok) throw new ApiError(res.status, errorMessage(body, res.status), errorCode(body), errorDetails(body))
   return body as T
 }

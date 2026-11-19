@@ -16,6 +16,7 @@ import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AuthedAdminBillingRouteImport } from './routes/_authed/admin/billing'
 import { Route as AuthedAdminClientsRouteImport } from './routes/_authed/admin/clients'
 import { Route as AuthedAdminDashboardRouteImport } from './routes/_authed/admin/dashboard'
+import { Route as AuthedAdminPromotionsRouteImport } from './routes/_authed/admin/promotions'
 import { Route as AuthedAdminSettingsRouteImport } from './routes/_authed/admin/settings'
 import { Route as AuthedAdminSystemRouteImport } from './routes/_authed/admin/system'
 import { Route as AuthedAdminTicketsRouteImport } from './routes/_authed/admin/tickets'
@@ -54,6 +55,11 @@ const AuthedAdminDashboardRoute = AuthedAdminDashboardRouteImport.update({
   path: '/admin/dashboard',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedAdminPromotionsRoute = AuthedAdminPromotionsRouteImport.update({
+  id: '/admin/promotions',
+  path: '/admin/promotions',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedAdminSettingsRoute = AuthedAdminSettingsRouteImport.update({
   id: '/admin/settings',
   path: '/admin/settings',
@@ -77,6 +83,7 @@ export interface FileRoutesByFullPath {
   '/admin/billing': typeof AuthedAdminBillingRoute
   '/admin/clients': typeof AuthedAdminClientsRoute
   '/admin/dashboard': typeof AuthedAdminDashboardRoute
+  '/admin/promotions': typeof AuthedAdminPromotionsRoute
   '/admin/settings': typeof AuthedAdminSettingsRoute
   '/admin/system': typeof AuthedAdminSystemRoute
   '/admin/tickets': typeof AuthedAdminTicketsRoute
@@ -88,6 +95,7 @@ export interface FileRoutesByTo {
   '/admin/billing': typeof AuthedAdminBillingRoute
   '/admin/clients': typeof AuthedAdminClientsRoute
   '/admin/dashboard': typeof AuthedAdminDashboardRoute
+  '/admin/promotions': typeof AuthedAdminPromotionsRoute
   '/admin/settings': typeof AuthedAdminSettingsRoute
   '/admin/system': typeof AuthedAdminSystemRoute
   '/admin/tickets': typeof AuthedAdminTicketsRoute
@@ -101,6 +109,7 @@ export interface FileRoutesById {
   '/_authed/admin/billing': typeof AuthedAdminBillingRoute
   '/_authed/admin/clients': typeof AuthedAdminClientsRoute
   '/_authed/admin/dashboard': typeof AuthedAdminDashboardRoute
+  '/_authed/admin/promotions': typeof AuthedAdminPromotionsRoute
   '/_authed/admin/settings': typeof AuthedAdminSettingsRoute
   '/_authed/admin/system': typeof AuthedAdminSystemRoute
   '/_authed/admin/tickets': typeof AuthedAdminTicketsRoute
@@ -114,6 +123,7 @@ export interface FileRouteTypes {
     | '/admin/billing'
     | '/admin/clients'
     | '/admin/dashboard'
+    | '/admin/promotions'
     | '/admin/settings'
     | '/admin/system'
     | '/admin/tickets'
@@ -125,6 +135,7 @@ export interface FileRouteTypes {
     | '/admin/billing'
     | '/admin/clients'
     | '/admin/dashboard'
+    | '/admin/promotions'
     | '/admin/settings'
     | '/admin/system'
     | '/admin/tickets'
@@ -137,6 +148,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/billing'
     | '/_authed/admin/clients'
     | '/_authed/admin/dashboard'
+    | '/_authed/admin/promotions'
     | '/_authed/admin/settings'
     | '/_authed/admin/system'
     | '/_authed/admin/tickets'
@@ -200,6 +212,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAdminDashboardRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/admin/promotions': {
+      id: '/_authed/admin/promotions'
+      path: '/admin/promotions'
+      fullPath: '/admin/promotions'
+      preLoaderRoute: typeof AuthedAdminPromotionsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/admin/settings': {
       id: '/_authed/admin/settings'
       path: '/admin/settings'
@@ -228,6 +247,7 @@ interface AuthedRouteChildren {
   AuthedAdminBillingRoute: typeof AuthedAdminBillingRoute
   AuthedAdminClientsRoute: typeof AuthedAdminClientsRoute
   AuthedAdminDashboardRoute: typeof AuthedAdminDashboardRoute
+  AuthedAdminPromotionsRoute: typeof AuthedAdminPromotionsRoute
   AuthedAdminSettingsRoute: typeof AuthedAdminSettingsRoute
   AuthedAdminSystemRoute: typeof AuthedAdminSystemRoute
   AuthedAdminTicketsRoute: typeof AuthedAdminTicketsRoute
@@ -237,6 +257,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAdminBillingRoute: AuthedAdminBillingRoute,
   AuthedAdminClientsRoute: AuthedAdminClientsRoute,
   AuthedAdminDashboardRoute: AuthedAdminDashboardRoute,
+  AuthedAdminPromotionsRoute: AuthedAdminPromotionsRoute,
   AuthedAdminSettingsRoute: AuthedAdminSettingsRoute,
   AuthedAdminSystemRoute: AuthedAdminSystemRoute,
   AuthedAdminTicketsRoute: AuthedAdminTicketsRoute,
