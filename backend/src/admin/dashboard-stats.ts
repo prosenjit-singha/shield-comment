@@ -4,9 +4,33 @@ import {
   type ResolvedRange,
 } from './dashboard-range.js';
 import type {
+  CommentsPoint,
   DashboardStatsResponse,
   PlanTierSlice,
 } from './dto/dashboard-stats.dto.js';
+
+/** Platform-wide `daily_comment_stats` sums of one bucket (M5-T13, D14). */
+export interface CommentCounts {
+  classified: number;
+  hidden: number;
+  deleted: number;
+}
+
+/**
+ * D14 mapping (M5-T13): `scanned` = AI classifications (`classified`, re-checked edits included),
+ * `blocked` = successful AI hides + deletes (`hidden` + `deleted`). Later unhides are not
+ * subtracted: the chart counts blocking actions taken in the bucket.
+ */
+export function commentsPoint(
+  bucket: string,
+  counts: CommentCounts | undefined,
+): CommentsPoint {
+  return {
+    bucket,
+    scanned: counts?.classified ?? 0,
+    blocked: (counts?.hidden ?? 0) + (counts?.deleted ?? 0),
+  };
+}
 
 /** ACTIVE workspaces per plan, as counted by the database (M2-T12b). */
 export interface PlanTierCount {
@@ -26,6 +50,8 @@ export interface DashboardSources {
   newClients: Readonly<Record<string, number>>;
   /** ACTIVE workspaces per plan right now (workspaces without a plan are not included). */
   planTiers: readonly PlanTierCount[];
+  /** `daily_comment_stats` sums per bucket key, all workspaces (M5-T13); missing keys = 0. */
+  comments?: Readonly<Record<string, CommentCounts>>;
 }
 
 /**
@@ -45,7 +71,8 @@ export function planTierSlices(
 
 /**
  * Zero-fills every bucket of the range and builds the response. Data sources that don't exist yet
- * (MRR, comments, gateways) are zeros or empty lists, never `null`.
+ * (MRR, gateways) are zeros or empty lists, never `null`. `commentsScanned` = the range's
+ * `scanned` total.
  */
 export function buildDashboardStats(
   range: ResolvedRange,
@@ -58,6 +85,9 @@ export function buildDashboardStats(
     total += newClients;
     return { bucket, newClients, totalClients: total, mrrBdt: 0 };
   });
+  const comments = keys.map((bucket) =>
+    commentsPoint(bucket, sources.comments?.[bucket]),
+  );
   return {
     range: range.range,
     granularity: range.granularity,
@@ -67,12 +97,12 @@ export function buildDashboardStats(
     kpis: {
       activeClients: sources.activeClients,
       mrrBdt: 0,
-      commentsScanned: 0,
+      commentsScanned: comments.reduce((sum, p) => sum + p.scanned, 0),
       openTickets: sources.openTickets,
     },
     series: {
       growth,
-      comments: keys.map((bucket) => ({ bucket, scanned: 0, blocked: 0 })),
+      comments,
       planTiers: planTierSlices(sources.planTiers),
       gateways: [],
     },

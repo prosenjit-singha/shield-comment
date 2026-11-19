@@ -2,12 +2,63 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { resolveDashboardRange } from './dashboard-range.js';
-import { buildDashboardStats, planTierSlices } from './dashboard-stats.js';
+import {
+  buildDashboardStats,
+  commentsPoint,
+  planTierSlices,
+} from './dashboard-stats.js';
 import { DashboardStatsQueryDto } from './dto/dashboard-stats.dto.js';
 
 const NOW = new Date('2026-11-18T04:00:00Z');
 
+describe('commentsPoint (M5-T13, D14)', () => {
+  it('scanned = classified, blocked = hidden + deleted', () => {
+    expect(
+      commentsPoint('2026-11-18', { classified: 9, hidden: 3, deleted: 2 }),
+    ).toEqual({ bucket: '2026-11-18', scanned: 9, blocked: 5 });
+  });
+
+  it('a bucket without stats is zeros', () => {
+    expect(commentsPoint('2026-11', undefined)).toEqual({
+      bucket: '2026-11',
+      scanned: 0,
+      blocked: 0,
+    });
+  });
+});
+
 describe('buildDashboardStats', () => {
+  it('fills comments from the per-bucket sums; the KPI is the range total', () => {
+    const range = resolveDashboardRange({ range: '7d' }, NOW);
+    const stats = buildDashboardStats(range, {
+      activeClients: 0,
+      clientsBefore: 0,
+      openTickets: 0,
+      newClients: {},
+      planTiers: [],
+      comments: {
+        '2026-11-12': { classified: 4, hidden: 1, deleted: 0 },
+        '2026-11-18': { classified: 6, hidden: 2, deleted: 1 },
+        // Outside the range: ignored.
+        '2026-11-11': { classified: 100, hidden: 100, deleted: 100 },
+      },
+    });
+    expect(stats.kpis.commentsScanned).toBe(10);
+    expect(stats.series.comments[0]).toEqual({
+      bucket: '2026-11-12',
+      scanned: 4,
+      blocked: 1,
+    });
+    expect(stats.series.comments[6]).toEqual({
+      bucket: '2026-11-18',
+      scanned: 6,
+      blocked: 3,
+    });
+    expect(
+      stats.series.comments.slice(1, 6).every((p) => p.scanned === 0),
+    ).toBe(true);
+  });
+
   it('zero-fills every daily bucket and keeps a running client total', () => {
     const range = resolveDashboardRange({ range: '7d' }, NOW);
     const stats = buildDashboardStats(range, {

@@ -1,5 +1,10 @@
 import type { AiUsage } from '../ai-gateway/ai-adapter.js';
 import type { AiProvider } from '../ai-gateway/ai-provider.js';
+import {
+  DEFAULT_AI_MODEL_PRICES,
+  lookupModelPrice,
+  type ModelPrice,
+} from './ai-model-prices.js';
 import type { GoldenComment } from './golden-fixture.js';
 import {
   COMMENT_LANGUAGES,
@@ -29,37 +34,20 @@ export interface GoldenOutcome {
   attempts: number;
 }
 
-/** USD per 1M tokens. */
-export interface ModelPrice {
-  input: number;
-  output: number;
-}
+/** USD per 1M tokens (shared with the admin AI usage card, M5-T13). */
+export type { ModelPrice };
 
 /**
- * List prices for the estimate (USD per 1M tokens, provider price pages, Nov 2026). Only an
- * estimate: check the provider before trusting it. Unknown provider/model → cost "n/a".
+ * List prices for the estimate (`DEFAULT_AI_MODEL_PRICES`, USD per 1M tokens). Only an estimate:
+ * check the provider before trusting it. Unknown provider/model → cost "n/a".
  */
-export const GOLDEN_MODEL_PRICES: Readonly<
-  Partial<Record<AiProvider, Readonly<Record<string, ModelPrice>>>>
-> = {
-  openai: {
-    'gpt-4.1-mini': { input: 0.4, output: 1.6 },
-    'gpt-4.1-nano': { input: 0.1, output: 0.4 },
-  },
-  anthropic: {
-    'claude-haiku-4-5': { input: 1, output: 5 },
-  },
-  google: {
-    'gemini-2.5-flash-lite': { input: 0.1, output: 0.4 },
-    'gemini-2.5-flash': { input: 0.3, output: 2.5 },
-  },
-};
+export const GOLDEN_MODEL_PRICES = DEFAULT_AI_MODEL_PRICES;
 
 export function modelPrice(
   provider: AiProvider,
   model: string,
 ): ModelPrice | null {
-  return GOLDEN_MODEL_PRICES[provider]?.[model] ?? null;
+  return lookupModelPrice(GOLDEN_MODEL_PRICES, provider, model);
 }
 
 export interface CategoryScore {

@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import { and, asc, count, eq, inArray } from 'drizzle-orm';
+import { CreditService, type CreditUsage } from '../credits/credit.service.js';
 import type { Database } from '../db/database.js';
 import {
   plans,
@@ -61,6 +63,11 @@ export interface ClientItem extends WorkspaceRow {
   /** Oldest owner membership, or `null` if the workspace has none. */
   owner: ClientOwner | null;
   memberCount: number;
+  /**
+   * AI credits of the current Asia/Dhaka month (M5-T13, D14/D15): `used / limit` of the plan
+   * (no plan = Free). `null` when the credit read failed (the list still answers).
+   */
+  credits: CreditUsage | null;
 }
 
 const workspaceColumns = {
@@ -79,7 +86,12 @@ const workspaceColumns = {
  */
 @Injectable()
 export class AdminClientsService {
-  constructor(@InjectDrizzle() private readonly db: Database) {}
+  private readonly logger = new Logger(AdminClientsService.name);
+
+  constructor(
+    @InjectDrizzle() private readonly db: Database,
+    private readonly credits: CreditService,
+  ) {}
 
   /** `{ items, total, skip, take }`; `total` counts every match of the filters. */
   async list(query: ClientListQuery) {
@@ -184,7 +196,7 @@ export class AdminClientsService {
   ): Promise<ClientItem[]> {
     const ids = page.map((w) => w.id);
     if (!ids.length) return [];
-    const [owners, memberCounts] = await Promise.all([
+    const [owners, memberCounts, credits] = await Promise.all([
       this.db
         .select({
           workspaceId: workspaceMembers.workspaceId,
@@ -209,6 +221,7 @@ export class AdminClientsService {
         .from(workspaceMembers)
         .where(inArray(workspaceMembers.workspaceId, ids))
         .groupBy(workspaceMembers.workspaceId),
+      this.creditsOf(ids),
     ]);
 
     // Oldest owner wins if a workspace has several.
@@ -223,6 +236,21 @@ export class AdminClientsService {
       ...w,
       owner: ownerOf.get(w.id) ?? null,
       memberCount: membersOf.get(w.id) ?? 0,
+      credits: credits?.get(w.id) ?? null,
     }));
+  }
+
+  /** This Dhaka month's credits per workspace; `null` (logged) when the read fails. */
+  private async creditsOf(
+    ids: readonly string[],
+  ): Promise<Map<string, CreditUsage> | null> {
+    try {
+      return await this.credits.usageMany(ids);
+    } catch (error) {
+      this.logger.warn(
+        `Credit usage unavailable for ${ids.length} clients: ${error instanceof Error ? error.name : 'unknown error'}`,
+      );
+      return null;
+    }
   }
 }

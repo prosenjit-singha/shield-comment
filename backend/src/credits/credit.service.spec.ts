@@ -35,4 +35,12 @@ describe('CreditService (unit)', () => {
       RangeError,
     );
   });
+
+  it('usageMany: no ids → empty map without a query; a bad instant → RangeError', async () => {
+    const service = new CreditService(strictDb());
+    await expect(service.usageMany([])).resolves.toEqual(new Map());
+    await expect(service.usageMany(['ws'], new Date('x'))).rejects.toThrow(
+      RangeError,
+    );
+  });
 });

@@ -2,7 +2,10 @@ import { randomBytes } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { eq, inArray } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
+import { normalizeFeatureConfig } from '../src/admin/plan-rules.js';
+import { dhakaMonthKey } from '../src/credits/credit-period.js';
 import {
+  monthlyCreditUsage,
   plans,
   users,
   workspaces,
@@ -23,7 +26,15 @@ interface Item {
   plan: { id: string; slug: string; name: string } | null;
   owner: { id: string; email: string; name: string } | null;
   memberCount: number;
+  credits: { used: number; limit: number; period: string } | null;
 }
+
+/** Credits of a workspace without usage this month (limit from its plan, checked separately). */
+const noCreditsUsed = () => ({
+  used: 0,
+  limit: expect.any(Number) as number,
+  period: dhakaMonthKey(),
+});
 
 /**
  * M2-T3: `GET /api/admin/clients` search/filters/sort and `PATCH /api/admin/clients/:id/status`
@@ -195,6 +206,7 @@ describe('Admin clients: list filters + status (e2e)', () => {
         plan: null,
         owner: { id: a.id, email: a.email, name: `Owner ${T} A` },
         memberCount: 2,
+        credits: noCreditsUsed(),
       });
     });
 
@@ -361,6 +373,77 @@ describe('Admin clients: list filters + status (e2e)', () => {
       );
     });
 
+    /** M5-T13 (D14/D15): `credits` = this Dhaka month's `used / limit` (no plan = Free). */
+    describe('credits (M5-T13)', () => {
+      const month = dhakaMonthKey();
+      const limitOf = async (slug: string) => {
+        const [row] = await db()
+          .select({ featureConfig: plans.featureConfig })
+          .from(plans)
+          .where(eq(plans.slug, slug));
+        return normalizeFeatureConfig(row!.featureConfig).limits
+          .monthlyAiCredits;
+      };
+
+      beforeAll(async () => {
+        await db()
+          .insert(monthlyCreditUsage)
+          .values([
+            { workspaceId: a.workspaceId, month, used: 42 },
+            // Another month: not this period.
+            { workspaceId: a.workspaceId, month: '2020-01', used: 99 },
+            { workspaceId: c.workspaceId, month, used: 3 },
+          ]);
+      });
+
+      afterAll(async () => {
+        await db()
+          .delete(monthlyCreditUsage)
+          .where(
+            inArray(monthlyCreditUsage.workspaceId, [
+              a.workspaceId,
+              c.workspaceId,
+            ]),
+          );
+      });
+
+      it('every item carries { used, limit, period } of the current Dhaka month', async () => {
+        const [growth, starter, free] = await Promise.all([
+          limitOf('growth'),
+          limitOf('starter'),
+          limitOf('free'),
+        ]);
+        expect(growth).toBeGreaterThan(starter);
+        const body = await list(`q=${T}&sort=oldest`);
+        expect(body.items.map((i) => [i.id, i.credits])).toEqual([
+          [a.workspaceId, { used: 42, limit: growth, period: month }],
+          [b.workspaceId, { used: 0, limit: starter, period: month }],
+          [c.workspaceId, { used: 3, limit: free, period: month }],
+          [d.workspaceId, { used: 0, limit: growth, period: month }],
+          [mod.workspaceId, { used: 0, limit: free, period: month }],
+        ]);
+      });
+
+      it('PATCH status answers with the credits too', async () => {
+        const res = await patchStatus(a.workspaceId, {
+          status: 'ACTIVE',
+          reason: 'credits check',
+        }).expect(200);
+        expect(res.body.client.credits).toEqual({
+          used: 42,
+          limit: await limitOf('growth'),
+          period: month,
+        });
+      });
+
+      it('403 for a normal user', async () => {
+        await http()
+          .get(`${CLIENTS}?q=${T}`)
+          .set('Cookie', a.cookie)
+          .expect(403);
+      });
+    });
+
     it('400 for an unknown plan slug', async () => {
       const res = await http()
         .get(`${CLIENTS}?plan=platinum`)
@@ -491,6 +574,7 @@ describe('Admin clients: list filters + status (e2e)', () => {
           plan: null,
           owner: { id: target.id, email: target.email, name: 'm2t3-target' },
           memberCount: 2,
+          credits: noCreditsUsed(),
         },
       });
       expect(await statusOf(target.workspaceId)).toBe('SUSPENDED');

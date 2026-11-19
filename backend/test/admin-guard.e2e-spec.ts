@@ -88,6 +88,7 @@ describe('Super admin guard (e2e)', () => {
     for (const item of res.body.items as Record<string, unknown>[]) {
       expect(Object.keys(item).sort()).toEqual([
         'createdAt',
+        'credits',
         'id',
         'memberCount',
         'name',

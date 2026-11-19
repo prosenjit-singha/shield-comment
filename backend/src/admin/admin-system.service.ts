@@ -9,8 +9,21 @@ import type { Database } from '../db/database.js';
 import { MIGRATIONS_FOLDER } from '../db/migrator.js';
 import { withTimeout } from '../common/async/with-timeout.js';
 import { HealthService } from '../health/health.service.js';
+import {
+  DEFAULT_AI_MODEL_PRICES,
+  mergeModelPrices,
+  type ModelPriceTable,
+  parseModelPrices,
+} from '../moderation/ai-model-prices.js';
+import { listDailyAiUsage } from '../moderation/moderation.queries.js';
 import { QueueRegistry } from '../queue/queue.registry.js';
+import {
+  aiUsageDays,
+  type AiUsageRow,
+  buildAiUsageReport,
+} from './ai-usage-summary.js';
 import type {
+  AiUsageReport,
   MigrationStatus,
   QueueStats,
   SystemHealthResponse,
@@ -28,6 +41,7 @@ import {
 
 const MIGRATIONS_TIMEOUT_MS = 3000;
 const QUEUE_COUNTS_TIMEOUT_MS = 3000;
+const AI_USAGE_TIMEOUT_MS = 3000;
 
 function readText(path: string): string {
   try {
@@ -54,21 +68,35 @@ export class AdminSystemService {
     readText(join(MIGRATIONS_FOLDER, 'meta', '_journal.json')),
   );
 
+  /** Overridable clock for the AI usage windows (tests). */
+  now: () => Date = () => new Date();
+  /** Built-in prices + `AI_MODEL_PRICES` (validated at boot). */
+  private readonly prices: ModelPriceTable;
+  private readonly usdToBdtRate: number;
+
   constructor(
     private readonly healthService: HealthService,
     @InjectDrizzle() private readonly db: Database,
     private readonly config: ConfigService<EnvironmentVariables, true>,
     private readonly queueRegistry: QueueRegistry,
-  ) {}
+  ) {
+    const override = config.get('AI_MODEL_PRICES', { infer: true });
+    this.prices = mergeModelPrices(
+      DEFAULT_AI_MODEL_PRICES,
+      typeof override === 'string' ? parseModelPrices(override) : {},
+    );
+    const rate = Number(config.get('AI_COST_USD_TO_BDT', { infer: true }));
+    this.usdToBdtRate = Number.isFinite(rate) && rate > 0 ? rate : 122;
+  }
 
   async health(): Promise<SystemHealthResponse> {
     const report = await this.healthService.check();
     // Skip the journal query when the DB probe already failed (it would only wait for the pool).
-    const [migrations, queues] = await Promise.all([
-      report.database === 'up'
-        ? this.migrations()
-        : Promise.resolve(UNKNOWN_MIGRATIONS),
+    const dbUp = report.database === 'up';
+    const [migrations, queues, ai] = await Promise.all([
+      dbUp ? this.migrations() : Promise.resolve(UNKNOWN_MIGRATIONS),
       this.queues(),
+      dbUp ? this.aiUsage() : Promise.resolve(null),
     ]);
     return {
       status:
@@ -89,7 +117,39 @@ export class AdminSystemService {
       }),
       queues,
       migrations,
+      ai,
     };
+  }
+
+  /** Platform-wide `daily_ai_usage` rows of an inclusive Dhaka day range (a seam for tests). */
+  aiUsageRows(range: { from: string; to: string }): Promise<AiUsageRow[]> {
+    return listDailyAiUsage(this.db, range);
+  }
+
+  /**
+   * D14 "AI moderation" card: platform-wide `daily_ai_usage` of the last 7 Dhaka days (super admin
+   * only: this service sits behind `SuperAdminGuard`). A failed or slow (> 3 s) read → `null`, so
+   * the endpoint stays 200.
+   */
+  private async aiUsage(): Promise<AiUsageReport | null> {
+    try {
+      const now = this.now();
+      const { from, today } = aiUsageDays(now);
+      const rows = await withTimeout(
+        this.aiUsageRows({ from, to: today }),
+        AI_USAGE_TIMEOUT_MS,
+      );
+      return buildAiUsageReport(rows, {
+        now,
+        prices: this.prices,
+        usdToBdtRate: this.usdToBdtRate,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `AI usage unavailable: ${error instanceof Error ? error.name : 'unknown error'}`,
+      );
+      return null;
+    }
   }
 
   /**

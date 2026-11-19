@@ -1,7 +1,9 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
+import type { CreditService } from '../credits/credit.service.js';
 import type { Database } from '../db/database.js';
 import {
   plans,
+  workspaceMembers,
   workspaces,
   workspaceStatusAuditLogs,
 } from '../db/schema/index.js';
@@ -12,6 +14,8 @@ import {
 
 const WS = '019a0000-0000-7000-8000-000000000001';
 const ADMIN = '019a0000-0000-7000-8000-0000000000aa';
+/** Credit reads are not part of these tests. */
+const NO_CREDITS = {} as CreditService;
 
 /** Just enough of a Drizzle transaction for `updateStatus`. */
 function fakeDb(
@@ -62,7 +66,7 @@ function fakeDb(
 }
 
 function service(fake: ReturnType<typeof fakeDb>) {
-  const svc = new AdminClientsService(fake.db);
+  const svc = new AdminClientsService(fake.db, NO_CREDITS);
   const item = { id: WS, status: 'SUSPENDED' } as ClientItem;
   vi.spyOn(svc, 'findOne').mockResolvedValue(item);
   return { svc, item };
@@ -144,7 +148,7 @@ describe('AdminClientsService.list', () => {
         },
       }),
     };
-    const svc = new AdminClientsService(db as unknown as Database);
+    const svc = new AdminClientsService(db as unknown as Database, NO_CREDITS);
     await expect(
       svc.list({ skip: 0, take: 50, sort: 'newest', plan: 'platinum' }),
     ).rejects.toThrow(new BadRequestException('Unknown plan: platinum'));
@@ -152,7 +156,7 @@ describe('AdminClientsService.list', () => {
   });
 
   it('400s when createdFrom is after createdTo, before querying', async () => {
-    const svc = new AdminClientsService({} as Database);
+    const svc = new AdminClientsService({} as Database, NO_CREDITS);
     await expect(
       svc.list({
         skip: 0,
@@ -162,5 +166,95 @@ describe('AdminClientsService.list', () => {
         createdTo: '2026-11-18',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('AdminClientsService client items: credits (M5-T13)', () => {
+  const WS2 = '019a0000-0000-7000-8000-000000000002';
+  const page = [WS, WS2].map((id) => ({
+    id,
+    name: `Shop ${id.slice(-1)}`,
+    slug: `shop-${id.slice(-1)}`,
+    status: 'ACTIVE' as const,
+    createdAt: new Date('2026-11-01T00:00:00.000Z'),
+    plan: null,
+  }));
+
+  /**
+   * Just enough of the `findOne` queries: page rows (`…limit()`), owners (`…innerJoin…orderBy()`)
+   * and member counts (`…groupBy()`). Anything else throws.
+   */
+  function chainDb() {
+    const db = {
+      select: () => {
+        let table: unknown;
+        let joined = false;
+        const chain: Record<string, (...args: unknown[]) => unknown> = {
+          from: (t) => {
+            table = t;
+            return chain;
+          },
+          leftJoin: () => chain,
+          innerJoin: () => {
+            joined = true;
+            return chain;
+          },
+          where: () => chain,
+          limit: async () => {
+            if (table === workspaces) return page;
+            throw new Error('unexpected query');
+          },
+          orderBy: async () => {
+            if (table === workspaceMembers && joined)
+              return [
+                { workspaceId: WS, id: 'u1', email: 'o@x.test', name: 'O' },
+              ];
+            throw new Error('unexpected query');
+          },
+          groupBy: async () => {
+            if (table === workspaceMembers)
+              return [{ workspaceId: WS, total: 2 }];
+            throw new Error('unexpected query');
+          },
+        };
+        return chain;
+      },
+    };
+    return db as unknown as Database;
+  }
+
+  it("adds this month's credits per workspace, null for one the read did not return", async () => {
+    const usageMany = vi.fn(
+      async () => new Map([[WS, { used: 7, limit: 500, period: '2026-11' }]]),
+    );
+    const svc = new AdminClientsService(chainDb(), {
+      usageMany,
+    } as unknown as CreditService);
+    const item = await svc.findOne(WS);
+    expect(item).toMatchObject({
+      id: WS,
+      memberCount: 2,
+      owner: { id: 'u1', email: 'o@x.test', name: 'O' },
+      credits: { used: 7, limit: 500, period: '2026-11' },
+    });
+    expect(usageMany).toHaveBeenCalledWith([WS, WS2]);
+  });
+
+  it('a failing credit read → credits null on every item, logged, no throw', async () => {
+    const warn = vi
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const svc = new AdminClientsService(chainDb(), {
+      usageMany: vi.fn(async () => {
+        throw new Error('connection terminated');
+      }),
+    } as unknown as CreditService);
+    const item = await svc.findOne(WS);
+    expect(item?.credits).toBeNull();
+    expect(item?.memberCount).toBe(2);
+    expect(warn).toHaveBeenCalledWith(
+      'Credit usage unavailable for 2 clients: Error',
+    );
+    warn.mockRestore();
   });
 });

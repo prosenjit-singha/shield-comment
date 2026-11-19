@@ -4,6 +4,7 @@ import type { App } from 'supertest/types.js';
 import { dhakaBucketKey } from '../src/admin/dashboard-range.js';
 import type { DashboardStatsResponse } from '../src/admin/dto/dashboard-stats.dto.js';
 import {
+  dailyCommentStats,
   plans,
   tickets,
   UNRESOLVED_TICKET_STATUSES,
@@ -263,6 +264,104 @@ describe('Admin dashboard stats (e2e)', () => {
       expect(g['2024-03']).toEqual([1, 5]); // marLast
       expect(g['2024-04']).toEqual([1, 6]); // aprFirst
       expect(g['2024-05']).toEqual([0, 6]);
+    });
+  });
+
+  /**
+   * M5-T13 (D14): `comments` from every workspace's `daily_comment_stats` in the range (scanned =
+   * classified, blocked = hidden + deleted). Seeded in 2022 so the other ranges stay at zero.
+   */
+  describe('comments (M5-T13)', () => {
+    const PAGE = '5013000000001';
+    const seededIds = () => [client.workspaceId, edge.janLast!.workspaceId];
+
+    beforeAll(async () => {
+      const row = (
+        workspaceId: string,
+        day: string,
+        counts: {
+          classifiedCount: number;
+          hiddenCount?: number;
+          deletedCount?: number;
+          unhiddenCount?: number;
+        },
+        platform: 'FACEBOOK' | 'INSTAGRAM' = 'FACEBOOK',
+      ) => ({
+        workspaceId,
+        pageId: PAGE,
+        platform,
+        day,
+        receivedCount: 1,
+        ...counts,
+      });
+      await db()
+        .insert(dailyCommentStats)
+        .values([
+          row(client.workspaceId, '2022-02-28', {
+            classifiedCount: 5,
+            hiddenCount: 2,
+            unhiddenCount: 1,
+          }),
+          row(
+            client.workspaceId,
+            '2022-02-28',
+            { classifiedCount: 3, deletedCount: 1 },
+            'INSTAGRAM',
+          ),
+          row(edge.janLast!.workspaceId, '2022-02-28', {
+            classifiedCount: 2,
+            hiddenCount: 1,
+          }),
+          row(client.workspaceId, '2022-03-01', {
+            classifiedCount: 7,
+            hiddenCount: 3,
+          }),
+          // Outside the daily range below, inside the monthly one.
+          row(client.workspaceId, '2022-03-31', {
+            classifiedCount: 4,
+            deletedCount: 4,
+          }),
+        ]);
+    });
+
+    afterAll(async () => {
+      await db()
+        .delete(dailyCommentStats)
+        .where(inArray(dailyCommentStats.workspaceId, seededIds()));
+    });
+
+    it('daily: sums every workspace + platform per Dhaka day; KPI = scanned total', async () => {
+      const s = await stats('from=2022-02-27&to=2022-03-02');
+      expect(s.series.comments).toEqual([
+        { bucket: '2022-02-27', scanned: 0, blocked: 0 },
+        { bucket: '2022-02-28', scanned: 10, blocked: 4 },
+        { bucket: '2022-03-01', scanned: 7, blocked: 3 },
+        { bucket: '2022-03-02', scanned: 0, blocked: 0 },
+      ]);
+      expect(s.kpis.commentsScanned).toBe(17);
+      expect(s.series.comments.map((p) => p.bucket)).toEqual(
+        s.series.growth.map((p) => p.bucket),
+      );
+    });
+
+    it('monthly (> 92 days): sums per Dhaka month', async () => {
+      const s = await stats('from=2022-01-01&to=2022-12-31');
+      expect(s.granularity).toBe('month');
+      const byBucket = Object.fromEntries(
+        s.series.comments.map((p) => [p.bucket, [p.scanned, p.blocked]]),
+      );
+      expect(byBucket['2022-01']).toEqual([0, 0]);
+      expect(byBucket['2022-02']).toEqual([10, 4]);
+      expect(byBucket['2022-03']).toEqual([11, 7]);
+      expect(s.kpis.commentsScanned).toBe(21);
+    });
+
+    it('a range without stats stays at zeros', async () => {
+      const s = await stats('from=2022-05-01&to=2022-05-03');
+      expect(s.kpis.commentsScanned).toBe(0);
+      expect(
+        s.series.comments.every((p) => p.scanned === 0 && p.blocked === 0),
+      ).toBe(true);
     });
   });
 

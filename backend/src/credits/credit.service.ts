@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { normalizeFeatureConfig } from '../admin/plan-rules.js';
 import type { Database } from '../db/database.js';
-import { monthlyCreditUsage } from '../db/schema/index.js';
+import { monthlyCreditUsage, plans, workspaces } from '../db/schema/index.js';
 import {
+  FALLBACK_PLAN_SLUG,
   findPlanFeatureConfig,
   findWorkspacePlanId,
 } from '../meta/social-pages.queries.js';
@@ -16,6 +17,12 @@ export interface CreditUsage {
   limit: number;
   /** Asia/Dhaka calendar month, `YYYY-MM`. */
   period: string;
+}
+
+/** `limits.monthlyAiCredits` of a raw plan `feature_config` (missing plan/config = 0). */
+function monthlyAiCredits(raw: unknown): number {
+  if (raw === undefined || raw === null) return 0;
+  return normalizeFeatureConfig(raw).limits.monthlyAiCredits;
 }
 
 /**
@@ -37,9 +44,9 @@ export class CreditService {
   async monthlyLimit(workspaceId: string): Promise<number> {
     const workspace = await findWorkspacePlanId(this.db, workspaceId);
     if (!workspace) return 0;
-    const raw = await findPlanFeatureConfig(this.db, workspace.planId);
-    if (raw === undefined || raw === null) return 0;
-    return normalizeFeatureConfig(raw).limits.monthlyAiCredits;
+    return monthlyAiCredits(
+      await findPlanFeatureConfig(this.db, workspace.planId),
+    );
   }
 
   /**
@@ -117,5 +124,64 @@ export class CreditService {
       this.monthlyLimit(workspaceId),
     ]);
     return { used: row?.used ?? 0, limit, period };
+  }
+
+  /**
+   * `usage()` for a page of workspaces in three queries (admin clients list, M5-T13), every one
+   * scoped by the given ids. Unknown ids are missing from the map; same rules as `usage()`.
+   */
+  async usageMany(
+    workspaceIds: readonly string[],
+    at: Date = new Date(),
+  ): Promise<Map<string, CreditUsage>> {
+    const period = dhakaMonthKey(at);
+    const ids = [...new Set(workspaceIds)];
+    if (ids.length === 0) return new Map();
+    const t = monthlyCreditUsage;
+    const [rows, usedRows, planRows] = await Promise.all([
+      this.db
+        .select({ id: workspaces.id, planId: workspaces.planId })
+        .from(workspaces)
+        .where(inArray(workspaces.id, ids)),
+      this.db
+        .select({ workspaceId: t.workspaceId, used: t.used })
+        .from(t)
+        .where(and(inArray(t.workspaceId, ids), eq(t.month, period))),
+      this.db
+        .select({
+          id: plans.id,
+          slug: plans.slug,
+          featureConfig: plans.featureConfig,
+        })
+        .from(plans)
+        .where(
+          or(
+            inArray(
+              plans.id,
+              this.db
+                .select({ id: workspaces.planId })
+                .from(workspaces)
+                .where(inArray(workspaces.id, ids)),
+            ),
+            eq(plans.slug, FALLBACK_PLAN_SLUG),
+          ),
+        ),
+    ]);
+    const usedBy = new Map(usedRows.map((r) => [r.workspaceId, r.used]));
+    const limitOfPlan = new Map(
+      planRows.map((p) => [p.id, monthlyAiCredits(p.featureConfig)]),
+    );
+    const fallback = planRows.find((p) => p.slug === FALLBACK_PLAN_SLUG);
+    const result = new Map<string, CreditUsage>();
+    for (const { id, planId } of rows) {
+      const limit =
+        planId === null
+          ? fallback
+            ? (limitOfPlan.get(fallback.id) ?? 0)
+            : 0
+          : (limitOfPlan.get(planId) ?? 0);
+      result.set(id, { used: usedBy.get(id) ?? 0, limit, period });
+    }
+    return result;
   }
 }

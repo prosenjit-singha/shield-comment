@@ -167,6 +167,11 @@ describe('AdminSystemService', () => {
     report: Partial<HealthReport>,
     execute: () => Promise<unknown>,
     queueCounts: Record<string, GetJobCounts> = {},
+    options: {
+      /** What `listDailyAiUsage` resolves to (default: no rows). */
+      aiRows?: () => Promise<unknown[]>;
+      env?: Record<string, unknown>;
+    } = {},
   ) {
     const full: HealthReport = {
       status: 'ok',
@@ -180,9 +185,19 @@ describe('AdminSystemService', () => {
       check: vi.fn(async () => full),
     } as unknown as HealthService;
     const exec = vi.fn(execute);
-    const db = { execute: exec } as unknown as Database;
+    const aiRows = vi.fn(options.aiRows ?? (async () => []));
+    const aiWhere = vi.fn(() => ({ orderBy: () => aiRows() }));
+    const db = {
+      execute: exec,
+      select: vi.fn(() => ({ from: () => ({ where: aiWhere }) })),
+    } as unknown as Database;
+    const env: Record<string, unknown> = {
+      NODE_ENV: 'test',
+      AI_COST_USD_TO_BDT: 122,
+      ...options.env,
+    };
     const config = {
-      get: vi.fn(() => 'test'),
+      get: vi.fn((key: string) => env[key]),
     } as unknown as ConfigService<EnvironmentVariables, true>;
     const getJobCounts = Object.fromEntries(
       Object.entries(queueCounts).map(([name, fn]) => [
@@ -202,6 +217,7 @@ describe('AdminSystemService', () => {
       service: new AdminSystemService(health, db, config, registry),
       exec,
       getJobCounts,
+      aiRows,
     };
   }
 
@@ -314,6 +330,129 @@ describe('AdminSystemService', () => {
     expect(res.status).toBe('degraded');
     expect(res.redis).toEqual({ status: 'down', latencyMs: null });
     expect(res.migrations.latest).toBeNull();
+  });
+
+  describe('ai (M5-T13)', () => {
+    const row = (day: string, model: string, extra: object = {}) => ({
+      day,
+      provider: 'openai',
+      model,
+      calls: 10,
+      inputTokens: 1_000_000,
+      outputTokens: 100_000,
+      credits: 12,
+      failedCalls: 1,
+      failuresByKind: { timeout: 1 },
+      latencyMsSum: 5000,
+      latencyMsMax: 900,
+      ...extra,
+    });
+
+    it('summarises the last 7 Dhaka days with built-in prices + the env rate', async () => {
+      const { service } = makeService(
+        {},
+        okMigrations,
+        {},
+        {
+          aiRows: async () => [
+            row('2026-11-12', 'gpt-4.1-mini'),
+            row('2026-11-18', 'gpt-4.1-mini'),
+          ],
+          env: { AI_COST_USD_TO_BDT: 120 },
+        },
+      );
+      service.now = () => new Date('2026-11-18T10:00:00.000Z');
+      const { ai } = await service.health();
+      expect(ai?.usdToBdtRate).toBe(120);
+      expect(ai?.today.from).toBe('2026-11-18');
+      expect(ai?.last7Days).toMatchObject({
+        from: '2026-11-12',
+        to: '2026-11-18',
+      });
+      // 1M input × 0.4 + 0.1M output × 1.6 = 0.56 USD per day.
+      expect(ai?.today.totals).toMatchObject({
+        calls: 10,
+        estimatedCostUsd: 0.56,
+        estimatedCostBdt: 67.2,
+      });
+      expect(ai?.last7Days.totals).toMatchObject({
+        calls: 20,
+        estimatedCostUsd: 1.12,
+        estimatedCostBdt: 134.4,
+        avgLatencyMs: 500,
+        failuresByKind: { timeout: 2 },
+      });
+    });
+
+    it('AI_MODEL_PRICES prices an otherwise unknown model', async () => {
+      const { service } = makeService(
+        {},
+        okMigrations,
+        {},
+        {
+          aiRows: async () => [
+            row('2026-11-18', 'gpt-oss-20b', { provider: 'neon' }),
+          ],
+          env: { AI_MODEL_PRICES: 'neon:gpt-oss-20b=0.05/0.2' },
+        },
+      );
+      service.now = () => new Date('2026-11-18T10:00:00.000Z');
+      const { ai } = await service.health();
+      expect(ai?.today.models[0]).toMatchObject({
+        provider: 'neon',
+        priceUsdPer1M: { input: 0.05, output: 0.2 },
+        estimatedCostUsd: 0.07,
+      });
+    });
+
+    it('a failing usage read → ai null, logged, the report still resolves', async () => {
+      const warn = vi
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      const { service } = makeService(
+        {},
+        okMigrations,
+        {},
+        {
+          aiRows: async () => {
+            throw new Error('relation "daily_ai_usage" does not exist');
+          },
+        },
+      );
+      const res = await service.health();
+      expect(res.ai).toBeNull();
+      expect(res.migrations.known).toBe(true);
+      expect(warn).toHaveBeenCalledWith('AI usage unavailable: Error');
+    });
+
+    it('a hanging usage read times out after 3 s → ai null', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const { service } = makeService(
+        {},
+        okMigrations,
+        {},
+        {
+          aiRows: () => new Promise<unknown[]>(() => undefined),
+        },
+      );
+      const pending = service.health();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect((await pending).ai).toBeNull();
+    });
+
+    it('DB down → ai null without a usage query', async () => {
+      const { service, aiRows } = makeService(
+        {
+          status: 'error',
+          database: 'down',
+          latencyMs: { database: null, redis: 1 },
+        },
+        okMigrations,
+      );
+      expect((await service.health()).ai).toBeNull();
+      expect(aiRows).not.toHaveBeenCalled();
+    });
   });
 
   it('unknown migrations when the journal query fails', async () => {

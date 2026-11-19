@@ -3,6 +3,7 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUrl,
@@ -15,6 +16,7 @@ import {
   validateSync,
 } from 'class-validator';
 import { AI_PROVIDERS, type AiProvider } from '../ai-gateway/ai-provider.js';
+import { parseModelPrices } from '../moderation/ai-model-prices.js';
 import {
   AES_256_KEY_BYTES,
   decodeAes256Key,
@@ -165,6 +167,29 @@ export class EnvironmentVariables {
   @Max(3_600_000)
   MODERATION_LLM_RATE_DURATION_MS = 1000;
 
+  // --- Admin AI usage estimate (M5-T13, D14): `/admin/system/health` `ai` cost USD + BDT.
+  /** BDT per 1 USD for the estimated AI cost in BDT (default 122). */
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 4 })
+  @Min(1)
+  @Max(1000)
+  AI_COST_USD_TO_BDT = 122;
+
+  /**
+   * Adds to / replaces the built-in price table (USD per 1M tokens), comma-separated
+   * `provider:model=input/output`, e.g. `neon:gpt-oss-20b=0.05/0.2`. Unknown model = cost `null`.
+   */
+  @IsOptional()
+  @ValidateBy({
+    name: 'isModelPriceList',
+    validator: {
+      validate: (value: unknown) => modelPricesError(value) === null,
+      defaultMessage: (args) =>
+        `AI_MODEL_PRICES: ${modelPricesError(args?.value) ?? 'invalid'}`,
+    },
+  })
+  AI_MODEL_PRICES?: string;
+
   // --- Token cipher (AES-256-GCM for Meta access tokens at rest, M3-T1, decision D2).
   // Optional: TokenCipherService is disabled when all three are unset. KEY + KEY_ID go together.
   /** Base64 of exactly 32 bytes: `openssl rand -base64 32`. Encrypts new tokens. */
@@ -283,6 +308,17 @@ function hasTokenCipherEnv(env: EnvironmentVariables): boolean {
     env.TOKEN_ENCRYPTION_KEY_ID !== undefined ||
     env.TOKEN_ENCRYPTION_PREVIOUS_KEYS !== undefined
   );
+}
+
+/** `null` when valid, else why `AI_MODEL_PRICES` can't be parsed. */
+function modelPricesError(value: unknown): string | null {
+  if (typeof value !== 'string') return 'must be a string';
+  try {
+    parseModelPrices(value);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : 'invalid';
+  }
 }
 
 /** `null` when valid; the message never contains key material. */

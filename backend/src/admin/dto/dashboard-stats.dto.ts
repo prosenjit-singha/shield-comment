@@ -35,7 +35,7 @@ export interface DashboardKpis {
   activeClients: number;
   /** Current MRR in BDT. Placeholder `0` until payments (Module 8). */
   mrrBdt: number;
-  /** Comments scanned inside the range. Placeholder `0` until comment moderation exists. */
+  /** AI classifications inside the range, all workspaces (sum of `series.comments[].scanned`). */
   commentsScanned: number;
   /** Unresolved support tickets right now (OPEN + IN_PROGRESS), not limited to the range. */
   openTickets: number;
@@ -53,10 +53,15 @@ export interface GrowthPoint {
   mrrBdt: number;
 }
 
-/** Grouped bar chart: comments scanned vs blocked per bucket. Placeholder zeros. */
+/**
+ * Grouped bar chart: comments scanned vs blocked per bucket, all workspaces, from
+ * `daily_comment_stats` (M5-T13, D14).
+ */
 export interface CommentsPoint {
   bucket: string;
+  /** `classified` count: AI classifications (re-checked edits included). */
   scanned: number;
+  /** `hidden` + `deleted` counts: successful AI hide/delete actions. */
   blocked: number;
 }
 

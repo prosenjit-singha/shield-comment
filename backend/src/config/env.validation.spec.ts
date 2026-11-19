@@ -212,3 +212,38 @@ describe('validateEnv: AI provider', () => {
     },
   );
 });
+
+describe('validateEnv: AI cost estimate (M5-T13)', () => {
+  it('defaults the BDT rate to 122 and has no price override', () => {
+    const env = validateEnv(BASE);
+    expect(env.AI_COST_USD_TO_BDT).toBe(122);
+    expect(env.AI_MODEL_PRICES).toBeUndefined();
+  });
+
+  it('accepts a decimal rate and a price list', () => {
+    const env = validateEnv({
+      ...BASE,
+      AI_COST_USD_TO_BDT: '121.75',
+      AI_MODEL_PRICES: 'neon:gpt-oss-20b=0.05/0.2, openai:gpt-4.1-mini=0.4/1.6',
+    });
+    expect(env.AI_COST_USD_TO_BDT).toBe(121.75);
+    expect(env.AI_MODEL_PRICES).toContain('neon:gpt-oss-20b');
+  });
+
+  it.each(['0', '-5', 'abc', '1001', '1.123456'])(
+    'rejects AI_COST_USD_TO_BDT=%j',
+    (value) => {
+      expectInvalid({ AI_COST_USD_TO_BDT: value }, '- AI_COST_USD_TO_BDT:');
+    },
+  );
+
+  it.each([
+    ['azure:gpt=1/2', 'provider must be one of'],
+    ['neon:gpt-oss-20b=1', 'price must be'],
+    ['neon=1/2', 'must look like'],
+    ['neon:m=1/2,neon:m=3/4', 'duplicate'],
+  ])('rejects AI_MODEL_PRICES=%j', (value, reason) => {
+    expectInvalid({ AI_MODEL_PRICES: value }, `AI_MODEL_PRICES: entry`);
+    expectInvalid({ AI_MODEL_PRICES: value }, reason);
+  });
+});

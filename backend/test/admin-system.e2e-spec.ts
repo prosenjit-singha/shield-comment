@@ -1,6 +1,9 @@
 import type { INestApplication } from '@nestjs/common';
+import { and, between, inArray } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
+import { AdminSystemService } from '../src/admin/admin-system.service.js';
 import type { SystemHealthResponse } from '../src/admin/dto/system-health.dto.js';
+import { dailyAiUsage } from '../src/db/schema/index.js';
 import { ALL_QUEUE_NAMES, QUEUE_NAMES } from '../src/queue/queue.constants.js';
 import { QueueRegistry } from '../src/queue/queue.registry.js';
 import { type Actor, createAuthActors } from './utils/auth-actors.js';
@@ -84,6 +87,7 @@ describe('Admin system health (e2e)', () => {
     it('has exactly the documented top-level keys', () => {
       expect(Object.keys(body).sort()).toEqual(
         [
+          'ai',
           'checkedAt',
           'database',
           'migrations',
@@ -196,6 +200,228 @@ describe('Admin system health (e2e)', () => {
         .set('Cookie', superAdmin.cookie)
         .expect(200);
       expect((res.body as SystemHealthResponse).queues).toEqual([]);
+    });
+  });
+
+  /**
+   * M5-T13 (D14): `ai` = platform-wide `daily_ai_usage`, today + last 7 Dhaka days. The clock is
+   * pinned to 2031 so only this spec's rows (unique model names, deleted in `afterAll`) are read.
+   */
+  describe('ai (M5-T13)', () => {
+    const MODEL_PRICED = 'gpt-4.1-mini';
+    const MODEL_UNKNOWN = 'm5t13-e2e-model';
+    const DAYS = { from: '2031-03-01', to: '2031-03-31' };
+    let service: AdminSystemService;
+    const realNow = () => new Date();
+
+    const cleanup = () =>
+      actors.db
+        .delete(dailyAiUsage)
+        .where(
+          and(
+            between(dailyAiUsage.day, DAYS.from, DAYS.to),
+            inArray(dailyAiUsage.model, [MODEL_PRICED, MODEL_UNKNOWN]),
+          ),
+        );
+
+    const health = async (cookie = superAdmin.cookie) =>
+      (await http().get(HEALTH).set('Cookie', cookie).expect(200))
+        .body as SystemHealthResponse;
+
+    beforeAll(async () => {
+      service = app.get(AdminSystemService);
+      await cleanup();
+      const base = {
+        inputTokens: 0,
+        outputTokens: 0,
+        credits: 0,
+        failedCalls: 0,
+        failuresByKind: {},
+        latencyMsSum: 0,
+        latencyMsMax: 0,
+      };
+      await actors.db.insert(dailyAiUsage).values([
+        // Today (Dhaka 2031-03-10).
+        {
+          ...base,
+          day: '2031-03-10',
+          provider: 'openai',
+          model: MODEL_PRICED,
+          calls: 10,
+          inputTokens: 1_000_000,
+          outputTokens: 250_000,
+          credits: 12,
+          failedCalls: 2,
+          failuresByKind: { timeout: 1, rate_limited: 1 },
+          latencyMsSum: 6000,
+          latencyMsMax: 1400,
+        },
+        {
+          ...base,
+          day: '2031-03-10',
+          provider: 'neon',
+          model: MODEL_UNKNOWN,
+          calls: 4,
+          inputTokens: 4000,
+          outputTokens: 800,
+          credits: 4,
+          failedCalls: 1,
+          failuresByKind: { timeout: 1 },
+          latencyMsSum: 2000,
+          latencyMsMax: 700,
+        },
+        // First day of the 7-day window.
+        {
+          ...base,
+          day: '2031-03-04',
+          provider: 'openai',
+          model: MODEL_PRICED,
+          calls: 2,
+          inputTokens: 1000,
+          outputTokens: 100,
+          credits: 2,
+          latencyMsSum: 1000,
+          latencyMsMax: 600,
+        },
+        // Outside both windows.
+        {
+          ...base,
+          day: '2031-03-03',
+          provider: 'openai',
+          model: MODEL_PRICED,
+          calls: 99,
+          inputTokens: 99_000,
+        },
+      ]);
+    });
+
+    afterEach(() => {
+      service.now = realNow;
+      vi.restoreAllMocks();
+    });
+
+    afterAll(async () => {
+      await cleanup();
+    });
+
+    it('today + last 7 Dhaka days per provider + model, with estimated cost USD + BDT', async () => {
+      // 23:59 Dhaka on 2031-03-10.
+      service.now = () => new Date('2031-03-10T17:59:00.000Z');
+      const { ai } = await health();
+      expect(ai).not.toBeNull();
+      const rate = ai!.usdToBdtRate;
+      expect(rate).toBeGreaterThan(0);
+      expect(ai!.timezone).toBe('Asia/Dhaka');
+      expect(ai!.today).toMatchObject({ from: '2031-03-10', to: '2031-03-10' });
+      expect(ai!.last7Days).toMatchObject({
+        from: '2031-03-04',
+        to: '2031-03-10',
+      });
+
+      const priced = ai!.today.models.find((m) => m.model === MODEL_PRICED)!;
+      const price = priced.priceUsdPer1M!;
+      expect(price).toEqual({
+        input: expect.any(Number) as number,
+        output: expect.any(Number) as number,
+      });
+      const usd = (1_000_000 * price.input + 250_000 * price.output) / 1e6;
+      expect(ai!.today.models).toEqual([
+        {
+          provider: 'neon',
+          model: MODEL_UNKNOWN,
+          calls: 4,
+          failedCalls: 1,
+          failuresByKind: { timeout: 1 },
+          inputTokens: 4000,
+          outputTokens: 800,
+          credits: 4,
+          avgLatencyMs: 500,
+          maxLatencyMs: 700,
+          estimatedCostUsd: null,
+          estimatedCostBdt: null,
+          priceUsdPer1M: null,
+        },
+        {
+          provider: 'openai',
+          model: MODEL_PRICED,
+          calls: 10,
+          failedCalls: 2,
+          failuresByKind: { rate_limited: 1, timeout: 1 },
+          inputTokens: 1_000_000,
+          outputTokens: 250_000,
+          credits: 12,
+          avgLatencyMs: 600,
+          maxLatencyMs: 1400,
+          estimatedCostUsd: Math.round(usd * 1e6) / 1e6,
+          estimatedCostBdt:
+            Math.round((usd * rate + Number.EPSILON) * 100) / 100,
+          priceUsdPer1M: price,
+        },
+      ]);
+      expect(ai!.today.totals).toMatchObject({
+        calls: 14,
+        failedCalls: 3,
+        failuresByKind: { rate_limited: 1, timeout: 2 },
+        inputTokens: 1_004_000,
+        outputTokens: 250_800,
+        credits: 16,
+        avgLatencyMs: Math.round(8000 / 14),
+        maxLatencyMs: 1400,
+        estimatedCostUsd: Math.round(usd * 1e6) / 1e6,
+        unpricedModels: 1,
+      });
+      expect(ai!.last7Days.totals).toMatchObject({
+        calls: 16,
+        inputTokens: 1_005_000,
+        credits: 18,
+        maxLatencyMs: 1400,
+      });
+      expect(
+        ai!.last7Days.models.find((m) => m.model === MODEL_PRICED)?.calls,
+      ).toBe(12);
+    });
+
+    it('the window moves at Dhaka midnight (2031-03-04 drops out)', async () => {
+      service.now = () => new Date('2031-03-10T18:00:00.000Z');
+      const { ai } = await health();
+      expect(ai!.today.totals.calls).toBe(0);
+      expect(ai!.today.models).toEqual([]);
+      expect(ai!.today.totals.avgLatencyMs).toBeNull();
+      expect(ai!.last7Days).toMatchObject({
+        from: '2031-03-05',
+        to: '2031-03-11',
+      });
+      expect(ai!.last7Days.totals.calls).toBe(14);
+    });
+
+    it('no usage in the window → zeros and no models', async () => {
+      service.now = () => new Date('2031-06-01T06:00:00.000Z');
+      const { ai } = await health();
+      expect(ai!.last7Days.models).toEqual([]);
+      expect(ai!.last7Days.totals).toMatchObject({
+        calls: 0,
+        estimatedCostUsd: 0,
+        estimatedCostBdt: 0,
+        unpricedModels: 0,
+      });
+    });
+
+    it('a failing usage read → ai: null, still 200 with the other sections', async () => {
+      vi.spyOn(service, 'aiUsageRows').mockRejectedValueOnce(
+        new Error('relation "daily_ai_usage" does not exist'),
+      );
+      const body = await health();
+      expect(body.ai).toBeNull();
+      expect(body.database.status).toBe('up');
+      expect(body.migrations.known).toBe(true);
+    });
+
+    it('403 for a normal user (no platform-wide AI usage for clients)', async () => {
+      const res = await http()
+        .get(HEALTH)
+        .set('Cookie', client.cookie)
+        .expect(403);
+      expect(res.body).not.toHaveProperty('ai');
     });
   });
 
