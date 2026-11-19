@@ -130,7 +130,7 @@ describe('Billing + wallet schema (e2e)', () => {
         slug: `pwt1-${tag}`,
         name: `PWT1 ${tag}`,
         sortOrder: 90,
-        originalPriceBdt: 999,
+        monthlyPriceBdt: 999,
         offerPriceBdt: 499,
         featureConfig: {
           limits: {
@@ -572,7 +572,7 @@ describe('Billing + wallet schema (e2e)', () => {
       }),
     );
 
-    it('the seeded plans carry the PW-T1b data (migration 0022)', async () => {
+    it('the seeded plans carry the PW-T1b data (migration 0022; yearly = list price since 0027)', async () => {
       const rows = await db()
         .select({
           slug: plans.slug,
@@ -590,14 +590,14 @@ describe('Billing + wallet schema (e2e)', () => {
           trialDays: null,
           trialCommentLimit: null,
         },
-        { slug: 'starter', yearly: 449, trialDays: 7, trialCommentLimit: 300 },
+        { slug: 'starter', yearly: 949, trialDays: 7, trialCommentLimit: 300 },
         {
           slug: 'growth',
-          yearly: 1349,
+          yearly: 2349,
           trialDays: null,
           trialCommentLimit: null,
         },
-        { slug: 'pro', yearly: 3599, trialDays: null, trialCommentLimit: null },
+        { slug: 'pro', yearly: 5599, trialDays: null, trialCommentLimit: null },
       ]);
     });
 
@@ -612,21 +612,25 @@ describe('Billing + wallet schema (e2e)', () => {
         trialDays: 1,
         trialCommentLimit: 0,
       });
-      // No offer → the yearly price is capped by the original price.
+      // The yearly price is capped by the monthly list price, offer or not (PR-T1).
       await setPlan({ offerPriceBdt: null, yearlyMonthlyPriceBdt: 999 });
-      await setPlan({ offerPriceBdt: 499, yearlyMonthlyPriceBdt: 449 });
+      await setPlan({ offerPriceBdt: 499, yearlyMonthlyPriceBdt: 999 });
     });
 
     it.each([
-      ['yearly per-month > offer price', { yearlyMonthlyPriceBdt: 500 }],
+      ['yearly per-month > list price', { yearlyMonthlyPriceBdt: 1000 }],
       [
-        'yearly per-month > original (no offer)',
+        'yearly per-month > list price (no offer)',
         { offerPriceBdt: null, yearlyMonthlyPriceBdt: 1000 },
       ],
       ['negative yearly price', { yearlyMonthlyPriceBdt: -1 }],
       [
-        'offer lowered below the yearly price',
-        { yearlyMonthlyPriceBdt: 449, offerPriceBdt: 400 },
+        'list price lowered below the yearly price',
+        {
+          yearlyMonthlyPriceBdt: 949,
+          monthlyPriceBdt: 900,
+          offerPriceBdt: 499,
+        },
       ],
       ['0 trial days', { trialDays: 0 }],
       ['91 trial days', { trialDays: 91 }],

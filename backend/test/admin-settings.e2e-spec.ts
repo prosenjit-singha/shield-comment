@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
-import { asc, count, desc, eq, sql } from 'drizzle-orm';
+import { asc, count, desc, eq, type SQL, sql } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
 import type { PlanAuditList } from '../src/admin/dto/plan-audit.dto.js';
 import type {
@@ -23,6 +23,23 @@ const PLAN_DATA_MIGRATION = join(
   '../drizzle/0022_plan_trial_yearly_workspaces.sql',
 );
 const UNKNOWN_ID = '01a1ecf3-0000-7000-8000-000000000000';
+
+/**
+ * Replays a data migration written before 0027 (it names `original_price_bdt`): the column gets
+ * its old name for the statement only. Callers run it inside a rolled-back transaction.
+ */
+async function runPre0027Sql(
+  tx: { execute: (query: SQL) => PromiseLike<unknown> },
+  text: string,
+): Promise<void> {
+  await tx.execute(
+    sql`alter table plans rename column monthly_price_bdt to original_price_bdt`,
+  );
+  await tx.execute(sql.raw(text));
+  await tx.execute(
+    sql`alter table plans rename column original_price_bdt to monthly_price_bdt`,
+  );
+}
 
 /**
  * M2-T11: plans table (seeded by migration `0007_seed_plans`, launch offers `0008_plan_launch_offers`,
@@ -82,7 +99,7 @@ describe('Admin plan settings (e2e)', () => {
       seeded.map((p) => [
         p.slug,
         p.name,
-        p.originalPriceBdt,
+        p.monthlyPriceBdt,
         p.offerPriceBdt,
         p.offerBadge,
         p.yearlyMonthlyPriceBdt,
@@ -92,9 +109,10 @@ describe('Admin plan settings (e2e)', () => {
       ]),
     ).toEqual([
       ['free', 'Free', 0, null, null, null, null, null, false],
-      ['starter', 'Starter', 999, 499, '50% Launch Offer', 449, 7, 300, true],
-      ['growth', 'Growth', 2499, 1499, '40% Off', 1349, null, null, true],
-      ['pro', 'Pro', 5999, 3999, '33% Off', 3599, null, null, true],
+      // Yearly = list price since 0027 (PR-T1): 449 / 1,349 / 3,599 + the launch offer value.
+      ['starter', 'Starter', 999, 499, '50% Launch Offer', 949, 7, 300, true],
+      ['growth', 'Growth', 2499, 1499, '40% Off', 2349, null, null, true],
+      ['pro', 'Pro', 5999, 3999, '33% Off', 5599, null, null, true],
     ]);
     // Data migrations write no audit rows.
     expect(await auditCount()).toBe(0);
@@ -106,28 +124,33 @@ describe('Admin plan settings (e2e)', () => {
     await expect(
       actors.db.transaction(async (tx) => {
         // Already applied: running it again changes nothing.
-        await tx.execute(sql.raw(offersSql));
+        await runPre0027Sql(tx, offersSql);
         expect(
           await tx.select().from(plans).orderBy(asc(plans.sortOrder)),
         ).toEqual(seeded);
         // Back to the 0007 seed values, except growth (edited by an admin) and pro's badge.
         await tx
           .update(plans)
-          .set({ offerPriceBdt: null, offerBadge: null })
+          // The yearly list price (0027) would exceed the lowered list prices below.
+          .set({
+            offerPriceBdt: null,
+            offerBadge: null,
+            yearlyMonthlyPriceBdt: null,
+          })
           .where(sql`${plans.slug} in ('starter', 'growth', 'pro')`);
         await tx
           .update(plans)
-          .set({ originalPriceBdt: 499 })
+          .set({ monthlyPriceBdt: 499 })
           .where(eq(plans.slug, 'starter'));
         await tx
           .update(plans)
-          .set({ originalPriceBdt: 1799 })
+          .set({ monthlyPriceBdt: 1799 })
           .where(eq(plans.slug, 'growth'));
         await tx
           .update(plans)
-          .set({ originalPriceBdt: 3999, offerBadge: 'Hand-made' })
+          .set({ monthlyPriceBdt: 3999, offerBadge: 'Hand-made' })
           .where(eq(plans.slug, 'pro'));
-        await tx.execute(sql.raw(offersSql));
+        await runPre0027Sql(tx, offersSql);
         const rows = await tx
           .select()
           .from(plans)
@@ -135,7 +158,7 @@ describe('Admin plan settings (e2e)', () => {
         expect(
           rows.map((p) => [
             p.slug,
-            p.originalPriceBdt,
+            p.monthlyPriceBdt,
             p.offerPriceBdt,
             p.offerBadge,
           ]),
@@ -207,7 +230,7 @@ describe('Admin plan settings (e2e)', () => {
         const read = () =>
           tx.select().from(plans).orderBy(asc(plans.sortOrder));
         // Already applied: running it again changes nothing.
-        await tx.execute(sql.raw(dataSql));
+        await runPre0027Sql(tx, dataSql);
         expect(await read()).toEqual(seeded);
         // Back to the pre-0022 shape (raw SQL: `updated_at` untouched): old key, no workspaces,
         // no yearly/trial values, free active. Admin edits made before the migration:
@@ -232,7 +255,7 @@ describe('Admin plan settings (e2e)', () => {
           update plans set yearly_monthly_price_bdt = 3000,
             feature_config = jsonb_set(feature_config, '{limits,workspaces}', '7')
           where slug = 'pro'`);
-        await tx.execute(sql.raw(dataSql));
+        await runPre0027Sql(tx, dataSql);
         const once = await read();
         expect(pick(once)).toEqual([
           [
@@ -297,7 +320,7 @@ describe('Admin plan settings (e2e)', () => {
           seeded.map((p) => p.updatedAt),
         );
         // A second run changes nothing.
-        await tx.execute(sql.raw(dataSql));
+        await runPre0027Sql(tx, dataSql);
         expect(await read()).toEqual(once);
         throw rollback;
       }),
@@ -365,7 +388,7 @@ describe('Admin plan settings (e2e)', () => {
       ]);
       expect(body.items.map((p) => p.sortOrder)).toEqual([1, 2, 3]);
       expect(body.items[0]).toMatchObject({
-        yearlyMonthlyPriceBdt: 449,
+        yearlyMonthlyPriceBdt: 949,
         trialDays: 7,
         trialCommentLimit: 300,
       });
@@ -379,7 +402,7 @@ describe('Admin plan settings (e2e)', () => {
         originalPriceBdt: 2499,
         offerPriceBdt: 1499,
         offerBadge: '40% Off',
-        yearlyMonthlyPriceBdt: 1349,
+        yearlyMonthlyPriceBdt: 2349,
         trialDays: null,
         trialCommentLimit: null,
         featureConfig: {
@@ -504,7 +527,7 @@ describe('Admin plan settings (e2e)', () => {
       expect(inBody.body).toMatchObject({
         message: expect.stringContaining('offerPriceBdt') as string,
       });
-      // The stored ৳449 yearly price must stay ≤ the monthly price: lower it in the same body.
+      // Offer and yearly together (the yearly price is capped by the list price since PR-T1).
       await patch(starter.id, {
         offerPriceBdt: 299,
         yearlyMonthlyPriceBdt: 249,
@@ -516,7 +539,7 @@ describe('Admin plan settings (e2e)', () => {
         .from(plans)
         .where(eq(plans.id, starter.id));
       expect(row).toMatchObject({
-        originalPriceBdt: 999,
+        monthlyPriceBdt: 999,
         offerPriceBdt: 299,
         yearlyMonthlyPriceBdt: 249,
       });
@@ -556,8 +579,11 @@ describe('Admin plan settings (e2e)', () => {
       ],
       ['negative yearly price', { yearlyMonthlyPriceBdt: -1 }],
       ['string yearly price', { yearlyMonthlyPriceBdt: '3000' }],
-      ['yearly above the monthly offer', { yearlyMonthlyPriceBdt: 4000 }],
-      ['offer lowered below the stored yearly price', { offerPriceBdt: 3000 }],
+      ['yearly above the monthly list price', { yearlyMonthlyPriceBdt: 6000 }],
+      [
+        'list price lowered below the stored yearly price',
+        { originalPriceBdt: 5500 },
+      ],
       [
         'offer cleared + original lowered below the stored yearly price',
         { offerPriceBdt: null, originalPriceBdt: 3000 },
@@ -856,7 +882,7 @@ describe('Admin plan settings (e2e)', () => {
       });
       let [latest] = await auditRows(pro.id);
       expect(latest!.changes).toEqual([
-        { field: 'yearlyMonthlyPriceBdt', before: 3599, after: 3499 },
+        { field: 'yearlyMonthlyPriceBdt', before: 5599, after: 3499 },
         {
           field: 'featureConfig.limits.monthlyComments',
           before: 75000,
@@ -865,8 +891,8 @@ describe('Admin plan settings (e2e)', () => {
         { field: 'featureConfig.limits.workspaces', before: 10, after: 12 },
       ]);
 
-      // Equal to the monthly offer is allowed; with no yearly price the offer may go lower.
-      await patch(pro.id, { yearlyMonthlyPriceBdt: 3999 }).expect(200);
+      // Equal to the monthly list price is allowed (PR-T1: above the offer is fine too).
+      await patch(pro.id, { yearlyMonthlyPriceBdt: 5999 }).expect(200);
       const cleared = await patch(pro.id, {
         yearlyMonthlyPriceBdt: null,
       }).expect(200);
@@ -875,7 +901,7 @@ describe('Admin plan settings (e2e)', () => {
       ).toBeNull();
       [latest] = await auditRows(pro.id);
       expect(latest!.changes).toEqual([
-        { field: 'yearlyMonthlyPriceBdt', before: 3999, after: null },
+        { field: 'yearlyMonthlyPriceBdt', before: 5999, after: null },
       ]);
       await patch(pro.id, { offerPriceBdt: 2999 }).expect(200);
 

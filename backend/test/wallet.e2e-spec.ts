@@ -65,7 +65,7 @@ describe('Client wallet (e2e)', () => {
         slug: `pwt2-${key}-${tag}`,
         name: `PWT2 ${key} ${tag}`,
         sortOrder: 90,
-        originalPriceBdt: 499,
+        monthlyPriceBdt: 499,
         trialCommentLimit,
         featureConfig: featureConfig(
           monthlyComments,

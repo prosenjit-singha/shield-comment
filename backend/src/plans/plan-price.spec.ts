@@ -1,10 +1,11 @@
 import { type PlanPriceSource, planPrice } from './plan-price.js';
 
 const starter: PlanPriceSource = {
-  originalPriceBdt: 999,
+  monthlyPriceBdt: 999,
   offerPriceBdt: 499,
   offerBadge: '50% Launch Offer',
-  yearlyMonthlyPriceBdt: 449,
+  // Yearly list price since 0027 (PR-T1): ৳449 shown + the ৳500 launch offer.
+  yearlyMonthlyPriceBdt: 949,
 };
 
 describe('planPrice (PW-T1b)', () => {
@@ -45,14 +46,23 @@ describe('planPrice (PW-T1b)', () => {
     expect(
       planPrice(
         {
-          originalPriceBdt: 5999,
+          monthlyPriceBdt: 5999,
           offerPriceBdt: 3999,
           offerBadge: '33% Off',
-          yearlyMonthlyPriceBdt: 3599,
+          yearlyMonthlyPriceBdt: 5599,
         },
         'year',
       ),
     ).toMatchObject({ perMonthBdt: 3599, chargedBdt: 43188 });
+  });
+
+  it('yearly minus the offer saving (PR-T1 bridge): no offer = the yearly list price; floor ৳0', () => {
+    expect(
+      planPrice({ ...starter, offerPriceBdt: null, offerBadge: null }, 'year'),
+    ).toMatchObject({ perMonthBdt: 949, chargedBdt: 11388 });
+    expect(
+      planPrice({ ...starter, yearlyMonthlyPriceBdt: 400 }, 'year'),
+    ).toMatchObject({ perMonthBdt: 0, chargedBdt: 0 });
   });
 
   it('yearly without a yearly price → null (no yearly option)', () => {

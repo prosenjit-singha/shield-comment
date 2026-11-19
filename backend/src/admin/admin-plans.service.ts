@@ -33,7 +33,7 @@ const planColumns = {
   name: plans.name,
   sortOrder: plans.sortOrder,
   isActive: plans.isActive,
-  originalPriceBdt: plans.originalPriceBdt,
+  originalPriceBdt: plans.monthlyPriceBdt,
   offerPriceBdt: plans.offerPriceBdt,
   offerBadge: plans.offerBadge,
   yearlyMonthlyPriceBdt: plans.yearlyMonthlyPriceBdt,
@@ -96,9 +96,11 @@ export class AdminPlansService {
       if (error) throw new BadRequestException(error);
       const changes = diffPlanValues(current, next);
       if (changes.length === 0) return toAdminPlan(current);
+      // API/audit name `originalPriceBdt` until PR-T4 renames it; the column is `monthly_price_bdt`.
+      const { originalPriceBdt, ...rest } = next;
       const [updated] = await tx
         .update(plans)
-        .set(next)
+        .set({ ...rest, monthlyPriceBdt: originalPriceBdt })
         .where(eq(plans.id, current.id))
         .returning(planColumns);
       if (!updated) throw new NotFoundException('Plan not found');

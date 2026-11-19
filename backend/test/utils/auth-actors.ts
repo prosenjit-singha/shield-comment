@@ -20,6 +20,9 @@ import {
   planAuditLogs,
   plans,
   postContexts,
+  promotionPlans,
+  promotionRedemptions,
+  promotions,
   socialPages,
   subscriptionAuditLogs,
   subscriptions,
@@ -55,11 +58,12 @@ export interface Actor {
 
 /**
  * Deletes the manual-activation audit rows (PW-T9) → wallet ledger → balances → wallets →
- * subscriptions of these billing accounts (FKs restrict), not the accounts themselves (workspaces
- * may still point at them).
+ * subscriptions → promotion redemptions (PR-T1) of these billing accounts (FKs restrict), not the
+ * accounts themselves (workspaces may still point at them). Redemptions and subscriptions point
+ * at each other: the redemption's `subscription_id` is cleared first.
  */
 export async function deleteBillingChildren(
-  db: Pick<Database, 'select' | 'delete'>,
+  db: Pick<Database, 'select' | 'delete' | 'update'>,
   accountIds: readonly string[],
 ): Promise<void> {
   if (accountIds.length === 0) return;
@@ -79,8 +83,15 @@ export async function deleteBillingChildren(
     .where(inArray(walletBalances.walletId, walletIds));
   await db.delete(wallets).where(inArray(wallets.billingAccountId, ids));
   await db
+    .update(promotionRedemptions)
+    .set({ subscriptionId: null })
+    .where(inArray(promotionRedemptions.billingAccountId, ids));
+  await db
     .delete(subscriptions)
     .where(inArray(subscriptions.billingAccountId, ids));
+  await db
+    .delete(promotionRedemptions)
+    .where(inArray(promotionRedemptions.billingAccountId, ids));
 }
 
 export function sessionCookie(res: request.Response): string {
@@ -305,6 +316,26 @@ export function createAuthActors(app: INestApplication<App>) {
         .delete(subscriptionAuditLogs)
         .where(or(...subscriptionAuditRefs));
     await deleteBillingChildren(db, accountIds);
+    // Promotions (PR-T1): the ones tracked users created go (claims + targets first; the claims'
+    // subscriptions are gone above); the seeded ones (`created_by` null, 0027) stay, and a Stop by
+    // a tracked user is undone.
+    if (userIds.length) {
+      const created = db
+        .select({ id: promotions.id })
+        .from(promotions)
+        .where(inArray(promotions.createdBy, userIds));
+      await db
+        .delete(promotionRedemptions)
+        .where(inArray(promotionRedemptions.promotionId, created));
+      await db
+        .delete(promotionPlans)
+        .where(inArray(promotionPlans.promotionId, created));
+      await db.delete(promotions).where(inArray(promotions.createdBy, userIds));
+      await db
+        .update(promotions)
+        .set({ stoppedAt: null, stoppedBy: null })
+        .where(inArray(promotions.stoppedBy, userIds));
+    }
     const ticketRefs = [
       ...(userIds.length ? [inArray(tickets.userId, userIds)] : []),
       ...(workspaceIds.length

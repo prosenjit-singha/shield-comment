@@ -4,10 +4,10 @@ const starter: PublicPlanRow = {
   id: '019a0000-0000-7000-8000-0000000000a1',
   slug: 'starter',
   name: 'Starter',
-  originalPriceBdt: 999,
+  monthlyPriceBdt: 999,
   offerPriceBdt: 499,
   offerBadge: '50% Launch Offer',
-  yearlyMonthlyPriceBdt: 449,
+  yearlyMonthlyPriceBdt: 949,
   trialDays: 7,
   trialCommentLimit: 300,
   featureConfig: {

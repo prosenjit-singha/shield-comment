@@ -21,7 +21,7 @@ export class PlansService {
         id: plans.id,
         slug: plans.slug,
         name: plans.name,
-        originalPriceBdt: plans.originalPriceBdt,
+        monthlyPriceBdt: plans.monthlyPriceBdt,
         offerPriceBdt: plans.offerPriceBdt,
         offerBadge: plans.offerBadge,
         yearlyMonthlyPriceBdt: plans.yearlyMonthlyPriceBdt,

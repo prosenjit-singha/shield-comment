@@ -1,5 +1,6 @@
 import { relations, sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   check,
   index,
   integer,
@@ -13,6 +14,7 @@ import { users } from './auth.js';
 import { allOrNoneSql, inListSql, nonNegativeSql } from './check-sql.js';
 import { id, timestamps, timestamptz } from './columns.js';
 import { plans } from './plans.js';
+import { promotionRedemptions } from './promotions.js';
 
 /**
  * Billing accounts and subscriptions (PW-T1; user decisions 2026-11-19 PW-D3/D5/D8, see
@@ -87,9 +89,21 @@ export const subscriptions = pgTable(
     chargedBdt: integer(),
     /** Set exactly when `status = CANCELED`. */
     canceledAt: timestamptz(),
+    /** The automatic discount (or trial) this term applies (PR-D12; set from PR-T3/PR-T3b). */
+    promotionRedemptionId: uuid().references(
+      (): AnyPgColumn => promotionRedemptions.id,
+      { onDelete: 'restrict' },
+    ),
+    /** The coupon on top of it (PR-D16). */
+    couponRedemptionId: uuid().references(
+      (): AnyPgColumn => promotionRedemptions.id,
+      { onDelete: 'restrict' },
+    ),
     ...timestamps,
   },
   (t) => [
+    index().on(t.promotionRedemptionId),
+    index().on(t.couponRedemptionId),
     // History per account (+ the FK `restrict` lookups when deleting an account).
     index().on(t.billingAccountId, t.createdAt),
     index().on(t.planId),

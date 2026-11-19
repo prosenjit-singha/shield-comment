@@ -135,13 +135,14 @@ export function offerPriceError(values: PlanEditableValues): string | null {
 }
 
 /**
- * Yearly rule on the merged values (PW-D5): the yearly per-month price must not be above the
- * monthly price (`offer ?? original`). Checked after every merge, so lowering the offer/original
- * below a stored yearly price is refused too (DB check `plans_yearly_monthly_price_check` is the
- * backstop, never reached).
+ * Yearly rule on the merged values (PW-D5): the yearly per-month list price must not be above the
+ * monthly list price (`originalPriceBdt` = column `monthly_price_bdt`; PR-T1: offers moved to
+ * promotions, so the offer no longer caps it). Checked after every merge, so lowering the monthly
+ * price below a stored yearly price is refused too (DB check `plans_yearly_monthly_price_check` is
+ * the backstop, never reached).
  */
 export function yearlyPriceError(values: PlanEditableValues): string | null {
-  const monthly = values.offerPriceBdt ?? values.originalPriceBdt;
+  const monthly = values.originalPriceBdt;
   if (
     values.yearlyMonthlyPriceBdt !== null &&
     values.yearlyMonthlyPriceBdt > monthly

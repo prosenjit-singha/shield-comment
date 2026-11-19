@@ -233,17 +233,17 @@ describe('offerPriceError', () => {
   });
 });
 
-describe('yearlyPriceError (PW-D5)', () => {
+describe('yearlyPriceError (PW-D5, PR-T1)', () => {
   it.each([
     [1499, null, null, false],
     [1499, null, 1499, false],
     [1499, null, 1349, false],
     [1499, null, 1500, true],
-    // The monthly price is the offer when there is one.
+    // PR-T1: the cap is the monthly list price; the offer (now a promotion) no longer caps it.
     [2499, 1499, 1499, false],
-    [2499, 1499, 1500, true],
-    [2499, 0, 0, false],
-    [2499, 0, 1, true],
+    [2499, 1499, 2349, false],
+    [2499, 0, 2499, false],
+    [2499, 0, 2500, true],
   ])(
     'original %d, offer %s, yearly %s → error %s',
     (original, offer, yearly, hasError) => {

@@ -6,7 +6,9 @@ import {
   jsonb,
   pgTable,
   text,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { lengthSql } from './check-sql.js';
 import { id, timestamps } from './columns.js';
 
 /**
@@ -20,6 +22,11 @@ import { id, timestamps } from './columns.js';
  * `ON CONFLICT (slug) DO NOTHING`, so admin edits are never overwritten. `0008_plan_launch_offers`
  * (M2-T15) adds the launch offers (Starter ~~৳999~~ ৳499, Growth ~~৳2,499~~ ৳1,499, Pro ~~৳5,999~~
  * ৳3,999) only to plans still at their seed values. Every admin edit is logged in `plan_audit_logs`.
+ *
+ * Promotions (PR-T1, migration 0027): a plan holds only its fixed facts (PR-D8). The list price is
+ * `monthly_price_bdt` (was `original_price_bdt`); offers live in `promotions` (0027 seeded a
+ * "Launch offer" DISCOUNT per plan from `offer_price_bdt`). `offer_price_bdt`, `offer_badge`,
+ * `trial_days` and `trial_comment_limit` stay until PR-T7 drops them.
  */
 
 /** Numeric limits per plan (`feature_config.limits`). Rows 1–3 of the landing pricing matrix + workspaces. */
@@ -89,6 +96,10 @@ export interface PlanFeatureConfig {
 export const PLAN_PRICE_MAX_BDT = 1_000_000;
 export const PLAN_OFFER_BADGE_MAX = 40;
 export const PLAN_NAME_MAX = 40;
+/** Optional card badge (PR-D8, en + bn PR-D17), e.g. "Popular". */
+export const PLAN_BADGE_MAX = 24;
+/** Optional short card description (PR-D8, en + bn PR-D17). */
+export const PLAN_DESCRIPTION_MAX = 160;
 
 /** Trial length bounds in days (PW-D8; the admin UI offers 3 / 7 / 14 / 30). */
 export const PLAN_TRIAL_DAYS_MIN = 1;
@@ -107,15 +118,15 @@ export const plans = pgTable(
     sortOrder: integer().notNull().default(0),
     /** Inactive plans stay assigned to existing workspaces but are not offered to new ones. */
     isActive: boolean().notNull().default(true),
-    /** Monthly list price in whole BDT (৳). */
-    originalPriceBdt: integer().notNull(),
+    /** Monthly list price in whole BDT (৳); was `original_price_bdt` (renamed by 0027). */
+    monthlyPriceBdt: integer().notNull(),
     /** Promo price in whole BDT, ≤ original; `null` = no offer (customers pay the original). */
     offerPriceBdt: integer(),
     /** Short promo label shown on the pricing card, e.g. "50% Launch Offer". */
     offerBadge: text(),
     /**
-     * Per-month price in whole BDT when billed yearly (PW-D5; charged × 12), ≤ the monthly price
-     * (`offer_price_bdt ?? original_price_bdt`). `null` = no yearly option.
+     * Per-month list price in whole BDT when billed yearly (PW-D5; charged × 12), ≤
+     * `monthly_price_bdt` (PR-T1; before 0027: ≤ `offer ?? original`). `null` = no yearly option.
      */
     yearlyMonthlyPriceBdt: integer(),
     /** Trial length in days (PW-D8; Starter only, enforced by the API; seed 7). `null` = no trial. */
@@ -126,18 +137,29 @@ export const plans = pgTable(
      */
     trialCommentLimit: integer(),
     featureConfig: jsonb().$type<PlanFeatureConfig>().notNull(),
+    /** Card badge, e.g. "Popular" (PR-D8/D17); `null` = none. bn falls back to en. */
+    badgeEn: text(),
+    badgeBn: text(),
+    /** Short card description (PR-D8/D17); `null` = none. bn falls back to en. */
+    descriptionEn: text(),
+    descriptionBn: text(),
+    /** The one highlighted plan (PR-D9): strong card + primary button. At most one row. */
+    isHighlighted: boolean().notNull().default(false),
     ...timestamps,
   },
-  () => [
+  (t) => [
+    uniqueIndex('plans_one_highlighted')
+      .on(t.isHighlighted)
+      .where(sql`is_highlighted`),
     check('plans_slug_format', sql`slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
     check(
       'plans_name_length',
       sql.raw(`char_length(name) between 1 and ${PLAN_NAME_MAX}`),
     ),
-    check('plans_original_price_check', sql`original_price_bdt >= 0`),
+    check('plans_monthly_price_check', sql`monthly_price_bdt >= 0`),
     check(
       'plans_offer_price_check',
-      sql`offer_price_bdt is null or (offer_price_bdt >= 0 and offer_price_bdt <= original_price_bdt)`,
+      sql`offer_price_bdt is null or (offer_price_bdt >= 0 and offer_price_bdt <= monthly_price_bdt)`,
     ),
     check(
       'plans_offer_badge_length',
@@ -147,7 +169,19 @@ export const plans = pgTable(
     ),
     check(
       'plans_yearly_monthly_price_check',
-      sql`yearly_monthly_price_bdt is null or (yearly_monthly_price_bdt >= 0 and yearly_monthly_price_bdt <= coalesce(offer_price_bdt, original_price_bdt))`,
+      sql`yearly_monthly_price_bdt is null or (yearly_monthly_price_bdt >= 0 and yearly_monthly_price_bdt <= monthly_price_bdt)`,
+    ),
+    ...(['badge_en', 'badge_bn'] as const).map((c) =>
+      check(
+        `plans_${c}_length`,
+        sql.raw(lengthSql(c, 1, PLAN_BADGE_MAX, true)),
+      ),
+    ),
+    ...(['description_en', 'description_bn'] as const).map((c) =>
+      check(
+        `plans_${c}_length`,
+        sql.raw(lengthSql(c, 1, PLAN_DESCRIPTION_MAX, true)),
+      ),
     ),
     check(
       'plans_trial_days_check',

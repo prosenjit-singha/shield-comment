@@ -114,7 +114,7 @@ export class AdminSubscriptionService {
           slug: plans.slug,
           name: plans.name,
           isActive: plans.isActive,
-          originalPriceBdt: plans.originalPriceBdt,
+          monthlyPriceBdt: plans.monthlyPriceBdt,
           offerPriceBdt: plans.offerPriceBdt,
           offerBadge: plans.offerBadge,
           yearlyMonthlyPriceBdt: plans.yearlyMonthlyPriceBdt,
