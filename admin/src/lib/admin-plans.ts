@@ -9,7 +9,11 @@ import { apiFetch } from '@/lib/api'
  * - `PATCH /api/admin/settings/plans/:planId` (one plan per request, partial body) → `{ plan }`.
  *   400 = invalid / unknown field / nothing to update / offer > original; 404 = unknown plan.
  */
-export const PLAN_LIMIT_KEYS = ['connectedPages', 'monthlyComments', 'teamSeats'] as const
+/**
+ * `monthlyAiCredits` (M5-T11, D15) = AI credits per Asia/Dhaka month, the only moderation limit; it
+ * replaced `monthlyComments` (old audit rows still carry that name, see `admin-plan-audit.ts`).
+ */
+export const PLAN_LIMIT_KEYS = ['connectedPages', 'monthlyAiCredits', 'teamSeats'] as const
 export type PlanLimitKey = (typeof PLAN_LIMIT_KEYS)[number]
 
 export const PLAN_FEATURE_KEYS = [
@@ -69,15 +73,26 @@ export const PLAN_PRICE_MAX_BDT = 1_000_000
 export const PLAN_OFFER_BADGE_MAX = 40
 export const PLAN_LIMIT_MAX: Record<PlanLimitKey, number> = {
   connectedPages: 1_000,
-  monthlyComments: 10_000_000,
+  monthlyAiCredits: 10_000_000,
   teamSeats: 1_000,
 }
 
 /** Row labels of the `docs/design/client.md` §7 pricing matrix (rows 1–3 and 4–10). */
 export const planLimitLabels: Record<PlanLimitKey, string> = {
   connectedPages: 'Connected FB & IG Pages',
-  monthlyComments: 'Monthly Comments Scanned',
+  monthlyAiCredits: 'Monthly AI credits',
   teamSeats: 'Team / Moderator Seats',
+}
+
+/**
+ * Hint under a limit input. Monthly AI credits: the comment estimate at 1 credit per comment (the
+ * "Comment only" level, D8). It is display text only: credits are the limit (D15).
+ */
+export function planLimitHint(key: PlanLimitKey, value: string): string | undefined {
+  if (key !== 'monthlyAiCredits') return undefined
+  const credits = parseWholeNumber(value)
+  if (credits === null) return undefined
+  return `≈ ${formatCount(credits)} comments (estimate at 1 credit per comment, not a limit)`
 }
 
 export const planFeatureLabels: Record<PlanFeatureKey, string> = {
@@ -137,7 +152,7 @@ export function draftFromPlan(plan: AdminPlan): PlanDraft {
     offerBadge: plan.offerBadge ?? '',
     limits: {
       connectedPages: String(limits.connectedPages),
-      monthlyComments: String(limits.monthlyComments),
+      monthlyAiCredits: String(limits.monthlyAiCredits),
       teamSeats: String(limits.teamSeats),
     },
     features: { ...features },

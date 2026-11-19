@@ -57,7 +57,7 @@ function row(
 }
 
 const features = (autoReplyTemplates: boolean) => ({
-  limits: { connectedPages: 1, monthlyComments: 500, teamSeats: 1 },
+  limits: { connectedPages: 1, monthlyAiCredits: 500, teamSeats: 1 },
   features: { autoReplyTemplates },
 });
 

@@ -41,13 +41,13 @@ describe('UpdatePlanDto', () => {
       offerPriceBdt: 499,
       offerBadge: '  50% Launch Offer ',
       featureConfig: {
-        limits: { connectedPages: 3, monthlyComments: 0, teamSeats: 2 },
+        limits: { connectedPages: 3, monthlyAiCredits: 0, teamSeats: 2 },
         features: { customBlocklist: true, prioritySupportApi: false },
       },
     });
     expect(fields).toEqual([]);
     expect(dto.offerBadge).toBe('50% Launch Offer');
-    expect(dto.featureConfig?.limits?.monthlyComments).toBe(0);
+    expect(dto.featureConfig?.limits?.monthlyAiCredits).toBe(0);
   });
 
   it('accepts an empty body at DTO level (the service answers "Nothing to update")', async () => {
@@ -77,7 +77,7 @@ describe('UpdatePlanDto', () => {
       featureConfig: {
         limits: {
           connectedPages: 1000,
-          monthlyComments: 10_000_000,
+          monthlyAiCredits: 10_000_000,
           teamSeats: 1000,
         },
       },
@@ -111,6 +111,16 @@ describe('UpdatePlanDto', () => {
       'featureConfig.limits.storageGb',
     ],
     [
+      'old limit name monthlyComments (M5-T11)',
+      { featureConfig: { limits: { monthlyComments: 500 } } },
+      'featureConfig.limits.monthlyComments',
+    ],
+    [
+      'string monthlyAiCredits',
+      { featureConfig: { limits: { monthlyAiCredits: '500' } } },
+      'featureConfig.limits.monthlyAiCredits',
+    ],
+    [
       'unknown feature key',
       { featureConfig: { features: { aiImages: true } } },
       'featureConfig.features.aiImages',
@@ -127,8 +137,8 @@ describe('UpdatePlanDto', () => {
     ],
     [
       'limit above max',
-      { featureConfig: { limits: { monthlyComments: 10_000_001 } } },
-      'featureConfig.limits.monthlyComments',
+      { featureConfig: { limits: { monthlyAiCredits: 10_000_001 } } },
+      'featureConfig.limits.monthlyAiCredits',
     ],
     [
       'null limit',

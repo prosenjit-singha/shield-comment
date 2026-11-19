@@ -50,7 +50,7 @@ const connection = (
 });
 
 const config = (connectedPages: unknown) => ({
-  limits: { connectedPages, monthlyComments: 500, teamSeats: 1 },
+  limits: { connectedPages, monthlyAiCredits: 500, teamSeats: 1 },
   features: {},
 });
 

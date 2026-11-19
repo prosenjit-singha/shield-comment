@@ -1,4 +1,5 @@
 import {
+  LEGACY_PLAN_LIMIT_KEYS,
   PLAN_AUDIT_USER_AGENT_MAX,
   PLAN_FEATURE_KEYS,
   PLAN_LIMIT_KEYS,
@@ -28,10 +29,15 @@ export interface PlanRow extends PlanEditableValues {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const isLimitValue = (value: unknown): value is number =>
+  Number.isInteger(value) && (value as number) >= 0;
+
 /**
  * Complete, typed `feature_config` from whatever the jsonb holds: every known key present
  * (missing or mistyped limit → 0, flag → false), unknown keys dropped. Keeps the API shape
- * stable if a key is added later or a row was edited by hand.
+ * stable if a key is added later or a row was edited by hand. A limit whose key is missing is
+ * read from its old name (`LEGACY_PLAN_LIMIT_KEYS`, e.g. `monthlyComments` → `monthlyAiCredits`,
+ * M5-T11); the new key wins when both are present.
  */
 export function normalizeFeatureConfig(raw: unknown): PlanFeatureConfig {
   const source = isRecord(raw) ? raw : {};
@@ -40,11 +46,10 @@ export function normalizeFeatureConfig(raw: unknown): PlanFeatureConfig {
   return {
     limits: Object.fromEntries(
       PLAN_LIMIT_KEYS.map((key) => {
-        const value = limits[key];
-        return [
-          key,
-          Number.isInteger(value) && (value as number) >= 0 ? value : 0,
-        ];
+        const legacy = LEGACY_PLAN_LIMIT_KEYS[key];
+        const value =
+          key in limits || legacy === undefined ? limits[key] : limits[legacy];
+        return [key, isLimitValue(value) ? value : 0];
       }),
     ) as PlanFeatureConfig['limits'],
     features: Object.fromEntries(

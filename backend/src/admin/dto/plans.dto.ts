@@ -28,7 +28,8 @@ import {
  *
  * `featureConfig` keys (seed defaults Free | Starter | Growth | Pro):
  * - `limits.connectedPages` (0–1,000): 1 | 1 | 5 | 25
- * - `limits.monthlyComments` (0–10,000,000): 500 | 2,500 | 15,000 | 75,000
+ * - `limits.monthlyAiCredits` (0–10,000,000): 500 | 2,500 | 15,000 | 75,000 (AI credits per Asia/Dhaka
+ *   month, D15; the only moderation limit. Old name `monthlyComments` → 400 as an unknown key)
  * - `limits.teamSeats` (0–1,000): 1 | 1 | 3 | 10
  * - `features.banglaAiFilter`, `features.autoHideScams`: all plans
  * - `features.customBlocklist`, `features.autoReplyTemplates`, `features.messengerAlerts`: Growth, Pro
@@ -75,11 +76,11 @@ export class PlanLimitsPatchDto {
   @Max(PLAN_LIMIT_MAX.connectedPages)
   connectedPages?: number;
 
-  @unlessAbsent<PlanLimitsPatchDto>('monthlyComments')
+  @unlessAbsent<PlanLimitsPatchDto>('monthlyAiCredits')
   @IsInt()
   @Min(0)
-  @Max(PLAN_LIMIT_MAX.monthlyComments)
-  monthlyComments?: number;
+  @Max(PLAN_LIMIT_MAX.monthlyAiCredits)
+  monthlyAiCredits?: number;
 
   @unlessAbsent<PlanLimitsPatchDto>('teamSeats')
   @IsInt()

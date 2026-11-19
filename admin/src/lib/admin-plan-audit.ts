@@ -92,14 +92,23 @@ export const planAuditActionLabels: Record<PlanAuditAction, string> = {
   UPDATE: 'Updated',
 }
 
-type FieldKind = 'price' | 'badge' | 'limit' | 'feature' | 'unknown'
+type FieldKind = 'price' | 'badge' | 'limit' | 'legacy-limit' | 'feature' | 'unknown'
 
 const LIMIT_PREFIX = 'featureConfig.limits.'
 const FEATURE_PREFIX = 'featureConfig.features.'
 
+/**
+ * Renamed limits that only old audit rows carry (backend `LEGACY_PLAN_AUDIT_FIELDS`), shown under
+ * their old label. M5-T11: `monthlyComments` → `monthlyAiCredits`.
+ */
+export const legacyPlanAuditFieldLabels: Readonly<Record<string, string>> = {
+  'featureConfig.limits.monthlyComments': 'Monthly Comments Scanned',
+}
+
 function fieldKind(field: string): FieldKind {
   if (field === 'originalPriceBdt' || field === 'offerPriceBdt') return 'price'
   if (field === 'offerBadge') return 'badge'
+  if (Object.hasOwn(legacyPlanAuditFieldLabels, field)) return 'legacy-limit'
   if (field.startsWith(LIMIT_PREFIX) && (PLAN_LIMIT_KEYS as readonly string[]).includes(field.slice(LIMIT_PREFIX.length)))
     return 'limit'
   if (
@@ -119,6 +128,8 @@ export function planAuditFieldLabel(field: string): string {
       return 'Offer badge'
     case 'limit':
       return planLimitLabels[field.slice(LIMIT_PREFIX.length) as PlanLimitKey]
+    case 'legacy-limit':
+      return legacyPlanAuditFieldLabels[field] ?? field
     case 'feature':
       return planFeatureLabels[field.slice(FEATURE_PREFIX.length) as PlanFeatureKey]
     default:

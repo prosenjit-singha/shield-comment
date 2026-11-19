@@ -19,6 +19,7 @@ import {
   PLAN_OFFER_BADGE_MAX,
   type PlanDraft,
   planFeatureLabels,
+  planLimitHint,
   planLimitLabels,
   planPatch,
   plansListKey,
@@ -181,7 +182,13 @@ export function PlanEditorCard({
             <h3 className="text-sm font-semibold">Limits</h3>
             <div className="grid gap-4 sm:grid-cols-3">
               {PLAN_LIMIT_KEYS.map((key) => (
-                <Field key={key} id={`${id}-${key}`} label={planLimitLabels[key]} error={errors.limits[key]}>
+                <Field
+                  key={key}
+                  id={`${id}-${key}`}
+                  label={planLimitLabels[key]}
+                  error={errors.limits[key]}
+                  hint={planLimitHint(key, draft.limits[key])}
+                >
                   <Input
                     id={`${id}-${key}`}
                     inputMode="numeric"

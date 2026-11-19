@@ -16,6 +16,7 @@ import {
   metaDataDeletionRequests,
   moderationActions,
   moderationPolicies,
+  monthlyCreditUsage,
   planAuditLogs,
   postContexts,
   socialPages,
@@ -226,6 +227,10 @@ export function createAuthActors(app: INestApplication<App>) {
       await db
         .delete(postContexts)
         .where(inArray(postContexts.workspaceId, workspaceIds));
+      // Monthly AI credit usage (M5-T11): workspace FK restrict.
+      await db
+        .delete(monthlyCreditUsage)
+        .where(inArray(monthlyCreditUsage.workspaceId, workspaceIds));
       // Meta rows (M3-T2) reference workspaces with FK restrict.
       await db
         .delete(socialPages)

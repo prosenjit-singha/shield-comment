@@ -19,6 +19,8 @@ describe('planAuditFieldLabel', () => {
 
   it('uses the client.md §7 matrix labels for limits and features', () => {
     expect(planAuditFieldLabel('featureConfig.limits.connectedPages')).toBe('Connected FB & IG Pages')
+    expect(planAuditFieldLabel('featureConfig.limits.monthlyAiCredits')).toBe('Monthly AI credits')
+    // Renamed in M5-T11: old rows keep the old field name and label.
     expect(planAuditFieldLabel('featureConfig.limits.monthlyComments')).toBe('Monthly Comments Scanned')
     expect(planAuditFieldLabel('featureConfig.limits.teamSeats')).toBe('Team / Moderator Seats')
     expect(planAuditFieldLabel('featureConfig.features.customBlocklist')).toBe('Custom Keyword & BD Phone Blocklist')
@@ -49,6 +51,7 @@ describe('formatPlanAuditValue', () => {
 
   it('quotes badges, groups limits and maps flags to On/Off', () => {
     expect(formatPlanAuditValue('offerBadge', '40% Off')).toBe('“40% Off”')
+    expect(formatPlanAuditValue('featureConfig.limits.monthlyAiCredits', 15000)).toBe(group(15000))
     expect(formatPlanAuditValue('featureConfig.limits.monthlyComments', 15000)).toBe(group(15000))
     expect(formatPlanAuditValue('featureConfig.limits.teamSeats', 3)).toBe('3')
     expect(formatPlanAuditValue('featureConfig.features.messengerAlerts', true)).toBe('On')

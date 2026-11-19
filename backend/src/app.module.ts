@@ -23,6 +23,7 @@ import { WebhooksModule } from './webhooks/webhooks.module.js';
 import { CommentsModule } from './comments/comments.module.js';
 import { MetaCallbacksModule } from './meta-callbacks/meta-callbacks.module.js';
 import { ModerationModule } from './moderation/moderation.module.js';
+import { CreditsModule } from './credits/credits.module.js';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { ModerationModule } from './moderation/moderation.module.js';
     CommentsModule,
     MetaCallbacksModule,
     ModerationModule,
+    CreditsModule,
   ],
 })
 export class AppModule {}

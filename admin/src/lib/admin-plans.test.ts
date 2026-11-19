@@ -8,6 +8,8 @@ import {
   isDraftDirty,
   offerDiscountPercent,
   parseWholeNumber,
+  planLimitHint,
+  planLimitLabels,
   type PlanDraft,
   planPatch,
   pricePreview,
@@ -26,7 +28,7 @@ const starter: AdminPlan = {
   offerPriceBdt: null,
   offerBadge: null,
   featureConfig: {
-    limits: { connectedPages: 1, monthlyComments: 2500, teamSeats: 1 },
+    limits: { connectedPages: 1, monthlyAiCredits: 2500, teamSeats: 1 },
     features: {
       banglaAiFilter: true,
       autoHideScams: true,
@@ -51,7 +53,7 @@ describe('draftFromPlan', () => {
       originalPriceBdt: '499',
       offerPriceBdt: '',
       offerBadge: '',
-      limits: { connectedPages: '1', monthlyComments: '2500', teamSeats: '1' },
+      limits: { connectedPages: '1', monthlyAiCredits: '2500', teamSeats: '1' },
       features: starter.featureConfig.features,
     })
     const promo = draftFromPlan({ ...starter, originalPriceBdt: 999, offerPriceBdt: 499, offerBadge: '50% Launch Offer' })
@@ -116,15 +118,29 @@ describe('validatePlanDraft', () => {
 
   it('checks each limit against its own maximum', () => {
     const errors = validatePlanDraft(
-      draft({ limits: { connectedPages: '1001', monthlyComments: '10000000', teamSeats: 'two' } }),
+      draft({ limits: { connectedPages: '1001', monthlyAiCredits: '10000000', teamSeats: 'two' } }),
     )
     expect(errors.limits).toEqual({
       connectedPages: `Must be ${formatCount(1000)} or less.`,
       teamSeats: 'Use a whole number (digits only).',
     })
-    expect(validatePlanDraft(draft({ limits: { connectedPages: '', monthlyComments: '1', teamSeats: '1' } })).limits)
+    expect(validatePlanDraft(draft({ limits: { connectedPages: '', monthlyAiCredits: '1', teamSeats: '1' } })).limits)
       .toEqual({ connectedPages: 'Enter a limit.' })
     expect(hasDraftErrors({ limits: { teamSeats: 'x' } })).toBe(true)
+  })
+})
+
+describe('planLimitHint (M5-T11)', () => {
+  it('estimates comments at 1 credit per comment for monthly AI credits only', () => {
+    expect(planLimitLabels.monthlyAiCredits).toBe('Monthly AI credits')
+    expect(planLimitHint('monthlyAiCredits', ' 15000 ')).toBe(
+      `≈ ${formatCount(15000)} comments (estimate at 1 credit per comment, not a limit)`,
+    )
+    expect(planLimitHint('monthlyAiCredits', '0')).toBe('≈ 0 comments (estimate at 1 credit per comment, not a limit)')
+    expect(planLimitHint('monthlyAiCredits', '')).toBeUndefined()
+    expect(planLimitHint('monthlyAiCredits', '1.5')).toBeUndefined()
+    expect(planLimitHint('connectedPages', '5')).toBeUndefined()
+    expect(planLimitHint('teamSeats', '5')).toBeUndefined()
   })
 })
 
@@ -161,10 +177,10 @@ describe('planPatch (minimal PATCH body)', () => {
     expect(
       planPatch(starter, {
         ...d,
-        limits: { ...d.limits, monthlyComments: '3000' },
+        limits: { ...d.limits, monthlyAiCredits: '3000' },
         features: { ...d.features, autoHideScams: false },
       }),
-    ).toEqual({ featureConfig: { limits: { monthlyComments: 3000 }, features: { autoHideScams: false } } })
+    ).toEqual({ featureConfig: { limits: { monthlyAiCredits: 3000 }, features: { autoHideScams: false } } })
   })
 })
 

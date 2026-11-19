@@ -18,6 +18,10 @@ const OFFERS_MIGRATION = join(
   import.meta.dirname,
   '../drizzle/0008_plan_launch_offers.sql',
 );
+const CREDITS_MIGRATION = join(
+  import.meta.dirname,
+  '../drizzle/0018_plan_ai_credits.sql',
+);
 const UNKNOWN_ID = '01a1ecf3-0000-7000-8000-000000000000';
 
 /**
@@ -142,6 +146,71 @@ describe('Admin plan settings (e2e)', () => {
     expect(await readPlans()).toEqual(seeded);
   });
 
+  it('M5-T11: migration 0018 renamed monthlyComments → monthlyAiCredits (seeds kept, idempotent, admin edits kept)', async () => {
+    // Applied: every plan carries the new key with the seed number, the old key is gone.
+    expect(
+      seeded.map((p) => [
+        p.slug,
+        (p.featureConfig.limits as Record<string, unknown>).monthlyAiCredits,
+        'monthlyComments' in p.featureConfig.limits,
+      ]),
+    ).toEqual([
+      ['free', 500, false],
+      ['starter', 2500, false],
+      ['growth', 15000, false],
+      ['pro', 75000, false],
+    ]);
+    const creditsSql = readFileSync(CREDITS_MIGRATION, 'utf8');
+    const rollback = new Error('rollback');
+    await expect(
+      actors.db.transaction(async (tx) => {
+        // Already applied: running it again changes nothing.
+        await tx.execute(sql.raw(creditsSql));
+        expect(
+          await tx.select().from(plans).orderBy(asc(plans.sortOrder)),
+        ).toEqual(seeded);
+        // Pre-0018 shapes: starter = admin-edited old key, growth = both keys (new wins).
+        await tx.execute(sql`
+          update plans set feature_config = jsonb_set(
+            feature_config, '{limits}',
+            ((feature_config->'limits') - 'monthlyAiCredits') || '{"monthlyComments": 3333}'::jsonb)
+          where slug = 'starter'`);
+        await tx.execute(sql`
+          update plans set feature_config = jsonb_set(
+            feature_config, '{limits}',
+            (feature_config->'limits') || '{"monthlyComments": 1}'::jsonb)
+          where slug = 'growth'`);
+        await tx.execute(sql.raw(creditsSql));
+        const rows = await tx
+          .select()
+          .from(plans)
+          .orderBy(asc(plans.sortOrder));
+        expect(rows.map((p) => [p.slug, p.featureConfig.limits])).toEqual([
+          ['free', { connectedPages: 1, monthlyAiCredits: 500, teamSeats: 1 }],
+          [
+            'starter',
+            { connectedPages: 1, monthlyAiCredits: 3333, teamSeats: 1 },
+          ],
+          [
+            'growth',
+            { connectedPages: 5, monthlyAiCredits: 15000, teamSeats: 3 },
+          ],
+          [
+            'pro',
+            { connectedPages: 25, monthlyAiCredits: 75000, teamSeats: 10 },
+          ],
+        ]);
+        // `updated_at` untouched (data migration, same value).
+        expect(rows.map((p) => p.updatedAt)).toEqual(
+          seeded.map((p) => p.updatedAt),
+        );
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+    expect(await readPlans()).toEqual(seeded);
+    expect(await auditCount()).toBe(0);
+  });
+
   describe('access', () => {
     it('401 when signed out (GET and PATCH)', async () => {
       await http().get(PLANS).expect(401);
@@ -212,7 +281,7 @@ describe('Admin plan settings (e2e)', () => {
         offerPriceBdt: 1499,
         offerBadge: '40% Off',
         featureConfig: {
-          limits: { connectedPages: 5, monthlyComments: 15000, teamSeats: 3 },
+          limits: { connectedPages: 5, monthlyAiCredits: 15000, teamSeats: 3 },
           features: {
             banglaAiFilter: true,
             autoHideScams: true,
@@ -228,7 +297,7 @@ describe('Admin plan settings (e2e)', () => {
       });
       expect(body.items[3]!.featureConfig.limits).toEqual({
         connectedPages: 25,
-        monthlyComments: 75000,
+        monthlyAiCredits: 75000,
         teamSeats: 10,
       });
       expect(
@@ -264,7 +333,7 @@ describe('Admin plan settings (e2e)', () => {
         offerPriceBdt: 1999,
         offerBadge: '33% Off',
         featureConfig: {
-          limits: { connectedPages: 5, monthlyComments: 15000, teamSeats: 4 },
+          limits: { connectedPages: 5, monthlyAiCredits: 15000, teamSeats: 4 },
           features: { customBlocklist: true, whiteLabelReports: true },
         },
       });
@@ -388,7 +457,7 @@ describe('Admin plan settings (e2e)', () => {
         // Same values as stored: not part of the diff.
         originalPriceBdt: 0,
         featureConfig: {
-          limits: { monthlyComments: 750, teamSeats: 1 },
+          limits: { monthlyAiCredits: 750, teamSeats: 1 },
           features: { customBlocklist: true, banglaAiFilter: true },
         },
       })
@@ -408,7 +477,7 @@ describe('Admin plan settings (e2e)', () => {
         changes: [
           { field: 'offerBadge', before: null, after: 'Always free' },
           {
-            field: 'featureConfig.limits.monthlyComments',
+            field: 'featureConfig.limits.monthlyAiCredits',
             before: 500,
             after: 750,
           },
@@ -433,11 +502,11 @@ describe('Admin plan settings (e2e)', () => {
       const res = await patch(stored!.id, {
         offerBadge: '  Always free ',
         offerPriceBdt: null,
-        featureConfig: { limits: { monthlyComments: 750 } },
+        featureConfig: { limits: { monthlyAiCredits: 750 } },
       }).expect(200);
       const { plan } = res.body as AdminPlanUpdateResponse;
       expect(plan.updatedAt).toBe(stored!.updatedAt.toISOString());
-      expect(plan.featureConfig.limits.monthlyComments).toBe(750);
+      expect(plan.featureConfig.limits.monthlyAiCredits).toBe(750);
       expect(await auditCount()).toBe(before);
       const [row] = await actors.db
         .select()
@@ -450,6 +519,10 @@ describe('Admin plan settings (e2e)', () => {
       const free = planBySlug('free');
       const before = await auditCount();
       await patch(free.id, { originalPriceBdt: 'x' }).expect(400);
+      // The old limit name is an unknown key now (M5-T11).
+      await patch(free.id, {
+        featureConfig: { limits: { monthlyComments: 600 } },
+      }).expect(400);
       await patch(free.id, { offerPriceBdt: 1 }).expect(400);
       const cookie = await actors.signIn(superAdmin.email);
       await actors.patchStoredSession(cookie, {
@@ -581,6 +654,40 @@ describe('Admin plan settings (e2e)', () => {
           .expect(400);
       });
     });
+  });
+
+  it('M5-T11: an old audit row keeps its old field name (featureConfig.limits.monthlyComments)', async () => {
+    const pro = planBySlug('pro');
+    const [old] = await actors.db
+      .insert(planAuditLogs)
+      .values({
+        planId: pro.id,
+        adminId: superAdmin.id,
+        action: 'UPDATE',
+        changes: [
+          {
+            field: 'featureConfig.limits.monthlyComments',
+            before: 75000,
+            after: 80000,
+          },
+        ],
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      })
+      .returning();
+    const res = await http()
+      .get(`${AUDIT}?planId=${pro.id}&take=100`)
+      .set('Cookie', superAdmin.cookie)
+      .expect(200);
+    const entry = (res.body as PlanAuditList).items.find(
+      (i) => i.id === old!.id,
+    );
+    expect(entry?.changes).toEqual([
+      {
+        field: 'featureConfig.limits.monthlyComments',
+        before: 75000,
+        after: 80000,
+      },
+    ]);
   });
 
   describe('workspaces.plan_id', () => {

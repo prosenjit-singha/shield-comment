@@ -25,8 +25,12 @@ import { id, timestamps } from './columns.js';
 export const PLAN_LIMIT_KEYS = [
   /** Connected Facebook + Instagram pages. */
   'connectedPages',
-  /** Comments scanned per calendar month (Module 8 `QuotaGuard`). */
-  'monthlyComments',
+  /**
+   * AI credits per Asia/Dhaka calendar month (Module 5 D15, M5-T11): the only moderation limit.
+   * One AI call costs 1–2 credits by the D8 context level; no rollover. Replaced
+   * `monthlyComments` (migration 0018 copied the numbers).
+   */
+  'monthlyAiCredits',
   /** Team / moderator seats (workspace members). */
   'teamSeats',
 ] as const;
@@ -35,8 +39,19 @@ export type PlanLimitKey = (typeof PLAN_LIMIT_KEYS)[number];
 /** Upper bound per limit (validation; 0 = feature unavailable). */
 export const PLAN_LIMIT_MAX: Record<PlanLimitKey, number> = {
   connectedPages: 1_000,
-  monthlyComments: 10_000_000,
+  monthlyAiCredits: 10_000_000,
   teamSeats: 1_000,
+};
+
+/**
+ * Old limit key names, read as a fallback by `normalizeFeatureConfig` when the new key is missing
+ * (M5-T11: `monthlyComments` → `monthlyAiCredits`). Old `plan_audit_logs` rows keep the old
+ * dotted field name (`LEGACY_PLAN_AUDIT_FIELDS`).
+ */
+export const LEGACY_PLAN_LIMIT_KEYS: Readonly<
+  Partial<Record<PlanLimitKey, string>>
+> = {
+  monthlyAiCredits: 'monthlyComments',
 };
 
 /** Boolean feature flags (`feature_config.features`). Rows 4–10 of the landing pricing matrix. */

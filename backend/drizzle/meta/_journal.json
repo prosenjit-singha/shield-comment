@@ -127,6 +127,20 @@
       "when": 1795086424727,
       "tag": "0017_post_contexts",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795087170273,
+      "tag": "0018_plan_ai_credits",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1795087181799,
+      "tag": "0019_monthly_credit_usage",
+      "breakpoints": true
     }
   ]
 }
