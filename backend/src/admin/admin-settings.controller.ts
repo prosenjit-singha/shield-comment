@@ -16,6 +16,10 @@ import { requestIp } from './admin-impersonation.service.js';
 import { auditUserAgent } from './plan-rules.js';
 import { AdminPlansService } from './admin-plans.service.js';
 import {
+  type PlatformSettings,
+  UpdatePlatformSettingsDto,
+} from './dto/platform-settings.dto.js';
+import {
   ListPlanAuditQueryDto,
   type PlanAuditList,
 } from './dto/plan-audit.dto.js';
@@ -55,7 +59,7 @@ export class AdminSettingsController {
 
   /**
    * One plan per request (the A7 editor saves each plan card on its own): partial body →
-   * `{ plan }`. 400 invalid / empty / offer > original, 404 unknown plan. A real change writes a
+   * `{ plan }`. 400 invalid / empty / yearly > monthly, 404 unknown plan. A real change writes a
    * `plan_audit_logs` row (who, changed fields before → after, IP, user agent); a no-op doesn't.
    */
   @Patch('plans/:planId')
@@ -70,5 +74,22 @@ export class AdminSettingsController {
       ipAddress: requestIp(req),
       userAgent: auditUserAgent(req.headers['user-agent']),
     });
+  }
+
+  /** Support WhatsApp number etc. (PR-T4, PR-D18): `PlatformSettings`. */
+  @Get('platform')
+  platformSettings(): Promise<PlatformSettings> {
+    return this.plans.platformSettings();
+  }
+
+  @Patch('platform')
+  updatePlatformSettings(
+    @Body() body: UpdatePlatformSettingsDto,
+    @Session() session: AuthSession,
+  ): Promise<PlatformSettings> {
+    return this.plans.updatePlatformSettings(
+      body.supportWhatsappNumber,
+      session.user.id,
+    );
   }
 }

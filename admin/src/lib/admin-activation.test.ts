@@ -66,7 +66,7 @@ describe('startDateError', () => {
 })
 
 describe('activationPricePreview', () => {
-  const starter = { originalPriceBdt: 999, offerPriceBdt: 499, yearlyMonthlyPriceBdt: 449 }
+  const starter = { monthlyPriceBdt: 999, offerPriceBdt: 499, yearlyMonthlyPriceBdt: 449 }
 
   it('monthly shows the offer (else the original) per month', () => {
     expect(activationPricePreview(starter, 'month')).toBe('৳499/month')

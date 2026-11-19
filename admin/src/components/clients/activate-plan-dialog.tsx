@@ -123,7 +123,7 @@ function ActivateForm({ client, onClose }: { client: AdminClient; onClose: () =>
   const planOptions: PillOption<string>[] = items.map((plan) => ({
     value: plan.id,
     label: plan.name,
-    hint: formatPlanPrice(plan.offerPriceBdt ?? plan.originalPriceBdt),
+    hint: formatPlanPrice(plan.offerPriceBdt ?? plan.monthlyPriceBdt),
   }))
   const intervalOptions: PillOption<SubscriptionInterval>[] = [
     { value: 'month', label: 'Monthly' },

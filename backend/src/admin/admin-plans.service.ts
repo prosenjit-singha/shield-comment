@@ -4,9 +4,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { asc, count, desc, eq } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ne } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
-import { planAuditLogs, plans, users } from '../db/schema/index.js';
+import {
+  planAuditLogs,
+  platformSettings,
+  plans,
+  users,
+} from '../db/schema/index.js';
+import type { PlatformSettings } from './dto/platform-settings.dto.js';
 import type {
   ListPlanAuditQueryDto,
   PlanAuditList,
@@ -21,8 +27,8 @@ import {
   diffPlanValues,
   isEmptyPlanPatch,
   mergePlanPatch,
-  planValuesError,
   toAdminPlan,
+  yearlyPriceError,
 } from './plan-rules.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -33,10 +39,15 @@ const planColumns = {
   name: plans.name,
   sortOrder: plans.sortOrder,
   isActive: plans.isActive,
-  originalPriceBdt: plans.monthlyPriceBdt,
+  monthlyPriceBdt: plans.monthlyPriceBdt,
+  yearlyMonthlyPriceBdt: plans.yearlyMonthlyPriceBdt,
+  badgeEn: plans.badgeEn,
+  badgeBn: plans.badgeBn,
+  descriptionEn: plans.descriptionEn,
+  descriptionBn: plans.descriptionBn,
+  isHighlighted: plans.isHighlighted,
   offerPriceBdt: plans.offerPriceBdt,
   offerBadge: plans.offerBadge,
-  yearlyMonthlyPriceBdt: plans.yearlyMonthlyPriceBdt,
   trialDays: plans.trialDays,
   trialCommentLimit: plans.trialCommentLimit,
   featureConfig: plans.featureConfig,
@@ -70,10 +81,13 @@ export class AdminPlansService {
   }
 
   /**
-   * Partial update of one plan. The row is locked (`FOR UPDATE`) so the price rules (offer ≤
-   * original, yearly ≤ monthly) and the trial rule (Starter only) see the merged latest values, the `featureConfig` merge and the audit diff see the latest values even with concurrent saves.
-   * A real change writes one `plan_audit_logs` row (only the changed fields) in the same
-   * transaction; a body that changes nothing is a no-op: no update (`updatedAt` kept), no audit row.
+   * Partial update of one plan. The row is locked (`FOR UPDATE`) so the yearly rule (yearly ≤
+   * monthly), the `featureConfig` merge and the audit diff see the latest values even with
+   * concurrent saves. A real change writes one `plan_audit_logs` row (only the changed fields) in
+   * the same transaction; a body that changes nothing is a no-op: no update (`updatedAt` kept), no
+   * audit row. `isHighlighted: true` (PR-D9) first locks every plan (id order, so two highlight
+   * saves queue instead of deadlocking) and clears the flag on the others, each with its own
+   * audit row.
    */
   async update(
     planId: string,
@@ -85,6 +99,13 @@ export class AdminPlansService {
       throw new BadRequestException('Nothing to update');
     }
     const plan = await this.db.transaction(async (tx): Promise<AdminPlan> => {
+      if (patch.isHighlighted === true) {
+        await tx
+          .select({ id: plans.id })
+          .from(plans)
+          .orderBy(asc(plans.id))
+          .for('update');
+      }
       const [current] = await tx
         .select(planColumns)
         .from(plans)
@@ -92,26 +113,38 @@ export class AdminPlansService {
         .for('update');
       if (!current) throw new NotFoundException('Plan not found');
       const next = mergePlanPatch(current, patch);
-      const error = planValuesError(current.slug, next);
+      const error = yearlyPriceError(next);
       if (error) throw new BadRequestException(error);
       const changes = diffPlanValues(current, next);
       if (changes.length === 0) return toAdminPlan(current);
-      // API/audit name `originalPriceBdt` until PR-T4 renames it; the column is `monthly_price_bdt`.
-      const { originalPriceBdt, ...rest } = next;
+      const audit = (id: string, rowChanges: typeof changes) =>
+        tx.insert(planAuditLogs).values({
+          planId: id,
+          adminId: actor.adminId,
+          action: 'UPDATE',
+          changes: rowChanges,
+          ipAddress: actor.ipAddress,
+          userAgent: actor.userAgent,
+        });
+      if (next.isHighlighted && !current.isHighlighted) {
+        const cleared = await tx
+          .update(plans)
+          .set({ isHighlighted: false })
+          .where(and(eq(plans.isHighlighted, true), ne(plans.id, current.id)))
+          .returning({ id: plans.id });
+        for (const other of cleared) {
+          await audit(other.id, [
+            { field: 'isHighlighted', before: true, after: false },
+          ]);
+        }
+      }
       const [updated] = await tx
         .update(plans)
-        .set({ ...rest, monthlyPriceBdt: originalPriceBdt })
+        .set(next)
         .where(eq(plans.id, current.id))
         .returning(planColumns);
       if (!updated) throw new NotFoundException('Plan not found');
-      await tx.insert(planAuditLogs).values({
-        planId: current.id,
-        adminId: actor.adminId,
-        action: 'UPDATE',
-        changes,
-        ipAddress: actor.ipAddress,
-        userAgent: actor.userAgent,
-      });
+      await audit(current.id, changes);
       return toAdminPlan(updated);
     });
     return { plan };
@@ -151,6 +184,38 @@ export class AdminPlansService {
       total: totals?.total ?? 0,
       skip: query.skip,
       take: query.take,
+    };
+  }
+
+  /** Platform settings (PR-D18); all `null` until the first save. */
+  async platformSettings(): Promise<PlatformSettings> {
+    const [row] = await this.db
+      .select()
+      .from(platformSettings)
+      .where(eq(platformSettings.id, 1));
+    return {
+      supportWhatsappNumber: row?.supportWhatsappNumber ?? null,
+      updatedAt: row?.updatedAt.toISOString() ?? null,
+    };
+  }
+
+  /** Upserts row `id = 1` (DB check `platform_settings_support_whatsapp_number_check` is the backstop). */
+  async updatePlatformSettings(
+    supportWhatsappNumber: string | null,
+    adminId: string,
+  ): Promise<PlatformSettings> {
+    const values = { supportWhatsappNumber, updatedById: adminId };
+    const [row] = await this.db
+      .insert(platformSettings)
+      .values({ id: 1, ...values })
+      .onConflictDoUpdate({
+        target: platformSettings.id,
+        set: { ...values, updatedAt: new Date() },
+      })
+      .returning();
+    return {
+      supportWhatsappNumber: row!.supportWhatsappNumber,
+      updatedAt: row!.updatedAt.toISOString(),
     };
   }
 }

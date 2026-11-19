@@ -2,13 +2,7 @@ import { relations, sql } from 'drizzle-orm';
 import { check, index, jsonb, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { users } from './auth.js';
 import { id, timestamptz } from './columns.js';
-import {
-  PLAN_FEATURE_KEYS,
-  PLAN_LIMIT_KEYS,
-  type PlanFeatureKey,
-  type PlanLimitKey,
-  plans,
-} from './plans.js';
+import { PLAN_FEATURE_KEYS, PLAN_LIMIT_KEYS, plans } from './plans.js';
 
 /**
  * What happened to the plan. Only `UPDATE` (`PATCH /api/admin/settings/plans/:planId`) exists today;
@@ -18,37 +12,38 @@ export const PLAN_AUDIT_ACTIONS = ['UPDATE'] as const;
 export type PlanAuditAction = (typeof PLAN_AUDIT_ACTIONS)[number];
 
 /**
- * Audited plan fields, in display order. Feature config leaves are dotted paths so one change row
- * names exactly one value (`featureConfig.limits.teamSeats`, `featureConfig.features.customBlocklist`).
+ * Audited plan fields, in display order (the fields `PATCH /api/admin/settings/plans/:planId`
+ * writes). Feature config leaves are dotted paths so one change row names exactly one value
+ * (`featureConfig.limits.teamSeats`, `featureConfig.features.customBlocklist`).
  */
 export const PLAN_AUDIT_FIELDS = [
-  'originalPriceBdt',
-  'offerPriceBdt',
-  'offerBadge',
+  'monthlyPriceBdt',
   'yearlyMonthlyPriceBdt',
-  'trialDays',
-  'trialCommentLimit',
+  'badgeEn',
+  'badgeBn',
+  'descriptionEn',
+  'descriptionBn',
+  'isHighlighted',
   ...PLAN_LIMIT_KEYS.map((key) => `featureConfig.limits.${key}` as const),
   ...PLAN_FEATURE_KEYS.map((key) => `featureConfig.features.${key}` as const),
 ] as const;
 /**
- * Field names that only old audit rows carry (renamed keys). Never written again; kept so
- * `PlanAuditChange` types the stored history and the admin app can label it. PW-T1b:
- * `monthlyAiCredits` (M5-T11) → `monthlyComments`, so rows from before M5-T11 read as current again.
+ * Field names that only old audit rows carry (renamed or no longer editable). Never written again;
+ * kept so `PlanAuditChange` types the stored history and the admin app can label it. PW-T1b:
+ * `monthlyAiCredits` (M5-T11) → `monthlyComments`. PR-T4: `originalPriceBdt` → `monthlyPriceBdt`;
+ * the offer and trial fields left the plan editor (offers are promotions, PR-D8).
  */
 export const LEGACY_PLAN_AUDIT_FIELDS = [
   'featureConfig.limits.monthlyAiCredits',
+  'originalPriceBdt',
+  'offerPriceBdt',
+  'offerBadge',
+  'trialDays',
+  'trialCommentLimit',
 ] as const;
 export type PlanAuditField =
-  | (typeof LEGACY_PLAN_AUDIT_FIELDS)[number]
-  | 'originalPriceBdt'
-  | 'offerPriceBdt'
-  | 'offerBadge'
-  | 'yearlyMonthlyPriceBdt'
-  | 'trialDays'
-  | 'trialCommentLimit'
-  | `featureConfig.limits.${PlanLimitKey}`
-  | `featureConfig.features.${PlanFeatureKey}`;
+  | (typeof PLAN_AUDIT_FIELDS)[number]
+  | (typeof LEGACY_PLAN_AUDIT_FIELDS)[number];
 
 /** One changed field. Prices/limits are numbers, the badge a string, flags booleans; `null` = cleared. */
 export interface PlanAuditChange {

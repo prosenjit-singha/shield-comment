@@ -107,10 +107,10 @@ export function hasYearlyPrice(plan: Pick<AdminPlan, 'yearlyMonthlyPriceBdt'>): 
  * `৳449/month · billed ৳5,388 yearly`. `null` = yearly without a yearly price.
  */
 export function activationPricePreview(
-  plan: Pick<AdminPlan, 'originalPriceBdt' | 'offerPriceBdt' | 'yearlyMonthlyPriceBdt'>,
+  plan: Pick<AdminPlan, 'monthlyPriceBdt' | 'offerPriceBdt' | 'yearlyMonthlyPriceBdt'>,
   interval: SubscriptionInterval,
 ): string | null {
-  if (interval === 'month') return `${formatPlanPrice(plan.offerPriceBdt ?? plan.originalPriceBdt)}/month`
+  if (interval === 'month') return `${formatPlanPrice(plan.offerPriceBdt ?? plan.monthlyPriceBdt)}/month`
   if (plan.yearlyMonthlyPriceBdt === null) return null
   return `${formatPlanPrice(plan.yearlyMonthlyPriceBdt)}/month · billed ${formatPlanPrice(yearlyChargeBdt(plan.yearlyMonthlyPriceBdt))} yearly`
 }

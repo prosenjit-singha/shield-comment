@@ -84,7 +84,9 @@ describe('Admin plan settings (e2e)', () => {
 
   afterAll(async () => {
     if (actors && seeded) {
-      // Restore every column (incl. `updatedAt`) of the plans this spec may have edited.
+      // Restore every column (incl. `updatedAt`) of the plans this spec may have edited; clear
+      // the highlight first so restoring it never meets a second highlighted row.
+      await actors.db.update(plans).set({ isHighlighted: false });
       for (const { id, ...row } of seeded) {
         await actors.db.update(plans).set(row).where(eq(plans.id, id));
       }
@@ -334,7 +336,7 @@ describe('Admin plan settings (e2e)', () => {
       await http().get(PLANS).expect(401);
       await http()
         .patch(`${PLANS}/${planBySlug('growth').id}`)
-        .send({ originalPriceBdt: 1 })
+        .send({ monthlyPriceBdt: 1 })
         .expect(401);
     });
 
@@ -346,7 +348,7 @@ describe('Admin plan settings (e2e)', () => {
       expect(res.body).toMatchObject({ message: 'Super admin only' });
       await patch(
         planBySlug('growth').id,
-        { originalPriceBdt: 1 },
+        { monthlyPriceBdt: 1 },
         client.cookie,
       ).expect(403);
     });
@@ -365,7 +367,7 @@ describe('Admin plan settings (e2e)', () => {
         await http().get(PLANS).set('Cookie', cookie).expect(403);
         await patch(
           planBySlug('growth').id,
-          { originalPriceBdt: 1 },
+          { monthlyPriceBdt: 1 },
           cookie,
         ).expect(403);
       }
@@ -399,10 +401,16 @@ describe('Admin plan settings (e2e)', () => {
         name: 'Growth',
         sortOrder: 2,
         isActive: true,
-        originalPriceBdt: 2499,
+        monthlyPriceBdt: 2499,
+        yearlyMonthlyPriceBdt: 2349,
+        badgeEn: null,
+        badgeBn: null,
+        descriptionEn: null,
+        descriptionBn: null,
+        isHighlighted: false,
+        // Read-only legacy columns (PR-T7 drops them).
         offerPriceBdt: 1499,
         offerBadge: '40% Off',
-        yearlyMonthlyPriceBdt: 2349,
         trialDays: null,
         trialCommentLimit: null,
         featureConfig: {
@@ -445,12 +453,14 @@ describe('Admin plan settings (e2e)', () => {
   });
 
   describe('PATCH /:planId', () => {
-    it('updates prices, badge and featureConfig and persists them', async () => {
+    it('updates the price, en + bn card text and featureConfig and persists them', async () => {
       const growth = planBySlug('growth');
       const res = await patch(growth.id, {
-        originalPriceBdt: 2999,
-        offerPriceBdt: 1999,
-        offerBadge: '  33% Off  ',
+        monthlyPriceBdt: 2999,
+        badgeEn: '  Popular  ',
+        badgeBn: 'জনপ্রিয়',
+        descriptionEn: 'For growing shops',
+        descriptionBn: 'বাড়তে থাকা দোকানের জন্য',
         featureConfig: {
           limits: { teamSeats: 4 },
           features: { whiteLabelReports: true },
@@ -460,9 +470,13 @@ describe('Admin plan settings (e2e)', () => {
       expect(plan).toMatchObject({
         id: growth.id,
         slug: 'growth',
-        originalPriceBdt: 2999,
-        offerPriceBdt: 1999,
-        offerBadge: '33% Off',
+        monthlyPriceBdt: 2999,
+        badgeEn: 'Popular',
+        badgeBn: 'জনপ্রিয়',
+        descriptionEn: 'For growing shops',
+        descriptionBn: 'বাড়তে থাকা দোকানের জন্য',
+        // Untouched legacy columns.
+        offerPriceBdt: 1499,
         featureConfig: {
           limits: {
             connectedPages: 5,
@@ -495,9 +509,9 @@ describe('Admin plan settings (e2e)', () => {
       }).expect(200);
       const { plan } = res.body as AdminPlanUpdateResponse;
       expect(plan).toMatchObject({
-        originalPriceBdt: 2999,
-        offerPriceBdt: 1999,
-        offerBadge: '33% Off',
+        monthlyPriceBdt: 2999,
+        badgeEn: 'Popular',
+        descriptionBn: 'বাড়তে থাকা দোকানের জন্য',
       });
       expect(plan.featureConfig.limits.teamSeats).toBe(4);
       expect(plan.featureConfig.features).toMatchObject({
@@ -506,55 +520,84 @@ describe('Admin plan settings (e2e)', () => {
       });
     });
 
-    it('null clears the offer and the badge', async () => {
+    it('null or a blank string clears the badge and the description', async () => {
       const res = await patch(planBySlug('growth').id, {
-        offerPriceBdt: null,
-        offerBadge: null,
+        badgeEn: null,
+        badgeBn: '  ',
+        descriptionEn: '',
       }).expect(200);
       expect((res.body as AdminPlanUpdateResponse).plan).toMatchObject({
-        originalPriceBdt: 2999,
-        offerPriceBdt: null,
-        offerBadge: null,
+        monthlyPriceBdt: 2999,
+        badgeEn: null,
+        badgeBn: null,
+        descriptionEn: null,
+        descriptionBn: 'বাড়তে থাকা দোকানের জন্য',
       });
     });
 
-    it('400 when the offer is above the original (body or stored value)', async () => {
+    it('PR-D9: highlighting a plan clears the other one in the same transaction, with an audit row each', async () => {
       const starter = planBySlug('starter');
-      const inBody = await patch(starter.id, {
-        originalPriceBdt: 499,
-        offerPriceBdt: 500,
-      }).expect(400);
-      expect(inBody.body).toMatchObject({
-        message: expect.stringContaining('offerPriceBdt') as string,
+      const growth = planBySlug('growth');
+      await patch(starter.id, { isHighlighted: true }).expect(200);
+      const highlighted = async () =>
+        (
+          await actors.db
+            .select({ slug: plans.slug })
+            .from(plans)
+            .where(eq(plans.isHighlighted, true))
+        ).map((r) => r.slug);
+      expect(await highlighted()).toEqual(['starter']);
+      const growthBefore = (await auditRows(growth.id)).length;
+      const res = await patch(growth.id, { isHighlighted: true }).expect(200);
+      expect((res.body as AdminPlanUpdateResponse).plan.isHighlighted).toBe(
+        true,
+      );
+      expect(await highlighted()).toEqual(['growth']);
+      const [starterRow] = await auditRows(starter.id);
+      expect(starterRow).toMatchObject({
+        adminId: superAdmin.id,
+        changes: [{ field: 'isHighlighted', before: true, after: false }],
       });
-      // Offer and yearly together (the yearly price is capped by the list price since PR-T1).
-      await patch(starter.id, {
-        offerPriceBdt: 299,
-        yearlyMonthlyPriceBdt: 249,
-      }).expect(200);
-      // Lowering the original below the stored offer is refused too.
-      await patch(starter.id, { originalPriceBdt: 199 }).expect(400);
-      const [row] = await actors.db
-        .select()
-        .from(plans)
-        .where(eq(plans.id, starter.id));
-      expect(row).toMatchObject({
-        monthlyPriceBdt: 999,
-        offerPriceBdt: 299,
-        yearlyMonthlyPriceBdt: 249,
-      });
+      const growthRows = await auditRows(growth.id);
+      expect(growthRows).toHaveLength(growthBefore + 1);
+      expect(growthRows[0]!.changes).toEqual([
+        { field: 'isHighlighted', before: false, after: true },
+      ]);
+      // Re-sending true is a no-op; false just un-highlights (no plan highlighted).
+      await patch(growth.id, { isHighlighted: true }).expect(200);
+      expect(await auditRows(growth.id)).toHaveLength(growthBefore + 1);
+      await patch(growth.id, { isHighlighted: false }).expect(200);
+      expect(await highlighted()).toEqual([]);
+      // Two highlight saves at once: both succeed (serialized), one plan stays highlighted.
+      const results = await Promise.all([
+        patch(starter.id, { isHighlighted: true }),
+        patch(growth.id, { isHighlighted: true }),
+      ]);
+      expect(results.map((r) => r.status)).toEqual([200, 200]);
+      expect(await highlighted()).toHaveLength(1);
+      await actors.db
+        .update(plans)
+        .set({ isHighlighted: false })
+        .where(eq(plans.isHighlighted, true));
     });
 
     it.each([
       ['empty body', {}],
       ['empty featureConfig', { featureConfig: {} }],
-      ['negative price', { originalPriceBdt: -1 }],
-      ['fractional price', { originalPriceBdt: 499.5 }],
-      ['string price', { originalPriceBdt: '499' }],
-      ['null original', { originalPriceBdt: null }],
-      ['price above max', { originalPriceBdt: 1_000_001 }],
-      ['negative offer', { offerPriceBdt: -1 }],
-      ['badge over 40 chars', { offerBadge: 'x'.repeat(41) }],
+      ['negative price', { monthlyPriceBdt: -1 }],
+      ['fractional price', { monthlyPriceBdt: 499.5 }],
+      ['string price', { monthlyPriceBdt: '499' }],
+      ['null monthly price', { monthlyPriceBdt: null }],
+      ['price above max', { monthlyPriceBdt: 1_000_001 }],
+      ['badgeEn over 24 chars', { badgeEn: 'x'.repeat(25) }],
+      ['descriptionBn over 160 chars', { descriptionBn: 'ক'.repeat(161) }],
+      ['null isHighlighted', { isHighlighted: null }],
+      // PR-T4: old API name + offer/trial fields left the editor (offers are promotions).
+      ['legacy originalPriceBdt', { originalPriceBdt: 5999 }],
+      ['legacy offerPriceBdt', { offerPriceBdt: 1 }],
+      ['legacy offerBadge', { offerBadge: 'Sale' }],
+      ['legacy trialDays', { trialDays: 7 }],
+      ['legacy trialCommentLimit', { trialCommentLimit: 0 }],
       ['unknown field', { name: 'Gold' }],
       ['read-only field', { isActive: false }],
       ['featureConfig null', { featureConfig: null }],
@@ -582,18 +625,12 @@ describe('Admin plan settings (e2e)', () => {
       ['yearly above the monthly list price', { yearlyMonthlyPriceBdt: 6000 }],
       [
         'list price lowered below the stored yearly price',
-        { originalPriceBdt: 5500 },
+        { monthlyPriceBdt: 5500 },
       ],
       [
-        'offer cleared + original lowered below the stored yearly price',
-        { offerPriceBdt: null, originalPriceBdt: 3000 },
+        'highlight + list price below the stored yearly price',
+        { isHighlighted: true, monthlyPriceBdt: 3000 },
       ],
-      ['trialDays on a non-Starter plan', { trialDays: 7 }],
-      ['trialCommentLimit on a non-Starter plan', { trialCommentLimit: 0 }],
-      ['trialDays 0', { trialDays: 0 }],
-      ['trialDays 91', { trialDays: 91 }],
-      ['trialCommentLimit above max', { trialCommentLimit: 10_000_001 }],
-      ['negative trialCommentLimit', { trialCommentLimit: -1 }],
     ])('400 for %s (plan unchanged, no audit row)', async (_label, body) => {
       const pro = planBySlug('pro');
       const res = await patch(pro.id, body);
@@ -609,9 +646,9 @@ describe('Admin plan settings (e2e)', () => {
 
     it('404 for an unknown or malformed plan id', async () => {
       const before = await auditCount();
-      const res = await patch(UNKNOWN_ID, { originalPriceBdt: 1 }).expect(404);
+      const res = await patch(UNKNOWN_ID, { monthlyPriceBdt: 1 }).expect(404);
       expect(res.body).toMatchObject({ message: 'Plan not found' });
-      await patch('not-a-uuid', { originalPriceBdt: 1 }).expect(404);
+      await patch('not-a-uuid', { monthlyPriceBdt: 1 }).expect(404);
       expect(await auditCount()).toBe(before);
     });
   });
@@ -623,9 +660,9 @@ describe('Admin plan settings (e2e)', () => {
       const free = planBySlug('free');
       const before = await auditCount();
       const res = await patch(free.id, {
-        offerBadge: 'Always free',
+        badgeEn: 'Always free',
         // Same values as stored: not part of the diff.
-        originalPriceBdt: 0,
+        monthlyPriceBdt: 0,
         featureConfig: {
           limits: { monthlyComments: 750, teamSeats: 1 },
           features: { customBlocklist: true, banglaAiFilter: true },
@@ -645,7 +682,7 @@ describe('Admin plan settings (e2e)', () => {
         adminId: superAdmin.id,
         action: 'UPDATE',
         changes: [
-          { field: 'offerBadge', before: null, after: 'Always free' },
+          { field: 'badgeEn', before: null, after: 'Always free' },
           {
             field: 'featureConfig.limits.monthlyComments',
             before: 500,
@@ -670,8 +707,8 @@ describe('Admin plan settings (e2e)', () => {
         .where(eq(plans.slug, 'free'));
       const before = await auditCount();
       const res = await patch(stored!.id, {
-        offerBadge: '  Always free ',
-        offerPriceBdt: null,
+        badgeEn: '  Always free ',
+        descriptionEn: null,
         featureConfig: { limits: { monthlyComments: 750 } },
       }).expect(200);
       const { plan } = res.body as AdminPlanUpdateResponse;
@@ -685,33 +722,33 @@ describe('Admin plan settings (e2e)', () => {
       expect(row).toEqual(stored);
     });
 
-    it('400 (validation or offer > original) and impersonated 403 write no row', async () => {
+    it('400 (validation or yearly > monthly) and impersonated 403 write no row', async () => {
       const free = planBySlug('free');
       const before = await auditCount();
-      await patch(free.id, { originalPriceBdt: 'x' }).expect(400);
+      await patch(free.id, { monthlyPriceBdt: 'x' }).expect(400);
       // The M5-T11 limit name is an unknown key now (PW-T1b).
       await patch(free.id, {
         featureConfig: { limits: { monthlyAiCredits: 600 } },
       }).expect(400);
-      await patch(free.id, { offerPriceBdt: 1 }).expect(400);
+      await patch(free.id, { yearlyMonthlyPriceBdt: 1 }).expect(400);
       const cookie = await actors.signIn(superAdmin.email);
       await actors.patchStoredSession(cookie, {
         impersonatedBy: superAdmin.id,
       });
-      await patch(free.id, { offerBadge: 'Nope' }, cookie).expect(403);
+      await patch(free.id, { badgeEn: 'Nope' }, cookie).expect(403);
       expect(await auditCount()).toBe(before);
     });
 
     it('records clearing values as → null and keeps rows per plan', async () => {
       const growth = planBySlug('growth');
       await patch(growth.id, {
-        offerPriceBdt: 1399,
-        offerBadge: 'Flash sale',
+        descriptionEn: 'Flash sale',
+        badgeBn: 'সেল',
       }).expect(200);
-      await patch(growth.id, { offerPriceBdt: null }).expect(200);
+      await patch(growth.id, { descriptionEn: null }).expect(200);
       const [latest] = await auditRows(growth.id);
       expect(latest!.changes).toEqual([
-        { field: 'offerPriceBdt', before: 1399, after: null },
+        { field: 'descriptionEn', before: 'Flash sale', after: null },
       ]);
       expect(latest!.ipAddress).toEqual(expect.any(String));
     });
@@ -746,7 +783,7 @@ describe('Admin plan settings (e2e)', () => {
         expect(body.items.map((i) => i.id)).toEqual(rows.map((r) => r.id));
         const times = body.items.map((i) => Date.parse(i.createdAt));
         expect(times).toEqual([...times].sort((a, b) => b - a));
-        // Newest = the growth "offer cleared" edit.
+        // Newest = the growth "description cleared" edit.
         expect(body.items[0]).toEqual({
           id: rows[0]!.id,
           plan: { id: planBySlug('growth').id, slug: 'growth', name: 'Growth' },
@@ -756,7 +793,9 @@ describe('Admin plan settings (e2e)', () => {
             email: superAdmin.email,
           },
           action: 'UPDATE',
-          changes: [{ field: 'offerPriceBdt', before: 1399, after: null }],
+          changes: [
+            { field: 'descriptionEn', before: 'Flash sale', after: null },
+          ],
           ip: rows[0]!.ipAddress,
           userAgent: rows[0]!.userAgent,
           createdAt: rows[0]!.createdAt.toISOString(),
@@ -827,7 +866,7 @@ describe('Admin plan settings (e2e)', () => {
     });
   });
 
-  it('old audit rows keep their field names (pre-M5-T11 monthlyComments, M5-T11 monthlyAiCredits)', async () => {
+  it('old audit rows keep their field names (monthlyAiCredits; PR-T4 legacy originalPriceBdt + offer/trial keys)', async () => {
     const pro = planBySlug('pro');
     const [old] = await actors.db
       .insert(planAuditLogs)
@@ -846,6 +885,11 @@ describe('Admin plan settings (e2e)', () => {
             before: 80000,
             after: 75000,
           },
+          { field: 'originalPriceBdt', before: 5999, after: 6999 },
+          { field: 'offerPriceBdt', before: 3999, after: null },
+          { field: 'offerBadge', before: '33% Off', after: null },
+          { field: 'trialDays', before: null, after: 7 },
+          { field: 'trialCommentLimit', before: null, after: 300 },
         ],
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
       })
@@ -860,7 +904,7 @@ describe('Admin plan settings (e2e)', () => {
     expect(entry?.changes).toEqual(old!.changes);
   });
 
-  describe('PW-T1b: yearly price, trial fields, new limit keys', () => {
+  describe('PW-T1b: yearly price, new limit keys', () => {
     it('round-trips the yearly price and the new limits; null clears; one audit row per edit', async () => {
       const pro = planBySlug('pro');
       const res = await patch(pro.id, {
@@ -869,8 +913,6 @@ describe('Admin plan settings (e2e)', () => {
       }).expect(200);
       expect((res.body as AdminPlanUpdateResponse).plan).toMatchObject({
         yearlyMonthlyPriceBdt: 3499,
-        trialDays: null,
-        trialCommentLimit: null,
         featureConfig: {
           limits: {
             connectedPages: 25,
@@ -903,7 +945,7 @@ describe('Admin plan settings (e2e)', () => {
       expect(latest!.changes).toEqual([
         { field: 'yearlyMonthlyPriceBdt', before: 5999, after: null },
       ]);
-      await patch(pro.id, { offerPriceBdt: 2999 }).expect(200);
+      await patch(pro.id, { badgeEn: 'Best value' }).expect(200);
 
       const list = await http()
         .get(PLANS)
@@ -912,63 +954,10 @@ describe('Admin plan settings (e2e)', () => {
       expect(
         (list.body as AdminPlansResponse).items.find((p) => p.id === pro.id),
       ).toMatchObject({
-        offerPriceBdt: 2999,
+        badgeEn: 'Best value',
         yearlyMonthlyPriceBdt: null,
         featureConfig: { limits: { monthlyComments: 80000, workspaces: 12 } },
       });
-    });
-
-    it('edits and clears the Starter trial fields (audited under plain field names)', async () => {
-      const starter = planBySlug('starter');
-      const set = await patch(starter.id, {
-        trialDays: 14,
-        trialCommentLimit: 500,
-      }).expect(200);
-      expect((set.body as AdminPlanUpdateResponse).plan).toMatchObject({
-        trialDays: 14,
-        trialCommentLimit: 500,
-      });
-      let [latest] = await auditRows(starter.id);
-      expect(latest!.changes).toEqual([
-        { field: 'trialDays', before: 7, after: 14 },
-        { field: 'trialCommentLimit', before: 300, after: 500 },
-      ]);
-      // Bounds are accepted.
-      await patch(starter.id, {
-        trialDays: 90,
-        trialCommentLimit: 10_000_000,
-      }).expect(200);
-      await patch(starter.id, { trialDays: 1, trialCommentLimit: 0 }).expect(
-        200,
-      );
-      const cleared = await patch(starter.id, {
-        trialDays: null,
-        trialCommentLimit: null,
-      }).expect(200);
-      expect((cleared.body as AdminPlanUpdateResponse).plan).toMatchObject({
-        trialDays: null,
-        trialCommentLimit: null,
-      });
-      [latest] = await auditRows(starter.id);
-      expect(latest!.changes).toEqual([
-        { field: 'trialDays', before: 1, after: null },
-        { field: 'trialCommentLimit', before: 0, after: null },
-      ]);
-      // Out of range on Starter → 400, nothing written.
-      const before = await auditCount();
-      await patch(starter.id, { trialDays: 91 }).expect(400);
-      await patch(starter.id, { trialCommentLimit: -1 }).expect(400);
-      expect(await auditCount()).toBe(before);
-    });
-
-    it('a trial field on the inactive free plan → 400; free stays editable otherwise', async () => {
-      const free = planBySlug('free');
-      const res = await patch(free.id, { trialDays: 7 }).expect(400);
-      expect(res.body).toMatchObject({
-        message: expect.stringContaining('starter') as string,
-      });
-      // Clearing (already null) is a no-op, not an error.
-      await patch(free.id, { trialDays: null }).expect(200);
     });
   });
 

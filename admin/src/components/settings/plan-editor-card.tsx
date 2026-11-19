@@ -142,14 +142,14 @@ export function PlanEditorCard({
             <Field
               id={`${id}-original`}
               label="Original price"
-              error={errors.originalPriceBdt}
+              error={errors.monthlyPriceBdt}
               hint="Monthly, whole taka."
             >
               <TakaInput
                 id={`${id}-original`}
-                value={draft.originalPriceBdt}
-                onChange={(value) => edit({ ...draft, originalPriceBdt: value })}
-                invalid={errors.originalPriceBdt !== undefined}
+                value={draft.monthlyPriceBdt}
+                onChange={(value) => edit({ ...draft, monthlyPriceBdt: value })}
+                invalid={errors.monthlyPriceBdt !== undefined}
               />
             </Field>
             <Field id={`${id}-offer`} label="Offer price" error={errors.offerPriceBdt} hint="Empty = no offer.">

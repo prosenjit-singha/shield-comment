@@ -20,7 +20,7 @@ import { isRealDateOnly } from '../manual-activation.js';
 import type { ClientComments } from '../client-billing.js';
 
 /** A real calendar date `YYYY-MM-DD` (the 31-days-back range is checked by the service). */
-function IsDateOnly(options?: ValidationOptions): PropertyDecorator {
+export function IsDateOnly(options?: ValidationOptions): PropertyDecorator {
   return ValidateBy(
     {
       name: 'isDateOnly',

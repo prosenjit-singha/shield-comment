@@ -7,8 +7,10 @@ import { apiFetch } from '@/lib/api'
  *
  * - `GET /api/admin/settings/plans` → `{ items }` ordered by `sortOrder` (any query param → 400).
  * - `PATCH /api/admin/settings/plans/:planId` (one plan per request, partial body) → `{ plan }`.
- *   400 = invalid / unknown field / nothing to update / offer > original / yearly per-month >
- *   monthly price / trial field on a non-Starter plan; 404 = unknown plan.
+ *   400 = invalid / unknown field / nothing to update / yearly per-month > monthly price;
+ *   404 = unknown plan. PR-T4: the price is `monthlyPriceBdt` (was `originalPriceBdt`); the
+ *   offer/trial fields are read-only now (the backend refuses them, 400) until PR-T5 replaces
+ *   their inputs with the badge/description/highlight fields.
  *
  * The GET lists **active** plans only: the deactivated `free` row (PW-D7) never shows up.
  */
@@ -43,8 +45,16 @@ export interface AdminPlan {
   sortOrder: number
   isActive: boolean
   /** Monthly list price, whole BDT (৳). */
-  originalPriceBdt: number
-  /** Promo price, whole BDT, ≤ `originalPriceBdt`; `null` = no offer. */
+  monthlyPriceBdt: number
+  /** Card badge en / bn (1–24 chars, PR-D8/D17); `null` = none. */
+  badgeEn: string | null
+  badgeBn: string | null
+  /** Card description en / bn (1–160 chars); `null` = none. */
+  descriptionEn: string | null
+  descriptionBn: string | null
+  /** The one highlighted plan (PR-D9). */
+  isHighlighted: boolean
+  /** Legacy, read-only since PR-T4 (offers are promotions). Promo price ≤ `monthlyPriceBdt`; `null` = no offer. */
   offerPriceBdt: number | null
   /** e.g. "50% Launch Offer" (trimmed, 1–40 chars); `null` = none. */
   offerBadge: string | null
@@ -73,7 +83,7 @@ export interface AdminPlanUpdateResponse {
 
 /** `PATCH` body: every key optional, at least one sent. `null` clears a nullable field. */
 export interface UpdatePlanBody {
-  originalPriceBdt?: number
+  monthlyPriceBdt?: number
   offerPriceBdt?: number | null
   offerBadge?: string | null
   yearlyMonthlyPriceBdt?: number | null
@@ -147,7 +157,7 @@ export function replacePlanInList(list: AdminPlansResponse | undefined, plan: Ad
 // Editor draft: inputs hold strings so a half-typed value can be shown and validated.
 
 export interface PlanDraft {
-  originalPriceBdt: string
+  monthlyPriceBdt: string
   /** Empty = no offer. */
   offerPriceBdt: string
   /** Empty (after trimming) = no badge. */
@@ -165,7 +175,7 @@ export interface PlanDraft {
 export function draftFromPlan(plan: AdminPlan): PlanDraft {
   const { limits, features } = plan.featureConfig
   return {
-    originalPriceBdt: String(plan.originalPriceBdt),
+    monthlyPriceBdt: String(plan.monthlyPriceBdt),
     offerPriceBdt: plan.offerPriceBdt === null ? '' : String(plan.offerPriceBdt),
     offerBadge: plan.offerBadge ?? '',
     yearlyMonthlyPriceBdt: plan.yearlyMonthlyPriceBdt === null ? '' : String(plan.yearlyMonthlyPriceBdt),
@@ -188,7 +198,7 @@ export function parseWholeNumber(value: string): number | null {
 }
 
 export interface PlanDraftErrors {
-  originalPriceBdt?: string
+  monthlyPriceBdt?: string
   offerPriceBdt?: string
   offerBadge?: string
   yearlyMonthlyPriceBdt?: string
@@ -214,7 +224,7 @@ function wholeNumberError(value: string, max: number, what: string): string | un
  * `null` while the original or a typed offer is invalid or the offer is above the original.
  */
 export function draftMonthlyPrice(draft: PlanDraft): number | null {
-  const original = parseWholeNumber(draft.originalPriceBdt)
+  const original = parseWholeNumber(draft.monthlyPriceBdt)
   if (original === null || original > PLAN_PRICE_MAX_BDT) return null
   if (draft.offerPriceBdt.trim() === '') return original
   const offer = parseWholeNumber(draft.offerPriceBdt)
@@ -224,8 +234,8 @@ export function draftMonthlyPrice(draft: PlanDraft): number | null {
 /** Same rules as the backend's `UpdatePlanDto` + `planValuesError` (offer ≤ original, yearly ≤ monthly). */
 export function validatePlanDraft(draft: PlanDraft): PlanDraftErrors {
   const errors: PlanDraftErrors = { limits: {} }
-  const original = wholeNumberError(draft.originalPriceBdt, PLAN_PRICE_MAX_BDT, 'a price')
-  if (original) errors.originalPriceBdt = original
+  const original = wholeNumberError(draft.monthlyPriceBdt, PLAN_PRICE_MAX_BDT, 'a price')
+  if (original) errors.monthlyPriceBdt = original
 
   if (draft.offerPriceBdt.trim() !== '') {
     const offer = wholeNumberError(draft.offerPriceBdt, PLAN_PRICE_MAX_BDT, 'a price')
@@ -233,7 +243,7 @@ export function validatePlanDraft(draft: PlanDraft): PlanDraftErrors {
       errors.offerPriceBdt = offer
     } else if (!original) {
       const offerValue = parseWholeNumber(draft.offerPriceBdt) as number
-      const originalValue = parseWholeNumber(draft.originalPriceBdt) as number
+      const originalValue = parseWholeNumber(draft.monthlyPriceBdt) as number
       if (offerValue > originalValue) errors.offerPriceBdt = "The offer can't be more than the original price."
     }
   }
@@ -266,7 +276,7 @@ export function validatePlanDraft(draft: PlanDraft): PlanDraftErrors {
 
 export function hasDraftErrors(errors: PlanDraftErrors): boolean {
   return (
-    errors.originalPriceBdt !== undefined ||
+    errors.monthlyPriceBdt !== undefined ||
     errors.offerPriceBdt !== undefined ||
     errors.offerBadge !== undefined ||
     errors.yearlyMonthlyPriceBdt !== undefined ||
@@ -281,8 +291,8 @@ export function hasDraftErrors(errors: PlanDraftErrors): boolean {
  */
 export function planPatch(plan: AdminPlan, draft: PlanDraft): UpdatePlanBody {
   const body: UpdatePlanBody = {}
-  const original = parseWholeNumber(draft.originalPriceBdt)
-  if (original !== null && original !== plan.originalPriceBdt) body.originalPriceBdt = original
+  const original = parseWholeNumber(draft.monthlyPriceBdt)
+  if (original !== null && original !== plan.monthlyPriceBdt) body.monthlyPriceBdt = original
 
   const offer = draft.offerPriceBdt.trim() === '' ? null : parseWholeNumber(draft.offerPriceBdt)
   if (offer !== plan.offerPriceBdt) body.offerPriceBdt = offer
@@ -359,7 +369,7 @@ export interface PricePreview {
 
 /** Live preview of the draft as the pricing card would show it. */
 export function pricePreview(draft: PlanDraft): PricePreview {
-  const original = parseWholeNumber(draft.originalPriceBdt)
+  const original = parseWholeNumber(draft.monthlyPriceBdt)
   const offerText = draft.offerPriceBdt.trim()
   const offer = offerText === '' ? null : parseWholeNumber(offerText)
   const badge = draft.offerBadge.trim() === '' ? null : draft.offerBadge.trim()

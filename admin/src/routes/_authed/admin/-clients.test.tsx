@@ -493,7 +493,7 @@ describe('Activate plan dialog (PW-T9)', () => {
     name,
     sortOrder: 0,
     isActive: true,
-    originalPriceBdt: prices[0],
+    monthlyPriceBdt: prices[0],
     offerPriceBdt: prices[1],
     offerBadge: null,
     yearlyMonthlyPriceBdt: prices[2],

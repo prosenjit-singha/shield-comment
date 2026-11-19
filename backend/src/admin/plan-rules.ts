@@ -5,35 +5,41 @@ import {
   PLAN_LIMIT_KEYS,
   type PlanAuditChange,
   type PlanFeatureConfig,
-  TRIAL_PLAN_SLUG,
 } from '../db/schema/index.js';
 import type { AdminPlan, UpdatePlanDto } from './dto/plans.dto.js';
 
 /** Editable plan values (the columns `PATCH /api/admin/settings/plans/:planId` may change). */
 export interface PlanEditableValues {
-  originalPriceBdt: number;
-  offerPriceBdt: number | null;
-  offerBadge: string | null;
+  monthlyPriceBdt: number;
   /** Per-month price when billed yearly (PW-D5); `null` = no yearly option. */
   yearlyMonthlyPriceBdt: number | null;
-  /** Starter only (PW-D8); `null` = no trial. */
-  trialDays: number | null;
-  /** Starter only (PW-D12); `null` = the plan's `monthlyComments`. */
-  trialCommentLimit: number | null;
+  /** PR-D8 / PR-D17: optional en + bn card text. */
+  badgeEn: string | null;
+  badgeBn: string | null;
+  descriptionEn: string | null;
+  descriptionBn: string | null;
+  /** PR-D9: at most one plan. */
+  isHighlighted: boolean;
   featureConfig: PlanFeatureConfig;
 }
 
-/** The top-level scalar columns a PATCH may change, in audit order. */
+/** The top-level scalar columns a PATCH may change, in audit order (`PLAN_AUDIT_FIELDS`). */
 const SCALAR_FIELDS = [
-  'originalPriceBdt',
-  'offerPriceBdt',
-  'offerBadge',
+  'monthlyPriceBdt',
   'yearlyMonthlyPriceBdt',
-  'trialDays',
-  'trialCommentLimit',
+  'badgeEn',
+  'badgeBn',
+  'descriptionEn',
+  'descriptionBn',
+  'isHighlighted',
 ] as const;
 
 export interface PlanRow extends PlanEditableValues {
+  /** Read-only legacy columns (PR-T7 drops them). */
+  offerPriceBdt: number | null;
+  offerBadge: string | null;
+  trialDays: number | null;
+  trialCommentLimit: number | null;
   id: string;
   slug: string;
   name: string;
@@ -113,36 +119,25 @@ export function mergePlanPatch(
       ? current[field]
       : (patch[field] as PlanEditableValues[K]);
   return {
-    originalPriceBdt: pick('originalPriceBdt'),
-    offerPriceBdt: pick('offerPriceBdt'),
-    offerBadge: pick('offerBadge'),
+    monthlyPriceBdt: pick('monthlyPriceBdt'),
     yearlyMonthlyPriceBdt: pick('yearlyMonthlyPriceBdt'),
-    trialDays: pick('trialDays'),
-    trialCommentLimit: pick('trialCommentLimit'),
+    badgeEn: pick('badgeEn'),
+    badgeBn: pick('badgeBn'),
+    descriptionEn: pick('descriptionEn'),
+    descriptionBn: pick('descriptionBn'),
+    isHighlighted: pick('isHighlighted'),
     featureConfig: { limits, features },
   };
 }
 
-/** Offer rule on the merged values (DB check `plans_offer_price_check` is the backstop). */
-export function offerPriceError(values: PlanEditableValues): string | null {
-  if (
-    values.offerPriceBdt !== null &&
-    values.offerPriceBdt > values.originalPriceBdt
-  ) {
-    return `offerPriceBdt (${values.offerPriceBdt}) must not be greater than originalPriceBdt (${values.originalPriceBdt})`;
-  }
-  return null;
-}
-
 /**
  * Yearly rule on the merged values (PW-D5): the yearly per-month list price must not be above the
- * monthly list price (`originalPriceBdt` = column `monthly_price_bdt`; PR-T1: offers moved to
- * promotions, so the offer no longer caps it). Checked after every merge, so lowering the monthly
+ * monthly list price (PR-T1: offers moved to promotions, so an offer no longer caps it). Checked after every merge, so lowering the monthly
  * price below a stored yearly price is refused too (DB check `plans_yearly_monthly_price_check` is
  * the backstop, never reached).
  */
 export function yearlyPriceError(values: PlanEditableValues): string | null {
-  const monthly = values.originalPriceBdt;
+  const monthly = values.monthlyPriceBdt;
   if (
     values.yearlyMonthlyPriceBdt !== null &&
     values.yearlyMonthlyPriceBdt > monthly
@@ -150,32 +145,6 @@ export function yearlyPriceError(values: PlanEditableValues): string | null {
     return `yearlyMonthlyPriceBdt (${values.yearlyMonthlyPriceBdt}) must not be greater than the monthly price (${monthly})`;
   }
   return null;
-}
-
-/** Trial rule (PW-D8, PW-D12): `trialDays` / `trialCommentLimit` only on the Starter plan. */
-export function trialFieldsError(
-  slug: string,
-  values: PlanEditableValues,
-): string | null {
-  if (
-    slug !== TRIAL_PLAN_SLUG &&
-    (values.trialDays !== null || values.trialCommentLimit !== null)
-  ) {
-    return `trialDays and trialCommentLimit are only allowed on the ${TRIAL_PLAN_SLUG} plan`;
-  }
-  return null;
-}
-
-/** First broken rule on the merged values of plan `slug`, or `null`. */
-export function planValuesError(
-  slug: string,
-  values: PlanEditableValues,
-): string | null {
-  return (
-    offerPriceError(values) ??
-    yearlyPriceError(values) ??
-    trialFieldsError(slug, values)
-  );
 }
 
 /**
@@ -234,10 +203,15 @@ export function toAdminPlan(row: PlanRow): AdminPlan {
     name: row.name,
     sortOrder: row.sortOrder,
     isActive: row.isActive,
-    originalPriceBdt: row.originalPriceBdt,
+    monthlyPriceBdt: row.monthlyPriceBdt,
+    yearlyMonthlyPriceBdt: row.yearlyMonthlyPriceBdt,
+    badgeEn: row.badgeEn,
+    badgeBn: row.badgeBn,
+    descriptionEn: row.descriptionEn,
+    descriptionBn: row.descriptionBn,
+    isHighlighted: row.isHighlighted,
     offerPriceBdt: row.offerPriceBdt,
     offerBadge: row.offerBadge,
-    yearlyMonthlyPriceBdt: row.yearlyMonthlyPriceBdt,
     trialDays: row.trialDays,
     trialCommentLimit: row.trialCommentLimit,
     featureConfig: normalizeFeatureConfig(row.featureConfig),

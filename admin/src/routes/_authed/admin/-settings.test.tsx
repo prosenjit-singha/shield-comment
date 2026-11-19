@@ -51,7 +51,12 @@ function plan(
     name,
     sortOrder,
     isActive: true,
-    originalPriceBdt: price,
+    monthlyPriceBdt: price,
+    badgeEn: null,
+    badgeBn: null,
+    descriptionEn: null,
+    descriptionBn: null,
+    isHighlighted: false,
     offerPriceBdt: offer?.[0] ?? null,
     offerBadge: offer?.[1] ?? null,
     yearlyMonthlyPriceBdt: yearly,
@@ -278,7 +283,7 @@ describe('/admin/settings', () => {
       expect(id).toBe(starter.id)
       saved = {
         ...starter,
-        originalPriceBdt: 1199,
+        monthlyPriceBdt: 1199,
         offerPriceBdt: 599,
         offerBadge: '50% Eid Offer',
         featureConfig: {
@@ -313,7 +318,7 @@ describe('/admin/settings', () => {
     const [url, init] = calls('PATCH')[0] ?? ['']
     expect(url).toBe(`${PLANS}/${starter.id}`)
     expect(JSON.parse(String(init?.body))).toEqual({
-      originalPriceBdt: 1199,
+      monthlyPriceBdt: 1199,
       offerPriceBdt: 599,
       offerBadge: '50% Eid Offer',
       featureConfig: { limits: { teamSeats: 2 }, features: { customBlocklist: true } },

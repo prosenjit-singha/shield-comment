@@ -28,8 +28,10 @@ export type PlanAuditValue = number | string | boolean | null
 
 export interface PlanAuditChange {
   /**
-   * `originalPriceBdt`, `offerPriceBdt`, `offerBadge`, `yearlyMonthlyPriceBdt`, `trialDays`,
-   * `trialCommentLimit`, `featureConfig.limits.<key>` or `featureConfig.features.<key>`.
+   * `monthlyPriceBdt`, `yearlyMonthlyPriceBdt`, `badgeEn`/`badgeBn`, `descriptionEn`/`descriptionBn`,
+   * `isHighlighted`, `featureConfig.limits.<key>` or `featureConfig.features.<key>`; old rows also
+   * `originalPriceBdt`, `offerPriceBdt`, `offerBadge`, `trialDays`, `trialCommentLimit` (PR-T4
+   * legacy keys; labels for the new card fields come with PR-T5).
    */
   field: string
   before: PlanAuditValue
@@ -99,6 +101,7 @@ export const planAuditActionLabels: Record<PlanAuditAction, string> = {
 type FieldKind = 'price' | 'badge' | 'trial-days' | 'trial-limit' | 'limit' | 'legacy-limit' | 'feature' | 'unknown'
 
 const PRICE_LABELS: Readonly<Record<string, string>> = {
+  monthlyPriceBdt: 'Monthly price',
   originalPriceBdt: 'Original price',
   offerPriceBdt: 'Offer price',
   yearlyMonthlyPriceBdt: 'Yearly price per month',

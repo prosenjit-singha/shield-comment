@@ -35,14 +35,15 @@ describe('ListPlansQueryDto', () => {
 });
 
 describe('UpdatePlanDto', () => {
-  it('accepts a full valid body', async () => {
+  it('accepts a full valid body; trims the card text', async () => {
     const { dto, fields } = await check(UpdatePlanDto, {
-      originalPriceBdt: 999,
-      offerPriceBdt: 499,
-      offerBadge: '  50% Launch Offer ',
+      monthlyPriceBdt: 999,
       yearlyMonthlyPriceBdt: 449,
-      trialDays: 7,
-      trialCommentLimit: 300,
+      badgeEn: '  Popular ',
+      badgeBn: 'জনপ্রিয়',
+      descriptionEn: ' For growing shops ',
+      descriptionBn: 'বাড়তে থাকা দোকানের জন্য',
+      isHighlighted: true,
       featureConfig: {
         limits: {
           connectedPages: 3,
@@ -54,11 +55,13 @@ describe('UpdatePlanDto', () => {
       },
     });
     expect(fields).toEqual([]);
-    expect(dto.offerBadge).toBe('50% Launch Offer');
     expect(dto).toMatchObject({
+      monthlyPriceBdt: 999,
       yearlyMonthlyPriceBdt: 449,
-      trialDays: 7,
-      trialCommentLimit: 300,
+      badgeEn: 'Popular',
+      badgeBn: 'জনপ্রিয়',
+      descriptionEn: 'For growing shops',
+      isHighlighted: true,
     });
     expect(dto.featureConfig?.limits?.monthlyComments).toBe(0);
     expect(dto.featureConfig?.limits?.workspaces).toBe(1);
@@ -68,43 +71,31 @@ describe('UpdatePlanDto', () => {
     expect((await check(UpdatePlanDto, {})).fields).toEqual([]);
   });
 
-  it('accepts null to clear the offer and the badge; blank badge becomes null', async () => {
-    const cleared = await check(UpdatePlanDto, {
-      offerPriceBdt: null,
-      offerBadge: null,
-    });
-    expect(cleared.fields).toEqual([]);
-    expect(cleared.dto).toMatchObject({
-      offerPriceBdt: null,
-      offerBadge: null,
-    });
-    const blank = await check(UpdatePlanDto, { offerBadge: '   ' });
-    expect(blank.fields).toEqual([]);
-    expect(blank.dto.offerBadge).toBeNull();
-  });
-
-  it('accepts null to clear the yearly price and the trial fields (PW-T1b)', async () => {
+  it('null or a blank string clears the badge / description; null clears the yearly price', async () => {
     const cleared = await check(UpdatePlanDto, {
       yearlyMonthlyPriceBdt: null,
-      trialDays: null,
-      trialCommentLimit: null,
+      badgeEn: null,
+      badgeBn: '   ',
+      descriptionEn: '',
+      descriptionBn: null,
     });
     expect(cleared.fields).toEqual([]);
     expect(cleared.dto).toMatchObject({
       yearlyMonthlyPriceBdt: null,
-      trialDays: null,
-      trialCommentLimit: null,
+      badgeEn: null,
+      badgeBn: null,
+      descriptionEn: null,
+      descriptionBn: null,
     });
   });
 
-  it('accepts the price and limit bounds', async () => {
+  it('accepts the price, text and limit bounds', async () => {
     const { fields } = await check(UpdatePlanDto, {
-      originalPriceBdt: 1_000_000,
-      offerPriceBdt: 0,
-      offerBadge: 'x'.repeat(40),
+      monthlyPriceBdt: 1_000_000,
       yearlyMonthlyPriceBdt: 1_000_000,
-      trialDays: 90,
-      trialCommentLimit: 10_000_000,
+      badgeEn: 'x'.repeat(24),
+      descriptionBn: 'ক'.repeat(160),
+      isHighlighted: false,
       featureConfig: {
         limits: {
           connectedPages: 1000,
@@ -116,24 +107,40 @@ describe('UpdatePlanDto', () => {
     });
     expect(fields).toEqual([]);
     const low = await check(UpdatePlanDto, {
+      monthlyPriceBdt: 0,
       yearlyMonthlyPriceBdt: 0,
-      trialDays: 1,
-      trialCommentLimit: 0,
       featureConfig: { limits: { workspaces: 0 } },
     });
     expect(low.fields).toEqual([]);
   });
 
   it.each([
-    ['negative original', { originalPriceBdt: -1 }, 'originalPriceBdt'],
-    ['fractional original', { originalPriceBdt: 49.5 }, 'originalPriceBdt'],
-    ['string original', { originalPriceBdt: '499' }, 'originalPriceBdt'],
-    ['null original', { originalPriceBdt: null }, 'originalPriceBdt'],
-    ['too large original', { originalPriceBdt: 1_000_001 }, 'originalPriceBdt'],
-    ['negative offer', { offerPriceBdt: -5 }, 'offerPriceBdt'],
-    ['string offer', { offerPriceBdt: '10' }, 'offerPriceBdt'],
-    ['badge too long', { offerBadge: 'x'.repeat(41) }, 'offerBadge'],
-    ['badge not a string', { offerBadge: 5 }, 'offerBadge'],
+    ['negative monthly', { monthlyPriceBdt: -1 }, 'monthlyPriceBdt'],
+    ['fractional monthly', { monthlyPriceBdt: 49.5 }, 'monthlyPriceBdt'],
+    ['string monthly', { monthlyPriceBdt: '499' }, 'monthlyPriceBdt'],
+    ['null monthly', { monthlyPriceBdt: null }, 'monthlyPriceBdt'],
+    ['too large monthly', { monthlyPriceBdt: 1_000_001 }, 'monthlyPriceBdt'],
+    // PR-T4: the old API names and the offer/trial fields are unknown now.
+    ['legacy originalPriceBdt', { originalPriceBdt: 999 }, 'originalPriceBdt'],
+    ['legacy offerPriceBdt', { offerPriceBdt: 499 }, 'offerPriceBdt'],
+    ['legacy offerBadge', { offerBadge: 'Sale' }, 'offerBadge'],
+    ['legacy trialDays', { trialDays: 7 }, 'trialDays'],
+    [
+      'legacy trialCommentLimit',
+      { trialCommentLimit: 300 },
+      'trialCommentLimit',
+    ],
+    ['badgeEn too long', { badgeEn: 'x'.repeat(25) }, 'badgeEn'],
+    ['badgeBn too long', { badgeBn: 'ক'.repeat(25) }, 'badgeBn'],
+    ['badge not a string', { badgeEn: 5 }, 'badgeEn'],
+    [
+      'descriptionEn too long',
+      { descriptionEn: 'x'.repeat(161) },
+      'descriptionEn',
+    ],
+    ['descriptionBn not a string', { descriptionBn: [] }, 'descriptionBn'],
+    ['null isHighlighted', { isHighlighted: null }, 'isHighlighted'],
+    ['string isHighlighted', { isHighlighted: 'true' }, 'isHighlighted'],
     ['unknown field', { name: 'Gold' }, 'name'],
     ['slug is read-only', { slug: 'gold' }, 'slug'],
     ['featureConfig not an object', { featureConfig: 'x' }, 'featureConfig'],
@@ -179,20 +186,6 @@ describe('UpdatePlanDto', () => {
       'yearly above max',
       { yearlyMonthlyPriceBdt: 1_000_001 },
       'yearlyMonthlyPriceBdt',
-    ],
-    ['trialDays 0', { trialDays: 0 }, 'trialDays'],
-    ['trialDays 91', { trialDays: 91 }, 'trialDays'],
-    ['fractional trialDays', { trialDays: 7.5 }, 'trialDays'],
-    ['string trialDays', { trialDays: '7' }, 'trialDays'],
-    [
-      'negative trialCommentLimit',
-      { trialCommentLimit: -1 },
-      'trialCommentLimit',
-    ],
-    [
-      'trialCommentLimit above max',
-      { trialCommentLimit: 10_000_001 },
-      'trialCommentLimit',
     ],
     [
       'unknown feature key',

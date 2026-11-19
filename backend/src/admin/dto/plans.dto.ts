@@ -12,12 +12,10 @@ import {
   ValidateNested,
 } from 'class-validator';
 import {
+  PLAN_BADGE_MAX,
+  PLAN_DESCRIPTION_MAX,
   PLAN_LIMIT_MAX,
-  PLAN_OFFER_BADGE_MAX,
   PLAN_PRICE_MAX_BDT,
-  PLAN_TRIAL_COMMENT_LIMIT_MAX,
-  PLAN_TRIAL_DAYS_MAX,
-  PLAN_TRIAL_DAYS_MIN,
   type PlanFeatureConfig,
 } from '../../db/schema/index.js';
 
@@ -27,9 +25,10 @@ import {
  * - `GET /api/admin/settings/plans` → `AdminPlansResponse` (**active** plans only, ordered by
  *   `sortOrder`, then name; the deactivated `free` row is left out, PW-D7).
  * - `PATCH /api/admin/settings/plans/:planId` (one plan per request; partial body, see
- *   `UpdatePlanDto`) → `AdminPlanUpdateResponse`. 400 invalid body / nothing to update /
- *   offer > original / yearly per-month > monthly price / trial field on a non-Starter plan (all
- *   checked on the merged stored + sent values); 404 unknown or malformed id.
+ *   `UpdatePlanDto`) → `AdminPlanUpdateResponse`. 400 invalid body / nothing to update / yearly
+ *   per-month > monthly price (checked on the merged stored + sent values); 404 unknown or
+ *   malformed id. `isHighlighted: true` clears the flag on the other plans in the same
+ *   transaction (one audit row per changed plan, PR-D9).
  *
  * `featureConfig` keys (seed defaults Free (inactive) | Starter | Growth | Pro):
  * - `limits.connectedPages` (0–1,000): 1 | 1 | 5 | 25
@@ -51,17 +50,25 @@ export interface AdminPlan {
   name: string;
   sortOrder: number;
   isActive: boolean;
-  /** Monthly list price, whole BDT (৳). */
-  originalPriceBdt: number;
-  /** Promo price, whole BDT, ≤ `originalPriceBdt`; `null` = no offer. */
-  offerPriceBdt: number | null;
-  /** e.g. "50% Launch Offer" (trimmed, 1–40 chars); `null` = none. */
-  offerBadge: string | null;
-  /** Per-month price when billed yearly (charged × 12), ≤ the monthly price; `null` = no yearly option. Seed 449 / 1,349 / 3,599. */
+  /** Monthly list price, whole BDT (৳) (API name `originalPriceBdt` before PR-T4). */
+  monthlyPriceBdt: number;
+  /** Per-month list price when billed yearly (charged × 12), ≤ the monthly price; `null` = no yearly option. Seed 949 / 2,349 / 5,599. */
   yearlyMonthlyPriceBdt: number | null;
-  /** Trial length in days, 1–90 (Starter only; seed 7). `null` = no trial. */
+  /** Card badge, e.g. "Popular" (1–24 chars, PR-D8/D17); `null` = none. bn falls back to en on the client. */
+  badgeEn: string | null;
+  badgeBn: string | null;
+  /** Short card description (1–160 chars); `null` = none. */
+  descriptionEn: string | null;
+  descriptionBn: string | null;
+  /** The one highlighted plan (PR-D9). */
+  isHighlighted: boolean;
+  /**
+   * Read-only legacy columns (offers and trials are promotions since PR-T1; not editable since
+   * PR-T4; dropped in PR-T7).
+   */
+  offerPriceBdt: number | null;
+  offerBadge: string | null;
   trialDays: number | null;
-  /** Comments granted to a trial, 0–10,000,000 (Starter only; seed 300). `null` = Starter's `monthlyComments`. */
   trialCommentLimit: number | null;
   /** Always complete: every limit and feature key is present. */
   featureConfig: PlanFeatureConfig;
@@ -152,36 +159,25 @@ export class PlanFeatureConfigPatchDto {
   features?: PlanFeaturesPatchDto;
 }
 
+/** Trims a string; blank → `null` (clears). Other values pass through to the validators. */
+const trimToNull = Transform(({ value }: { value: unknown }) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+});
+
 /**
  * `PATCH /api/admin/settings/plans/:planId` body. Every field is optional, at least one must
- * be sent. Unknown fields (also `slug`, `name`, `sortOrder`, `isActive`) → 400.
- * Strings are never coerced to numbers/booleans.
+ * be sent. Unknown fields (also `slug`, `name`, `sortOrder`, `isActive` and the legacy
+ * `originalPriceBdt` / offer / trial fields) → 400. Strings are never coerced to numbers/booleans.
  */
 export class UpdatePlanDto {
   /** Whole BDT, 0–1,000,000. `null` is rejected. */
-  @unlessAbsent<UpdatePlanDto>('originalPriceBdt')
+  @unlessAbsent<UpdatePlanDto>('monthlyPriceBdt')
   @IsInt()
   @Min(0)
   @Max(PLAN_PRICE_MAX_BDT)
-  originalPriceBdt?: number;
-
-  /** Whole BDT, 0–1,000,000 and ≤ the (new or stored) original price. `null` removes the offer. */
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(PLAN_PRICE_MAX_BDT)
-  offerPriceBdt?: number | null;
-
-  /** Trimmed, ≤ 40 chars. `null` or a blank string removes the badge. */
-  @Transform(({ value }: { value: unknown }) => {
-    if (typeof value !== 'string') return value;
-    const trimmed = value.trim();
-    return trimmed === '' ? null : trimmed;
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(PLAN_OFFER_BADGE_MAX)
-  offerBadge?: string | null;
+  monthlyPriceBdt?: number;
 
   /** Whole BDT, 0–1,000,000 and ≤ the (new or stored) monthly price. `null` removes the yearly option. */
   @IsOptional()
@@ -190,19 +186,36 @@ export class UpdatePlanDto {
   @Max(PLAN_PRICE_MAX_BDT)
   yearlyMonthlyPriceBdt?: number | null;
 
-  /** Whole days, 1–90; Starter only. `null` = no trial. */
+  /** Trimmed, 1–24 chars. `null` or a blank string clears it. */
+  @trimToNull
   @IsOptional()
-  @IsInt()
-  @Min(PLAN_TRIAL_DAYS_MIN)
-  @Max(PLAN_TRIAL_DAYS_MAX)
-  trialDays?: number | null;
+  @IsString()
+  @MaxLength(PLAN_BADGE_MAX)
+  badgeEn?: string | null;
 
-  /** 0–10,000,000; Starter only. `null` = the plan's `monthlyComments`. */
+  @trimToNull
   @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(PLAN_TRIAL_COMMENT_LIMIT_MAX)
-  trialCommentLimit?: number | null;
+  @IsString()
+  @MaxLength(PLAN_BADGE_MAX)
+  badgeBn?: string | null;
+
+  /** Trimmed, 1–160 chars. `null` or a blank string clears it. */
+  @trimToNull
+  @IsOptional()
+  @IsString()
+  @MaxLength(PLAN_DESCRIPTION_MAX)
+  descriptionEn?: string | null;
+
+  @trimToNull
+  @IsOptional()
+  @IsString()
+  @MaxLength(PLAN_DESCRIPTION_MAX)
+  descriptionBn?: string | null;
+
+  /** `true` makes this the one highlighted plan (clears the others); `null` is rejected. */
+  @unlessAbsent<UpdatePlanDto>('isHighlighted')
+  @IsBoolean()
+  isHighlighted?: boolean;
 
   @unlessAbsent<UpdatePlanDto>('featureConfig')
   @IsObject()
