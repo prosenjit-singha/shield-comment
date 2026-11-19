@@ -8,10 +8,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)").
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #9 (2026-11-19) · rows this session: 2 · estimate: 95k
+- Session: #9 (2026-11-19) · rows this session: 3 · estimate: 115k
 
 ## State
-dispatched PW-T1b (2026-11-19) · commit: "feat(backend): seed trial, yearly prices and workspace limits (PW-T1b)"
+verified PW-T1b
 
 ## Resume
 `/orchestration --continue`
@@ -236,4 +236,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-19 M5-T16 🟡 blocked: Neon AI Gateway still refuses for billing (403 → `payment_required`) on `gpt-oss-20b` (`--limit 5` smoke, stopped at item 1) and `gpt-oss-120b` (`--limit 1`); no model ran, nothing recorded or set active, $0 spent; no direct provider keys exist
 - 2026-11-19 PW-PLAN ✅ e7dfc59 · docs only · PW section in TASKS.md (PW-D1…D16, 12 rows incl. PW-T1b/PW-T6b splits + PW-T9 manual activation), plan doc approved (+ `trial_comment_limit`), Module 5 D7/D14/D15 superseded, Module 5/8 specs + MEMORY updated; next PW-T1
 - 2026-11-19 PW-T1 ✅ 2427dee (+ fix bba8a3d: MEMORY next pointer) · backend 1699 unit (+1 skipped; unchanged) + e2e 764 (was 705; +59) · schema: `billing_accounts`, `subscriptions` (one live per account), `wallets`/`wallet_balances`/`wallet_entries`, plan yearly/trial columns, `workspaces.billing_account_id`, `comments.usage_counted_at` (migration 0021)
-- 2026-11-19 PW-T1b ✅ · backend 1734 unit (+1 skipped; was 1699) + e2e 780 (was 764) · admin 323 (unchanged) · migration 0022 (monthlyComments + workspaces, Starter trial 7/300, yearly 449/1,349/3,599, free inactive), `planPrice()`, admin plans API yearly/trial fields + rules, admin editor key sync
+- 2026-11-19 PW-T1b ✅ f3301ab (+ fix 1e9016d: MEMORY next pointer) · backend 1734 unit (+1 skipped; was 1699) + e2e 780 (was 764) · admin 323 (unchanged) · migration 0022 (monthlyComments + workspaces, Starter trial 7/300, yearly 449/1,349/3,599, free inactive), `planPrice()`, admin plans API yearly/trial fields + rules, admin editor key sync
