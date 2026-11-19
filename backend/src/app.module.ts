@@ -22,6 +22,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module.js';
 import { WebhooksModule } from './webhooks/webhooks.module.js';
 import { CommentsModule } from './comments/comments.module.js';
 import { MetaCallbacksModule } from './meta-callbacks/meta-callbacks.module.js';
+import { ModerationModule } from './moderation/moderation.module.js';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { MetaCallbacksModule } from './meta-callbacks/meta-callbacks.module.js';
     WebhooksModule,
     CommentsModule,
     MetaCallbacksModule,
+    ModerationModule,
   ],
 })
 export class AppModule {}
