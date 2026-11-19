@@ -8,10 +8,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)").
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #9 (2026-11-19) · rows this session: 4 · estimate: 135k
+- Session: #9 (2026-11-19) · rows this session: 5 · estimate: 160k
 
 ## State
-dispatched PW-T3 (2026-11-19) · commit: "feat(backend): add starter trial and subscription expiry (PW-T3)"
+verified PW-T3
 
 ## Resume
 `/orchestration --continue`
@@ -235,4 +235,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-19 PW-T1 ✅ 2427dee (+ fix bba8a3d: MEMORY next pointer) · backend 1699 unit (+1 skipped; unchanged) + e2e 764 (was 705; +59) · schema: `billing_accounts`, `subscriptions` (one live per account), `wallets`/`wallet_balances`/`wallet_entries`, plan yearly/trial columns, `workspaces.billing_account_id`, `comments.usage_counted_at` (migration 0021)
 - 2026-11-19 PW-T1b ✅ f3301ab (+ fix 1e9016d: MEMORY next pointer) · backend 1734 unit (+1 skipped; was 1699) + e2e 780 (was 764) · admin 323 (unchanged) · migration 0022 (monthlyComments + workspaces, Starter trial 7/300, yearly 449/1,349/3,599, free inactive), `planPrice()`, admin plans API yearly/trial fields + rules, admin editor key sync
 - 2026-11-19 PW-T2 ✅ 6cf9d56 (+ fix 93f4f74: PW-T9 carry-over note) · backend 1766 unit (+1 skipped; was 1734) + e2e 794 (was 780) · client wallet `src/wallet/`: Dhaka month-end-clamped `nextReset`, `WALLET_METERS`, shared live-subscription query, `WalletService` consume/openPeriod/refund/balance/balanceMany
-- 2026-11-19 PW-T3 ✅ · backend 1793 unit (+1 skipped; was 1766) + e2e 805 (was 794) · e2e/ 2/2 · Starter trial at sign-up (account + workspace link + TRIALING + wallet in the sign-up tx, repair on sign-in), `/organization/create` linked, `SubscriptionService.expireDue` + `billing` queue `subscription-expiry` every 15 min, backfill 0023 (PW-D15); next PW-T4
+- 2026-11-19 PW-T3 ✅ 75f5826 · backend 1793 unit (+1 skipped; was 1766) + e2e 805 (was 794) · e2e/ 2/2 · Starter trial at sign-up (account + workspace link + TRIALING + wallet in the sign-up tx, repair on sign-in), `/organization/create` linked, `SubscriptionService.expireDue` + `billing` queue `subscription-expiry` every 15 min, backfill 0023 (PW-D15); next PW-T4
