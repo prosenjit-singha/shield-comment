@@ -10,13 +10,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)"). **PR run: admin/ + client/ approved for every PR row** (user, 2026-11-20, "Both, whole PR run (Recommended)").
 - Keep Docker current (user, 2026-11-20: "First make sure our docker runs the latest code"): a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (recreates compose containers only; never the user's own processes). Orchestrator rebuilt the backend after PR-T1 (0027 had made the old image read a renamed column).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #10 (2026-11-20) · rows this session: 9 · estimate: 236k (incl. the promotions design talk)
+- Session: #10 (2026-11-20) · rows this session: 10 · estimate: 255k (incl. the promotions design talk)
 
 ## State
-dispatched PR-T5 (2026-11-20) · commit: "feat(admin): edit plan display fields and coupon on activation (PR-T5)"
+paused: row cap (10 rows this session) after verified PR-T5 (2026-11-20)
 
 ## Resume
-`/orchestration --continue` → continues the PR rows (PR-PLAN … PR-GATE), then M5-T16 (pre-check asks for Neon AI credits or a provider key) → M5-GATE.
+`/orchestration --continue` → dispatches PR-T5b (admin `/admin/promotions` page), then PR-T6 (client `/plans` page), PR-T7 (migration 0029 drops the old plan columns), PR-GATE; then M5-T16 (pre-check asks for Neon AI credits or a provider key) → M5-GATE.
 
 ## Next prompt (PR-T5b)
 
@@ -269,4 +269,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-20 PR-T3 ✅ · `1c66c89` · backend 1878 unit (+1 skipped; unchanged) + e2e 943 (was 935) · e2e/ 2/2 · trial by choice: sign-up links only (no plan), `isSetUp` = linked, owner-only `POST …/billing/trial` (one tx: subscription + redemption + wallet from the promotion snapshot), summary `trialEligible`, `signUp(p, { trial: true })` / `actors.startTrial` helpers across 9 specs
 - 2026-11-20 PR-T3b ✅ · `5254a58` (+ fix `0d2b0ba`: PR-T7 migration renumbered to 0029) · backend 1881 unit (+1 skipped; was 1878) + e2e 947 (was 943) · manual activation applies the claimed or best live discount + optional coupon on top, records redemptions (`months_used`, `discount_bdt_first_term`), links them on the subscription, `price` breakdown in response + audit (migration 0028); `validateCoupon` preview uses the claimed discount
 - 2026-11-20 PR-T4 ✅ · `8233d71` · backend 1936 unit (+1 skipped; was 1881) + e2e 967 (was 947) · admin 371 · `/api/admin/promotions` (list with status + filters, create per kind, PATCH with reading-8 locks, idempotent Stop, redemptions), plan PATCH `monthlyPriceBdt` + en/bn badge/description + exclusive highlight (audited), support WhatsApp `GET/PATCH /api/admin/settings/platform`; admin `originalPriceBdt` → `monthlyPriceBdt`
-- 2026-11-20 PR-T5 ✅ · admin 381 (was 371) · backend untouched · admin plan editor (monthly/yearly list price, badge + description en/bn, highlight switch; offer/trial inputs removed), support WhatsApp card, audit labels for the new/legacy keys, Activate plan coupon field + COUPON_* errors + "Plan activated" price breakdown
+- 2026-11-20 PR-T5 ✅ · `2ae699b` · admin 381 (was 371) · backend untouched · admin plan editor (monthly/yearly list price, badge + description en/bn, highlight switch; offer/trial inputs removed), support WhatsApp card, audit labels for the new/legacy keys, Activate plan coupon field + COUPON_* errors + "Plan activated" price breakdown
