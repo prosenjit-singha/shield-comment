@@ -59,6 +59,7 @@ You are implementing exactly ONE task row, **PW-T2**, in the ShieldComment BD re
 
 **Finish (in this order)**
 1. TASKS.md: PW-T2 → `✅ <date>` + concise notes (built + choices). Verification log entry at the TOP of `## Verification log`. Add short lasting facts to MEMORY.md (the PW line) and point its "Next:" phrase at PW-T3.
+   MEMORY.md: replace the existing **Next:** phrase (don't add a second one) so it names the row after PW-T2.
 2. Journal `docs/progress/ORCHESTRATION.md`:
    - append one `## Log` line (`- <date> PW-T2 ✅ · <tests> · <1-line summary>`); the orchestrator adds the commit hash;
    - append your choices under `## Choices to confirm` as `- PW-T2: …`;
