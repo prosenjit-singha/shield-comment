@@ -26,6 +26,7 @@ import { ModerationModule } from './moderation/moderation.module.js';
 import { CreditsModule } from './credits/credits.module.js';
 import { WalletModule } from './wallet/wallet.module.js';
 import { BillingModule } from './billing/billing.module.js';
+import { PlansModule } from './plans/plans.module.js';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { BillingModule } from './billing/billing.module.js';
     CreditsModule,
     WalletModule,
     BillingModule,
+    PlansModule,
   ],
 })
 export class AppModule {}

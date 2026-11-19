@@ -63,6 +63,7 @@ export function seatsLeftOf(
  *   workspace is linked to it by the after-hook); the first workspace at sign-up is created by
  *   `first-workspace.ts`, not through this check.
  * - `seatsLeft(accountId)`: for Module 7 invites (not enforced yet).
+ * - `workspaceCount(accountId)`: also read by `BillingSummaryService` (PW-T6).
  *
  * Read-only; every query is scoped by the account id (or the owner user id that finds it). Logs
  * carry ids and counts only.
@@ -89,7 +90,7 @@ export class LimitService {
     if (!account) return workspaceCreateCheck(null, 0);
     const [live, count] = await Promise.all([
       findAccountLiveSubscription(this.db, account.id, now),
-      this.countWorkspaces(account.id),
+      this.workspaceCount(account.id),
     ]);
     const check = workspaceCreateCheck(live, count);
     if (check.kind !== 'ok') {
@@ -113,8 +114,11 @@ export class LimitService {
     return seatsLeftOf(live, members);
   }
 
-  /** Workspaces linked to the account (any status). */
-  private async countWorkspaces(accountId: string): Promise<number> {
+  /**
+   * Workspaces linked to the account (any status): the `workspaces.used` of the create check and
+   * of the client billing summary (PW-T6).
+   */
+  async workspaceCount(accountId: string): Promise<number> {
     const [row] = await this.db
       .select({ value: countDistinct(workspaces.id) })
       .from(workspaces)
