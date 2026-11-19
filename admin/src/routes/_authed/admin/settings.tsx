@@ -7,6 +7,7 @@ import { AiProviderCard } from '@/components/settings/ai-provider-card'
 import { AiSettingsHistory } from '@/components/settings/ai-settings-history'
 import { PlanAuditHistory } from '@/components/settings/plan-audit-history'
 import { PlanEditorCard } from '@/components/settings/plan-editor-card'
+import { SupportWhatsappCard } from '@/components/settings/support-whatsapp-card'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -20,12 +21,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { type AiDraft, aiAuditQueryOptions, aiSettingsQueryOptions, isAiDraftDirty } from '@/lib/admin-ai-settings'
 import { planAuditQueryOptions } from '@/lib/admin-plan-audit'
 import { isDraftDirty, type PlanDraft, plansQueryOptions } from '@/lib/admin-plans'
+import { platformSettingsQueryOptions } from '@/lib/admin-platform-settings'
 
 export const Route = createFileRoute('/_authed/admin/settings')({
   // Warm the cache without blocking the screen; the cards show skeletons meanwhile.
   loader: ({ context }) => {
     void context.queryClient.prefetchQuery(plansQueryOptions())
     void context.queryClient.prefetchQuery(planAuditQueryOptions({ page: 1 }))
+    void context.queryClient.prefetchQuery(platformSettingsQueryOptions())
     void context.queryClient.prefetchQuery(aiSettingsQueryOptions())
     void context.queryClient.prefetchQuery(aiAuditQueryOptions(1))
   },
@@ -37,7 +40,8 @@ export const Route = createFileRoute('/_authed/admin/settings')({
  * Drafts live here, keyed by plan id, so leaving the page with unsaved changes can be blocked.
  * Below the cards, the plan audit history (M2-T16); a save invalidates `['admin','plans']`, which
  * covers the history queries too, so the new entry shows up.
- * Then the "AI provider" section (M5-T4, D16) + its history. One blocker covers the plan drafts and
+ * Then the "Support WhatsApp number" card (PR-T5, PR-D18; its own save, not part of the leave
+ * guard), the "AI provider" section (M5-T4, D16) + its history. One blocker covers the plan drafts and
  * the AI draft (a typed key counts as a change).
  */
 function SettingsPage() {
@@ -68,7 +72,7 @@ function SettingsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Settings"
-        description="Plan prices in ৳ (monthly and yearly), offer badges, the Starter trial, limits and features, and the AI provider. Each plan saves on its own."
+        description="Plan prices in ৳ (monthly and yearly), pricing card text, the highlighted plan, limits and features, the support WhatsApp number and the AI provider. Each plan saves on its own."
       />
 
       {query.isError && !query.data ? (
@@ -100,11 +104,13 @@ function SettingsPage() {
       )}
 
       <p className="text-xs text-muted-foreground">
-        Prices are in whole taka. The pricing page shows the original price struck through when an offer is
-        set; a yearly customer pays the yearly per-month price × 12. Free is retired and not listed.
+        Prices are list prices in whole taka; offers and trials are promotions. A yearly customer pays the yearly
+        per-month price × 12. Free is retired and not listed.
       </p>
 
       <PlanAuditHistory plans={items ?? []} />
+
+      <SupportWhatsappCard />
 
       <AiProviderCard draft={aiDraft} onDraftChange={setAiDraft} />
 

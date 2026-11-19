@@ -1,33 +1,32 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { RotateCcw, Save } from 'lucide-react'
-import { type FormEvent, type KeyboardEvent, type ReactNode, useId, useRef, useState } from 'react'
+import { type FormEvent, type ReactNode, useId, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import {
   type AdminPlan,
   type AdminPlansResponse,
   adminPlansKey,
   draftFromPlan,
-  formatCount,
   formatPlanPrice,
   hasDraftErrors,
   isDraftDirty,
-  isTrialPlan,
+  parseWholeNumber,
   PLAN_FEATURE_KEYS,
   PLAN_LIMIT_KEYS,
-  PLAN_OFFER_BADGE_MAX,
   type PlanDraft,
+  type PlanTextKey,
   planFeatureLabels,
   planLimitLabels,
   planPatch,
   plansListKey,
-  pricePreview,
+  planTextMax,
   replacePlanInList,
-  type TrialDaysOption,
-  trialDaysOptions,
+  textOrNull,
   updatePlan,
   validatePlanDraft,
   yearlyBilledHint,
@@ -37,8 +36,9 @@ import { ApiError } from '@/lib/api'
 /**
  * One plan's editor. The draft lives in the page (so leaving with unsaved changes can be
  * blocked); `undefined` = pristine, the card then shows the stored plan as it is.
- * Save sends only the changed fields (`planPatch`). PW-T7: yearly per-month price on every plan;
- * the trial section (length preset + comment limit) on Starter only.
+ * Save sends only the changed fields (`planPatch`). PR-T5: prices, card text (badge +
+ * description, en + bn) and "Highlight this plan" (saving `true` clears the others on the
+ * server; the list refetch after every save shows that). Offers and trials are promotions.
  */
 export function PlanEditorCard({
   plan,
@@ -57,7 +57,6 @@ export function PlanEditorCard({
   const errors = validatePlanDraft(draft)
   const invalid = hasDraftErrors(errors)
   const dirty = isDraftDirty(plan, storedDraft)
-  const preview = pricePreview(draft)
   const headingId = `${id}-name`
 
   const mutation = useMutation({
@@ -66,7 +65,8 @@ export function PlanEditorCard({
       queryClient.setQueryData<AdminPlansResponse>(plansListKey, (old) => replacePlanInList(old, saved))
       onDraftChange(undefined)
       toast.success(`${saved.name} saved.`)
-      // `['admin','plans']` = the list and every plan audit history page (the new entry shows up).
+      // `['admin','plans']` = the list (a new highlight clears the others) and every plan audit
+      // history page (the new entry shows up).
       void queryClient.invalidateQueries({ queryKey: adminPlansKey })
     },
     onError: (err) => {
@@ -103,9 +103,34 @@ export function PlanEditorCard({
     onDraftChange(undefined)
   }
 
-  const badgeLength = draft.offerBadge.trim().length
-  const trialPlan = isTrialPlan(plan)
-  const trialDaysLabelId = `${id}-trial-days-label`
+  const text = (key: PlanTextKey, label: string, hint: string, placeholder: string) => {
+    const length = draft[key].trim().length
+    const Control = key.startsWith('description') ? Textarea : Input
+    return (
+      <Field
+        id={`${id}-${key}`}
+        label={label}
+        error={errors[key]}
+        hint={hint}
+        counter={
+          <span className={length > planTextMax[key] ? 'text-destructive' : undefined}>
+            {length}/{planTextMax[key]}
+          </span>
+        }
+      >
+        <Control
+          id={`${id}-${key}`}
+          value={draft[key]}
+          onChange={(e: { target: { value: string } }) => edit({ ...draft, [key]: e.target.value })}
+          placeholder={placeholder}
+          aria-invalid={errors[key] !== undefined || undefined}
+          aria-describedby={`${id}-${key}-hint`}
+          className={Control === Input ? 'h-9' : undefined}
+          rows={Control === Input ? undefined : 2}
+        />
+      </Field>
+    )
+  }
 
   return (
     <section
@@ -128,6 +153,11 @@ export function PlanEditorCard({
                 {!plan.isActive && (
                   <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">Inactive</span>
                 )}
+                {plan.isHighlighted && (
+                  <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                    Highlighted
+                  </span>
+                )}
               </div>
               {dirty && (
                 <span data-testid="unsaved" className="text-xs font-medium text-primary">
@@ -135,30 +165,16 @@ export function PlanEditorCard({
                 </span>
               )}
             </div>
-            <PricePreviewBlock preview={preview} />
+            <PricePreviewBlock price={parseWholeNumber(draft.monthlyPriceBdt)} badge={textOrNull(draft.badgeEn)} />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field
-              id={`${id}-original`}
-              label="Original price"
-              error={errors.monthlyPriceBdt}
-              hint="Monthly, whole taka."
-            >
+            <Field id={`${id}-monthly`} label="Monthly price" error={errors.monthlyPriceBdt} hint="Whole taka.">
               <TakaInput
-                id={`${id}-original`}
+                id={`${id}-monthly`}
                 value={draft.monthlyPriceBdt}
                 onChange={(value) => edit({ ...draft, monthlyPriceBdt: value })}
                 invalid={errors.monthlyPriceBdt !== undefined}
-              />
-            </Field>
-            <Field id={`${id}-offer`} label="Offer price" error={errors.offerPriceBdt} hint="Empty = no offer.">
-              <TakaInput
-                id={`${id}-offer`}
-                value={draft.offerPriceBdt}
-                placeholder="No offer"
-                onChange={(value) => edit({ ...draft, offerPriceBdt: value })}
-                invalid={errors.offerPriceBdt !== undefined}
               />
             </Field>
             <Field
@@ -175,67 +191,36 @@ export function PlanEditorCard({
                 invalid={errors.yearlyMonthlyPriceBdt !== undefined}
               />
             </Field>
-            <Field
-              id={`${id}-badge`}
-              label="Offer badge"
-              error={errors.offerBadge}
-              hint="Empty = no badge."
-              counter={
-                <span className={badgeLength > PLAN_OFFER_BADGE_MAX ? 'text-destructive' : undefined}>
-                  {badgeLength}/{PLAN_OFFER_BADGE_MAX}
-                </span>
-              }
-            >
-              <Input
-                id={`${id}-badge`}
-                value={draft.offerBadge}
-                onChange={(e) => edit({ ...draft, offerBadge: e.target.value })}
-                placeholder="e.g. 50% Launch Offer"
-                aria-invalid={errors.offerBadge !== undefined || undefined}
-                aria-describedby={`${id}-badge-hint`}
-                className="h-9"
-              />
-            </Field>
           </div>
 
-          {trialPlan && (
-            <div className="flex flex-col gap-3" data-testid="trial-section">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                <h3 className="text-sm font-semibold">Sign-up trial</h3>
-                <span className="text-xs text-muted-foreground">Changes apply to new trials only.</span>
-              </div>
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <span id={trialDaysLabelId} className="text-sm leading-snug font-medium">
-                  Trial length
-                </span>
-                <TrialDaysPicker
-                  labelledBy={trialDaysLabelId}
-                  options={trialDaysOptions(plan.trialDays)}
-                  value={draft.trialDays}
-                  onChange={(trialDays) => edit({ ...draft, trialDays })}
-                />
-              </div>
-              <Field
-                id={`${id}-trial-limit`}
-                label="Trial comment limit"
-                error={errors.trialCommentLimit}
-                hint={`Empty = Starter's monthly comments (${formatCount(plan.featureConfig.limits.monthlyComments)}).`}
-                className="sm:max-w-[calc(50%-0.5rem)]"
-              >
-                <Input
-                  id={`${id}-trial-limit`}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={draft.trialCommentLimit}
-                  placeholder="Monthly comments"
-                  onChange={(e) => edit({ ...draft, trialCommentLimit: e.target.value })}
-                  aria-invalid={errors.trialCommentLimit !== undefined || undefined}
-                  aria-describedby={`${id}-trial-limit-hint`}
-                  className="h-9 tabular-nums"
-                />
-              </Field>
+          <div className="flex flex-col gap-3" data-testid="card-text">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <h3 className="text-sm font-semibold">Pricing card</h3>
+              <span className="text-xs text-muted-foreground">Empty Bangla text shows the English one.</span>
             </div>
-          )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              {text('badgeEn', 'Badge (English)', 'Empty = no badge.', 'e.g. Popular')}
+              {text('badgeBn', 'Badge (Bangla)', 'Empty = the English badge.', 'যেমন জনপ্রিয়')}
+              {text('descriptionEn', 'Description (English)', 'Empty = no description.', 'One short line')}
+              {text('descriptionBn', 'Description (Bangla)', 'Empty = the English description.', 'এক লাইনে')}
+            </div>
+            <div className="flex min-w-0 items-start gap-3">
+              <Switch
+                id={`${id}-highlight`}
+                checked={draft.isHighlighted}
+                onCheckedChange={(checked) => edit({ ...draft, isHighlighted: checked })}
+                aria-describedby={`${id}-highlight-hint`}
+              />
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <Label htmlFor={`${id}-highlight`} className="leading-snug">
+                  Highlight this plan
+                </Label>
+                <span id={`${id}-highlight-hint`} className="text-xs text-muted-foreground">
+                  One plan only: saving it removes the highlight from the others.
+                </span>
+              </div>
+            </div>
+          </div>
 
           <div className="flex flex-col gap-3">
             <h3 className="text-sm font-semibold">Limits</h3>
@@ -340,63 +325,6 @@ function Field({
   )
 }
 
-/** Trial length pills (radio group: roving focus, arrow keys move and select). */
-function TrialDaysPicker({
-  labelledBy,
-  options,
-  value,
-  onChange,
-}: {
-  labelledBy: string
-  options: TrialDaysOption[]
-  value: number | null
-  onChange: (value: number | null) => void
-}) {
-  const refs = useRef<(HTMLButtonElement | null)[]>([])
-  const selected = Math.max(
-    0,
-    options.findIndex((option) => option.value === value),
-  )
-  const onKeyDown = (event: KeyboardEvent) => {
-    const step =
-      event.key === 'ArrowRight' || event.key === 'ArrowDown'
-        ? 1
-        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-          ? -1
-          : 0
-    if (step === 0) return
-    event.preventDefault()
-    const next = (selected + step + options.length) % options.length
-    onChange((options[next] as TrialDaysOption).value)
-    refs.current[next]?.focus()
-  }
-  return (
-    <div role="radiogroup" aria-labelledby={labelledBy} onKeyDown={onKeyDown} className="flex flex-wrap gap-2">
-      {options.map((option, index) => {
-        const checked = option.value === value
-        return (
-          <button
-            key={option.value ?? 'none'}
-            ref={(el) => {
-              refs.current[index] = el
-            }}
-            type="button"
-            role="radio"
-            aria-checked={checked}
-            tabIndex={index === selected ? 0 : -1}
-            onClick={() => onChange(option.value)}
-            className={`h-8 rounded-full border px-3.5 text-sm tabular-nums transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 ${
-              checked ? 'border-primary bg-primary/10 font-medium text-primary' : 'hover:bg-muted'
-            }`}
-          >
-            {option.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
 function TakaInput({
   id,
   value,
@@ -433,7 +361,7 @@ function TakaInput({
   )
 }
 
-function PricePreviewBlock({ preview }: { preview: ReturnType<typeof pricePreview> }) {
+function PricePreviewBlock({ price, badge }: { price: number | null; badge: string | null }) {
   return (
     <div
       data-testid="price-preview"
@@ -441,28 +369,20 @@ function PricePreviewBlock({ preview }: { preview: ReturnType<typeof pricePrevie
       role="group"
       className="flex shrink-0 flex-col items-end gap-1 rounded-2xl bg-muted px-3 py-2 text-right"
     >
-      {preview.badge && (
+      {badge && (
         <span
           data-testid="preview-badge"
           className="max-w-56 truncate rounded-full bg-secondary px-2.5 py-0.5 text-xs font-semibold text-secondary-foreground"
         >
-          {preview.badge}
+          {badge}
         </span>
       )}
       <p className="flex items-baseline gap-1.5 whitespace-nowrap">
-        {preview.struck !== null && (
-          <s data-testid="preview-struck" className="text-sm text-muted-foreground tabular-nums">
-            {formatPlanPrice(preview.struck)}
-          </s>
-        )}
         <span data-testid="preview-price" className="text-xl font-semibold tracking-tight tabular-nums">
-          {preview.price === null ? '—' : formatPlanPrice(preview.price)}
+          {price === null ? '—' : formatPlanPrice(price)}
         </span>
         <span className="text-xs text-muted-foreground">/mo</span>
       </p>
-      {preview.discountPercent !== null && (
-        <span className="text-xs text-muted-foreground">Saves {preview.discountPercent}%</span>
-      )}
     </div>
   )
 }

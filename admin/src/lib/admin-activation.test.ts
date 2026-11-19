@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   activationPricePreview,
+  couponErrorMessages,
   activationTermEnd,
   addDays,
   dhakaToday,
@@ -66,15 +67,15 @@ describe('startDateError', () => {
 })
 
 describe('activationPricePreview', () => {
-  const starter = { monthlyPriceBdt: 999, offerPriceBdt: 499, yearlyMonthlyPriceBdt: 449 }
+  const starter = { monthlyPriceBdt: 999, yearlyMonthlyPriceBdt: 949 }
 
-  it('monthly shows the offer (else the original) per month', () => {
-    expect(activationPricePreview(starter, 'month')).toBe('৳499/month')
-    expect(activationPricePreview({ ...starter, offerPriceBdt: null }, 'month')).toBe('৳999/month')
+  it('monthly shows the list price per month (never the legacy offer)', () => {
+    expect(activationPricePreview(starter, 'month')).toBe('৳999/month')
+    expect(activationPricePreview({ ...starter, offerPriceBdt: 499 } as typeof starter, 'month')).toBe('৳999/month')
   })
 
-  it('yearly shows the per-month price and the yearly charge', () => {
-    expect(activationPricePreview(starter, 'year')).toBe('৳449/month · billed ৳5,388 yearly')
+  it('yearly shows the per-month list price and the yearly charge', () => {
+    expect(activationPricePreview(starter, 'year')).toBe(`৳949/month · billed ৳${new Intl.NumberFormat('en-BD').format(11_388)} yearly`)
     expect(activationPricePreview({ ...starter, yearlyMonthlyPriceBdt: 3599 }, 'year')).toBe(
       '৳3,599/month · billed ৳43,188 yearly',
     )
@@ -84,5 +85,17 @@ describe('activationPricePreview', () => {
     expect(activationPricePreview({ ...starter, yearlyMonthlyPriceBdt: null }, 'year')).toBeNull()
     expect(hasYearlyPrice({ yearlyMonthlyPriceBdt: null })).toBe(false)
     expect(hasYearlyPrice(starter)).toBe(true)
+  })
+})
+
+describe('couponErrorMessages', () => {
+  it('has a readable message for every backend COUPON_* code', () => {
+    expect(Object.keys(couponErrorMessages).sort()).toEqual([
+      'COUPON_ALREADY_USED',
+      'COUPON_EXPIRED',
+      'COUPON_NOT_FOR_PLAN',
+      'COUPON_NOT_FOUND',
+      'COUPON_USED_UP',
+    ])
   })
 })

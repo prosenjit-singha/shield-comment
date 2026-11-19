@@ -36,6 +36,19 @@ describe('planAuditFieldLabel', () => {
     expect(planAuditFieldLabel('trialCommentLimit')).toBe('Trial comment limit')
   })
 
+  it('labels the PR-T5 card fields and keeps the legacy keys readable', () => {
+    expect(planAuditFieldLabel('monthlyPriceBdt')).toBe('Monthly price')
+    expect(planAuditFieldLabel('badgeEn')).toBe('Badge (English)')
+    expect(planAuditFieldLabel('badgeBn')).toBe('Badge (Bangla)')
+    expect(planAuditFieldLabel('descriptionEn')).toBe('Description (English)')
+    expect(planAuditFieldLabel('descriptionBn')).toBe('Description (Bangla)')
+    expect(planAuditFieldLabel('isHighlighted')).toBe('Highlighted')
+    // Legacy (PR-T4 `LEGACY_PLAN_AUDIT_FIELDS`): old rows still read.
+    expect(planAuditFieldLabel('originalPriceBdt')).toBe('Original price')
+    expect(planAuditFieldLabel('offerBadge')).toBe('Offer badge')
+    expect(planAuditFieldLabel('trialDays')).toBe('Trial length')
+  })
+
   it('falls back to the raw field for anything unknown', () => {
     expect(planAuditFieldLabel('featureConfig.limits.storageGb')).toBe('featureConfig.limits.storageGb')
     expect(planAuditFieldLabel('featureConfig.features.toString')).toBe('featureConfig.features.toString')
@@ -72,6 +85,16 @@ describe('formatPlanAuditValue', () => {
     expect(formatPlanAuditValue('featureConfig.limits.teamSeats', 3)).toBe('3')
     expect(formatPlanAuditValue('featureConfig.features.messengerAlerts', true)).toBe('On')
     expect(formatPlanAuditValue('featureConfig.features.messengerAlerts', false)).toBe('Off')
+  })
+
+  it('quotes card text, shows Yes/No for the highlight and None for cleared text', () => {
+    expect(formatPlanAuditValue('badgeEn', 'Popular')).toBe('“Popular”')
+    expect(formatPlanAuditValue('descriptionBn', 'ছোট দোকানের জন্য')).toBe('“ছোট দোকানের জন্য”')
+    expect(formatPlanAuditValue('badgeBn', null)).toBe('None')
+    expect(formatPlanAuditValue('isHighlighted', true)).toBe('Yes')
+    expect(formatPlanAuditValue('isHighlighted', false)).toBe('No')
+    expect(formatPlanAuditValue('monthlyPriceBdt', 999)).toBe('৳999')
+    expect(formatPlanAuditValue('trialDays', 1)).toBe('1 day')
   })
 
   it('prints unknown fields plainly', () => {

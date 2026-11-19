@@ -16,6 +16,34 @@ export interface ActivatePlanBody {
   /** `YYYY-MM-DD`, Asia/Dhaka. */
   startDate: string
   reason: string
+  /** Optional coupon (PR-T3b): trimmed, any case; left out when empty. A bad one → 400 `COUPON_*`. */
+  couponCode?: string
+}
+
+/** A promotion on the activated term (backend `AppliedPromotion`). */
+export interface AppliedPromotion {
+  promotionId: string
+  redemptionId: string
+  name: string
+  /** COUPON only. */
+  code: string | null
+  /** "৳500 off" / "10% off for 3 months". */
+  label: string
+  labelBn: string
+  /** Whole ৳ off this term's bill. */
+  amountBdt: number
+  months: { from: number; to: number; of: number } | null
+}
+
+/** The term's price (backend `ActivationPrice`): list, charged, and what came off (PR-D12). */
+export interface ActivationPrice {
+  listChargedBdt: number
+  chargedBdt: number
+  perMonthBdt: number
+  /** The automatic discount (claimed before or claimed now). */
+  discount: AppliedPromotion | null
+  /** The admin's coupon, on top of the discount (PR-D16). */
+  coupon: AppliedPromotion | null
 }
 
 export interface ActivatePlanResponse {
@@ -27,6 +55,7 @@ export interface ActivatePlanResponse {
     plan: { id: string; slug: string; name: string }
   }
   comments: { used: number; limit: number; resetsAt: string | null }
+  price: ActivationPrice
 }
 
 export function activateClientPlan({ workspaceId, body }: { workspaceId: string; body: ActivatePlanBody }) {
@@ -103,14 +132,15 @@ export function hasYearlyPrice(plan: Pick<AdminPlan, 'yearlyMonthlyPriceBdt'>): 
 }
 
 /**
- * Price preview (backend `planPrice`): monthly `৳499/month` (offer, else original); yearly
- * `৳449/month · billed ৳5,388 yearly`. `null` = yearly without a yearly price.
+ * List price before promotions: monthly `৳999/month`; yearly `৳949/month · billed ৳11,388 yearly`.
+ * `null` = yearly without a yearly price. No preview endpoint exists (PR-T3b): the discount and
+ * coupon show in the 201 `price` after activating.
  */
 export function activationPricePreview(
-  plan: Pick<AdminPlan, 'monthlyPriceBdt' | 'offerPriceBdt' | 'yearlyMonthlyPriceBdt'>,
+  plan: Pick<AdminPlan, 'monthlyPriceBdt' | 'yearlyMonthlyPriceBdt'>,
   interval: SubscriptionInterval,
 ): string | null {
-  if (interval === 'month') return `${formatPlanPrice(plan.offerPriceBdt ?? plan.monthlyPriceBdt)}/month`
+  if (interval === 'month') return `${formatPlanPrice(plan.monthlyPriceBdt)}/month`
   if (plan.yearlyMonthlyPriceBdt === null) return null
   return `${formatPlanPrice(plan.yearlyMonthlyPriceBdt)}/month · billed ${formatPlanPrice(yearlyChargeBdt(plan.yearlyMonthlyPriceBdt))} yearly`
 }
@@ -122,4 +152,13 @@ export const activationErrorMessages: Record<string, string> = {
   YEARLY_PRICE_MISSING: 'This plan has no yearly price. Choose Monthly or set a yearly price in Settings.',
   START_DATE_OUT_OF_RANGE: `The start date must be between ${ACTIVATION_MAX_DAYS_BACK} days ago and today.`,
   TERM_ALREADY_ENDED: 'This term would already be over. Pick a later start date.',
+}
+
+/** The backend's `COUPON_ERROR_CODES` (400) → the coupon field's error. */
+export const couponErrorMessages: Record<string, string> = {
+  COUPON_NOT_FOUND: 'No coupon with this code.',
+  COUPON_EXPIRED: 'This coupon has ended or was stopped.',
+  COUPON_NOT_FOR_PLAN: 'This coupon is not for this plan or billing period.',
+  COUPON_ALREADY_USED: 'This client has already used this coupon.',
+  COUPON_USED_UP: 'This coupon has no uses left.',
 }

@@ -520,7 +520,24 @@ describe('Activate plan dialog (PW-T9)', () => {
       plan: { id: activePlans.items[0]!.id, slug: 'starter', name: 'Starter' },
     },
     comments: { used: 0, limit: 2500, resetsAt: '2026-12-19T18:00:00.000Z' },
+    price: {
+      listChargedBdt: 5388,
+      chargedBdt: 5088,
+      perMonthBdt: 424,
+      discount: null,
+      coupon: null,
+    },
   }
+  const applied = (name: string, code: string | null, label: string, amountBdt: number) => ({
+    promotionId: `p-${name}`,
+    redemptionId: `r-${name}`,
+    name,
+    code,
+    label,
+    labelBn: label,
+    amountBdt,
+    months: null,
+  })
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -552,8 +569,12 @@ describe('Activate plan dialog (PW-T9)', () => {
     expect(date.value).toBe('2026-11-20')
     expect(date.min).toBe('2026-10-20')
     expect(date.max).toBe('2026-11-20')
-    expect(price(dialog)).toBe('৳1,499/month')
+    // The list price: the legacy offer (৳1,499) is never read; promotions apply on activation.
+    expect(price(dialog)).toBe('৳2,499/month')
+    expect(radio(dialog, /Growth/).textContent).toContain('৳2,499')
     expect(within(dialog).getByText('Growth · term ends 20 Dec 2026')).toBeTruthy()
+    expect(within(dialog).getByText(/automatic discount and the coupon come off when you activate/)).toBeTruthy()
+    expect((within(dialog).getByLabelText('Coupon (optional)') as HTMLInputElement).value).toBe('')
     expect(within(dialog).getByText(/Ends Growth \(Yearly\) right away/)).toBeTruthy()
     expect(submitButton(dialog).disabled).toBe(true)
   })
@@ -561,7 +582,7 @@ describe('Activate plan dialog (PW-T9)', () => {
   it('defaults to the first plan without a live plan', async () => {
     const dialog = await openFor('Bazaar BD')
     expect(radio(dialog, /Starter/).getAttribute('aria-checked')).toBe('true')
-    expect(price(dialog)).toBe('৳499/month')
+    expect(price(dialog)).toBe('৳999/month')
     expect(within(dialog).getByText(/No active plan to end: starts the new term from the start date\./)).toBeTruthy()
   })
 
@@ -580,7 +601,7 @@ describe('Activate plan dialog (PW-T9)', () => {
     // Back to a plan without a yearly price: falls back to Monthly.
     fireEvent.click(radio(dialog, /Pro/))
     expect(radio(dialog, /Monthly/).getAttribute('aria-checked')).toBe('true')
-    expect(price(dialog)).toBe('৳3,999/month')
+    expect(price(dialog)).toBe('৳5,999/month')
   })
 
   it.each([
@@ -611,7 +632,7 @@ describe('Activate plan dialog (PW-T9)', () => {
     expect(submitButton(dialog).disabled).toBe(false)
   })
 
-  it('POSTs the body, shows a pending state, then toasts, closes and refreshes the list', async () => {
+  it('POSTs the body (no coupon key when empty), shows a pending state, then the result, toasts and refreshes the list', async () => {
     let resolve: (res: Response) => void = () => {}
     const post = vi.fn(
       (_url: URL, init: RequestInit) =>
@@ -641,8 +662,76 @@ describe('Activate plan dialog (PW-T9)', () => {
 
     resolve(json(activated, 201))
     expect(await screen.findByText('Acme Fashion is now on Starter (Yearly).')).toBeTruthy()
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const done = await screen.findByRole('dialog', { name: 'Plan activated' })
+    const result = within(done).getByTestId('activation-result')
+    expect(result.textContent).toContain('List price৳5,388')
+    expect(result.textContent).toContain('Charged৳5,088(৳424/month)')
+    expect(within(done).getByText('No promotion applied.')).toBeTruthy()
     await waitFor(() => expect(listCalls().length).toBeGreaterThan(calls))
+    fireEvent.click(within(done).getByRole('button', { name: 'Done' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('sends the coupon trimmed (any case) and shows the discount, the coupon and the charge', async () => {
+    const post = vi.fn((_url: URL, _init: RequestInit) =>
+      json(
+        {
+          ...activated,
+          subscription: { ...activated.subscription, interval: 'month', termEndsAt: '2026-12-19T18:00:00.000Z' },
+          price: {
+            listChargedBdt: 999,
+            chargedBdt: 399,
+            perMonthBdt: 399,
+            discount: applied('Launch offer', null, '৳500 off', 500),
+            coupon: applied('Eid coupon', 'EID100', '৳100 off', 100),
+          },
+        },
+        201,
+      ),
+    )
+    handlers[POST] = post
+    const dialog = await openFor('Acme Fashion')
+    fireEvent.click(radio(dialog, /Starter/))
+    fireEvent.change(within(dialog).getByLabelText('Reason'), { target: { value: 'Paid' } })
+    fireEvent.change(within(dialog).getByLabelText('Coupon (optional)'), { target: { value: '  eid100 ' } })
+    fireEvent.click(submitButton(dialog))
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(String(post.mock.calls[0]![1].body))).toMatchObject({ couponCode: 'eid100' })
+
+    const done = await screen.findByRole('dialog', { name: 'Plan activated' })
+    const rows = within(done)
+      .getByTestId('activation-result')
+      .querySelectorAll('dt')
+    expect([...rows].map((dt) => [dt.textContent, dt.nextElementSibling?.textContent])).toEqual([
+      ['List price', '৳999'],
+      ['Launch offer · ৳500 off', '−৳500'],
+      ['Coupon EID100 · ৳100 off', '−৳100'],
+      ['Charged', '৳399'],
+    ])
+    expect(within(done).queryByText('No promotion applied.')).toBeNull()
+  })
+
+  it.each([
+    ['COUPON_NOT_FOUND', 'No coupon with this code.'],
+    ['COUPON_EXPIRED', 'This coupon has ended or was stopped.'],
+    ['COUPON_NOT_FOR_PLAN', 'This coupon is not for this plan or billing period.'],
+    ['COUPON_ALREADY_USED', 'This client has already used this coupon.'],
+    ['COUPON_USED_UP', 'This coupon has no uses left.'],
+  ])('a 400 %s shows on the coupon field and clears on edit', async (code, shown) => {
+    handlers[POST] = () =>
+      json({ statusCode: 400, error: 'Bad Request', message: 'Coupon rejected', code, path: '/api', timestamp: '' }, 400)
+    const dialog = await openFor('Acme Fashion')
+    fireEvent.change(within(dialog).getByLabelText('Reason'), { target: { value: 'Paid' } })
+    const coupon = within(dialog).getByLabelText('Coupon (optional)')
+    fireEvent.change(coupon, { target: { value: 'BADCODE' } })
+    fireEvent.click(submitButton(dialog))
+    const alert = await within(dialog).findByRole('alert')
+    expect(alert.textContent).toBe(shown)
+    expect(alert.id).toBe(coupon.getAttribute('aria-describedby'))
+    expect(coupon.getAttribute('aria-invalid')).toBe('true')
+    expect(screen.getByRole('dialog', { name: 'Activate a plan for Acme Fashion' })).toBeTruthy()
+    fireEvent.change(coupon, { target: { value: 'OTHER' } })
+    expect(within(dialog).queryByRole('alert')).toBeNull()
   })
 
   it.each([

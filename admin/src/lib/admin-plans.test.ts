@@ -4,26 +4,21 @@ import {
   draftFromPlan,
   formatCount,
   formatPlanPrice,
-  formatTrialDays,
   hasDraftErrors,
   isDraftDirty,
-  isTrialPlan,
-  offerDiscountPercent,
   PLAN_LIMIT_KEYS,
   parseWholeNumber,
   planLimitLabels,
   type PlanDraft,
   planPatch,
-  pricePreview,
   replacePlanInList,
-  TRIAL_DAYS_PRESETS,
-  trialDaysOptions,
+  textOrNull,
   validatePlanDraft,
   yearlyBilledHint,
   yearlyChargeBdt,
 } from './admin-plans'
 
-// Starter as 0007 seeded it, before the 0008 launch offer (a plain, offer-free fixture).
+// A plain Starter fixture (no card text, not highlighted, no yearly option).
 const starter: AdminPlan = {
   id: '019a0000-0000-7000-8000-000000000002',
   slug: 'starter',
@@ -62,19 +57,20 @@ function draft(patch: Partial<PlanDraft> = {}, plan: AdminPlan = starter): PlanD
 }
 
 describe('draftFromPlan', () => {
-  it('turns numbers into strings and null offer/badge into empty strings', () => {
+  it('turns numbers into strings and null text into empty strings (legacy offer/trial fields ignored)', () => {
     expect(draftFromPlan(starter)).toEqual({
       monthlyPriceBdt: '499',
-      offerPriceBdt: '',
-      offerBadge: '',
       yearlyMonthlyPriceBdt: '',
-      trialDays: 7,
-      trialCommentLimit: '300',
+      badgeEn: '',
+      badgeBn: '',
+      descriptionEn: '',
+      descriptionBn: '',
+      isHighlighted: false,
       limits: { connectedPages: '1', monthlyComments: '2500', teamSeats: '1', workspaces: '1' },
       features: starter.featureConfig.features,
     })
-    const promo = draftFromPlan({ ...starter, monthlyPriceBdt: 999, offerPriceBdt: 499, offerBadge: '50% Launch Offer' })
-    expect([promo.monthlyPriceBdt, promo.offerPriceBdt, promo.offerBadge]).toEqual(['999', '499', '50% Launch Offer'])
+    const card = draftFromPlan({ ...starter, badgeEn: 'Popular', descriptionBn: 'ছোট দোকান', isHighlighted: true })
+    expect([card.badgeEn, card.descriptionBn, card.isHighlighted]).toEqual(['Popular', 'ছোট দোকান', true])
   })
 
   it('copies the feature flags (editing the draft never mutates the plan)', () => {
@@ -113,24 +109,16 @@ describe('validatePlanDraft', () => {
     expect(validatePlanDraft(draft({ monthlyPriceBdt: '0' })).monthlyPriceBdt).toBeUndefined()
   })
 
-  it('allows an empty offer and checks a set one against the original', () => {
-    expect(validatePlanDraft(draft({ offerPriceBdt: '  ' })).offerPriceBdt).toBeUndefined()
-    expect(validatePlanDraft(draft({ offerPriceBdt: '499' })).offerPriceBdt).toBeUndefined()
-    expect(validatePlanDraft(draft({ offerPriceBdt: '0' })).offerPriceBdt).toBeUndefined()
-    expect(validatePlanDraft(draft({ offerPriceBdt: '500' })).offerPriceBdt).toBe(
-      "The offer can't be more than the original price.",
-    )
-    expect(validatePlanDraft(draft({ offerPriceBdt: '1.5' })).offerPriceBdt).toBe('Use a whole number (digits only).')
-    expect(validatePlanDraft(draft({ offerPriceBdt: '2000000' })).offerPriceBdt).toBe(
-      `Must be ${formatCount(1_000_000)} or less.`,
-    )
-    // With an invalid original only the original is flagged.
-    expect(validatePlanDraft(draft({ monthlyPriceBdt: '', offerPriceBdt: '100' })).offerPriceBdt).toBeUndefined()
-  })
-
-  it('limits the trimmed badge to 40 characters', () => {
-    expect(validatePlanDraft(draft({ offerBadge: `  ${'x'.repeat(40)}  ` })).offerBadge).toBeUndefined()
-    expect(validatePlanDraft(draft({ offerBadge: 'x'.repeat(41) })).offerBadge).toBe('Up to 40 characters.')
+  it('limits the trimmed badges to 24 and descriptions to 160 characters', () => {
+    for (const key of ['badgeEn', 'badgeBn'] as const) {
+      expect(validatePlanDraft(draft({ [key]: `  ${'x'.repeat(24)}  ` }))[key]).toBeUndefined()
+      expect(validatePlanDraft(draft({ [key]: 'x'.repeat(25) }))[key]).toBe('Up to 24 characters.')
+    }
+    for (const key of ['descriptionEn', 'descriptionBn'] as const) {
+      expect(validatePlanDraft(draft({ [key]: 'ক'.repeat(160) }))[key]).toBeUndefined()
+      expect(validatePlanDraft(draft({ [key]: 'ক'.repeat(161) }))[key]).toBe('Up to 160 characters.')
+    }
+    expect(hasDraftErrors(validatePlanDraft(draft({ descriptionBn: 'x'.repeat(161) })))).toBe(true)
   })
 
   it('checks each limit against its own maximum', () => {
@@ -148,25 +136,22 @@ describe('validatePlanDraft', () => {
   })
 })
 
-describe('yearly price + trial fields (PW-T7)', () => {
-  const growth: AdminPlan = { ...starter, id: 'g', slug: 'growth', name: 'Growth', trialDays: null, trialCommentLimit: null }
-
-  it('maps stored nulls to empty inputs / no trial and back', () => {
-    const d = draftFromPlan({ ...starter, yearlyMonthlyPriceBdt: 449, trialDays: null, trialCommentLimit: null })
-    expect([d.yearlyMonthlyPriceBdt, d.trialDays, d.trialCommentLimit]).toEqual(['449', null, ''])
+describe('yearly price (PW-T7)', () => {
+  it('maps a stored yearly price to the input and back', () => {
+    expect(draftFromPlan({ ...starter, yearlyMonthlyPriceBdt: 449 }).yearlyMonthlyPriceBdt).toBe('449')
   })
 
-  it('checks the yearly per-month price against offer ?? original', () => {
+  it('checks the yearly per-month price against the monthly list price', () => {
     expect(validatePlanDraft(draft({ yearlyMonthlyPriceBdt: '' })).yearlyMonthlyPriceBdt).toBeUndefined()
     expect(validatePlanDraft(draft({ yearlyMonthlyPriceBdt: '499' })).yearlyMonthlyPriceBdt).toBeUndefined()
     expect(validatePlanDraft(draft({ yearlyMonthlyPriceBdt: '500' })).yearlyMonthlyPriceBdt).toBe(
       "Can't be more than the monthly price (৳499).",
     )
-    // With an offer the offer is the monthly price (backend `yearlyPriceError`).
+    // The legacy offer no longer caps it (backend `yearlyPriceError`, PR-T1).
     expect(
-      validatePlanDraft(draft({ monthlyPriceBdt: '999', offerPriceBdt: '499', yearlyMonthlyPriceBdt: '600' }))
+      validatePlanDraft(draft({}, { ...starter, monthlyPriceBdt: 999, offerPriceBdt: 499, yearlyMonthlyPriceBdt: 949 }))
         .yearlyMonthlyPriceBdt,
-    ).toBe("Can't be more than the monthly price (৳499).")
+    ).toBeUndefined()
     expect(validatePlanDraft(draft({ yearlyMonthlyPriceBdt: '4.5' })).yearlyMonthlyPriceBdt).toBe(
       'Use a whole number (digits only).',
     )
@@ -175,35 +160,11 @@ describe('yearly price + trial fields (PW-T7)', () => {
     expect(hasDraftErrors(validatePlanDraft(draft({ yearlyMonthlyPriceBdt: '500' })))).toBe(true)
   })
 
-  it('allows an empty trial comment limit and caps a set one at 10,000,000', () => {
-    expect(validatePlanDraft(draft({ trialCommentLimit: ' ' })).trialCommentLimit).toBeUndefined()
-    expect(validatePlanDraft(draft({ trialCommentLimit: '0' })).trialCommentLimit).toBeUndefined()
-    expect(validatePlanDraft(draft({ trialCommentLimit: '10000000' })).trialCommentLimit).toBeUndefined()
-    expect(validatePlanDraft(draft({ trialCommentLimit: '10000001' })).trialCommentLimit).toBe(
-      `Must be ${formatCount(10_000_000)} or less.`,
-    )
-    expect(validatePlanDraft(draft({ trialCommentLimit: 'lots' })).trialCommentLimit).toBe('Use a whole number (digits only).')
-  })
-
-  it('sends null for cleared fields and only changed trial values', () => {
+  it('sends null for a cleared yearly price', () => {
     const stored = { ...starter, yearlyMonthlyPriceBdt: 449 }
     expect(planPatch(stored, draft({}, stored))).toEqual({})
-    expect(planPatch(stored, draft({ yearlyMonthlyPriceBdt: '', trialDays: null, trialCommentLimit: '' }, stored))).toEqual({
-      yearlyMonthlyPriceBdt: null,
-      trialDays: null,
-      trialCommentLimit: null,
-    })
-    expect(planPatch(starter, draft({ yearlyMonthlyPriceBdt: '449', trialDays: 14, trialCommentLimit: '0500' }))).toEqual({
-      yearlyMonthlyPriceBdt: 449,
-      trialDays: 14,
-      trialCommentLimit: 500,
-    })
-  })
-
-  it('never sends trial fields for a non-Starter plan', () => {
-    expect(isTrialPlan(starter)).toBe(true)
-    expect(isTrialPlan(growth)).toBe(false)
-    expect(planPatch(growth, draft({ trialDays: 7, trialCommentLimit: '300' }, growth))).toEqual({})
+    expect(planPatch(stored, draft({ yearlyMonthlyPriceBdt: '' }, stored))).toEqual({ yearlyMonthlyPriceBdt: null })
+    expect(planPatch(starter, draft({ yearlyMonthlyPriceBdt: '0449' }))).toEqual({ yearlyMonthlyPriceBdt: 449 })
   })
 
   it('hints the yearly charge (per-month × 12)', () => {
@@ -212,21 +173,6 @@ describe('yearly price + trial fields (PW-T7)', () => {
     expect(yearlyBilledHint(draft({ yearlyMonthlyPriceBdt: '3599' }))).toBe(`Billed ৳${formatCount(43_188)} yearly.`)
     expect(yearlyBilledHint(draft({ yearlyMonthlyPriceBdt: '' }))).toBeNull()
     expect(yearlyBilledHint(draft({ yearlyMonthlyPriceBdt: 'x' }))).toBeNull()
-  })
-
-  it('offers No trial + the 3/7/14/30 presets and keeps a stored non-preset value', () => {
-    expect(TRIAL_DAYS_PRESETS).toEqual([3, 7, 14, 30])
-    expect(trialDaysOptions(7)).toEqual([
-      { value: null, label: 'No trial' },
-      { value: 3, label: '3 days' },
-      { value: 7, label: '7 days' },
-      { value: 14, label: '14 days' },
-      { value: 30, label: '30 days' },
-    ])
-    expect(trialDaysOptions(null).map((o) => o.value)).toEqual([null, 3, 7, 14, 30])
-    expect(trialDaysOptions(10).map((o) => o.value)).toEqual([null, 3, 7, 10, 14, 30])
-    expect(trialDaysOptions(90).at(-1)).toEqual({ value: 90, label: '90 days' })
-    expect(formatTrialDays(1)).toBe('1 day')
   })
 })
 
@@ -241,23 +187,29 @@ describe('planLimitLabels (PW-T1b)', () => {
 describe('planPatch (minimal PATCH body)', () => {
   it('is empty when nothing changed, including equivalent spellings', () => {
     expect(planPatch(starter, draft())).toEqual({})
-    expect(planPatch(starter, draft({ monthlyPriceBdt: ' 0499 ', offerBadge: '   ' }))).toEqual({})
+    expect(planPatch(starter, draft({ monthlyPriceBdt: ' 0499 ', badgeEn: '   ', descriptionBn: '\n' }))).toEqual({})
   })
 
-  it('sends only the changed top-level fields', () => {
-    expect(planPatch(starter, draft({ monthlyPriceBdt: '999', offerPriceBdt: '499', offerBadge: ' 50% Launch Offer ' }))).toEqual({
-      monthlyPriceBdt: 999,
-      offerPriceBdt: 499,
-      offerBadge: '50% Launch Offer',
-    })
+  it('sends only the changed top-level fields, text trimmed, never the legacy offer/trial fields', () => {
+    const legacy = { ...starter, offerPriceBdt: 299, offerBadge: 'Old', trialDays: 7, trialCommentLimit: 300 }
+    expect(
+      planPatch(
+        legacy,
+        draft({ monthlyPriceBdt: '999', badgeEn: ' Popular ', descriptionBn: ' ছোট দোকানের জন্য ', isHighlighted: true }, legacy),
+      ),
+    ).toEqual({ monthlyPriceBdt: 999, badgeEn: 'Popular', descriptionBn: 'ছোট দোকানের জন্য', isHighlighted: true })
   })
 
-  it('sends null to clear an offer and a badge', () => {
-    const promo = { ...starter, monthlyPriceBdt: 999, offerPriceBdt: 499, offerBadge: 'Sale' }
-    expect(planPatch(promo, draft({ offerPriceBdt: '', offerBadge: ' ' }, promo))).toEqual({
-      offerPriceBdt: null,
-      offerBadge: null,
+  it('sends null to clear card text and false to un-highlight', () => {
+    const card = { ...starter, badgeEn: 'Popular', badgeBn: 'জনপ্রিয়', descriptionEn: 'For shops', isHighlighted: true }
+    expect(planPatch(card, draft({ badgeEn: ' ', badgeBn: '', descriptionEn: '', isHighlighted: false }, card))).toEqual({
+      badgeEn: null,
+      badgeBn: null,
+      descriptionEn: null,
+      isHighlighted: false,
     })
+    expect(textOrNull('  a b ')).toBe('a b')
+    expect(textOrNull(' \t ')).toBeNull()
   })
 
   it('sends only the changed limits and features, omitting empty groups', () => {
@@ -306,48 +258,5 @@ describe('formatters', () => {
     expect(formatPlanPrice(499)).toBe('৳499')
     expect(formatPlanPrice(1499)).toBe('৳1,499')
     expect(formatPlanPrice(1_000_000)).toBe(`৳${new Intl.NumberFormat('en-BD').format(1_000_000)}`)
-  })
-
-  it('computes the whole-percent discount', () => {
-    expect(offerDiscountPercent(999, 499)).toBe(50)
-    expect(offerDiscountPercent(2499, 1499)).toBe(40)
-    expect(offerDiscountPercent(5999, 3999)).toBe(33)
-    expect(offerDiscountPercent(999, 0)).toBe(100)
-    expect(offerDiscountPercent(999, null)).toBeNull()
-    expect(offerDiscountPercent(999, 999)).toBeNull()
-    expect(offerDiscountPercent(0, 0)).toBeNull()
-  })
-
-  it('previews the price, strikethrough and badge of a draft', () => {
-    expect(pricePreview(draft())).toEqual({ price: 499, struck: null, badge: null, discountPercent: null })
-    expect(pricePreview(draft({ monthlyPriceBdt: '999', offerPriceBdt: '499', offerBadge: ' 50% Launch Offer ' }))).toEqual({
-      price: 499,
-      struck: 999,
-      badge: '50% Launch Offer',
-      discountPercent: 50,
-    })
-    // An offer equal to the original is not a discount: nothing struck through.
-    expect(pricePreview(draft({ offerPriceBdt: '499' }))).toEqual({ price: 499, struck: null, badge: null, discountPercent: null })
-    expect(pricePreview(draft({ offerPriceBdt: '600' })).price).toBeNull()
-    expect(pricePreview(draft({ monthlyPriceBdt: 'x', offerBadge: 'Hot' }))).toEqual({
-      price: null,
-      struck: null,
-      badge: 'Hot',
-      discountPercent: null,
-    })
-  })
-
-  it('previews the seeded launch offers (0008) from the stored plans', () => {
-    const seeded = (monthlyPriceBdt: number, offerPriceBdt: number | null, offerBadge: string | null) =>
-      pricePreview(draftFromPlan({ ...starter, monthlyPriceBdt, offerPriceBdt, offerBadge }))
-    expect(seeded(0, null, null)).toEqual({ price: 0, struck: null, badge: null, discountPercent: null })
-    expect(seeded(999, 499, '50% Launch Offer')).toEqual({
-      price: 499,
-      struck: 999,
-      badge: '50% Launch Offer',
-      discountPercent: 50,
-    })
-    expect(seeded(2499, 1499, '40% Off')).toEqual({ price: 1499, struck: 2499, badge: '40% Off', discountPercent: 40 })
-    expect(seeded(5999, 3999, '33% Off')).toEqual({ price: 3999, struck: 5999, badge: '33% Off', discountPercent: 33 })
   })
 })

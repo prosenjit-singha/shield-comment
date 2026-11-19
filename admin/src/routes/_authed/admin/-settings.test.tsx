@@ -34,6 +34,7 @@ const AUDIT = '/api/admin/settings/plans/audit'
 const AI = '/api/admin/settings/ai'
 const AI_TEST = '/api/admin/settings/ai/test'
 const AI_AUDIT = '/api/admin/settings/ai/audit'
+const PLATFORM = '/api/admin/settings/platform'
 
 function plan(
   sortOrder: number,
@@ -80,11 +81,12 @@ function plan(
   }
 }
 
-// As seeded by 0007 + the 0008 launch offers + PW-T1b (yearly prices, Starter trial). The GET lists
-// active plans only, so the deactivated Free row (PW-D7) never reaches the screen.
+// List prices as seeded; the legacy offer/trial columns are still in the response (read-only until
+// PR-T7) and must not reach the editor. Growth is the highlighted plan. The GET lists active plans
+// only, so the deactivated Free row (PW-D7) never reaches the screen.
 const seeded = [
   plan(1, 'starter', 'Starter', 999, [499, '50% Launch Offer'], [1, 2500, 1], 0, 449),
-  plan(2, 'growth', 'Growth', 2499, [1499, '40% Off'], [5, 15000, 3], 1, 1349),
+  { ...plan(2, 'growth', 'Growth', 2499, [1499, '40% Off'], [5, 15000, 3], 1, 1349), isHighlighted: true },
   plan(3, 'pro', 'Pro', 5999, [3999, '33% Off'], [25, 75000, 10], 2, 3599),
 ] as const satisfies AdminPlan[]
 const starter: AdminPlan = seeded[0]
@@ -156,6 +158,8 @@ let aiGetHandler: () => Response | Promise<Response>
 let aiPatchHandler: (body: unknown) => Response | Promise<Response>
 let aiTestHandler: (body: unknown) => Response | Promise<Response>
 let aiAuditHandler: (url: URL) => Response | Promise<Response>
+let platformGetHandler: () => Response | Promise<Response>
+let platformPatchHandler: (body: unknown) => Response | Promise<Response>
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -193,6 +197,8 @@ beforeEach(() => {
   aiPatchHandler = () => json({ statusCode: 500, message: 'unexpected AI PATCH' }, 500)
   aiTestHandler = () => json({ statusCode: 500, message: 'unexpected AI test' }, 500)
   aiAuditHandler = (url) => json({ items: [], total: 0, skip: Number(url.searchParams.get('skip')), take: 20 })
+  platformGetHandler = () => json({ supportWhatsappNumber: null, updatedAt: null })
+  platformPatchHandler = () => json({ statusCode: 500, message: 'unexpected platform PATCH' }, 500)
   fetchMock.mockReset().mockImplementation(async (input, init = {}) => {
     const url = new URL(input, 'http://admin.localhost')
     const method = init.method ?? 'GET'
@@ -202,6 +208,8 @@ beforeEach(() => {
     if (method === 'PATCH' && url.pathname === AI) return aiPatchHandler(JSON.parse(String(init.body)))
     if (method === 'POST' && url.pathname === AI_TEST) return aiTestHandler(JSON.parse(String(init.body)))
     if (method === 'GET' && url.pathname === AI_AUDIT) return aiAuditHandler(url)
+    if (method === 'GET' && url.pathname === PLATFORM && url.search === '') return platformGetHandler()
+    if (method === 'PATCH' && url.pathname === PLATFORM) return platformPatchHandler(JSON.parse(String(init.body)))
     const match = /^\/api\/admin\/settings\/plans\/([^/]+)$/.exec(url.pathname)
     if (method === 'PATCH' && match) return patchHandler(decodeURIComponent(match[1] ?? ''), JSON.parse(String(init.body)))
     throw new Error(`unexpected fetch ${method} ${url.pathname}${url.search}`)
@@ -230,8 +238,12 @@ function saveButton(region: HTMLElement) {
   return within(region).getByRole('button', { name: 'Save' }) as HTMLButtonElement
 }
 
+function hintOf(el: HTMLElement) {
+  return (document.getElementById(el.getAttribute('aria-describedby') as string) as HTMLElement).textContent
+}
+
 describe('/admin/settings', () => {
-  it('renders one card per plan in sortOrder with name, slug, prices, limits and features', async () => {
+  it('renders one card per plan in sortOrder with name, slug, prices, card text, limits and features', async () => {
     // The API orders by sortOrder; the screen keeps that order.
     renderSettings()
     await card('Starter')
@@ -250,31 +262,58 @@ describe('/admin/settings', () => {
     ])
 
     const pro = await card('Pro')
-    expect(input(pro, 'Original price').value).toBe('5999')
-    expect(input(pro, 'Offer price').value).toBe('3999')
-    expect(input(pro, 'Offer badge').value).toBe('33% Off')
+    expect(input(pro, 'Monthly price').value).toBe('5999')
+    expect(input(pro, 'Yearly price per month').value).toBe('3599')
+    for (const label of ['Badge (English)', 'Badge (Bangla)', 'Description (English)', 'Description (Bangla)']) {
+      expect(input(pro, label).value).toBe('')
+    }
+    expect(input(pro, 'Description (English)').tagName).toBe('TEXTAREA')
+    expect(within(pro).getByRole('switch', { name: 'Highlight this plan' }).getAttribute('aria-checked')).toBe('false')
     expect(input(pro, 'Connected FB & IG Pages').value).toBe('25')
     expect(input(pro, 'Monthly comments').value).toBe('75000')
     expect(input(pro, 'Workspaces').value).toBe('10')
     // PW-T1b: comments are the limit again (no AI-credit estimate hint).
     const comments = input(pro, 'Monthly comments')
-    const hint = document.getElementById(comments.getAttribute('aria-describedby') as string) as HTMLElement
-    expect(hint.textContent).toBe('')
+    expect(hintOf(comments)).toBe('')
     type(comments, 'many')
-    expect(hint.textContent).toBe('Use a whole number (digits only).')
+    expect(hintOf(comments)).toBe('Use a whole number (digits only).')
     type(comments, '75000')
-    expect(input(pro, 'Connected FB & IG Pages').getAttribute('aria-describedby')).toBeTruthy()
     expect(input(pro, 'Team / Moderator Seats').value).toBe('10')
-    expect(within(pro).getAllByRole('switch')).toHaveLength(7)
+    // 7 features + the highlight switch.
+    expect(within(pro).getAllByRole('switch')).toHaveLength(8)
     expect(within(pro).getByRole('switch', { name: 'Priority Support & API Webhook Access' }).getAttribute('aria-checked')).toBe('true')
-    expect(within(pro).getByTestId('preview-price').textContent).toBe('৳3,999')
-    expect(input(pro, 'Original price').className).toContain('rounded-full')
+    expect(input(pro, 'Monthly price').className).toContain('rounded-full')
 
     const growth = await card('Growth')
+    expect(within(growth).getByText('Highlighted')).toBeTruthy()
+    expect(within(growth).getByRole('switch', { name: 'Highlight this plan' }).getAttribute('aria-checked')).toBe('true')
     expect(within(growth).getByRole('switch', { name: 'White-Label CSV/PDF Agency Reports' }).getAttribute('aria-checked')).toBe('false')
     expect(saveButton(growth).disabled).toBe(true)
     expect(within(growth).getByRole('button', { name: 'Reset' })).toHaveProperty('disabled', true)
     expect(calls('GET', PLANS)).toHaveLength(1)
+  })
+
+  it('has no offer or trial inputs and previews the list price + English badge (no strike)', async () => {
+    renderSettings()
+    for (const name of ['Starter', 'Growth', 'Pro']) {
+      const region = await card(name)
+      for (const label of ['Original price', 'Offer price', 'Offer badge', 'Trial comment limit']) {
+        expect(within(region).queryByLabelText(label)).toBeNull()
+      }
+      expect(within(region).queryByRole('radiogroup')).toBeNull()
+      expect(within(region).queryByTestId('trial-section')).toBeNull()
+      expect(within(region).queryByTestId('preview-struck')).toBeNull()
+      expect(within(region).queryByTestId('preview-badge')).toBeNull()
+      expect(within(region).queryByText(/^Saves/)).toBeNull()
+    }
+    const starterCard = await card('Starter')
+    const preview = within(starterCard).getByTestId('price-preview')
+    expect(within(preview).getByTestId('preview-price').textContent).toBe('৳999')
+    type(input(starterCard, 'Badge (English)'), '  Popular ')
+    expect(within(preview).getByTestId('preview-badge').textContent).toBe('Popular')
+    expect(within(preview).getByTestId('preview-badge').className).toContain('rounded-full')
+    type(input(starterCard, 'Monthly price'), 'x')
+    expect(within(preview).getByTestId('preview-price').textContent).toBe('—')
   })
 
   it('edits → dirty → Save sends the minimal PATCH body, toasts and ends clean', async () => {
@@ -284,8 +323,8 @@ describe('/admin/settings', () => {
       saved = {
         ...starter,
         monthlyPriceBdt: 1199,
-        offerPriceBdt: 599,
-        offerBadge: '50% Eid Offer',
+        badgeEn: 'Popular',
+        descriptionBn: 'ছোট দোকানের জন্য',
         featureConfig: {
           limits: { ...starter.featureConfig.limits, teamSeats: 2 },
           features: { ...starter.featureConfig.features, customBlocklist: true },
@@ -299,18 +338,16 @@ describe('/admin/settings', () => {
     const region = await card('Starter')
     expect(region.dataset.dirty).toBeUndefined()
 
-    type(input(region, 'Original price'), '1199')
-    type(input(region, 'Offer price'), '599')
-    type(input(region, 'Offer badge'), '  50% Eid Offer ')
+    type(input(region, 'Monthly price'), '1199')
+    type(input(region, 'Badge (English)'), '  Popular ')
+    type(input(region, 'Description (Bangla)'), ' ছোট দোকানের জন্য ')
     type(input(region, 'Team / Moderator Seats'), '2')
     fireEvent.click(within(region).getByRole('switch', { name: 'Custom Keyword & BD Phone Blocklist' }))
 
     expect(region.dataset.dirty).toBe('true')
     expect(within(region).getByTestId('unsaved').textContent).toBe('Unsaved changes')
-    expect(within(region).getByTestId('preview-struck').textContent).toBe('৳1,199')
-    expect(within(region).getByTestId('preview-price').textContent).toBe('৳599')
-    expect(within(region).getByTestId('preview-badge').textContent).toBe('50% Eid Offer')
-    expect(within(region).getByText('13/40')).toBeTruthy()
+    expect(within(region).getByText('7/24')).toBeTruthy()
+    expect(within(region).getByText('16/160')).toBeTruthy()
 
     fireEvent.click(saveButton(region))
 
@@ -319,90 +356,90 @@ describe('/admin/settings', () => {
     expect(url).toBe(`${PLANS}/${starter.id}`)
     expect(JSON.parse(String(init?.body))).toEqual({
       monthlyPriceBdt: 1199,
-      offerPriceBdt: 599,
-      offerBadge: '50% Eid Offer',
+      badgeEn: 'Popular',
+      descriptionBn: 'ছোট দোকানের জন্য',
       featureConfig: { limits: { teamSeats: 2 }, features: { customBlocklist: true } },
     })
 
     expect(await screen.findByText('Starter saved.')).toBeTruthy()
     await waitFor(() => expect(region.dataset.dirty).toBeUndefined())
     expect(within(region).queryByTestId('unsaved')).toBeNull()
-    expect(input(region, 'Original price').value).toBe('1199')
-    expect(input(region, 'Offer price').value).toBe('599')
-    expect(input(region, 'Offer badge').value).toBe('50% Eid Offer')
+    expect(input(region, 'Monthly price').value).toBe('1199')
+    expect(input(region, 'Badge (English)').value).toBe('Popular')
     expect(saveButton(region).disabled).toBe(true)
     // The list is refreshed after the save.
     await waitFor(() => expect(calls('GET', PLANS)).toHaveLength(2))
   })
 
-  it('sends only one changed field and clears an offer with null', async () => {
-    patchHandler = () => json({ plan: { ...starter, offerPriceBdt: null } })
+  it('sends null for blanked card text', async () => {
+    listHandler = () =>
+      json({ items: seeded.map((p) => (p.id === starter.id ? { ...p, badgeEn: 'Popular', descriptionEn: 'For new shops' } : p)) })
+    patchHandler = () => json({ plan: starter })
     renderSettings()
     const region = await card('Starter')
-    type(input(region, 'Offer price'), '')
+    expect(input(region, 'Badge (English)').value).toBe('Popular')
+    type(input(region, 'Badge (English)'), '   ')
+    type(input(region, 'Description (English)'), '')
     fireEvent.click(saveButton(region))
     await waitFor(() => expect(calls('PATCH')).toHaveLength(1))
-    expect(JSON.parse(String(calls('PATCH')[0]?.[1]?.body))).toEqual({ offerPriceBdt: null })
+    expect(JSON.parse(String(calls('PATCH')[0]?.[1]?.body))).toEqual({ badgeEn: null, descriptionEn: null })
   })
 
-  it('Reset brings back the stored values', async () => {
-    renderSettings()
-    const region = await card('Growth')
-    type(input(region, 'Original price'), '1799')
-    fireEvent.click(within(region).getByRole('switch', { name: 'WhatsApp & Telegram Alerts' }))
-    expect(region.dataset.dirty).toBe('true')
-
-    fireEvent.click(within(region).getByRole('button', { name: 'Reset' }))
-    expect(region.dataset.dirty).toBeUndefined()
-    expect(input(region, 'Original price').value).toBe('2499')
-    expect(within(region).getByRole('switch', { name: 'WhatsApp & Telegram Alerts' }).getAttribute('aria-checked')).toBe('true')
-    expect(saveButton(region).disabled).toBe(true)
-    expect(calls('PATCH')).toHaveLength(0)
-  })
-
-  it('an offer above the original shows an inline error and disables Save', async () => {
+  it('validates badge (24) and description (160) lengths inline and disables Save', async () => {
     renderSettings()
     const region = await card('Starter')
-    type(input(region, 'Offer price'), '1000')
-    expect(within(region).getByText("The offer can't be more than the original price.")).toBeTruthy()
-    expect(input(region, 'Offer price').getAttribute('aria-invalid')).toBe('true')
+    type(input(region, 'Badge (Bangla)'), 'ক'.repeat(25))
+    expect(hintOf(input(region, 'Badge (Bangla)'))).toContain('Up to 24 characters.')
+    expect(input(region, 'Badge (Bangla)').getAttribute('aria-invalid')).toBe('true')
+    expect(within(region).getByText('25/24').className).toContain('text-destructive')
     expect(saveButton(region).disabled).toBe(true)
-    expect(within(region).getByTestId('preview-price').textContent).toBe('—')
+    type(input(region, 'Badge (Bangla)'), 'ক'.repeat(24))
+    expect(saveButton(region).disabled).toBe(false)
 
-    type(input(region, 'Offer price'), '12.5')
-    expect(within(region).getByText('Use a whole number (digits only).')).toBeTruthy()
+    type(input(region, 'Description (English)'), 'x'.repeat(161))
+    expect(hintOf(input(region, 'Description (English)'))).toContain('Up to 160 characters.')
     expect(saveButton(region).disabled).toBe(true)
-
-    // Below the stored yearly per-month price (৳449): the yearly field is flagged (backend rule).
-    type(input(region, 'Offer price'), '399')
-    expect(within(region).getByText("Can't be more than the monthly price (৳399).")).toBeTruthy()
-    expect(input(region, 'Yearly price per month').getAttribute('aria-invalid')).toBe('true')
-    expect(saveButton(region).disabled).toBe(true)
-    type(input(region, 'Yearly price per month'), '399')
+    fireEvent.submit(saveButton(region).closest('form') as HTMLFormElement)
+    expect(calls('PATCH')).toHaveLength(0)
+    // Surrounding spaces don't count.
+    type(input(region, 'Description (English)'), ` ${'x'.repeat(160)} `)
     expect(saveButton(region).disabled).toBe(false)
 
     type(input(region, 'Monthly comments'), '10000001')
     expect(within(region).getByText(`Must be ${new Intl.NumberFormat('en-BD').format(10_000_000)} or less.`)).toBeTruthy()
     expect(saveButton(region).disabled).toBe(true)
-    fireEvent.submit(saveButton(region).closest('form') as HTMLFormElement)
+  })
+
+  it('Reset brings back the stored values', async () => {
+    renderSettings()
+    const region = await card('Growth')
+    type(input(region, 'Monthly price'), '1799')
+    fireEvent.click(within(region).getByRole('switch', { name: 'WhatsApp & Telegram Alerts' }))
+    expect(region.dataset.dirty).toBe('true')
+
+    fireEvent.click(within(region).getByRole('button', { name: 'Reset' }))
+    expect(region.dataset.dirty).toBeUndefined()
+    expect(input(region, 'Monthly price').value).toBe('2499')
+    expect(within(region).getByRole('switch', { name: 'WhatsApp & Telegram Alerts' }).getAttribute('aria-checked')).toBe('true')
+    expect(saveButton(region).disabled).toBe(true)
     expect(calls('PATCH')).toHaveLength(0)
   })
 
   it('a 400 shows the backend message and keeps the edit', async () => {
-    patchHandler = () => json({ statusCode: 400, message: 'offerPriceBdt must not be greater than originalPriceBdt' }, 400)
+    patchHandler = () => json({ statusCode: 400, message: 'property offerPriceBdt should not exist' }, 400)
     renderSettings()
     const region = await card('Pro')
-    type(input(region, 'Original price'), '4999')
+    type(input(region, 'Monthly price'), '4999')
     fireEvent.click(saveButton(region))
 
     const alert = await within(region).findByRole('alert')
-    expect(alert.textContent).toBe('offerPriceBdt must not be greater than originalPriceBdt')
+    expect(alert.textContent).toBe('property offerPriceBdt should not exist')
     expect(await screen.findByText('Pro was not saved.')).toBeTruthy()
     expect(region.dataset.dirty).toBe('true')
-    expect(input(region, 'Original price').value).toBe('4999')
+    expect(input(region, 'Monthly price').value).toBe('4999')
 
     // Editing again clears the message.
-    type(input(region, 'Original price'), '4998')
+    type(input(region, 'Monthly price'), '4998')
     expect(within(region).queryByRole('alert')).toBeNull()
   })
 
@@ -450,7 +487,7 @@ describe('/admin/settings', () => {
   it('asks before leaving with unsaved changes', async () => {
     const { router } = renderSettings()
     const region = await card('Starter')
-    type(input(region, 'Original price'), '599')
+    type(input(region, 'Monthly price'), '599')
 
     act(() => void router.navigate({ to: '/admin/billing' }))
     const dialog = await screen.findByRole('dialog', { name: 'Leave without saving?' })
@@ -458,7 +495,7 @@ describe('/admin/settings', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Stay' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(router.state.location.pathname).toBe('/admin/settings')
-    expect(input(region, 'Original price').value).toBe('599')
+    expect(input(region, 'Monthly price').value).toBe('599')
 
     act(() => void router.navigate({ to: '/admin/billing' }))
     fireEvent.click(
@@ -478,154 +515,171 @@ describe('/admin/settings', () => {
   })
 })
 
-describe('/admin/settings yearly price + trial (PW-T7)', () => {
-  const trialGroup = (region: HTMLElement) => within(region).getByRole('radiogroup', { name: 'Trial length' })
-  const hintOf = (el: HTMLElement) =>
-    (document.getElementById(el.getAttribute('aria-describedby') as string) as HTMLElement).textContent
-
-  it('shows the yearly per-month price on every plan and the trial fields on Starter only', async () => {
+describe('/admin/settings yearly price (PW-T7)', () => {
+  it('shows the yearly per-month price on every plan with the yearly charge hint', async () => {
     renderSettings()
-    const starterCard = await card('Starter')
-    const yearly = input(starterCard, 'Yearly price per month')
+    const yearly = input(await card('Starter'), 'Yearly price per month')
     expect(yearly.value).toBe('449')
     expect(hintOf(yearly)).toBe('Billed ৳5,388 yearly.')
-    expect(input(await card('Pro'), 'Yearly price per month').value).toBe('3599')
     expect(hintOf(input(await card('Pro'), 'Yearly price per month'))).toBe(
       `Billed ৳${new Intl.NumberFormat('en-BD').format(43_188)} yearly.`,
     )
-
-    const radios = within(trialGroup(starterCard)).getAllByRole('radio')
-    expect(radios.map((r) => r.textContent)).toEqual(['No trial', '3 days', '7 days', '14 days', '30 days'])
-    expect(radios.map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'false', 'true', 'false', 'false'])
-    expect(radios[2]?.className).toContain('rounded-full')
-    expect(within(starterCard).getByText('Changes apply to new trials only.')).toBeTruthy()
-    const trialLimit = input(starterCard, 'Trial comment limit')
-    expect(trialLimit.value).toBe('300')
-    expect(hintOf(trialLimit)).toBe(`Empty = Starter's monthly comments (${new Intl.NumberFormat('en-BD').format(2500)}).`)
-
-    for (const name of ['Growth', 'Pro']) {
-      const region = await card(name)
-      expect(within(region).queryByRole('radiogroup')).toBeNull()
-      expect(within(region).queryByLabelText('Trial comment limit')).toBeNull()
-      expect(within(region).queryByTestId('trial-section')).toBeNull()
-    }
   })
 
-  it('clearing yearly, picking No trial and emptying the trial limit PATCHes null for each', async () => {
-    let saved: AdminPlan | undefined
-    patchHandler = (_id, body) => {
-      saved = { ...starter, ...(body as Partial<AdminPlan>), updatedAt: '2026-11-20T09:00:00.000Z' }
-      return json({ plan: saved })
-    }
-    listHandler = () => json({ items: seeded.map((p): AdminPlan => (saved && p.id === saved.id ? saved : p)) })
+  it('clearing yearly PATCHes null', async () => {
+    patchHandler = (_id, body) => json({ plan: { ...starter, ...(body as Partial<AdminPlan>) } })
     renderSettings()
     const region = await card('Starter')
     type(input(region, 'Yearly price per month'), '')
     expect(hintOf(input(region, 'Yearly price per month'))).toBe('Empty = no yearly option.')
-    fireEvent.click(within(trialGroup(region)).getByRole('radio', { name: 'No trial' }))
-    type(input(region, 'Trial comment limit'), '  ')
-    expect(region.dataset.dirty).toBe('true')
     fireEvent.click(saveButton(region))
     await waitFor(() => expect(calls('PATCH')).toHaveLength(1))
-    expect(JSON.parse(String(calls('PATCH')[0]?.[1]?.body))).toEqual({
-      yearlyMonthlyPriceBdt: null,
-      trialDays: null,
-      trialCommentLimit: null,
-    })
-    await waitFor(() => expect(region.dataset.dirty).toBeUndefined())
-    expect(within(trialGroup(region)).getByRole('radio', { name: 'No trial' }).getAttribute('aria-checked')).toBe('true')
+    expect(JSON.parse(String(calls('PATCH')[0]?.[1]?.body))).toEqual({ yearlyMonthlyPriceBdt: null })
   })
 
-  it('arrow keys move the trial preset; Save sends only the changed trial + yearly values', async () => {
-    patchHandler = (_id, body) => json({ plan: { ...starter, ...(body as Partial<AdminPlan>) } })
-    renderSettings()
-    const region = await card('Starter')
-    const group = trialGroup(region)
-    fireEvent.keyDown(within(group).getByRole('radio', { name: '7 days' }), { key: 'ArrowRight' })
-    expect(within(group).getByRole('radio', { name: '14 days' }).getAttribute('aria-checked')).toBe('true')
-    expect(document.activeElement?.textContent).toBe('14 days')
-    type(input(region, 'Trial comment limit'), '500')
-    type(input(region, 'Yearly price per month'), '450')
-    expect(hintOf(input(region, 'Yearly price per month'))).toBe('Billed ৳5,400 yearly.')
-    fireEvent.click(saveButton(region))
-    await waitFor(() => expect(calls('PATCH')).toHaveLength(1))
-    expect(JSON.parse(String(calls('PATCH')[0]?.[1]?.body))).toEqual({
-      yearlyMonthlyPriceBdt: 450,
-      trialDays: 14,
-      trialCommentLimit: 500,
-    })
-  })
-
-  it('a stored non-preset trial length still shows as the selected option', async () => {
-    listHandler = () => json({ items: seeded.map((p) => (p.id === starter.id ? { ...p, trialDays: 10 } : p)) })
-    renderSettings()
-    const group = trialGroup(await card('Starter'))
-    expect(within(group).getAllByRole('radio').map((r) => r.textContent)).toEqual([
-      'No trial',
-      '3 days',
-      '7 days',
-      '10 days',
-      '14 days',
-      '30 days',
-    ])
-    expect(within(group).getByRole('radio', { name: '10 days' }).getAttribute('aria-checked')).toBe('true')
-  })
-
-  it('validates the yearly price and trial limit inline; Growth sends no trial fields', async () => {
+  it('caps the yearly price at the monthly list price (not the legacy offer)', async () => {
     patchHandler = (_id, body) => json({ plan: { ...seeded[1], ...(body as Partial<AdminPlan>) } })
     renderSettings()
     const starterCard = await card('Starter')
-    type(input(starterCard, 'Yearly price per month'), '500')
-    expect(within(starterCard).getByText("Can't be more than the monthly price (৳499).")).toBeTruthy()
-    type(input(starterCard, 'Trial comment limit'), '10000001')
-    expect(
-      within(starterCard).getByText(`Must be ${new Intl.NumberFormat('en-BD').format(10_000_000)} or less.`),
-    ).toBeTruthy()
+    type(input(starterCard, 'Yearly price per month'), '1000')
+    expect(within(starterCard).getByText("Can't be more than the monthly price (৳999).")).toBeTruthy()
+    expect(input(starterCard, 'Yearly price per month').getAttribute('aria-invalid')).toBe('true')
     expect(saveButton(starterCard).disabled).toBe(true)
+    // ৳949 is above the legacy offer (৳499) but fine.
+    type(input(starterCard, 'Yearly price per month'), '949')
+    expect(saveButton(starterCard).disabled).toBe(false)
 
     const growth = await card('Growth')
-    type(input(growth, 'Yearly price per month'), '1299')
+    type(input(growth, 'Yearly price per month'), '2349')
     fireEvent.click(saveButton(growth))
     await waitFor(() => expect(calls('PATCH')).toHaveLength(1))
     expect(calls('PATCH')[0]?.[0]).toBe(`${PLANS}/${seeded[1].id}`)
-    expect(JSON.parse(String(calls('PATCH')[0]?.[1]?.body))).toEqual({ yearlyMonthlyPriceBdt: 1299 })
+    expect(JSON.parse(String(calls('PATCH')[0]?.[1]?.body))).toEqual({ yearlyMonthlyPriceBdt: 2349 })
   })
 
   it('shows a 400 from the yearly rule as today', async () => {
     patchHandler = () =>
-      json({ statusCode: 400, message: 'yearlyMonthlyPriceBdt (1500) must not be greater than the monthly price (1499)' }, 400)
+      json({ statusCode: 400, message: 'yearlyMonthlyPriceBdt (2500) must not be greater than the monthly price (2499)' }, 400)
     renderSettings()
     const region = await card('Growth')
     type(input(region, 'Yearly price per month'), '1400')
     fireEvent.click(saveButton(region))
     expect((await within(region).findByRole('alert')).textContent).toBe(
-      'yearlyMonthlyPriceBdt (1500) must not be greater than the monthly price (1499)',
+      'yearlyMonthlyPriceBdt (2500) must not be greater than the monthly price (2499)',
     )
     expect(input(region, 'Yearly price per month').value).toBe('1400')
   })
 })
 
-describe('/admin/settings price preview', () => {
-  it('shows the seeded launch offers struck through with badge and saving', async () => {
-    renderSettings()
-    const expected = [
-      ['Starter', '৳999', '৳499', '50% Launch Offer', 'Saves 50%'],
-      ['Growth', '৳2,499', '৳1,499', '40% Off', 'Saves 40%'],
-      ['Pro', '৳5,999', '৳3,999', '33% Off', 'Saves 33%'],
-    ] as const
-    for (const [name, struck, price, badge, saves] of expected) {
-      const preview = within(await card(name)).getByTestId('price-preview')
-      const struckEl = within(preview).queryByTestId('preview-struck')
-      expect(struckEl?.textContent ?? null).toBe(struck)
-      if (struckEl) expect(struckEl.tagName).toBe('S')
-      expect(within(preview).getByTestId('preview-price').textContent).toBe(price)
-      expect(within(preview).getByText('/mo')).toBeTruthy()
-      const badgeEl = within(preview).queryByTestId('preview-badge')
-      expect(badgeEl?.textContent ?? null).toBe(badge)
-      if (badgeEl) expect(badgeEl.className).toContain('rounded-full')
-      if (saves) expect(within(preview).getByText(saves)).toBeTruthy()
-      else expect(within(preview).queryByText(/^Saves/)).toBeNull()
+describe('/admin/settings highlighted plan (PR-D9)', () => {
+  it('saving the switch sends isHighlighted and the refreshed list moves the highlight', async () => {
+    let saved = false
+    const pro = seeded[2]
+    patchHandler = (id, body) => {
+      expect(id).toBe(pro.id)
+      saved = true
+      return json({ plan: { ...pro, ...(body as Partial<AdminPlan>) } })
     }
+    // The server clears the flag on Growth in the same transaction.
+    listHandler = () =>
+      json({ items: seeded.map((p) => (saved ? { ...p, isHighlighted: p.id === pro.id } : p)) })
+    renderSettings()
+    const proCard = await card('Pro')
+    fireEvent.click(within(proCard).getByRole('switch', { name: 'Highlight this plan' }))
+    expect(within(proCard).getByText('One plan only: saving it removes the highlight from the others.')).toBeTruthy()
+    fireEvent.click(saveButton(proCard))
+    await waitFor(() => expect(calls('PATCH')).toHaveLength(1))
+    expect(JSON.parse(String(calls('PATCH')[0]?.[1]?.body))).toEqual({ isHighlighted: true })
+
+    await waitFor(() => expect(calls('GET', PLANS)).toHaveLength(2))
+    const growth = await card('Growth')
+    await waitFor(() =>
+      expect(within(growth).getByRole('switch', { name: 'Highlight this plan' }).getAttribute('aria-checked')).toBe('false'),
+    )
+    expect(within(growth).queryByText('Highlighted')).toBeNull()
+    expect(within(proCard).getByText('Highlighted')).toBeTruthy()
+  })
+
+  it('un-highlighting sends false', async () => {
+    // Starter highlighted here (Growth saves in the history test; toasts outlive a test).
+    listHandler = () => json({ items: seeded.map((p) => ({ ...p, isHighlighted: p.id === starter.id })) })
+    patchHandler = (_id, body) => json({ plan: { ...starter, ...(body as Partial<AdminPlan>) } })
+    renderSettings()
+    const region = await card('Starter')
+    fireEvent.click(within(region).getByRole('switch', { name: 'Highlight this plan' }))
+    fireEvent.click(saveButton(region))
+    await waitFor(() => expect(calls('PATCH')).toHaveLength(1))
+    expect(JSON.parse(String(calls('PATCH')[0]?.[1]?.body))).toEqual({ isHighlighted: false })
+  })
+})
+
+describe('/admin/settings support WhatsApp number (PR-D18)', () => {
+  const region = () => screen.findByRole('region', { name: 'Support WhatsApp number' })
+  const field = (el: HTMLElement) => within(el).getByLabelText('WhatsApp number') as HTMLInputElement
+  const save = (el: HTMLElement) => within(el).getByRole('button', { name: 'Save' }) as HTMLButtonElement
+  const platformPatches = () => calls('PATCH', PLATFORM).map(([, init]) => JSON.parse(String(init?.body)) as unknown)
+
+  it('saves a valid number (trimmed) and shows when it was saved', async () => {
+    platformPatchHandler = (body) =>
+      json({ ...(body as object), updatedAt: '2026-11-20T04:00:00.000Z' })
+    renderSettings()
+    const card = await region()
+    await waitFor(() => expect(within(card).getByTestId('whatsapp-saved').textContent).toBe('Never saved.'))
+    expect(save(card).disabled).toBe(true)
+    expect(hintOf(field(card))).toBe('Country code + number, digits only, e.g. 8801712345678.')
+    expect(field(card).className).toContain('rounded-full')
+
+    type(field(card), ' 8801712345678 ')
+    expect(save(card).disabled).toBe(false)
+    fireEvent.click(save(card))
+    await waitFor(() => expect(platformPatches()).toEqual([{ supportWhatsappNumber: '8801712345678' }]))
+    expect(await screen.findByText('WhatsApp number saved.')).toBeTruthy()
+    // 04:00 UTC = 10:00 Dhaka.
+    await waitFor(() => expect(within(card).getByTestId('whatsapp-saved').textContent).toBe('Last saved 20 Nov 2026, 10:00.'))
+    expect(field(card).value).toBe('8801712345678')
+    expect(save(card).disabled).toBe(true)
+  })
+
+  it.each(['01712345678', '8801212345678', '88017123456789', '+8801712345678', 'abc'])(
+    'flags %j inline and sends nothing',
+    async (value) => {
+      renderSettings()
+      const card = await region()
+      await within(card).findByTestId('whatsapp-saved')
+      type(field(card), value)
+      expect(within(card).getByRole('alert').textContent).toBe('Use 13 digits with the country code, e.g. 8801712345678.')
+      expect(field(card).getAttribute('aria-invalid')).toBe('true')
+      expect(save(card).disabled).toBe(true)
+      fireEvent.submit(save(card).closest('form') as HTMLFormElement)
+      expect(platformPatches()).toHaveLength(0)
+    },
+  )
+
+  it('emptying a saved number clears it with null', async () => {
+    platformGetHandler = () => json({ supportWhatsappNumber: '8801912345678', updatedAt: '2026-11-19T04:00:00.000Z' })
+    platformPatchHandler = () => json({ supportWhatsappNumber: null, updatedAt: '2026-11-20T04:00:00.000Z' })
+    renderSettings()
+    const card = await region()
+    await waitFor(() => expect(field(card).value).toBe('8801912345678'))
+    expect(within(card).getByTestId('whatsapp-saved').textContent).toBe('Last saved 19 Nov 2026, 10:00.')
+    type(field(card), '  ')
+    expect(within(card).queryByRole('alert')).toBeNull()
+    fireEvent.click(save(card))
+    await waitFor(() => expect(platformPatches()).toEqual([{ supportWhatsappNumber: null }]))
+    expect(await screen.findByText('WhatsApp number cleared.')).toBeTruthy()
+    await waitFor(() => expect(field(card).value).toBe(''))
+  })
+
+  it('shows a 400 message from the backend', async () => {
+    platformPatchHandler = () =>
+      json({ statusCode: 400, message: 'supportWhatsappNumber must be a Bangladesh mobile number like 8801712345678' }, 400)
+    renderSettings()
+    const card = await region()
+    await within(card).findByTestId('whatsapp-saved')
+    type(field(card), '8801712345678')
+    fireEvent.click(save(card))
+    expect((await within(card).findByRole('alert')).textContent).toMatch(/Bangladesh mobile number/)
+    expect(field(card).value).toBe('8801712345678')
   })
 })
 
@@ -650,6 +704,10 @@ describe('/admin/settings change history', () => {
                 { field: 'originalPriceBdt', before: 999, after: 1199 },
                 { field: 'offerPriceBdt', before: 499, after: null },
                 { field: 'offerBadge', before: '50% Launch Offer', after: null },
+                { field: 'monthlyPriceBdt', before: 1199, after: 999 },
+                { field: 'badgeEn', before: null, after: 'Popular' },
+                { field: 'descriptionBn', before: 'পুরনো', after: null },
+                { field: 'isHighlighted', before: false, after: true },
                 // Rows from M5-T11 keep the AI-credit field name (PW-T1b renamed it back).
                 { field: 'featureConfig.limits.monthlyAiCredits', before: 2500, after: 5000 },
                 { field: 'featureConfig.limits.monthlyComments', before: 5000, after: 6000 },
@@ -694,6 +752,10 @@ describe('/admin/settings change history', () => {
       ['Original price', '৳999', '৳1,199'],
       ['Offer price', '৳499', 'None'],
       ['Offer badge', '“50% Launch Offer”', 'None'],
+      ['Monthly price', '৳1,199', '৳999'],
+      ['Badge (English)', 'None', '“Popular”'],
+      ['Description (Bangla)', '“পুরনো”', 'None'],
+      ['Highlighted', 'No', 'Yes'],
       ['Monthly AI credits', new Intl.NumberFormat('en-BD').format(2500), new Intl.NumberFormat('en-BD').format(5000)],
       ['Monthly comments', new Intl.NumberFormat('en-BD').format(5000), new Intl.NumberFormat('en-BD').format(6000)],
       ['Custom Keyword & BD Phone Blocklist', 'Off', 'On'],
@@ -1161,7 +1223,7 @@ describe('/admin/settings AI provider', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect((within(ai).getByLabelText('Google API key') as HTMLInputElement).value).toBe(KEY)
 
-    type(input(await card('Starter'), 'Original price'), '599')
+    type(input(await card('Starter'), 'Monthly price'), '599')
     act(() => void router.navigate({ to: '/admin/billing' }))
     dialog = await screen.findByRole('dialog', { name: 'Leave without saving?' })
     expect(within(dialog).getAllByRole('heading')).toHaveLength(1)

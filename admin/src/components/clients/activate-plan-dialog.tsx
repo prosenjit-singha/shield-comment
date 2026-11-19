@@ -16,10 +16,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { PillRadioGroup, type PillOption } from '@/components/clients/pill-radio-group'
 import {
+  type ActivatePlanResponse,
   activateClientPlan,
   activationErrorMessages,
   activationPricePreview,
   activationTermEnd,
+  type AppliedPromotion,
+  couponErrorMessages,
   hasYearlyPrice,
   startDateBounds,
   startDateError,
@@ -38,8 +41,10 @@ import { ApiError } from '@/lib/api'
 
 /**
  * "Activate plan" (PW-T9, PW-D16): the super admin picks an active plan, Monthly / Yearly, a start
- * date (today − 31 days … today, Dhaka) and a reason. The backend ends the account's live
- * subscription and starts the new term with a fresh comment period; audit-logged.
+ * date (today − 31 days … today, Dhaka), a reason and an optional coupon (PR-T5). The backend ends
+ * the account's live subscription, applies the best automatic discount + the coupon on top and
+ * starts the new term with a fresh comment period; audit-logged. The dialog then shows what was
+ * charged and what came off (no preview endpoint exists, so the saving shows after activating).
  */
 export function ActivatePlanDialog({ client, onClose }: { client: AdminClient | null; onClose: () => void }) {
   return (
@@ -73,7 +78,7 @@ function errorText(err: unknown): string {
 function ActivateForm({ client, onClose }: { client: AdminClient; onClose: () => void }) {
   const queryClient = useQueryClient()
   const plans = useQuery(plansQueryOptions())
-  const ids = { plan: useId(), interval: useId(), date: useId(), reason: useId() }
+  const ids = { plan: useId(), interval: useId(), date: useId(), reason: useId(), coupon: useId() }
   const [now] = useState(() => new Date())
   const bounds = startDateBounds(now)
 
@@ -82,7 +87,10 @@ function ActivateForm({ client, onClose }: { client: AdminClient; onClose: () =>
   const [startDate, setStartDate] = useState(bounds.max)
   const [reason, setReason] = useState('')
   const [reasonTouched, setReasonTouched] = useState(false)
+  const [coupon, setCoupon] = useState('')
+  const [couponError, setCouponError] = useState<string | null>(null)
   const [serverError, setServerError] = useState<string | null>(null)
+  const [result, setResult] = useState<ActivatePlanResponse | null>(null)
 
   const items = (plans.data?.items ?? []).filter((plan) => plan.isActive)
   // Default: the client's live plan when it is listed, else the first plan.
@@ -104,9 +112,13 @@ function ActivateForm({ client, onClose }: { client: AdminClient; onClose: () =>
         `${client.name} is now on ${res.subscription.plan.name} (${subscriptionIntervalLabels[res.subscription.interval]}).`,
       )
       void queryClient.invalidateQueries({ queryKey: adminClientsKey })
-      onClose()
+      setResult(res)
     },
-    onError: (err) => setServerError(errorText(err)),
+    onError: (err) => {
+      const couponMessage = err instanceof ApiError && err.code ? couponErrorMessages[err.code] : undefined
+      if (couponMessage) setCouponError(couponMessage)
+      else setServerError(errorText(err))
+    },
   })
 
   const submit = (event: FormEvent) => {
@@ -114,16 +126,20 @@ function ActivateForm({ client, onClose }: { client: AdminClient; onClose: () =>
     setReasonTouched(true)
     if (!selected || dateError || reasonErr || mutation.isPending) return
     setServerError(null)
+    setCouponError(null)
+    const couponCode = coupon.trim()
     mutation.mutate({
       workspaceId: client.id,
-      body: { planId: selected.id, interval, startDate, reason: reason.trim() },
+      body: { planId: selected.id, interval, startDate, reason: reason.trim(), ...(couponCode ? { couponCode } : {}) },
     })
   }
+
+  if (result) return <ActivationResult client={client} result={result} onClose={onClose} />
 
   const planOptions: PillOption<string>[] = items.map((plan) => ({
     value: plan.id,
     label: plan.name,
-    hint: formatPlanPrice(plan.offerPriceBdt ?? plan.monthlyPriceBdt),
+    hint: formatPlanPrice(plan.monthlyPriceBdt),
   }))
   const intervalOptions: PillOption<SubscriptionInterval>[] = [
     { value: 'month', label: 'Monthly' },
@@ -205,16 +221,47 @@ function ActivateForm({ client, onClose }: { client: AdminClient; onClose: () =>
 
         {selected && preview && (
           <div className="rounded-2xl border bg-muted/50 px-4 py-3" aria-live="polite">
-            <p className="text-sm font-medium tabular-nums" data-testid="activation-price">
-              {preview}
+            <p className="text-sm">
+              <span className="text-muted-foreground">List price </span>
+              <span className="font-medium tabular-nums" data-testid="activation-price">
+                {preview}
+              </span>
             </p>
             {termEnd && (
               <p className="text-xs text-muted-foreground">
                 {selected.name} · term ends {formatDhakaDate(termEnd)}
               </p>
             )}
+            <p className="text-xs text-muted-foreground">
+              The client’s automatic discount and the coupon come off when you activate.
+            </p>
           </div>
         )}
+
+        <div className="grid gap-2">
+          <Label htmlFor={ids.coupon}>Coupon (optional)</Label>
+          <Input
+            id={ids.coupon}
+            value={coupon}
+            onChange={(e) => {
+              setCoupon(e.target.value)
+              setCouponError(null)
+            }}
+            placeholder="e.g. EID25"
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={couponError !== null || undefined}
+            aria-describedby={`${ids.coupon}-hint`}
+            className="w-56 uppercase placeholder:normal-case"
+          />
+          <p
+            id={`${ids.coupon}-hint`}
+            className={`text-xs ${couponError ? 'text-destructive' : 'text-muted-foreground'}`}
+            role={couponError ? 'alert' : undefined}
+          >
+            {couponError ?? 'Any case. Comes off after the automatic discount.'}
+          </p>
+        </div>
 
         <div className="grid gap-2">
           <Label htmlFor={ids.reason}>Reason</Label>
@@ -261,4 +308,65 @@ function ActivateForm({ client, onClose }: { client: AdminClient; onClose: () =>
       </form>
     </DialogContent>
   )
+}
+
+/** After a 201: what the term costs and what came off (`price` from the backend, PR-D12). */
+function ActivationResult({
+  client,
+  result,
+  onClose,
+}: {
+  client: AdminClient
+  result: ActivatePlanResponse
+  onClose: () => void
+}) {
+  const { subscription, price } = result
+  const yearly = subscription.interval === 'year'
+  return (
+    <DialogContent className="rounded-2xl sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>Plan activated</DialogTitle>
+        <DialogDescription>
+          {client.name} is on {subscription.plan.name} ({subscriptionIntervalLabels[subscription.interval]}) until{' '}
+          {formatDhakaDate(subscription.termEndsAt)}.
+        </DialogDescription>
+      </DialogHeader>
+      <dl data-testid="activation-result" className="grid gap-2 rounded-2xl border bg-muted/50 px-4 py-3 text-sm">
+        <PriceRow label="List price" value={formatPlanPrice(price.listChargedBdt)} />
+        {price.discount && <PromotionRow promotion={price.discount} />}
+        {price.coupon && <PromotionRow promotion={price.coupon} />}
+        <div className="flex justify-between gap-3 border-t pt-2 font-semibold">
+          <dt>Charged</dt>
+          <dd className="tabular-nums">
+            {formatPlanPrice(price.chargedBdt)}
+            {yearly && (
+              <span className="ml-1 text-xs font-normal text-muted-foreground">
+                ({formatPlanPrice(price.perMonthBdt)}/month)
+              </span>
+            )}
+          </dd>
+        </div>
+      </dl>
+      {!price.discount && !price.coupon && <p className="text-xs text-muted-foreground">No promotion applied.</p>}
+      <DialogFooter className="rounded-b-2xl">
+        <Button type="button" onClick={onClose}>
+          Done
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  )
+}
+
+function PriceRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <dt className="min-w-0 text-muted-foreground">{label}</dt>
+      <dd className="shrink-0 tabular-nums">{value}</dd>
+    </div>
+  )
+}
+
+function PromotionRow({ promotion }: { promotion: AppliedPromotion }) {
+  const name = promotion.code ? `Coupon ${promotion.code}` : promotion.name
+  return <PriceRow label={`${name} · ${promotion.label}`} value={`−${formatPlanPrice(promotion.amountBdt)}`} />
 }

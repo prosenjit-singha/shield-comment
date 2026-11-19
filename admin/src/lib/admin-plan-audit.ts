@@ -3,7 +3,6 @@ import {
   adminPlansKey,
   formatCount,
   formatPlanPrice,
-  formatTrialDays,
   PLAN_FEATURE_KEYS,
   PLAN_LIMIT_KEYS,
   type PlanFeatureKey,
@@ -31,7 +30,7 @@ export interface PlanAuditChange {
    * `monthlyPriceBdt`, `yearlyMonthlyPriceBdt`, `badgeEn`/`badgeBn`, `descriptionEn`/`descriptionBn`,
    * `isHighlighted`, `featureConfig.limits.<key>` or `featureConfig.features.<key>`; old rows also
    * `originalPriceBdt`, `offerPriceBdt`, `offerBadge`, `trialDays`, `trialCommentLimit` (PR-T4
-   * legacy keys; labels for the new card fields come with PR-T5).
+   * legacy keys, still labelled).
    */
   field: string
   before: PlanAuditValue
@@ -98,13 +97,22 @@ export const planAuditActionLabels: Record<PlanAuditAction, string> = {
   UPDATE: 'Updated',
 }
 
-type FieldKind = 'price' | 'badge' | 'trial-days' | 'trial-limit' | 'limit' | 'legacy-limit' | 'feature' | 'unknown'
+type FieldKind = 'price' | 'text' | 'flag' | 'trial-days' | 'trial-limit' | 'limit' | 'legacy-limit' | 'feature' | 'unknown'
 
 const PRICE_LABELS: Readonly<Record<string, string>> = {
   monthlyPriceBdt: 'Monthly price',
   originalPriceBdt: 'Original price',
   offerPriceBdt: 'Offer price',
   yearlyMonthlyPriceBdt: 'Yearly price per month',
+}
+
+/** Card text (PR-T5 editor labels) + the legacy offer badge; values are quoted. */
+const TEXT_LABELS: Readonly<Record<string, string>> = {
+  badgeEn: 'Badge (English)',
+  badgeBn: 'Badge (Bangla)',
+  descriptionEn: 'Description (English)',
+  descriptionBn: 'Description (Bangla)',
+  offerBadge: 'Offer badge',
 }
 
 const LIMIT_PREFIX = 'featureConfig.limits.'
@@ -121,7 +129,8 @@ export const legacyPlanAuditFieldLabels: Readonly<Record<string, string>> = {
 
 function fieldKind(field: string): FieldKind {
   if (Object.hasOwn(PRICE_LABELS, field)) return 'price'
-  if (field === 'offerBadge') return 'badge'
+  if (Object.hasOwn(TEXT_LABELS, field)) return 'text'
+  if (field === 'isHighlighted') return 'flag'
   if (field === 'trialDays') return 'trial-days'
   if (field === 'trialCommentLimit') return 'trial-limit'
   if (Object.hasOwn(legacyPlanAuditFieldLabels, field)) return 'legacy-limit'
@@ -140,8 +149,10 @@ export function planAuditFieldLabel(field: string): string {
   switch (fieldKind(field)) {
     case 'price':
       return PRICE_LABELS[field] ?? field
-    case 'badge':
-      return 'Offer badge'
+    case 'text':
+      return TEXT_LABELS[field] ?? field
+    case 'flag':
+      return 'Highlighted'
     case 'trial-days':
       return 'Trial length'
     case 'trial-limit':
@@ -158,7 +169,7 @@ export function planAuditFieldLabel(field: string): string {
   }
 }
 
-/** Shown for `null` (offer or badge cleared / not set). */
+/** Shown for `null` (price, badge or description cleared / not set). */
 export const PLAN_AUDIT_NONE = 'None'
 
 /** What `null` means for the PW-T7 fields (everything else reads `None`). */
@@ -168,8 +179,9 @@ const NULL_LABELS: Partial<Record<FieldKind, string>> = {
 }
 
 /**
- * `৳1,499` for prices, `On`/`Off` for features, grouped numbers for limits, `7 days` for the trial
- * length, `None` for `null` (`No trial` / `Monthly comments` for the trial fields).
+ * `৳1,499` for prices, `On`/`Off` for features, `Yes`/`No` for the highlight, grouped numbers for
+ * limits, `7 days` for the (legacy) trial length, `None` for `null` (`No trial` / `Monthly
+ * comments` for the trial fields).
  */
 export function formatPlanAuditValue(field: string, value: PlanAuditValue | undefined): string {
   const kind = fieldKind(field)
@@ -177,8 +189,11 @@ export function formatPlanAuditValue(field: string, value: PlanAuditValue | unde
     if (field === 'yearlyMonthlyPriceBdt') return 'No yearly option'
     return NULL_LABELS[kind] ?? PLAN_AUDIT_NONE
   }
-  if (kind === 'trial-days' && typeof value === 'number') return formatTrialDays(value)
-  if (typeof value === 'boolean') return kind === 'feature' ? (value ? 'On' : 'Off') : String(value)
+  if (kind === 'trial-days' && typeof value === 'number') return `${value} ${value === 1 ? 'day' : 'days'}`
+  if (typeof value === 'boolean') {
+    if (kind === 'feature') return value ? 'On' : 'Off'
+    return kind === 'flag' ? (value ? 'Yes' : 'No') : String(value)
+  }
   if (typeof value === 'number') return kind === 'price' ? formatPlanPrice(value) : formatCount(value)
-  return kind === 'badge' ? `“${value}”` : value
+  return kind === 'text' ? `“${value}”` : value
 }
