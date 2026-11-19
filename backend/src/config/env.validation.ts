@@ -1,6 +1,7 @@
 import { plainToInstance, Type } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -13,6 +14,7 @@ import {
   ValidateIf,
   validateSync,
 } from 'class-validator';
+import { AI_PROVIDERS, type AiProvider } from '../ai-gateway/ai-provider.js';
 import {
   AES_256_KEY_BYTES,
   decodeAes256Key,
@@ -105,7 +107,14 @@ export class EnvironmentVariables {
   @IsString()
   STORAGE_BUCKET?: string;
 
-  // --- Neon AI Gateway. Optional: AiGatewayService is disabled without them.
+  // --- LLM provider (M5-T1, decisions D1/D16). Optional: AiGatewayService reports "not
+  // configured" when the active provider has no key. M5-T3 moves the choice to /admin/settings
+  // (keys encrypted in the DB); these values stay as the fallback.
+  /** Active provider: `neon` (default) | `openai` | `anthropic` | `google`. */
+  @IsOptional()
+  @IsIn(AI_PROVIDERS)
+  AI_PROVIDER?: AiProvider;
+
   /** Bare branch gateway host (no path), e.g. `https://<branch-id>-api.ai.<region>.aws.neon.tech`. */
   @IsOptional()
   @IsUrl({ require_tld: false })
@@ -115,7 +124,22 @@ export class EnvironmentVariables {
   @IsString()
   NEON_AI_GATEWAY_TOKEN?: string;
 
-  /** Default chat model (gateway catalog id). */
+  /** OpenAI API key (`AI_PROVIDER=openai`). */
+  @IsOptional()
+  @IsString()
+  OPENAI_API_KEY?: string;
+
+  /** Google AI Studio (Gemini) API key (`AI_PROVIDER=google`). */
+  @IsOptional()
+  @IsString()
+  GEMINI_API_KEY?: string;
+
+  /** Anthropic API key (`AI_PROVIDER=anthropic`; adapter lands in M5-T2). */
+  @IsOptional()
+  @IsString()
+  ANTHROPIC_API_KEY?: string;
+
+  /** Chat model of the active provider. Defaults per provider (`DEFAULT_AI_MODELS`). */
   @IsOptional()
   @IsString()
   AI_GATEWAY_MODEL?: string;

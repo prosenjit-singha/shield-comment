@@ -77,7 +77,7 @@ async function storageSmoke(storage: StorageService): Promise<Step[]> {
 }
 
 async function aiSmoke(ai: AiGatewayService): Promise<Step> {
-  if (!ai.enabled)
+  if (!(await ai.isConfigured()))
     return { name: 'ai.chat', ok: false, detail: 'not configured' };
   try {
     const res = await ai.chat([
@@ -86,7 +86,7 @@ async function aiSmoke(ai: AiGatewayService): Promise<Step> {
     return {
       name: 'ai.chat',
       ok: res.content.trim().length > 0,
-      detail: `model=${res.model} reply=${JSON.stringify(res.content.trim().slice(0, 80))} tokens=${res.usage?.totalTokens ?? '?'}`,
+      detail: `provider=${res.provider} model=${res.model} ms=${res.latencyMs} reply=${JSON.stringify(res.content.trim().slice(0, 80))} tokens=${res.usage?.totalTokens ?? '?'}`,
     };
   } catch (error) {
     return {

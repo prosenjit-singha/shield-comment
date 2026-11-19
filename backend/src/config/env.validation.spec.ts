@@ -180,3 +180,35 @@ describe('validateEnv: Meta webhook verify token', () => {
     if (value) expect(message).not.toContain(value);
   });
 });
+
+describe('validateEnv: AI provider', () => {
+  it('is optional and accepts each provider with its key', () => {
+    expect(validateEnv(BASE).AI_PROVIDER).toBeUndefined();
+    const env = validateEnv({
+      ...BASE,
+      AI_PROVIDER: 'google',
+      GEMINI_API_KEY: 'AIza-test-key',
+      OPENAI_API_KEY: 'sk-test',
+      ANTHROPIC_API_KEY: 'sk-ant-test',
+      AI_GATEWAY_MODEL: 'gemini-2.5-flash',
+    });
+    expect(env).toMatchObject({
+      AI_PROVIDER: 'google',
+      GEMINI_API_KEY: 'AIza-test-key',
+    });
+    for (const provider of ['neon', 'openai', 'anthropic']) {
+      expect(validateEnv({ ...BASE, AI_PROVIDER: provider }).AI_PROVIDER).toBe(
+        provider,
+      );
+    }
+  });
+
+  it.each(['gemini', 'NEON', 'azure', ''])(
+    'rejects AI_PROVIDER=%j',
+    (value) => {
+      expect(() => validateEnv({ ...BASE, AI_PROVIDER: value })).toThrow(
+        '- AI_PROVIDER:',
+      );
+    },
+  );
+});
