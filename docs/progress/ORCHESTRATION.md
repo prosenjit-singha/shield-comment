@@ -10,14 +10,14 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Session: #7 (2026-11-19) · rows this session: 6 · estimate: 130k
 
 ## State
-verified M5-T15 (2026-11-19)
+paused: user input needed: M5-T16 live golden bake-off waits for AI credentials (Neon credits and/or provider keys); user chose "Not yet: pause the run" (2026-11-19)
 
 ## Resume
-`/orchestration --continue` (next: M5-T16 live golden bake-off; PRE-CHECK pending)
+`/orchestration --continue` once the AI credentials are in place (Neon credits in `backend/.env.neon`/`.env` and/or provider keys in `/admin/settings` or `backend/.env`). Then the orchestrator confirms which credentials exist and dispatches M5-T16. Task note: `docs/todos/m5-t16-live-ai-golden-bake-off.md`.
 
 ## Next prompt (M5-T16)
 
-PRE-CHECK: live LLM run (D1/D12/D16). Before dispatch, ask the user to provide or confirm: (1) **credentials**: Neon AI Gateway credits bought (base URL + token in `backend/.env.neon` or `.env`) and/or direct provider key(s) (OpenAI / Anthropic / Google), either saved in `/admin/settings` (D16, encrypted in the DB) or in git-ignored `backend/.env`; the agent never prints, logs or commits a key; (2) **which providers/models to compare** (suggested: neon `gpt-oss-20b` + `gpt-oss-120b`, openai `gpt-4.1-nano` + `gpt-4.1-mini`, google `gemini-2.5-flash-lite` + `gemini-2.5-flash`, anthropic `claude-haiku-4-5`; only those with credentials); (3) **context level(s)** (default `comment_only` only; adding `page_name`/`post_caption` multiplies calls); (4) **spend cap** (suggested: ≤ US$2 total; 48 items × models × levels, ~1–3 calls each; stop at the cap); (5) **winner rule** = cheapest model with ≥ 90 % accuracy (D12), and whether the agent may set it as the active provider/model in the D16 settings DB row (local dev DB) or only report it; (6) whether the user's running compose stack may be used (it runs older backend code; the script runs from the host with `npm run build` first, no compose rebuild). Without (1) the row stops with `STATUS: needs-decision`.
+PRE-CHECK: only (1) is still open: **credentials** (Neon AI Gateway credits and/or direct provider keys; user answered "Not yet: pause the run" on 2026-11-19). Ask which credentials are ready before dispatch. (2)–(5) are answered below under "Decisions added by orchestrator"; (6) the script runs from the host after `npm run build`, with no compose rebuild. Without credentials the row stops with `STATUS: needs-decision`.
 
 You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
 
@@ -54,6 +54,9 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
    - **replace** the `## Next prompt` section (everything from that heading up to, not including, `## Choices to confirm`) with the next row's prompt in this same format (contract: `.claude/skills/orchestration/subagent-prompt.md`).
 3. Commit everything, journal included, with `test(backend): record live golden bake-off results (M5-T16)` (or a similar Conventional Commits subject containing `(M5-T16)`, ≤ 72 chars; count it) and an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
+
+### Decisions added by orchestrator
+- 2026-11-19 (user, M5-T16 pre-check): **models** = Neon `gpt-oss-20b` + `gpt-oss-120b`, OpenAI `gpt-4.1-nano` + `gpt-4.1-mini`, Google `gemini-2.5-flash-lite` + `gemini-2.5-flash`, Anthropic `claude-haiku-5-5` (only those with working credentials run). **Spend cap** = up to US$2 total. **Winner** = set it active locally: the agent saves it as the active provider/model in the local dev DB's AI settings (D16, audit row written) and records its replay. Context level: `comment_only` only (prompt default; not asked). Credentials: still pending (see PRE-CHECK).
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -119,6 +122,11 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
   - abuse-01 → "I think we should give this option to the client setting. like what they want to do this type of comment see. Actually give client a setting page for comment tone and the response of that image like wants to hide it, delete it, or show it. Show them the type with an example. then they will chose what will happen to those type or category of comment"
   - safe-09 → "SAFE_INQUIRY (current)"
 - 2026-11-19 M5-T7 pre-check, golden label review (D12), round 2: emojis → "Positive=SAFE, negative=ABUSIVE (Recommended)" (spam-07 → SAFE_INQUIRY; add negative-emoji items (😡👎🤮) labelled ABUSIVE_TOXIC; the prompt teaches it; if M5-T16 shows the model can't do it reliably, fall back to hiding all emoji-only comments) · client category settings page (abuse-01 follow-up) → "Keep it in Module 6" (abuse-01 stays ABUSIVE_TOXIC; the per-category Show/Hide/Delete page with examples is Module 6 /rules; record the user's wish in TASKS.md Module 6 notes) · spam-05 → "SPAM_IRRELEVANT (current)" · scam-05, scam-06 + all other labels → "Approve as labelled (Recommended)"
+- 2026-11-19 M5-T16 pre-check (live golden bake-off):
+  - Credentials → "Not yet: pause the run. Keep this task note for later. In "docs/todos/" folder. with meaning full file name." (note written: `docs/todos/m5-t16-live-ai-golden-bake-off.md`)
+  - Models → "Neon gpt-oss-20b + 120b,OpenAI gpt-4.1-nano + mini,Google gemini-2.5-flash-lite + flash,Anthropic claude-haiku-5-5"
+  - Spend cap → "Up to US$2 (Recommended)"
+  - Winner → "Set it active locally (Recommended)"
 
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
