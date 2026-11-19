@@ -7,10 +7,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.)
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #6 (2026-11-19) · rows this session: 7 · estimate: 160k
+- Session: #6 (2026-11-19) · rows this session: 8 · estimate: 172k
 
 ## State
-dispatched M5-T7 (2026-11-19) · commit: "feat(backend): add moderation schema and migration (M5-T7)"
+verified M5-T7
 
 ## Resume
 `/orchestration --continue`
@@ -149,4 +149,4 @@ You are implementing exactly ONE task row, **M5-T8**, in the ShieldComment BD re
 - 2026-11-19 M5-T5 ✅ 01a1db3 · backend 1296 unit (was 1227) + e2e 532 · pure comment classifier: versioned prompt (moderation-v1, 13 bn/banglish/en few-shots, JSON data blocks), D8 levels + credit cost, output parser, json_schema → json_object → prompt fallback, one output retry, typed failures
 - 2026-11-19 M5-T6 ✅ 52a8cdf · backend 1347 unit (+1 skipped; was 1296) + e2e 532 · golden suite: 45-item fixture (labels await user review, D12), pure scorer, replay files keyed by prompt version + item id, hand-made replay through the real classifier (42/45), `npm run ai:golden` script (no live run)
 - 2026-11-19 M5-T6 label fix ✅ 774a434 · backend 1348 unit (+1 skipped; was 1347) + e2e 532 · user golden review applied: spam-07 → safe-11, + 3 negative emoji-only ABUSIVE items (48), prompt moderation-v2 (emoji-only rule + few-shots), hand-made replay regenerated (45/48)
-- 2026-11-19 M5-T7 ✅ · backend 1375 + e2e 586 · e2e 2/2 · moderation schema (0016): comment statuses + classification columns, moderation_actions/policies, daily counters, daily_ai_usage, query helpers, delete order
+- 2026-11-19 M5-T7 ✅ f62df78 · backend 1375 + e2e 586 · e2e 2/2 · moderation schema (0016): comment statuses + classification columns, moderation_actions/policies, daily counters, daily_ai_usage, query helpers, delete order
