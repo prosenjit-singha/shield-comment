@@ -51,6 +51,7 @@ describe('toBillingSummary (PW-T6)', () => {
         balance: { included: 300, added: 0, used: 12, resetsAt: TRIAL_END },
         workspaceCount: 1,
         activePages: 1,
+        trialEligible: false,
       }),
     ).toEqual({
       plan: { slug: 'starter', name: 'Starter' },
@@ -61,6 +62,7 @@ describe('toBillingSummary (PW-T6)', () => {
       comments: { used: 12, limit: 300, resetsAt: TRIAL_END },
       workspaces: { used: 1, limit: 1 },
       pages: { used: 1, limit: 1 },
+      trialEligible: false,
     });
   });
 
@@ -71,6 +73,7 @@ describe('toBillingSummary (PW-T6)', () => {
       balance: { included: 2_500, added: 100, used: 1_234, resetsAt: RESET },
       workspaceCount: 2,
       activePages: 4,
+      trialEligible: false,
     });
     expect(summary).toEqual({
       plan: { slug: 'growth', name: 'Growth' },
@@ -81,6 +84,7 @@ describe('toBillingSummary (PW-T6)', () => {
       comments: { used: 1_234, limit: 2_600, resetsAt: RESET },
       workspaces: { used: 2, limit: 3 },
       pages: { used: 4, limit: 5 },
+      trialEligible: false,
     });
   });
 
@@ -97,6 +101,7 @@ describe('toBillingSummary (PW-T6)', () => {
         balance: null,
         workspaceCount: 1,
         activePages: 2,
+        trialEligible: false,
       }),
     ).toEqual({
       plan: { slug: 'starter', name: 'Starter' },
@@ -107,6 +112,7 @@ describe('toBillingSummary (PW-T6)', () => {
       comments: { used: 0, limit: 0, resetsAt: null },
       workspaces: { used: 1, limit: 0 },
       pages: { used: 2, limit: 0 },
+      trialEligible: false,
     });
   });
 
@@ -116,6 +122,7 @@ describe('toBillingSummary (PW-T6)', () => {
       balance: null,
       workspaceCount: 1,
       activePages: 0,
+      trialEligible: false,
     };
     for (const status of ['TRIALING', 'ACTIVE'] as const) {
       expect(
@@ -128,7 +135,7 @@ describe('toBillingSummary (PW-T6)', () => {
     ).toBe('CANCELED');
   });
 
-  it('no billing account / never subscribed: NONE, plan + interval + dates null, limits 0', () => {
+  it('never subscribed: NONE, plan + interval + dates null, limits 0, trialEligible passed through', () => {
     expect(
       toBillingSummary({
         live: null,
@@ -136,6 +143,7 @@ describe('toBillingSummary (PW-T6)', () => {
         balance: null,
         workspaceCount: 1,
         activePages: 0,
+        trialEligible: true,
       }),
     ).toEqual({
       plan: null,
@@ -146,6 +154,7 @@ describe('toBillingSummary (PW-T6)', () => {
       comments: { used: 0, limit: 0, resetsAt: null },
       workspaces: { used: 1, limit: 0 },
       pages: { used: 0, limit: 0 },
+      trialEligible: true,
     });
   });
 
@@ -156,6 +165,7 @@ describe('toBillingSummary (PW-T6)', () => {
       balance: null,
       workspaceCount: 1,
       activePages: 0,
+      trialEligible: false,
     });
     expect(summary.comments).toEqual({ used: 0, limit: 0, resetsAt: null });
     expect(summary.status).toBe('ACTIVE');

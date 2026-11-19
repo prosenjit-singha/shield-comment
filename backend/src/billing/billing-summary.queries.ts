@@ -108,3 +108,18 @@ export async function findSummarySubscriptions(
     ]),
   );
 }
+
+/**
+ * The account ever had a trial (reading 1, PR-T3): a TRIAL promotion redemption, or a subscription
+ * with `trial_ends_at` (sign-up trials before PR-T3 have no redemption row). Scoped by the account
+ * id. One query; pass a transaction to read under its locks.
+ */
+export async function accountHadTrial(
+  db: Pick<Database, 'execute'>,
+  billingAccountId: string,
+): Promise<boolean> {
+  const { rows } = await db.execute<{ had: boolean }>(
+    sql`select (exists (select 1 from promotion_redemptions where billing_account_id = ${billingAccountId} and kind = 'TRIAL') or exists (select 1 from subscriptions where billing_account_id = ${billingAccountId} and trial_ends_at is not null)) as had`,
+  );
+  return rows[0]!.had;
+}

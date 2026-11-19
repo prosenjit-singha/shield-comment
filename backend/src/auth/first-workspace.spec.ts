@@ -43,9 +43,9 @@ describe('first workspace helpers', () => {
  */
 describe('resolveActiveWorkspace (PW-T3 billing)', () => {
   const USER = 'user-1';
-  const setUpOwner = vi.fn<SessionBilling['setUpOwner']>();
+  const linkWorkspace = vi.fn<SessionBilling['linkWorkspace']>();
   const isSetUp = vi.fn<SessionBilling['isSetUp']>();
-  const billing: SessionBilling = { setUpOwner, isSetUp };
+  const billing: SessionBilling = { linkWorkspace, isSetUp };
   let inserts: { table: unknown; values: unknown }[];
   let tx: object;
 
@@ -74,15 +74,12 @@ describe('resolveActiveWorkspace (PW-T3 billing)', () => {
   }
 
   beforeEach(() => {
-    setUpOwner.mockReset().mockResolvedValue({
-      billingAccountId: 'acc-1',
-      trialSubscriptionId: 'sub-1',
-    });
+    linkWorkspace.mockReset().mockResolvedValue('acc-1');
     isSetUp.mockReset();
     inserts = [];
   });
 
-  it('sign-up: workspace + owner membership + billing set up in the same transaction', async () => {
+  it('sign-up: workspace + owner membership + billing link in the same transaction (no plan, PR-T3)', async () => {
     const id = await resolveActiveWorkspace(fakeDb(), billing, USER, 'Shop');
     expect(id).toBe('ws-new');
     expect(inserts.map((i) => i.table)).toEqual([workspaces, workspaceMembers]);
@@ -91,15 +88,13 @@ describe('resolveActiveWorkspace (PW-T3 billing)', () => {
       userId: USER,
       role: 'owner',
     });
-    expect(setUpOwner).toHaveBeenCalledTimes(1);
-    const [userId, workspaceId, now, inTx] = setUpOwner.mock.calls[0]!;
-    expect([userId, workspaceId, inTx]).toEqual([USER, 'ws-new', tx]);
-    expect(now).toBeInstanceOf(Date);
+    expect(linkWorkspace).toHaveBeenCalledTimes(1);
+    expect(linkWorkspace).toHaveBeenCalledWith(USER, 'ws-new', tx);
     expect(isSetUp).not.toHaveBeenCalled();
   });
 
   it('a billing failure fails the whole sign-up transaction', async () => {
-    setUpOwner.mockRejectedValueOnce(new Error('db down'));
+    linkWorkspace.mockRejectedValueOnce(new Error('db down'));
     await expect(
       resolveActiveWorkspace(fakeDb(), billing, USER, 'Shop'),
     ).rejects.toThrow('db down');
@@ -107,7 +102,7 @@ describe('resolveActiveWorkspace (PW-T3 billing)', () => {
 
   it('no membership and no sign-up: null, no billing', async () => {
     expect(await resolveActiveWorkspace(fakeDb(), billing, USER)).toBeNull();
-    expect(setUpOwner).not.toHaveBeenCalled();
+    expect(linkWorkspace).not.toHaveBeenCalled();
     expect(isSetUp).not.toHaveBeenCalled();
   });
 
@@ -116,16 +111,16 @@ describe('resolveActiveWorkspace (PW-T3 billing)', () => {
     const db = fakeDb({ workspaceId: 'ws-1', role: 'owner' });
     expect(await resolveActiveWorkspace(db, billing, USER)).toBe('ws-1');
     expect(isSetUp).toHaveBeenCalledWith('ws-1');
-    expect(setUpOwner).not.toHaveBeenCalled();
+    expect(linkWorkspace).not.toHaveBeenCalled();
   });
 
-  it('owner without account / subscription: repaired on the next session create', async () => {
+  it('owner whose workspace has no account: linked on the next session create', async () => {
     isSetUp.mockResolvedValue(false);
     const db = fakeDb({ workspaceId: 'ws-1', role: 'owner' });
     expect(await resolveActiveWorkspace(db, billing, USER, 'Ignored')).toBe(
       'ws-1',
     );
-    expect(setUpOwner).toHaveBeenCalledWith(USER, 'ws-1');
+    expect(linkWorkspace).toHaveBeenCalledWith(USER, 'ws-1');
     expect(inserts).toEqual([]);
   });
 
@@ -133,6 +128,6 @@ describe('resolveActiveWorkspace (PW-T3 billing)', () => {
     const db = fakeDb({ workspaceId: 'ws-1', role: 'moderator' });
     expect(await resolveActiveWorkspace(db, billing, USER)).toBe('ws-1');
     expect(isSetUp).not.toHaveBeenCalled();
-    expect(setUpOwner).not.toHaveBeenCalled();
+    expect(linkWorkspace).not.toHaveBeenCalled();
   });
 });

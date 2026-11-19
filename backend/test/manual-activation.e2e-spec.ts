@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
 import {
   dhakaDate,
@@ -118,7 +118,7 @@ describe('Admin manual plan activation (e2e)', () => {
       .where(eq(walletEntries.walletId, (await walletOf(owner)).id))
       .orderBy(asc(walletEntries.createdAt), asc(walletEntries.id));
 
-  /** Nothing changed: still exactly the sign-up trial, no audit row. */
+  /** Nothing changed: still exactly the started trial, no audit row. */
   async function expectUntouched(owner: Actor) {
     const subs = await subsOf(owner);
     expect(subs.map((s) => s.status)).toEqual(['TRIALING']);
@@ -146,10 +146,10 @@ describe('Admin manual plan activation (e2e)', () => {
     let owner: Actor;
 
     beforeAll(async () => {
-      owner = await actors.signUp('pwt9-owner');
+      owner = await actors.signUp('pwt9-owner', { trial: true });
     });
 
-    it('replaces the sign-up trial with an ACTIVE monthly term (CANCELED trial, snapshots, fresh wallet, audit)', async () => {
+    it('replaces the trial with an ACTIVE monthly term (CANCELED trial, snapshots, fresh wallet, audit)', async () => {
       const [trial] = await subsOf(owner);
       // The trial already used some comments: they stay on the trial's period.
       await wallet.consume(owner.workspaceId, 'monthlyComments', 3);
@@ -364,7 +364,7 @@ describe('Admin manual plan activation (e2e)', () => {
   });
 
   it('a start date 31 days back works for a yearly term (period containing now)', async () => {
-    const owner = await actors.signUp('pwt9-back');
+    const owner = await actors.signUp('pwt9-back', { trial: true });
     const startDate = daysAgo(31);
     const res = await activate(
       owner.workspaceId,
@@ -391,7 +391,7 @@ describe('Admin manual plan activation (e2e)', () => {
   });
 
   it('a stale live subscription past its term is recorded EXPIRED, not CANCELED', async () => {
-    const owner = await actors.signUp('pwt9-stale');
+    const owner = await actors.signUp('pwt9-stale', { trial: true });
     const [trial] = await subsOf(owner);
     const start = new Date(Date.now() - 10 * DAY);
     const end = new Date(Date.now() - 3 * DAY);
@@ -414,23 +414,8 @@ describe('Admin manual plan activation (e2e)', () => {
     ]);
   });
 
-  it('an account without any subscription gets one (audit before = null)', async () => {
+  it('an account without any subscription (plain sign-up, PR-T3) gets one (audit before = null)', async () => {
     const owner = await actors.signUp('pwt9-none');
-    const accountId = await actors.accountIdOf(owner);
-    const walletIds = db()
-      .select({ id: wallets.id })
-      .from(wallets)
-      .where(eq(wallets.billingAccountId, accountId));
-    await db()
-      .delete(walletEntries)
-      .where(inArray(walletEntries.walletId, walletIds));
-    await db()
-      .delete(walletBalances)
-      .where(inArray(walletBalances.walletId, walletIds));
-    await db().delete(wallets).where(eq(wallets.billingAccountId, accountId));
-    await db()
-      .delete(subscriptions)
-      .where(eq(subscriptions.billingAccountId, accountId));
     const res = await activate(owner.workspaceId, body());
     expect(res.status).toBe(201);
     expect((await subsOf(owner)).map((s) => s.status)).toEqual(['ACTIVE']);
@@ -449,7 +434,7 @@ describe('Admin manual plan activation (e2e)', () => {
     let owner: Actor;
 
     beforeAll(async () => {
-      owner = await actors.signUp('pwt9-reject');
+      owner = await actors.signUp('pwt9-reject', { trial: true });
     });
 
     afterEach(async () => {

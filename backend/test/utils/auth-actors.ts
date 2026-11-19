@@ -121,7 +121,15 @@ export function createAuthActors(app: INestApplication<App>) {
   const facebookUserIds: string[] = [];
   const http = () => request(app.getHttpServer());
 
-  async function signUp(prefix: string): Promise<Actor> {
+  /**
+   * Signs up a user: their first workspace (owner) linked to a new billing account, **no plan**
+   * (PR-T3). `{ trial: true }` then starts the seeded Starter trial through the endpoint
+   * (`startTrial`), i.e. what sign-up gave before PR-T3.
+   */
+  async function signUp(
+    prefix: string,
+    options: { trial?: boolean } = {},
+  ): Promise<Actor> {
     const email = uniqueEmail(prefix);
     const res = await http()
       .post('/api/auth/sign-up/email')
@@ -134,12 +142,42 @@ export function createAuthActors(app: INestApplication<App>) {
       .from(workspaceMembers)
       .where(eq(workspaceMembers.userId, id));
     workspaceIds.push(member!.workspaceId);
-    return {
+    const actor = {
       id,
       email,
       cookie: sessionCookie(res),
       workspaceId: member!.workspaceId,
     };
+    if (options.trial) await startTrial(actor);
+    return actor;
+  }
+
+  /**
+   * Starts the owner's trial on plan `slug` (default Starter, the seeded "Starter 7-day trial")
+   * through `POST …/billing/trial` (PR-T3): TRIALING subscription + redemption + wallet period.
+   * Returns the subscription id.
+   */
+  async function startTrial(owner: Actor, slug = 'starter'): Promise<string> {
+    const [plan] = await db
+      .select({ id: plans.id })
+      .from(plans)
+      .where(eq(plans.slug, slug));
+    expect(plan, `plan ${slug}`).toBeDefined();
+    const res = await http()
+      .post(`/api/workspaces/${owner.workspaceId}/billing/trial`)
+      .set('Cookie', owner.cookie)
+      .send({ planId: plan!.id });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const [row] = await db
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.billingAccountId, await accountIdOf(owner)),
+          eq(subscriptions.status, 'TRIALING'),
+        ),
+      );
+    return row!.id;
   }
 
   /** A fresh session (cookie) for an existing user. */
@@ -187,8 +225,8 @@ export function createAuthActors(app: INestApplication<App>) {
   }
 
   /**
-   * Undoes the billing setup sign-up made for these actors (PW-T3): their accounts' wallet rows +
-   * subscriptions, the workspace links and the accounts. For specs that build billing rows
+   * Undoes the billing setup sign-up (and `startTrial`) made for these actors (PW-T3): their
+   * accounts' wallet rows + subscriptions + redemptions, the workspace links and the accounts. For specs that build billing rows
    * themselves (schema, wallet). Returns nothing; the actors stay usable.
    */
   async function removeBilling(...owners: Actor[]): Promise<void> {
@@ -222,8 +260,8 @@ export function createAuthActors(app: INestApplication<App>) {
   }
 
   /**
-   * Ends the owner's live subscription (`EXPIRED`, e.g. the sign-up trial ran out; PW-D9). The
-   * term end is left as is: readers stop at the status.
+   * Ends the owner's live subscription (`EXPIRED`, e.g. the trial ran out; PW-D9). The term end is
+   * left as is: readers stop at the status. No-op without one.
    */
   async function expirePlan(owner: Actor): Promise<void> {
     await db
@@ -238,7 +276,7 @@ export function createAuthActors(app: INestApplication<App>) {
   }
 
   /**
-   * Replaces the owner's live subscription with a paid `ACTIVE` monthly one on the plan `slug`
+   * Replaces the owner's live subscription (if any) with a paid `ACTIVE` monthly one on the plan `slug`
    * (started a minute ago, 30 days long, price snapshot 999): e.g. Growth for its higher limits
    * and flags (PW-T5). Returns the new subscription id.
    */
@@ -446,6 +484,7 @@ export function createAuthActors(app: INestApplication<App>) {
     storage,
     http,
     signUp,
+    startTrial,
     signIn,
     signUpSuperAdmin,
     addMember,

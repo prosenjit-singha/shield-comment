@@ -4,7 +4,6 @@ import { createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { admin, organization } from 'better-auth/plugins';
 import { uuidv7 } from 'uuidv7';
 import type { LimitService } from '../billing/limit.service.js';
-import type { SubscriptionService } from '../billing/subscription.service.js';
 import type { Database } from '../db/database.js';
 import * as schema from '../db/schema/index.js';
 import { CLIENT_IP_HEADER } from './client-ip.js';
@@ -39,7 +38,7 @@ export interface BetterAuthSettings {
   /** Off in e2e: every supertest request shares one "no IP" bucket. */
   rateLimit: boolean;
   /**
-   * Billing accounts + Starter trial (PW-T3): sign-up / session-create setup and the
+   * Billing accounts (PW-T3; no trial since PR-T3): sign-up / session-create setup and the
    * `/organization/create` workspace link (`SubscriptionService`).
    */
   billing: AuthBilling;
@@ -48,8 +47,7 @@ export interface BetterAuthSettings {
 }
 
 /** The `SubscriptionService` calls Better Auth's hooks make (PW-T3). */
-export type AuthBilling = SessionBilling &
-  Pick<SubscriptionService, 'linkWorkspace'>;
+export type AuthBilling = SessionBilling;
 
 /** The `LimitService` call the `/organization/create` before-hook makes (PW-T5). */
 export type AuthLimits = Pick<LimitService, 'canCreateWorkspace'>;

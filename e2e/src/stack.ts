@@ -144,7 +144,7 @@ export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary>
         [ids, wsIds],
       );
       const plan = await db.query('delete from plan_audit_logs where admin_id = any($1::uuid[])', [ids]);
-      // Billing (PW-T3: sign-up makes an account + Starter trial + wallet): the run users' accounts
+      // Billing (PW-T3; since PR-T3 sign-up makes an account only, no trial): the run users' accounts
       // and the run workspaces' accounts; children first (FKs restrict), accounts after workspaces.
       const accounts = await db.query<{ id: string }>(
         `select id from billing_accounts where owner_user_id = any($1::uuid[])

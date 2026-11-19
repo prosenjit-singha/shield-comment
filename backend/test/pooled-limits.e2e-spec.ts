@@ -54,7 +54,7 @@ describe('Pooled plan limits (e2e)', () => {
 
   describe('POST /api/auth/organization/create (before-hook)', () => {
     it('Starter trial (1 workspace, the sign-up one) → 403 workspace_limit_reached + details; nothing created', async () => {
-      const owner = await actors.signUp('pwt5-trial');
+      const owner = await actors.signUp('pwt5-trial', { trial: true });
       const res = await create(owner).expect(403);
       expect(res.body).toMatchObject({
         code: 'workspace_limit_reached',
@@ -113,24 +113,26 @@ describe('Pooled plan limits (e2e)', () => {
     it('a member counts against their own account, not the workspace they joined', async () => {
       const owner = await actors.signUp('pwt5-host');
       await actors.activatePlan(owner, 'growth');
-      const guest = await actors.signUp('pwt5-guest');
+      const guest = await actors.signUp('pwt5-guest', { trial: true });
       await actors.addMember(owner.workspaceId, guest.id, 'admin');
       // The guest's own Starter trial already has its sign-up workspace.
       const res = await create(guest).expect(403);
       expect(res.body.code).toBe('workspace_limit_reached');
     });
 
-    it('sign-up still creates the first workspace (not through the hook)', async () => {
+    it('sign-up still creates the first workspace (not through the hook) but no plan: a second → 403 no_active_plan (PR-T3)', async () => {
       const owner = await actors.signUp('pwt5-signup');
       expect(await accountWorkspaces(owner)).toEqual([
         { id: owner.workspaceId },
       ]);
+      const res = await create(owner).expect(403);
+      expect(res.body.code).toBe('no_active_plan');
     });
   });
 
   describe('LimitService.seatsLeft (not enforced until Module 7)', () => {
     it('Starter trial: 1 seat − the owner = 0', async () => {
-      const owner = await actors.signUp('pwt5-seat-trial');
+      const owner = await actors.signUp('pwt5-seat-trial', { trial: true });
       expect(await limits.seatsLeft(await actors.accountIdOf(owner))).toBe(0);
     });
 

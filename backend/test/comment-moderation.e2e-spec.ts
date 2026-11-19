@@ -320,8 +320,8 @@ describe('Comment moderation worker (e2e)', () => {
     cipher = app.get(TokenCipherService);
     ingestProcessor = app.get(CommentIngestProcessor);
     processor = app.get(CommentModerationProcessor);
-    a = await actors.signUp('m5t12-a');
-    b = await actors.signUp('m5t12-b');
+    a = await actors.signUp('m5t12-a', { trial: true });
+    b = await actors.signUp('m5t12-b', { trial: true });
     await insertConnection(a);
     await insertConnection(b);
     pageA = await insertPage(a.workspaceId);
@@ -603,7 +603,7 @@ describe('Comment moderation worker (e2e)', () => {
     });
 
     it('no live plan: expired trial, then no billing account → SKIPPED no_active_plan, nothing sent to Meta', async () => {
-      const c = await actors.signUp('pwt4-noplan');
+      const c = await actors.signUp('pwt4-noplan', { trial: true });
       await insertConnection(c);
       const pageC = await insertPage(c.workspaceId);
       const account = await accountOf(c.workspaceId);

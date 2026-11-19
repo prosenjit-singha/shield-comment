@@ -232,6 +232,8 @@ describe('AdminClientsService client items: plan, subscription, comments (PW-T6b
           joined = true;
           return chain;
         },
+        // The live-subscription query's redemption snapshot (PR-T3).
+        leftJoin: () => chain,
         // The live-subscription query is awaited right after `where()`.
         where: () => {
           if (table !== workspaces || !joined) return chain;

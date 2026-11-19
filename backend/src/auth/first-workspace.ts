@@ -49,10 +49,10 @@ export function firstWorkspaceName(body: unknown): string {
   );
 }
 
-/** The billing calls a new session makes (`SubscriptionService`, PW-T3). */
+/** The billing calls a new session makes (`SubscriptionService`, PW-T3, PR-T3). */
 export type SessionBilling = Pick<
   SubscriptionService,
-  'setUpOwner' | 'isSetUp'
+  'linkWorkspace' | 'isSetUp'
 >;
 
 /**
@@ -64,11 +64,10 @@ export type SessionBilling = Pick<
  * `activeOrganizationId`. The Drizzle adapter runs without transactions, so the user row is
  * committed; workspace + owner membership + billing go in one transaction of their own.
  *
- * Billing (PW-T3, PW-D8): sign-up links the new workspace to the user's billing account (made on
- * first use) and starts the Starter trial with its wallet period, in that same transaction. Later
- * session creates repair an owner whose oldest workspace has no account, or whose account never had
- * a subscription (e.g. a sign-up during the 0023 deploy): it gets the account + link + trial then;
- * an account that already had a subscription never gets another trial.
+ * Billing (PW-T3; PR-T3, PR-D10 no trial at sign-up): sign-up links the new workspace to the
+ * user's billing account (made on first use) in that same transaction, with **no plan** (the client
+ * picks one, or a trial, on `/plans`). Later session creates repair an owner whose oldest workspace
+ * has no account (e.g. a sign-up during the 0023 deploy): it gets the account + link then.
  */
 export async function resolveActiveWorkspace(
   db: Database,
@@ -90,7 +89,7 @@ export async function resolveActiveWorkspace(
       membership.role === 'owner' &&
       !(await billing.isSetUp(membership.workspaceId))
     ) {
-      await billing.setUpOwner(userId, membership.workspaceId);
+      await billing.linkWorkspace(userId, membership.workspaceId);
     }
     return membership.workspaceId;
   }
@@ -104,7 +103,7 @@ export async function resolveActiveWorkspace(
     await tx
       .insert(workspaceMembers)
       .values({ workspaceId: workspace!.id, userId, role: 'owner' });
-    await billing.setUpOwner(userId, workspace!.id, new Date(), tx);
+    await billing.linkWorkspace(userId, workspace!.id, tx);
     return workspace!.id;
   });
 }

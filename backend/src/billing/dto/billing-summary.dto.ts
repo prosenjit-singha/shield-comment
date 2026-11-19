@@ -43,4 +43,12 @@ export interface BillingSummary {
   workspaces: BillingUsage;
   /** Pages switched on across the account's workspaces vs `limits.connectedPages`. */
   pages: BillingUsage;
+  /**
+   * PR-T3: `POST …/billing/trial` can succeed for this account: it has a billing account, no live
+   * plan and never had a trial (no TRIAL redemption, no subscription with `trialEndsAt`: sign-up
+   * trials before PR-T3 count). The client shows "Start free N-day trial" on a plan card only when
+   * this is `true` **and** that plan's `GET /api/plans` `trial` is not `null`; the button's
+   * `planId` is the card's plan id. Same for every member (only the owner may start it).
+   */
+  trialEligible: boolean;
 }

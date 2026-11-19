@@ -137,10 +137,10 @@ describe('Admin clients: list filters + status (e2e)', () => {
     actors = createAuthActors(app);
     superAdmin = await actors.signUpSuperAdmin('m2t3-super');
 
-    a = await actors.signUp(`${T}ea`);
-    b = await actors.signUp(`${T}eb`);
-    c = await actors.signUp(`${T}mailmark`);
-    d = await actors.signUp(`${T}ed`);
+    a = await actors.signUp(`${T}ea`, { trial: true });
+    b = await actors.signUp(`${T}eb`, { trial: true });
+    c = await actors.signUp(`${T}mailmark`, { trial: true });
+    d = await actors.signUp(`${T}ed`, { trial: true });
     mod = await actors.signUp(`${T}em`);
     await setWorkspace(
       a,
@@ -190,7 +190,7 @@ describe('Admin clients: list filters + status (e2e)', () => {
     );
     await actors.addMember(a.workspaceId, mod.id, 'moderator');
 
-    target = await actors.signUp('m2t3-target');
+    target = await actors.signUp('m2t3-target', { trial: true });
     member = await actors.signUp('m2t3-member');
     await actors.addMember(target.workspaceId, member.id, 'admin');
   });

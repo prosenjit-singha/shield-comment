@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { INestApplication } from '@nestjs/common';
-import { and, asc, count, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
 import { BillingJobSchedulers } from '../src/billing/billing-job-schedulers.js';
 import { SUBSCRIPTION_EXPIRY_JOB_NAME } from '../src/billing/billing-scheduled.jobs.js';
@@ -10,6 +10,9 @@ import type { Database } from '../src/db/database.js';
 import {
   billingAccounts,
   plans,
+  promotionPlans,
+  promotionRedemptions,
+  promotions,
   subscriptions,
   walletBalances,
   walletEntries,
@@ -41,17 +44,20 @@ type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 type Executor = Database | Tx;
 
 /**
- * PW-T3: Starter trial at sign-up + subscription expiry (user decisions 2026-11-19 PW-D8 trial once
- * per account, admin-adjustable length for new trials only; PW-D9 expiry; PW-D12 trial comment
- * limit 300; PW-D15 backfill). Real Postgres; the Starter plan's trial values are restored after
- * the tests that change them (7 days / 300 comments, seeded by 0022).
+ * PW-T3 accounts + expiry (PW-D9, PW-D15 backfill) and PR-T3 trial by choice (user decisions
+ * 2026-11-20 PR-D3, PR-D10: no trial at sign-up, `POST …/billing/trial` from a live TRIAL
+ * promotion; reading 1: one trial per account ever). Real Postgres; the seeded "Starter 7-day
+ * trial" (7 days / 300 comments, 0027) is the default trial; the Starter plan's old trial columns
+ * (0022, still read by the 0023 backfill) are restored after the tests that change them.
  */
-describe('Subscriptions + Starter trial (e2e)', () => {
+describe('Subscriptions + trial by choice (e2e)', () => {
   let app: INestApplication<App>;
   let actors: ReturnType<typeof createAuthActors>;
   let service: SubscriptionService;
   let wallet: WalletService;
   let starterId: string;
+  let growthId: string;
+  let proId: string;
 
   const db = (): Database => actors.db;
 
@@ -114,6 +120,31 @@ describe('Subscriptions + Starter trial (e2e)', () => {
       .innerJoin(wallets, eq(wallets.id, walletEntries.walletId))
       .where(eq(wallets.billingAccountId, accountId));
 
+  const redemptionsOf = (accountId: string) =>
+    db()
+      .select()
+      .from(promotionRedemptions)
+      .where(eq(promotionRedemptions.billingAccountId, accountId));
+
+  /** The seeded "Starter 7-day trial" (0027, `created_by` null). */
+  const seedTrialId = async () =>
+    (
+      await db()
+        .select({ id: promotions.id })
+        .from(promotions)
+        .innerJoin(
+          promotionPlans,
+          eq(promotionPlans.promotionId, promotions.id),
+        )
+        .where(
+          and(
+            eq(promotions.kind, 'TRIAL'),
+            eq(promotionPlans.planId, starterId),
+            isNull(promotions.createdBy),
+          ),
+        )
+    )[0]!.id;
+
   const setStarterTrial = (
     trialDays: number | null,
     trialCommentLimit: number | null,
@@ -130,6 +161,7 @@ describe('Subscriptions + Starter trial (e2e)', () => {
     days: number,
     grant: number,
     ex: Executor = db(),
+    planId = starterId,
   ) {
     const account = await accountOf(actor.id, ex);
     expect(account, 'billing account').toBeDefined();
@@ -138,7 +170,7 @@ describe('Subscriptions + Starter trial (e2e)', () => {
     expect(subs).toHaveLength(1);
     const sub = subs[0]!;
     expect(sub).toMatchObject({
-      planId: starterId,
+      planId,
       interval: 'month',
       status: 'TRIALING',
       pricePerMonthBdt: null,
@@ -193,6 +225,15 @@ describe('Subscriptions + Starter trial (e2e)', () => {
       .from(plans)
       .where(eq(plans.slug, 'starter'));
     starterId = starter!.id;
+    const idOf = async (slug: string) =>
+      (
+        await db()
+          .select({ id: plans.id })
+          .from(plans)
+          .where(eq(plans.slug, slug))
+      )[0]!.id;
+    growthId = await idOf('growth');
+    proId = await idOf('pro');
     // The seed (0022) this spec is written against.
     expect(starter).toMatchObject({ trialDays: 7, trialCommentLimit: 300 });
   });
@@ -205,129 +246,319 @@ describe('Subscriptions + Starter trial (e2e)', () => {
     await app?.close();
   });
 
-  describe('sign-up', () => {
-    it('creates the account, links the workspace and starts a 7-day trial with a 300-comment wallet', async () => {
-      const before = Date.now();
+  describe('sign-up (PR-T3: no plan)', () => {
+    it('creates the account and links the workspace, no subscription, no wallet; set up at once (no repair loop)', async () => {
       const owner = await actors.signUp('pwt3-signup');
-      const { account, sub } = await expectFreshTrial(owner, 7, 300);
+      const account = (await accountOf(owner.id))!;
       expect(account.ownerUserId).toBe(owner.id);
-      expect(sub.startedAt.getTime()).toBeGreaterThanOrEqual(before);
-      expect(sub.startedAt.getTime()).toBeLessThanOrEqual(Date.now());
+      expect(await linkOf(owner.workspaceId)).toBe(account.id);
+      expect(await subsOf(account.id)).toEqual([]);
+      expect(await walletOf(account.id)).toBeUndefined();
+      expect(await service.activePlan(owner.workspaceId)).toBeNull();
+      expect(await wallet.consume(owner.workspaceId, 'monthlyComments')).toBe(
+        'no_active_plan',
+      );
+      expect(await service.isSetUp(owner.workspaceId)).toBe(true);
+      // A later session create finds nothing to repair and starts nothing.
+      await actors.signIn(owner.email);
+      expect(await subsOf(account.id)).toEqual([]);
+      expect(await redemptionsOf(account.id)).toEqual([]);
+    });
+  });
 
-      const live = await service.activePlan(owner.workspaceId);
-      expect(live).toMatchObject({
-        workspaceId: owner.workspaceId,
-        billingAccountId: account.id,
-        subscriptionId: sub.id,
+  describe('POST …/billing/trial (PR-T3)', () => {
+    let creator: Actor;
+    const trialPath = (workspaceId: string) =>
+      `/api/workspaces/${workspaceId}/billing/trial`;
+    const post = (actor: Actor | string, workspaceId: string, body: object) =>
+      actors
+        .http()
+        .post(trialPath(workspaceId))
+        .set('Cookie', typeof actor === 'string' ? actor : actor.cookie)
+        .send(body);
+    const start = (owner: Actor, planId = starterId) =>
+      post(owner, owner.workspaceId, { planId });
+
+    /** A TRIAL promotion made by `creator` (deleted by `cleanup()`). */
+    async function insertTrial(
+      planId: string,
+      patch: Partial<typeof promotions.$inferInsert> = {},
+    ): Promise<string> {
+      const [row] = await db()
+        .insert(promotions)
+        .values({
+          kind: 'TRIAL',
+          name: 'PR-T3 trial',
+          trialDays: 3,
+          createdBy: creator.id,
+          ...patch,
+        })
+        .returning({ id: promotions.id });
+      await db()
+        .insert(promotionPlans)
+        .values({ promotionId: row!.id, planId });
+      return row!.id;
+    }
+
+    beforeAll(async () => {
+      creator = await actors.signUp('prt3-creator');
+    });
+
+    it('owner: 201 + summary; TRIALING 7-day Starter, redemption linked, wallet 300 from the promotion snapshot', async () => {
+      const owner = await actors.signUp('prt3-happy');
+      // The old plan columns no longer drive new trials.
+      await setStarterTrial(14, 50);
+      const before = Date.now();
+      let res: Awaited<ReturnType<typeof start>>;
+      try {
+        res = await start(owner);
+      } finally {
+        await setStarterTrial(7, 300);
+      }
+      expect(res.status).toBe(201);
+      expect(res.headers['cache-control']).toBe('private, no-store');
+      expect(res.body).toMatchObject({
+        plan: { slug: 'starter' },
         status: 'TRIALING',
-        plan: { id: starterId, slug: 'starter', trialCommentLimit: 300 },
+        comments: { used: 0, limit: 300 },
+        trialEligible: false,
       });
-      expect(await wallet.balance(owner.workspaceId)).toMatchObject({
-        included: 300,
-        used: 0,
-        available: 300,
-        resetsAt: sub.currentTermEnd,
+      const { account, sub } = await expectFreshTrial(owner, 7, 300);
+      expect(sub.startedAt.getTime()).toBeGreaterThanOrEqual(before);
+      expect(res.body.trialEndsAt).toBe(sub.trialEndsAt!.toISOString());
+      const [redemption, ...more] = await redemptionsOf(account.id);
+      expect(more).toEqual([]);
+      expect(redemption).toMatchObject({
+        promotionId: await seedTrialId(),
+        subscriptionId: sub.id,
+        kind: 'TRIAL',
+        trialDays: 7,
+        trialCommentLimit: 300,
+        discountBdtFirstTerm: 0,
+      });
+      expect(sub.promotionRedemptionId).toBe(redemption!.id);
+      expect(await service.activePlan(owner.workspaceId)).toMatchObject({
+        status: 'TRIALING',
+        plan: { slug: 'starter', trialCommentLimit: 300 },
       });
       expect(await wallet.consume(owner.workspaceId, 'monthlyComments')).toBe(
         'ok',
       );
     });
 
-    it('a changed trial_days / trial_comment_limit applies to new trials only', async () => {
-      const early = await actors.signUp('pwt3-early');
-      try {
-        await setStarterTrial(14, 50);
-        const late = await actors.signUp('pwt3-late');
-        await expectFreshTrial(early, 7, 300);
-        await expectFreshTrial(late, 14, 50);
-        expect(await wallet.balance(early.workspaceId)).toMatchObject({
-          included: 300,
-        });
-        expect(await wallet.balance(late.workspaceId)).toMatchObject({
-          included: 50,
-        });
-        // trial_comment_limit null = the plan's monthly comment limit.
-        await setStarterTrial(3, null);
-        const fallback = await actors.signUp('pwt3-fallback');
-        const [plan] = await db()
-          .select({ featureConfig: plans.featureConfig })
-          .from(plans)
-          .where(eq(plans.id, starterId));
-        await expectFreshTrial(
-          fallback,
-          3,
-          plan!.featureConfig.limits.monthlyComments,
+    it('a promotion without a comment limit grants the plan’s monthly comments; its days, not the plan’s', async () => {
+      const owner = await actors.signUp('prt3-fallback');
+      await insertTrial(growthId, { trialDays: 3, trialCommentLimit: null });
+      await start(owner, growthId).expect(201);
+      const [plan] = await db()
+        .select({ featureConfig: plans.featureConfig })
+        .from(plans)
+        .where(eq(plans.id, growthId));
+      await expectFreshTrial(
+        owner,
+        3,
+        plan!.featureConfig.limits.monthlyComments,
+        db(),
+        growthId,
+      );
+      expect(await wallet.balance(owner.workspaceId)).toMatchObject({
+        included: plan!.featureConfig.limits.monthlyComments,
+      });
+    });
+
+    it('401 without a session, 404 for a non-member, 403 for admin + moderator, 403 impersonated; nothing written', async () => {
+      const owner = await actors.signUp('prt3-roles');
+      const admin = await actors.signUp('prt3-roles-admin');
+      const mod = await actors.signUp('prt3-roles-mod');
+      await actors.addMember(owner.workspaceId, admin.id, 'admin');
+      await actors.addMember(owner.workspaceId, mod.id, 'moderator');
+      await actors
+        .http()
+        .post(trialPath(owner.workspaceId))
+        .send({ planId: starterId })
+        .expect(401);
+      await post(creator, owner.workspaceId, { planId: starterId }).expect(404);
+      for (const member of [admin, mod])
+        await post(member, owner.workspaceId, { planId: starterId }).expect(
+          403,
         );
-      } finally {
-        await setStarterTrial(7, 300);
+      const cookie = await actors.signIn(owner.email);
+      await actors.patchStoredSession(cookie, {
+        impersonatedBy: creator.id,
+        activeOrganizationId: owner.workspaceId,
+      });
+      const res = await post(cookie, owner.workspaceId, {
+        planId: starterId,
+      }).expect(403);
+      expect(res.body.message).toMatch(/impersonat/i);
+      expect(await subsOf((await accountOf(owner.id))!.id)).toEqual([]);
+    });
+
+    it('400 for a bad body, PLAN_NOT_AVAILABLE for an unknown or inactive plan', async () => {
+      const owner = await actors.signUp('prt3-body');
+      await post(owner, owner.workspaceId, { planId: 'nope' }).expect(400);
+      await post(owner, owner.workspaceId, {}).expect(400);
+      await post(owner, owner.workspaceId, {
+        planId: starterId,
+        extra: 1,
+      }).expect(400);
+      const [free] = await db()
+        .select({ id: plans.id })
+        .from(plans)
+        .where(eq(plans.slug, 'free'));
+      for (const planId of ['019a0000-0000-7000-8000-00000000beef', free!.id]) {
+        const res = await start(owner, planId).expect(400);
+        expect(res.body.code).toBe('PLAN_NOT_AVAILABLE');
       }
     });
 
-    it('trial_days null = no trial: account + link only, the trial comes on a later session create', async () => {
-      let owner!: Actor;
+    it('TRIAL_NOT_AVAILABLE: plan not targeted, the trial stopped, ended or used up', async () => {
+      const owner = await actors.signUp('prt3-none');
+      const code = async (planId: string) =>
+        (await start(owner, planId).expect(409)).body.code as string;
+      // Pro has no trial promotion.
+      expect(await code(proId)).toBe('TRIAL_NOT_AVAILABLE');
+      await insertTrial(proId, { endsAt: new Date(Date.now() - 60_000) });
+      expect(await code(proId)).toBe('TRIAL_NOT_AVAILABLE');
+      // Used up ("first N" cap reached by another account).
+      const capped = await insertTrial(proId, { maxRedemptions: 1 });
+      await db()
+        .insert(promotionRedemptions)
+        .values({
+          promotionId: capped,
+          billingAccountId: (await accountOf(creator.id))!.id,
+          kind: 'TRIAL',
+          trialDays: 3,
+        });
+      expect(await code(proId)).toBe('TRIAL_NOT_AVAILABLE');
+      const seed = await seedTrialId();
       try {
-        await setStarterTrial(null, 300);
-        owner = await actors.signUp('pwt3-notrial');
-        const account = await accountOf(owner.id);
-        expect(await linkOf(owner.workspaceId)).toBe(account!.id);
-        expect(await subsOf(account!.id)).toEqual([]);
-        expect(await walletOf(account!.id)).toBeUndefined();
-        expect(await service.activePlan(owner.workspaceId)).toBeNull();
+        await db()
+          .update(promotions)
+          .set({ stoppedAt: new Date(), stoppedBy: creator.id })
+          .where(eq(promotions.id, seed));
+        expect(await code(starterId)).toBe('TRIAL_NOT_AVAILABLE');
       } finally {
-        await setStarterTrial(7, 300);
+        await db()
+          .update(promotions)
+          .set({ stoppedAt: null, stoppedBy: null })
+          .where(eq(promotions.id, seed));
       }
-      await actors.signIn(owner.email);
-      await expectFreshTrial(owner, 7, 300);
+      expect(await subsOf((await accountOf(owner.id))!.id)).toEqual([]);
     });
-  });
 
-  describe('trial once per account', () => {
-    it('startTrial returns null while a trial runs and after it expired', async () => {
-      const owner = await actors.signUp('pwt3-once');
-      const account = (await accountOf(owner.id))!;
-      expect(await service.startTrial(account.id)).toBeNull();
+    it('one trial per account ever: a second (other promotion) → TRIAL_ALREADY_USED; a live plan → PLAN_ALREADY_ACTIVE', async () => {
+      const owner = await actors.signUp('prt3-twice', { trial: true });
+      let res = await start(owner).expect(409);
+      expect(res.body.code).toBe('PLAN_ALREADY_ACTIVE');
+      await actors.expirePlan(owner);
+      await insertTrial(growthId);
+      res = await start(owner, growthId).expect(409);
+      expect(res.body.code).toBe('TRIAL_ALREADY_USED');
+
+      const paid = await actors.signUp('prt3-paid');
+      await actors.activatePlan(paid, 'growth');
+      res = await start(paid).expect(409);
+      expect(res.body.code).toBe('PLAN_ALREADY_ACTIVE');
+      const account = (await accountOf(owner.id))!.id;
+      expect((await subsOf(account)).map((s) => s.status)).toEqual(['EXPIRED']);
+      expect(await redemptionsOf(account)).toHaveLength(1);
+    });
+
+    it('an old sign-up trial (no redemption row) counts: TRIAL_ALREADY_USED, trialEligible false', async () => {
+      const owner = await actors.signUp('prt3-legacy');
+      const summary = async () =>
+        (
+          await actors
+            .http()
+            .get(`/api/workspaces/${owner.workspaceId}/billing/summary`)
+            .set('Cookie', owner.cookie)
+            .expect(200)
+        ).body as { trialEligible: boolean; status: string };
+      expect(await summary()).toMatchObject({
+        status: 'NONE',
+        trialEligible: true,
+      });
+      const startedAt = new Date(Date.now() - 10 * DAY);
+      const end = new Date(Date.now() - 3 * DAY);
+      await db()
+        .insert(subscriptions)
+        .values({
+          billingAccountId: (await accountOf(owner.id))!.id,
+          planId: starterId,
+          interval: 'month',
+          status: 'EXPIRED',
+          startedAt,
+          trialEndsAt: end,
+          currentTermStart: startedAt,
+          currentTermEnd: end,
+        });
+      expect(await summary()).toMatchObject({
+        status: 'EXPIRED',
+        trialEligible: false,
+      });
+      const res = await start(owner).expect(409);
+      expect(res.body.code).toBe('TRIAL_ALREADY_USED');
+    });
+
+    it('a stale paid row past its term (expiry job not run) is recorded EXPIRED and the trial starts', async () => {
+      const owner = await actors.signUp('prt3-stale');
+      const subId = await actors.activatePlan(owner, 'growth');
+      const past = new Date(Date.now() - 60_000);
       await db()
         .update(subscriptions)
-        .set({ status: 'EXPIRED' })
-        .where(eq(subscriptions.billingAccountId, account.id));
-      expect(await service.startTrial(account.id)).toBeNull();
-      // A new session doesn't start one either (the account had a subscription).
-      await actors.signIn(owner.email);
-      const subs = await subsOf(account.id);
-      expect(subs.map((s) => s.status)).toEqual(['EXPIRED']);
-      expect(await service.activePlan(owner.workspaceId)).toBeNull();
+        .set({
+          startedAt: new Date(past.getTime() - 30 * DAY),
+          currentTermStart: new Date(past.getTime() - 30 * DAY),
+          currentTermEnd: past,
+        })
+        .where(eq(subscriptions.id, subId));
+      await start(owner).expect(201);
+      const account = (await accountOf(owner.id))!.id;
+      expect(
+        (await subsOf(account)).map((s) => [s.id === subId, s.status]),
+      ).toEqual([
+        [true, 'EXPIRED'],
+        [false, 'TRIALING'],
+      ]);
     });
 
-    it('concurrent startTrial / ensureAccount calls create one account and one trial', async () => {
-      const owner = await actors.signUp('pwt3-race');
+    it('NO_BILLING_ACCOUNT when the workspace has no account', async () => {
+      const owner = await actors.signUp('prt3-orphan');
       await actors.removeBilling(owner);
-      const ids = await Promise.all(
-        [1, 2, 3].map(() => service.ensureAccount(owner.id)),
-      );
-      expect(new Set(ids).size).toBe(1);
-      const results = await Promise.all(
-        [1, 2, 3].map(() => service.startTrial(ids[0]!)),
-      );
-      expect(results.filter((r) => r !== null)).toHaveLength(1);
-      expect(await subsOf(ids[0]!)).toHaveLength(1);
-      expect(await balancesOf(ids[0]!)).toHaveLength(1);
-      expect(await entriesOf(ids[0]!)).toHaveLength(1);
+      const res = await start(owner).expect(409);
+      expect(res.body.code).toBe('NO_BILLING_ACCOUNT');
+    });
+
+    it('a parallel double-click starts exactly one trial (one redemption, one grant)', async () => {
+      const owner = await actors.signUp('prt3-race');
+      const statuses = (
+        await Promise.all([1, 2, 3].map(() => start(owner)))
+      ).map((r) => r.status);
+      expect(statuses.sort((x, y) => x - y)).toEqual([201, 409, 409]);
+      const account = (await accountOf(owner.id))!.id;
+      expect(await subsOf(account)).toHaveLength(1);
+      expect(await redemptionsOf(account)).toHaveLength(1);
+      expect(await balancesOf(account)).toHaveLength(1);
+      expect(await entriesOf(account)).toHaveLength(1);
     });
   });
 
   describe('repair on the next session create', () => {
-    it('an owner whose workspace has no account gets account + link + trial at sign-in', async () => {
+    it('an owner whose workspace has no account gets account + link (no plan) at sign-in, once', async () => {
       const owner = await actors.signUp('pwt3-repair');
       await actors.removeBilling(owner);
       expect(await accountOf(owner.id)).toBeUndefined();
       expect(await linkOf(owner.workspaceId)).toBeNull();
+      expect(await service.isSetUp(owner.workspaceId)).toBe(false);
       await actors.signIn(owner.email);
-      const { sub } = await expectFreshTrial(owner, 7, 300);
+      const account = (await accountOf(owner.id))!;
+      expect(await linkOf(owner.workspaceId)).toBe(account.id);
+      expect(await subsOf(account.id)).toEqual([]);
+      expect(await service.isSetUp(owner.workspaceId)).toBe(true);
       // Already set up: another sign-in changes nothing.
       await actors.signIn(owner.email);
-      expect((await subsOf(sub.billingAccountId)).map((s) => s.id)).toEqual([
-        sub.id,
-      ]);
+      expect((await accountOf(owner.id))!.id).toBe(account.id);
     });
 
     it('a non-owner member is never set up by a sign-in', async () => {
@@ -346,7 +577,7 @@ describe('Subscriptions + Starter trial (e2e)', () => {
 
   describe('/organization/create', () => {
     it('links the new workspace to the creator account, no second trial', async () => {
-      const owner = await actors.signUp('pwt3-second');
+      const owner = await actors.signUp('pwt3-second', { trial: true });
       const account = (await accountOf(owner.id))!;
       // Starter allows 1 workspace (PW-T5): a paid Growth term (3) makes room for the second.
       await actors.activatePlan(owner, 'growth');
@@ -381,10 +612,10 @@ describe('Subscriptions + Starter trial (e2e)', () => {
       await service.expireDue();
       // T is in the past: every other trial of this spec ends after it, so only ours are due.
       const T = new Date(Math.floor(Date.now() / 1000) * 1000 - DAY);
-      const due = await actors.signUp('pwt3-due');
-      const boundary = await actors.signUp('pwt3-boundary');
-      const later = await actors.signUp('pwt3-later');
-      const canceled = await actors.signUp('pwt3-canceled');
+      const due = await actors.signUp('pwt3-due', { trial: true });
+      const boundary = await actors.signUp('pwt3-boundary', { trial: true });
+      const later = await actors.signUp('pwt3-later', { trial: true });
+      const canceled = await actors.signUp('pwt3-canceled', { trial: true });
       const accountId = async (a: Actor) => (await accountOf(a.id))!.id;
       const setTrial = async (a: Actor, start: Date, end: Date) =>
         db()
@@ -461,7 +692,7 @@ describe('Subscriptions + Starter trial (e2e)', () => {
           },
         },
       ]);
-      const owner = await actors.signUp('pwt3-job');
+      const owner = await actors.signUp('pwt3-job', { trial: true });
       const account = (await accountOf(owner.id))!;
       const past = new Date(Date.now() - 2 * DAY);
       await db()
@@ -492,7 +723,7 @@ describe('Subscriptions + Starter trial (e2e)', () => {
       const host = await actors.signUp('pwt3-bf-host');
       const oldest = await actors.signUp('pwt3-bf-oldest');
       const empty = await actors.signUp('pwt3-bf-empty');
-      const had = await actors.signUp('pwt3-bf-had');
+      const had = await actors.signUp('pwt3-bf-had', { trial: true });
       const noTrial = await actors.signUp('pwt3-bf-notrial');
       const backfillSql = readFileSync(BACKFILL_MIGRATION, 'utf8');
       const rollback = new Error('rollback');
@@ -627,8 +858,11 @@ describe('Subscriptions + Starter trial (e2e)', () => {
         }),
       ).rejects.toBe(rollback);
 
-      // Rolled back: the sign-up rows are back, the Starter trial values too.
-      await expectFreshTrial(owner, 7, 300);
+      // Rolled back: the sign-up rows are back (account + link, no plan), the Starter trial values
+      // too.
+      const ownerAccount = (await accountOf(owner.id))!;
+      expect(await linkOf(owner.workspaceId)).toBe(ownerAccount.id);
+      expect(await subsOf(ownerAccount.id)).toEqual([]);
       const [starter] = await db()
         .select({ trialDays: plans.trialDays })
         .from(plans)

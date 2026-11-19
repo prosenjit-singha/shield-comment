@@ -1,7 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { and, eq, isNull, lte, sql } from 'drizzle-orm';
-import { normalizeFeatureConfig } from '../admin/plan-rules.js';
+import { and, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import { inListSql } from '../db/schema/check-sql.js';
 import {
@@ -9,11 +13,14 @@ import {
   LIVE_SUBSCRIPTION_STATUSES,
   plans,
   subscriptions,
-  TRIAL_PLAN_SLUG,
   workspaces,
 } from '../db/schema/index.js';
 import {
-  type AccountLiveSubscription,
+  PROMOTION_ERROR_CODES,
+  PromotionService,
+} from '../promotions/promotion.service.js';
+import {
+  findAccountLiveSubscription,
   findLiveSubscription,
   type LiveSubscription,
 } from '../wallet/live-subscription.queries.js';
@@ -21,17 +28,23 @@ import {
   type WalletExecutor,
   WalletService,
 } from '../wallet/wallet.service.js';
+import { accountHadTrial } from './billing-summary.queries.js';
 import { trialEndsAt } from './trial.js';
 
 /** The Drizzle methods the billing writes need (db or a transaction). */
 export type BillingExecutor = WalletExecutor;
 
-/** What `setUpOwner()` left in place. */
-export interface OwnerBilling {
-  billingAccountId: string;
-  /** The trial started now, or `null` (the account already had a subscription / no trial days). */
-  trialSubscriptionId: string | null;
-}
+/** `startTrial()` 4xx codes (body `{ message, code }`); `redeem()`'s 409 codes pass through. */
+export const TRIAL_ERROR_CODES = {
+  /** 409: the workspace has no billing account. */
+  noBillingAccount: 'NO_BILLING_ACCOUNT',
+  /** 409: the account already has a live (TRIALING / ACTIVE) subscription. */
+  planAlreadyActive: 'PLAN_ALREADY_ACTIVE',
+  /** 400: unknown or inactive plan. */
+  planNotAvailable: 'PLAN_NOT_AVAILABLE',
+  /** 409: no live TRIAL promotion targets the plan (none, ended, stopped or used up). */
+  trialNotAvailable: 'TRIAL_NOT_AVAILABLE',
+} as const;
 
 /** `status in ('TRIALING', 'ACTIVE')` as a literal list, so it matches the partial indexes. */
 const LIVE_STATUS_SQL = sql.raw(
@@ -39,16 +52,16 @@ const LIVE_STATUS_SQL = sql.raw(
 );
 
 /**
- * Billing accounts and subscriptions (PW-T3; user decisions 2026-11-19 PW-D8 Starter trial at
- * sign-up once per account, PW-D9 expiry, PW-D12 trial comment limit, PW-D15). Payments,
- * renewals and plan changes are Module 8; manual activation is PW-T9.
+ * Billing accounts and subscriptions (PW-T3; PW-D9 expiry, PW-D15; PR-T3: PR-D10 trial by choice,
+ * reading 1 one trial per account ever). Payments, renewals and plan changes are Module 8; manual
+ * activation is PW-T9.
  *
  * - The account is the paying "client" (one per owner user); every workspace points at the
  *   creator's account (`workspaces.billing_account_id`), so plan limits are pooled (PW-D11).
- * - A trial is a `TRIALING` subscription on the active `starter` plan (`TRIAL_PLAN_SLUG`) whose
- *   end (`trial_days` at trial start) is stored once, plus **one** wallet period granted
- *   `trial_comment_limit ?? limits.monthlyComments` at trial start: a later admin change of either
- *   only affects new trials.
+ *   Sign-up only links the workspace (no plan).
+ * - A trial is started by the owner (`startTrial`) from a live TRIAL promotion: a `TRIALING`
+ *   subscription whose end is stored once, plus **one** wallet period granted the redemption's
+ *   comment limit (snapshot: a later promotion edit never changes a running trial).
  * - Readers treat `now ≥ current_term_end` as over (`findLiveSubscription`); `expireDue()` (the
  *   `subscription-expiry` job, every 15 min) only records it as `EXPIRED`.
  *
@@ -62,6 +75,7 @@ export class SubscriptionService {
   constructor(
     @InjectDrizzle() private readonly db: Database,
     private readonly wallet: WalletService,
+    private readonly promotions: PromotionService,
   ) {}
 
   /** The user's billing account id, created on first use (create-or-get on the owner unique key). */
@@ -88,8 +102,8 @@ export class SubscriptionService {
 
   /**
    * Links the workspace to the user's account (created on first use) when it has none yet; a
-   * workspace keeps its account for life. Returns the user's account id. For `/organization/create`
-   * (no trial) and sign-up.
+   * workspace keeps its account for life. Returns the user's account id. Sign-up (and its
+   * session-create repair) and `/organization/create`; never starts a plan (PR-T3).
    */
   async linkWorkspace(
     userId: string,
@@ -111,51 +125,82 @@ export class SubscriptionService {
   }
 
   /**
-   * Starts the Starter trial (PW-D8) at `now` when the account has **no** subscription row at all
-   * (once per account, also after expiry/cancel) and the active `starter` plan has `trial_days`.
-   * Inserts the `TRIALING` subscription and opens its wallet period with the trial grant, in the
-   * caller's transaction (`tx`) or its own. Concurrent calls are serialised on the account row
-   * (`FOR UPDATE`) and the partial unique index backs that up. Returns the subscription id, or
-   * `null` (already had one / no trial plan).
+   * Starts a free trial by choice (PR-T3; PR-D10, reading 1) for the workspace's billing account
+   * on `planId`, in one transaction: lock the account → no live subscription → the plan is active
+   * → a live TRIAL promotion targets it → the account never had a trial → `TRIALING` subscription
+   * (end = now + the promotion's days × 24 h) → the redemption (`PromotionService.redeem`, its 409
+   * codes pass through) linked on the subscription → the wallet period granted the redemption's
+   * comment limit (`null` = the plan's monthly comments). Concurrent calls serialise on the
+   * account row: the later one sees `PLAN_ALREADY_ACTIVE`. Returns the subscription id.
    */
   async startTrial(
-    accountId: string,
+    workspaceId: string,
+    planId: string,
     now: Date = new Date(),
-    tx?: BillingExecutor,
-  ): Promise<string | null> {
-    const run = async (ex: BillingExecutor): Promise<string | null> => {
-      const [account] = await ex
+  ): Promise<string> {
+    const conflict = (code: string, message: string) =>
+      new ConflictException({ message, code });
+    return this.db.transaction(async (tx) => {
+      const [ws] = await tx
+        .select({ billingAccountId: workspaces.billingAccountId })
+        .from(workspaces)
+        .where(eq(workspaces.id, workspaceId));
+      const accountId = ws?.billingAccountId;
+      if (!accountId)
+        throw conflict(
+          TRIAL_ERROR_CODES.noBillingAccount,
+          'This workspace has no billing account',
+        );
+      await tx
         .select({ id: billingAccounts.id })
         .from(billingAccounts)
         .where(eq(billingAccounts.id, accountId))
         .for('update');
-      if (!account) throw new Error(`Billing account ${accountId} not found`);
-      const [existing] = await ex
-        .select({ id: subscriptions.id })
-        .from(subscriptions)
-        .where(eq(subscriptions.billingAccountId, accountId))
-        .limit(1);
-      if (existing) return null;
-      const [plan] = await ex
-        .select({
-          id: plans.id,
-          slug: plans.slug,
-          trialDays: plans.trialDays,
-          trialCommentLimit: plans.trialCommentLimit,
-          featureConfig: plans.featureConfig,
-        })
+      if (await findAccountLiveSubscription(tx, accountId, now))
+        throw conflict(
+          TRIAL_ERROR_CODES.planAlreadyActive,
+          'This account already has a plan',
+        );
+      const [plan] = await tx
+        .select({ id: plans.id })
         .from(plans)
-        .where(and(eq(plans.slug, TRIAL_PLAN_SLUG), eq(plans.isActive, true)));
-      if (!plan || plan.trialDays === null) {
-        this.logger.debug(`no trial plan account=${accountId}`);
-        return null;
-      }
-      const end = trialEndsAt(now, plan.trialDays);
-      const [inserted] = await ex
+        .where(and(eq(plans.id, planId), eq(plans.isActive, true)));
+      if (!plan)
+        throw new BadRequestException({
+          message: 'This plan is not available',
+          code: TRIAL_ERROR_CODES.planNotAvailable,
+        });
+      const trial = await this.promotions.liveTrialFor(planId, now);
+      if (!trial)
+        throw conflict(
+          TRIAL_ERROR_CODES.trialNotAvailable,
+          'No free trial is available for this plan',
+        );
+      // Also counts sign-up trials from before PR-T3 (no redemption row).
+      if (await accountHadTrial(tx, accountId))
+        throw conflict(
+          PROMOTION_ERROR_CODES.trialAlreadyUsed,
+          'This account already had a free trial',
+        );
+
+      // A live-status row past its term still holds `subscriptions_one_live_per_account` until
+      // the expiry job runs: record it as EXPIRED first.
+      await tx
+        .update(subscriptions)
+        .set({ status: 'EXPIRED' })
+        .where(
+          and(
+            eq(subscriptions.billingAccountId, accountId),
+            LIVE_STATUS_SQL,
+            lte(subscriptions.currentTermEnd, now),
+          ),
+        );
+      const end = trialEndsAt(now, trial.days);
+      const [created] = await tx
         .insert(subscriptions)
         .values({
           billingAccountId: accountId,
-          planId: plan.id,
+          planId,
           interval: 'month',
           status: 'TRIALING',
           startedAt: now,
@@ -163,75 +208,41 @@ export class SubscriptionService {
           currentTermStart: now,
           currentTermEnd: end,
         })
-        .onConflictDoNothing()
         .returning({ id: subscriptions.id });
-      if (!inserted) return null;
-      const live: AccountLiveSubscription = {
-        billingAccountId: accountId,
-        subscriptionId: inserted.id,
-        status: 'TRIALING',
-        interval: 'month',
-        startedAt: now,
-        trialEndsAt: end,
-        currentTermStart: now,
-        currentTermEnd: end,
-        plan: {
-          id: plan.id,
-          slug: plan.slug,
-          featureConfig: normalizeFeatureConfig(plan.featureConfig),
-          trialCommentLimit: plan.trialCommentLimit,
-        },
-      };
-      await this.wallet.openSubscriptionPeriod(live, now, ex);
-      this.logger.log(
-        `trial started account=${accountId} subscription=${inserted.id} days=${plan.trialDays}`,
-      );
-      return inserted.id;
-    };
-    return tx ? run(tx) : this.db.transaction(run);
-  }
-
-  /**
-   * Sign-up (and its repair on a later session create): the user's account, the workspace linked
-   * to it, and the trial when the account never had a subscription. Idempotent; pass `tx` to run
-   * in the transaction that creates the workspace.
-   */
-  async setUpOwner(
-    userId: string,
-    workspaceId: string,
-    now: Date = new Date(),
-    tx?: BillingExecutor,
-  ): Promise<OwnerBilling> {
-    const run = async (ex: BillingExecutor): Promise<OwnerBilling> => {
-      const billingAccountId = await this.linkWorkspace(
-        userId,
-        workspaceId,
-        ex,
-      );
-      const trialSubscriptionId = await this.startTrial(
-        billingAccountId,
+      const subscriptionId = created!.id;
+      const redemption = await this.promotions.redeem(
+        tx,
+        { promotionId: trial.promotionId, accountId, planId, subscriptionId },
         now,
-        ex,
       );
-      return { billingAccountId, trialSubscriptionId };
-    };
-    return tx ? run(tx) : this.db.transaction(run);
+      await tx
+        .update(subscriptions)
+        .set({ promotionRedemptionId: redemption.id })
+        .where(eq(subscriptions.id, subscriptionId));
+      // Re-read: the grant comes from the redemption snapshot (`findAccountLiveSubscription`).
+      const live = await findAccountLiveSubscription(tx, accountId, now);
+      await this.wallet.openSubscriptionPeriod(live!, now, tx);
+      this.logger.log(
+        `trial started account=${accountId} workspace=${workspaceId} subscription=${subscriptionId} promotion=${trial.promotionId} days=${trial.days}`,
+      );
+      return subscriptionId;
+    });
   }
 
   /**
-   * `true` when the workspace is linked to an account that has (or had) a subscription: nothing
-   * for `setUpOwner()` to repair. One query (the session-create check).
+   * `true` when the workspace is linked to a billing account: nothing for the session-create
+   * repair (`linkWorkspace`) to do. One query.
    */
   async isSetUp(workspaceId: string): Promise<boolean> {
     const [row] = await this.db
-      .select({ id: subscriptions.id })
+      .select({ id: workspaces.id })
       .from(workspaces)
-      .innerJoin(
-        subscriptions,
-        eq(subscriptions.billingAccountId, workspaces.billingAccountId),
-      )
-      .where(eq(workspaces.id, workspaceId))
-      .limit(1);
+      .where(
+        and(
+          eq(workspaces.id, workspaceId),
+          isNotNull(workspaces.billingAccountId),
+        ),
+      );
     return row !== undefined;
   }
 

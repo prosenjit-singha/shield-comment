@@ -158,8 +158,8 @@ describe('Workspace pages API (e2e)', () => {
     );
     actors = createAuthActors(app);
     cipher = app.get(TokenCipherService);
-    owner = await actors.signUp('m3t6-owner');
-    other = await actors.signUp('m3t6-other');
+    owner = await actors.signUp('m3t6-owner', { trial: true });
+    other = await actors.signUp('m3t6-other', { trial: true });
     growth = await actors.signUp('m3t6-growth');
     moderator = await actors.signUp('m3t6-mod');
     wsAdmin = await actors.signUp('m3t6-admin');
@@ -170,7 +170,8 @@ describe('Workspace pages API (e2e)', () => {
     for (const actor of [owner, other, growth]) {
       await insertConnection(actor.workspaceId, 'ACTIVE');
     }
-    // Every sign-up runs on a Starter trial (PW-T3); the limit comes from the live plan (PW-T5).
+    // owner/other run on the Starter trial (PR-T3: started explicitly); the limit comes from the live
+    // plan (PW-T5).
     starterLimit = await limitOf('starter');
     growthLimit = await limitOf('growth');
     // The limit tests need room for at least one active Page on Starter and more on Growth.
@@ -607,9 +608,9 @@ describe('Workspace pages API (e2e)', () => {
     let none: Actor;
 
     beforeAll(async () => {
-      reauth = await actors.signUp('m4t9-reauth');
-      revoked = await actors.signUp('m4t9-revoked');
-      none = await actors.signUp('m4t9-none');
+      reauth = await actors.signUp('m4t9-reauth', { trial: true });
+      revoked = await actors.signUp('m4t9-revoked', { trial: true });
+      none = await actors.signUp('m4t9-none', { trial: true });
       await insertConnection(reauth.workspaceId, 'NEEDS_REAUTH');
       await insertConnection(revoked.workspaceId, 'REVOKED');
     });
@@ -889,7 +890,7 @@ describe('Workspace pages API (e2e)', () => {
     });
 
     it('expired plan: GET limit 0, switch on → 409 NO_ACTIVE_PLAN without Graph, switch off → 200', async () => {
-      const ended = await actors.signUp('pwt5-ended');
+      const ended = await actors.signUp('pwt5-ended', { trial: true });
       await insertConnection(ended.workspaceId, 'ACTIVE');
       const on = await insertPage(ended.workspaceId, 'E on', {
         isActive: true,

@@ -261,8 +261,8 @@ describe('Meta disconnect (e2e)', () => {
       (state: string) =>
         `https://www.facebook.com/v26.0/dialog/oauth?client_id=1&state=${state}`,
     );
-    owner = await actors.signUp('m4t9-owner');
-    other = await actors.signUp('m4t9-other');
+    owner = await actors.signUp('m4t9-owner', { trial: true });
+    other = await actors.signUp('m4t9-other', { trial: true });
     moderator = await actors.signUp('m4t9-mod');
     outsider = await actors.signUp('m4t9-outsider');
     superAdmin = await actors.signUpSuperAdmin('m4t9-super');

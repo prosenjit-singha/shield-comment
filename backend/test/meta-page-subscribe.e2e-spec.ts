@@ -137,9 +137,9 @@ describe('Page toggle → subscribed_apps (e2e)', () => {
     );
     actors = createAuthActors(app);
     cipher = app.get(TokenCipherService);
-    owner = await actors.signUp('m4t8-owner');
-    other = await actors.signUp('m4t8-other');
-    revoked = await actors.signUp('m4t8-revoked');
+    owner = await actors.signUp('m4t8-owner', { trial: true });
+    other = await actors.signUp('m4t8-other', { trial: true });
+    revoked = await actors.signUp('m4t8-revoked', { trial: true });
     await insertConnection(owner, 'ACTIVE');
     await insertConnection(other, 'ACTIVE');
     await insertConnection(revoked, 'REVOKED');

@@ -22,6 +22,8 @@ export interface BillingSummaryInput {
   workspaceCount: number;
   /** Pages on across the account (`countPooledActivePages`). */
   activePages: number;
+  /** The account may start a trial (`BillingSummary.trialEligible`). */
+  trialEligible: boolean;
 }
 
 const isLiveStatus = (status: string): boolean =>
@@ -74,5 +76,6 @@ export function toBillingSummary(input: BillingSummaryInput): BillingSummary {
       used: input.activePages,
       limit: live?.plan.featureConfig.limits.connectedPages ?? 0,
     },
+    trialEligible: input.trialEligible,
   };
 }

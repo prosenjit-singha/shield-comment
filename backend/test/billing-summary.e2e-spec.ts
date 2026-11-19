@@ -26,7 +26,7 @@ import { createTestApp } from './utils/create-test-app.js';
  * PW-T6: the client `GET /api/workspaces/:workspaceId/billing/summary` (public `GET /api/plans`
  * moved to promotions.e2e-spec.ts with its PR-T2 shape)
  * (plan §3.7; user decisions 2026-11-19 PW-D5/D6 prices, PW-D9 paused, PW-D11 pooled). Real
- * Postgres; every sign-up starts on the Starter trial (PW-T3). Pages are inserted directly with
+ * Postgres; sign-ups have no plan (PR-T3): the owner starts the Starter trial explicitly. Pages are inserted directly with
  * real ciphertexts (the summary never reads them).
  */
 describe('Billing summary (e2e)', () => {
@@ -100,7 +100,7 @@ describe('Billing summary (e2e)', () => {
     actors = createAuthActors(app);
     cipher = app.get(TokenCipherService);
     wallet = app.get(WalletService);
-    owner = await actors.signUp('pwt6-owner');
+    owner = await actors.signUp('pwt6-owner', { trial: true });
     moderator = await actors.signUp('pwt6-mod');
     wsAdmin = await actors.signUp('pwt6-admin');
     outsider = await actors.signUp('pwt6-outsider');
@@ -178,6 +178,7 @@ describe('Billing summary (e2e)', () => {
         },
         workspaces: { used: 1, limit: 1 },
         pages: { used: 0, limit: starter.limits.connectedPages },
+        trialEligible: false,
       });
       expect(trial.trialEndsAt!.getTime()).toBe(trial.currentTermEnd.getTime());
 
@@ -254,7 +255,7 @@ describe('Billing summary (e2e)', () => {
     });
 
     it('expired trial: EXPIRED (paused) with the ended Starter + its trial end, comments 0/0, limits 0', async () => {
-      const ended = await actors.signUp('pwt6-expired');
+      const ended = await actors.signUp('pwt6-expired', { trial: true });
       const trial = await subscriptionOf(ended, 'TRIALING');
       await insertPage(ended.workspaceId, true);
       await actors.expirePlan(ended);
@@ -267,11 +268,12 @@ describe('Billing summary (e2e)', () => {
         comments: { used: 0, limit: 0, resetsAt: null },
         workspaces: { used: 1, limit: 0 },
         pages: { used: 1, limit: 0 },
+        trialEligible: false,
       });
     });
 
     it('a trial whose term is over but still TRIALING (expiry job not run) reads EXPIRED', async () => {
-      const late = await actors.signUp('pwt6-late');
+      const late = await actors.signUp('pwt6-late', { trial: true });
       const past = new Date(Date.now() - 60_000);
       await db()
         .update(subscriptions)
@@ -304,7 +306,42 @@ describe('Billing summary (e2e)', () => {
         comments: { used: 0, limit: 0, resetsAt: null },
         workspaces: { used: 1, limit: 0 },
         pages: { used: 1, limit: 0 },
+        trialEligible: false,
       });
+    });
+
+    it('fresh sign-up (PR-T3): NONE, no plan, trialEligible true → false once the trial started', async () => {
+      const fresh = await actors.signUp('prt3-fresh');
+      expect(await summary(fresh, fresh.workspaceId)).toEqual({
+        plan: null,
+        interval: null,
+        status: 'NONE',
+        trialEndsAt: null,
+        termEndsAt: null,
+        comments: { used: 0, limit: 0, resetsAt: null },
+        workspaces: { used: 1, limit: 0 },
+        pages: { used: 0, limit: 0 },
+        trialEligible: true,
+      });
+      await actors.startTrial(fresh);
+      expect(await summary(fresh, fresh.workspaceId)).toMatchObject({
+        status: 'TRIALING',
+        trialEligible: false,
+      });
+      // Still false after the trial ended (one trial per account, reading 1).
+      await actors.expirePlan(fresh);
+      expect(await summary(fresh, fresh.workspaceId)).toMatchObject({
+        status: 'EXPIRED',
+        trialEligible: false,
+      });
+    });
+
+    it('a paid plan that ended (never a trial): trialEligible true; while it is live: false', async () => {
+      const paid = await actors.signUp('prt3-paid-summary');
+      await actors.activatePlan(paid, 'growth');
+      expect((await summary(paid, paid.workspaceId)).trialEligible).toBe(false);
+      await actors.expirePlan(paid);
+      expect((await summary(paid, paid.workspaceId)).trialEligible).toBe(true);
     });
   });
 });

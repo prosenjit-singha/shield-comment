@@ -24,7 +24,7 @@ import { PasswordService } from './password.service.js';
  * - The integration's `AuthGuard` is the global guard: every route needs a session unless it
  *   (or its controller) has `@Public()` (src/auth/decorators/public.decorator.ts).
  * - `AUTH_SECONDARY_STORAGE` comes from the global RedisModule.
- * - `SubscriptionService` (from `BillingModule`): sign-up trial + workspace links (PW-T3);
+ * - `SubscriptionService` (from `BillingModule`): workspace links at sign-up / org create (PW-T3, no trial since PR-T3);
  *   `LimitService`: the `/organization/create` workspace limit (PW-T5).
  * - Client IP (rate limit, session `ipAddress`): `X-Forwarded-For`, else the socket address
  *   (src/auth/client-ip.ts).

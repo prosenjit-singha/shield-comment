@@ -8,7 +8,10 @@ import {
 import { findLiveSubscription } from '../wallet/live-subscription.queries.js';
 import { WalletService } from '../wallet/wallet.service.js';
 import { toBillingSummary } from './billing-summary.js';
-import { findSummarySubscription } from './billing-summary.queries.js';
+import {
+  accountHadTrial,
+  findSummarySubscription,
+} from './billing-summary.queries.js';
 import type { BillingSummary } from './dto/billing-summary.dto.js';
 import { LimitService } from './limit.service.js';
 
@@ -35,7 +38,7 @@ export class BillingSummaryService {
       findLiveSubscription(this.db, workspaceId, now),
     ]);
     const accountId = billing?.billingAccountId ?? null;
-    const [subscription, balance, workspaceCount, activePages] =
+    const [subscription, balance, workspaceCount, activePages, hadTrial] =
       await Promise.all([
         accountId
           ? findSummarySubscription(
@@ -47,6 +50,7 @@ export class BillingSummaryService {
         live ? this.wallet.balance(workspaceId, 'monthlyComments', now) : null,
         accountId ? this.limits.workspaceCount(accountId) : 1,
         countPooledActivePages(this.db, workspaceId),
+        accountId ? accountHadTrial(this.db, accountId) : true,
       ]);
     return toBillingSummary({
       live,
@@ -54,6 +58,8 @@ export class BillingSummaryService {
       balance,
       workspaceCount,
       activePages,
+      // PR-T3: the trial endpoint needs an account, no live plan and no trial ever (reading 1).
+      trialEligible: !hadTrial && live === null,
     });
   }
 }

@@ -8,6 +8,7 @@ import { PasswordService } from '../auth/password.service.js';
 import { ensureSuperAdmin, parseSuperAdminInput } from '../auth/super-admin.js';
 import { relaxHappyEyeballsTimeout } from '../common/net/happy-eyeballs.js';
 import * as schema from '../db/schema/index.js';
+import { PromotionService } from '../promotions/promotion.service.js';
 import { WalletService } from '../wallet/wallet.service.js';
 
 /**
@@ -60,7 +61,11 @@ try {
     secondaryStorage: noopStorage(),
     rateLimit: false,
     // `createUser` makes no session or workspace, so the billing hooks never run here.
-    billing: new SubscriptionService(db, new WalletService(db)),
+    billing: new SubscriptionService(
+      db,
+      new WalletService(db),
+      new PromotionService(db),
+    ),
     limits: new LimitService(db),
   });
   const result = await ensureSuperAdmin(db, auth, input);

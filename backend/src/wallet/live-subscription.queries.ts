@@ -1,10 +1,11 @@
-import { and, eq, gt, inArray } from 'drizzle-orm';
+import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import { normalizeFeatureConfig } from '../admin/plan-rules.js';
 import type { Database } from '../db/database.js';
 import {
   LIVE_SUBSCRIPTION_STATUSES,
   type PlanFeatureConfig,
   plans,
+  promotionRedemptions,
   type SubscriptionInterval,
   subscriptions,
   workspaces,
@@ -30,6 +31,10 @@ export interface LiveSubscription {
     slug: string;
     /** Normalised (`normalizeFeatureConfig`): every limit key present. */
     featureConfig: PlanFeatureConfig;
+    /**
+     * A trial's comment limit (`null` = the plan's monthly comments): the redemption snapshot of
+     * a promotion trial (PR-T3), else the plan column (sign-up trials before PR-T3).
+     */
     trialCommentLimit: number | null;
   };
 }
@@ -50,8 +55,17 @@ const liveColumns = {
   planId: plans.id,
   planSlug: plans.slug,
   featureConfig: plans.featureConfig,
-  trialCommentLimit: plans.trialCommentLimit,
+  // ponytail: the plan-column fallback is for pre-PR-T3 sign-up trials; PR-T7 drops it.
+  trialCommentLimit: sql<
+    number | null
+  >`case when ${promotionRedemptions.id} is null then ${plans.trialCommentLimit} else ${promotionRedemptions.trialCommentLimit} end`,
 };
+
+/** The promotion a subscription redeemed (its trial snapshot), if any. */
+const redemptionJoin = eq(
+  promotionRedemptions.id,
+  subscriptions.promotionRedemptionId,
+);
 
 /**
  * A subscription row that is live at `now`: TRIALING / ACTIVE and `now < current_term_end`. Also
@@ -86,6 +100,7 @@ function liveSubscriptionQuery(
       ),
     )
     .innerJoin(plans, eq(plans.id, subscriptions.planId))
+    .leftJoin(promotionRedemptions, redemptionJoin)
     .where(inArray(workspaces.id, [...workspaceIds]));
 }
 
@@ -157,6 +172,7 @@ export async function findAccountLiveSubscription(
     .select(liveColumns)
     .from(subscriptions)
     .innerJoin(plans, eq(plans.id, subscriptions.planId))
+    .leftJoin(promotionRedemptions, redemptionJoin)
     .where(
       and(eq(subscriptions.billingAccountId, billingAccountId), isLiveAt(now)),
     )
