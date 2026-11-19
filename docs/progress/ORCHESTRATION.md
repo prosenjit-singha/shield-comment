@@ -8,11 +8,12 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Scope change (user, 2026-11-20, "yes please proceed" on `docs/plans/2026-11-20-promotions.md`): **first PR-PLAN … PR-GATE** (promotions: trial / discount / coupon; plans = fixed facts), **then M5-T16 → M5-GATE** (M5-T16 parked again below; still needs Neon AI credits or a provider key).
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)"). **PR run: admin/ + client/ approved for every PR row** (user, 2026-11-20, "Both, whole PR run (Recommended)").
+- Keep Docker current (user, 2026-11-20: "First make sure our docker runs the latest code"): a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (recreates compose containers only; never the user's own processes). Orchestrator rebuilt the backend after PR-T1 (0027 had made the old image read a renamed column).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #10 (2026-11-20) · rows this session: 4 · estimate: 145k (incl. the promotions design talk)
+- Session: #10 (2026-11-20) · rows this session: 5 · estimate: 162k (incl. the promotions design talk)
 
 ## State
-dispatched PR-T1 (2026-11-20) · commit: "feat(backend): add promotions schema and plain plan fields (PR-T1)"
+verified PR-T1 (2026-11-20)
 
 ## Resume
 `/orchestration --continue` → continues the PR rows (PR-PLAN … PR-GATE), then M5-T16 (pre-check asks for Neon AI credits or a provider key) → M5-GATE.
@@ -56,6 +57,10 @@ You are implementing exactly ONE task row, **PR-T2**, in the ShieldComment BD re
    - **replace** everything from `## Next prompt (PR-T2)` up to (not including) the line that starts with `## Choices to confirm` with the PR-T3 prompt in the format of `.claude/skills/orchestration/subagent-prompt.md` (PR-T3 row in TASKS.md; plan doc §3 items 1, 5, 6, §5.4). Leave `## Parked prompt (M5-T16)` untouched.
 3. Commit everything (journal included) with `feat(backend): add promotion service and discount pricing (PR-T2)` and an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
+
+### Decisions added by orchestrator
+- 2026-11-20 (user, "First make sure our docker runs the latest code"): before your finish steps, run `docker compose up -d --build backend` (plus `admin`/`client` when you changed them), wait for healthy, and check `curl -s http://localhost:3000/api/plans` serves the new shape; report it under CHECKS. This recreates compose containers only. Carry this block into every later PR prompt.
+- 2026-11-20: "Save up to N%" from the **shown** per-month prices (your recommended reading) is fine: within the builder's latitude of plan doc §7.
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -258,4 +263,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-20 PW-T9 ✅ · `b086a82` · backend 1869 unit (+1 skipped; was 1824) + e2e 850 (was 825) · admin 371 (was 346) · e2e/ 2/2 · admin manual plan activation: migration 0026 `subscription_audit_logs`, `POST /api/admin/clients/:workspaceId/subscription` (CANCELED → new ACTIVE term with snapshots, fresh wallet period + `PLAN_GRANT` by the admin, audit with IP/UA), "Activate plan" dialog on `/admin/clients`
 - 2026-11-20 PW-GATE ✅ · `a904a24` · backend 1869 unit (+1 skipped) + e2e 850 · admin 371 · client 464 · e2e/ 2/2 (host + docker) · plans & wallet gate passed: all suites green, compose rebuilt (migrate no-op), browser check of plan editor, clients list + manual activation and client trial/paused banner (en + bn); gate fix: Activate plan dialog copy without a live plan
 - 2026-11-20 PR-PLAN ✅ · `701ede1` · docs only · promotions plan → TASKS.md section PR (PR-D1…D18, planner's readings, rows PR-T1…T7 + PR-T3b/PR-T5b + GATE), PW-D6/D8/D12/D13 superseded, Module 8 spec + client.md + MEMORY updated, plan doc approved and committed
-- 2026-11-20 PR-T1 ✅ · backend 1870 unit (+1 skipped; was 1869) + e2e 924 (was 850) · promotions schema (migration 0027: `promotions`, `promotion_plans`, `promotion_redemptions`, `platform_settings`, subscription redemption FKs, plan `monthly_price_bdt` rename + badge/description en + bn + one highlighted plan), seeded Launch offers + Starter 7-day trial, shown prices unchanged (dev + test DB)
+- 2026-11-20 PR-T1 ✅ · `eb0c24c` · backend 1870 unit (+1 skipped; was 1869) + e2e 924 (was 850) · promotions schema (migration 0027: `promotions`, `promotion_plans`, `promotion_redemptions`, `platform_settings`, subscription redemption FKs, plan `monthly_price_bdt` rename + badge/description en + bn + one highlighted plan), seeded Launch offers + Starter 7-day trial, shown prices unchanged (dev + test DB)
