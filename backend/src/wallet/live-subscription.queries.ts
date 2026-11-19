@@ -1,0 +1,148 @@
+import { and, eq, gt, inArray } from 'drizzle-orm';
+import { normalizeFeatureConfig } from '../admin/plan-rules.js';
+import type { Database } from '../db/database.js';
+import {
+  LIVE_SUBSCRIPTION_STATUSES,
+  type PlanFeatureConfig,
+  plans,
+  type SubscriptionInterval,
+  subscriptions,
+  workspaces,
+} from '../db/schema/index.js';
+import { type WalletPeriod, walletPeriodAt } from './wallet-period.js';
+
+/** The read-only Drizzle methods the live-subscription queries need (db or a transaction). */
+export type LiveSubscriptionExecutor = Pick<Database, 'select'>;
+
+/** A workspace's live plan: its account, the TRIALING / ACTIVE subscription and the plan row. */
+export interface LiveSubscription {
+  workspaceId: string;
+  billingAccountId: string;
+  subscriptionId: string;
+  status: (typeof LIVE_SUBSCRIPTION_STATUSES)[number];
+  interval: SubscriptionInterval;
+  startedAt: Date;
+  trialEndsAt: Date | null;
+  currentTermStart: Date;
+  currentTermEnd: Date;
+  plan: {
+    id: string;
+    slug: string;
+    /** Normalised (`normalizeFeatureConfig`): every limit key present. */
+    featureConfig: PlanFeatureConfig;
+    trialCommentLimit: number | null;
+  };
+}
+
+/**
+ * Shared live-subscription query (PW-T2; reused by PW-T3…T6). Workspace → `billing_account_id`
+ * → the subscription with status in `LIVE_SUBSCRIPTION_STATUSES` and `now < current_term_end`
+ * (a late expiry job never extends a plan) → plan. Scoped by the workspace ids; the join keeps
+ * the subscription on the workspace's own account.
+ */
+function liveSubscriptionQuery(
+  db: LiveSubscriptionExecutor,
+  workspaceIds: readonly string[],
+  now: Date,
+) {
+  return db
+    .select({
+      workspaceId: workspaces.id,
+      billingAccountId: subscriptions.billingAccountId,
+      subscriptionId: subscriptions.id,
+      status: subscriptions.status,
+      interval: subscriptions.interval,
+      startedAt: subscriptions.startedAt,
+      trialEndsAt: subscriptions.trialEndsAt,
+      currentTermStart: subscriptions.currentTermStart,
+      currentTermEnd: subscriptions.currentTermEnd,
+      planId: plans.id,
+      planSlug: plans.slug,
+      featureConfig: plans.featureConfig,
+      trialCommentLimit: plans.trialCommentLimit,
+    })
+    .from(workspaces)
+    .innerJoin(
+      subscriptions,
+      and(
+        eq(subscriptions.billingAccountId, workspaces.billingAccountId),
+        inArray(subscriptions.status, [...LIVE_SUBSCRIPTION_STATUSES]),
+        gt(subscriptions.currentTermEnd, now),
+      ),
+    )
+    .innerJoin(plans, eq(plans.id, subscriptions.planId))
+    .where(inArray(workspaces.id, [...workspaceIds]));
+}
+
+type LiveRow = Awaited<ReturnType<typeof liveSubscriptionQuery>>[number];
+
+function toLiveSubscription(row: LiveRow): LiveSubscription {
+  return {
+    workspaceId: row.workspaceId,
+    billingAccountId: row.billingAccountId,
+    subscriptionId: row.subscriptionId,
+    status: row.status === 'TRIALING' ? 'TRIALING' : 'ACTIVE',
+    interval: row.interval,
+    startedAt: row.startedAt,
+    trialEndsAt: row.trialEndsAt,
+    currentTermStart: row.currentTermStart,
+    currentTermEnd: row.currentTermEnd,
+    plan: {
+      id: row.planId,
+      slug: row.planSlug,
+      featureConfig: normalizeFeatureConfig(row.featureConfig),
+      trialCommentLimit: row.trialCommentLimit,
+    },
+  };
+}
+
+/**
+ * The workspace's live plan at `now`, or `null` (unknown workspace, no billing account, no live
+ * subscription, or its term is over). One query.
+ */
+export async function findLiveSubscription(
+  db: LiveSubscriptionExecutor,
+  workspaceId: string,
+  now: Date = new Date(),
+): Promise<LiveSubscription | null> {
+  const [row] = await liveSubscriptionQuery(db, [workspaceId], now).limit(1);
+  return row ? toLiveSubscription(row) : null;
+}
+
+/**
+ * `findLiveSubscription` for many workspaces in one query: a map holding only the workspaces with
+ * a live plan.
+ */
+export async function findLiveSubscriptions(
+  db: LiveSubscriptionExecutor,
+  workspaceIds: readonly string[],
+  now: Date = new Date(),
+): Promise<Map<string, LiveSubscription>> {
+  const ids = [...new Set(workspaceIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await liveSubscriptionQuery(db, ids, now);
+  return new Map(rows.map((row) => [row.workspaceId, toLiveSubscription(row)]));
+}
+
+/**
+ * The wallet period of a live subscription at `now` (PW-D4 + the confirmed PW-PLAN reading):
+ * - a trial is **one** period `[started_at, trial_ends_at)` anchored at `started_at`;
+ * - a paid term is anchored at `current_term_start` and resets monthly (yearly terms too), each
+ *   period cut at `current_term_end`.
+ */
+export function subscriptionPeriod(
+  live: Pick<
+    LiveSubscription,
+    'status' | 'startedAt' | 'currentTermStart' | 'currentTermEnd'
+  >,
+  now: Date,
+): WalletPeriod {
+  if (live.status === 'TRIALING') {
+    return {
+      anchor: live.startedAt,
+      start: live.startedAt,
+      end: live.currentTermEnd,
+    };
+  }
+  return walletPeriodAt(live.currentTermStart, now, live.currentTermEnd);
+}
