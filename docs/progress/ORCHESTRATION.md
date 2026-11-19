@@ -10,13 +10,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)"). **PR run: admin/ + client/ approved for every PR row** (user, 2026-11-20, "Both, whole PR run (Recommended)").
 - Keep Docker current (user, 2026-11-20: "First make sure our docker runs the latest code"): a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (recreates compose containers only; never the user's own processes). Orchestrator rebuilt the backend after PR-T1 (0027 had made the old image read a renamed column).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #11 (2026-11-20) · rows this session: 1 · estimate: 55k
+- Session: #11 (2026-11-20) · rows this session: 2 · estimate: 70k
 
 ## State
-dispatched PR-T6 (2026-11-20) · commit: "feat(client): add plans page with trial start and contact us (PR-T6)"
+verified PR-T6 (2026-11-20)
 
 ## Resume
-`/orchestration --continue` → dispatches PR-T6 (client `/plans` page), then PR-T7 (migration 0029 drops the old plan columns), PR-GATE; then M5-T16 (pre-check asks for Neon AI credits or a provider key) → M5-GATE.
+`/orchestration --continue` → dispatches PR-T7 (migration 0029 drops the old plan columns), then PR-GATE; then M5-T16 (pre-check asks for Neon AI credits or a provider key) → M5-GATE.
 
 ## Next prompt (PR-T7)
 
@@ -269,4 +269,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-20 PR-T4 ✅ · `8233d71` · backend 1936 unit (+1 skipped; was 1881) + e2e 967 (was 947) · admin 371 · `/api/admin/promotions` (list with status + filters, create per kind, PATCH with reading-8 locks, idempotent Stop, redemptions), plan PATCH `monthlyPriceBdt` + en/bn badge/description + exclusive highlight (audited), support WhatsApp `GET/PATCH /api/admin/settings/platform`; admin `originalPriceBdt` → `monthlyPriceBdt`
 - 2026-11-20 PR-T5 ✅ · `2ae699b` · admin 381 (was 371) · backend untouched · admin plan editor (monthly/yearly list price, badge + description en/bn, highlight switch; offer/trial inputs removed), support WhatsApp card, audit labels for the new/legacy keys, Activate plan coupon field + COUPON_* errors + "Plan activated" price breakdown
 - 2026-11-20 PR-T5b ✅ · `d4e31e4` · admin 400 (was 381) · backend untouched · admin `/admin/promotions` (nav item, table with kind/name+code/plans/value/ends/used/status, kind + status filters, New/Edit dialog per kind with locked terms read-only, Stop confirm, Claims sheet)
-- 2026-11-20 PR-T6 ✅ · client 490 (was 464) · backend untouched · client `/plans` (Monthly/Yearly switch + Save up to, cards with struck list price + plain saving text, highlighted primary, trial start → `/onboarding`, WhatsApp Contact us), sign-in/sign-up → `/plans` for summary `NONE`, banner "See plans" link
+- 2026-11-20 PR-T6 ✅ · `06d56a7` · client 490 (was 464) · backend untouched · client `/plans` (Monthly/Yearly switch + Save up to, cards with struck list price + plain saving text, highlighted primary, trial start → `/onboarding`, WhatsApp Contact us), sign-in/sign-up → `/plans` for summary `NONE`, banner "See plans" link
