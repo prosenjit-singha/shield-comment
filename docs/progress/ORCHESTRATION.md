@@ -8,10 +8,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)").
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #9 (2026-11-19) · rows this session: 1 · estimate: 75k
+- Session: #9 (2026-11-19) · rows this session: 2 · estimate: 95k
 
 ## State
-dispatched PW-T1 (2026-11-19) · commit: "feat(backend): add billing, subscription and wallet schema (PW-T1)"
+verified PW-T1
 
 ## Resume
 `/orchestration --continue`
@@ -65,6 +65,9 @@ You are implementing exactly ONE task row, **PW-T1b**, in the ShieldComment BD r
    - **replace** everything from `## Next prompt (PW-T1b)` up to (not including) the `## Choices to confirm` heading line (match it at the start of a line: this prompt also names it inline) with the PW-T2 prompt in the format of `.claude/skills/orchestration/subagent-prompt.md` (read-first list, recorded decisions quoted with IDs, deliverables, named tests, rules, verify commands with the current test counts, finish steps; commit subject ≤ 72 chars, count it). Leave the `## Parked prompt (M5-T16)` section untouched.
 3. Commit everything (journal included) with `feat(backend): seed trial, yearly prices and workspace limits (PW-T1b)` (70 chars) and an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
+
+### Decisions added by orchestrator
+- 2026-11-19 (user, confirming PW-PLAN readings): no live plan → creating a workspace 403 `no_active_plan` and switching a Page ON 409 `NO_ACTIVE_PLAN` (OFF still works) · PW-T9 manual activation: start date from 31 days ago to today (Dhaka), no future dates, reason 1–500 chars required · manual activation ends the live subscription and starts a fresh wallet period with `used` 0 on the chosen start date. Mark these PW readings **CONFIRMED 2026-11-19** in the TASKS.md PW section and carry this block into the next prompt until PW-T9 is done.
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -143,6 +146,8 @@ You are implementing exactly ONE task row, **PW-T1b**, in the ShieldComment BD r
 - 2026-11-19 PW trial length → "Make it adjustable, like i can set 3, 7, 14, 30 days. But those client who has started the plan their plan trail period will not be adjusted."
 - 2026-11-19 PW expiry → "Moderation pauses (Recommended)" · yearly price → "Exact price per plan (Recommended)" · limits scope → "Shared pool (Recommended)" · reset → "Billing date each month (Recommended)" · edits → "Count once (Recommended)" · launch offer → "Keep it (Recommended)"
 - 2026-11-19 PW plan §6 (`/orchestration --continue` pre-check): trial limits → "Smaller trial limit" → "300 comments (Recommended)" · yearly seed → "10% off (Recommended)" · workspaces → "1 / 3 / 10 (Recommended)" · limit edits → "From their next reset (Recommended)" · existing dev workspaces → "Fresh Starter trial (Recommended)" · manual plan activation → "Yes, add it (Recommended)" · app approval → "Both, whole PW run (Recommended)"
+
+- 2026-11-19 PW planner readings (asked while PW-T1 ran): no live plan → "Block new workspace + Page on (Recommended)" · manual activation start date → "Up to 31 days back (Recommended)" · manual activation count → "Fresh month from 0 (Recommended)"
 
 ## Parked prompt (M5-T16)
 Parked 2026-11-19 by the orchestrator while the PW rows run (user: plans & wallet first). PW-GATE copies this section back as `## Next prompt (M5-T16)` (credits → comments wording, current test counts) and deletes this section.
@@ -231,4 +236,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-19 M5-T15 ✅ d5299b4 · client 426 (was 399) · client "AI analysis" card on /pages (D8 level via the D5 policy API, en + bn, save only when changed, 403/load-error/retry, impersonated ok)
 - 2026-11-19 M5-T16 🟡 blocked: Neon AI Gateway still refuses for billing (403 → `payment_required`) on `gpt-oss-20b` (`--limit 5` smoke, stopped at item 1) and `gpt-oss-120b` (`--limit 1`); no model ran, nothing recorded or set active, $0 spent; no direct provider keys exist
 - 2026-11-19 PW-PLAN ✅ e7dfc59 · docs only · PW section in TASKS.md (PW-D1…D16, 12 rows incl. PW-T1b/PW-T6b splits + PW-T9 manual activation), plan doc approved (+ `trial_comment_limit`), Module 5 D7/D14/D15 superseded, Module 5/8 specs + MEMORY updated; next PW-T1
-- 2026-11-19 PW-T1 ✅ · backend 1699 unit (+1 skipped; unchanged) + e2e 764 (was 705; +59) · schema: `billing_accounts`, `subscriptions` (one live per account), `wallets`/`wallet_balances`/`wallet_entries`, plan yearly/trial columns, `workspaces.billing_account_id`, `comments.usage_counted_at` (migration 0021)
+- 2026-11-19 PW-T1 ✅ 2427dee (+ fix bba8a3d: MEMORY next pointer) · backend 1699 unit (+1 skipped; unchanged) + e2e 764 (was 705; +59) · schema: `billing_accounts`, `subscriptions` (one live per account), `wallets`/`wallet_balances`/`wallet_entries`, plan yearly/trial columns, `workspaces.billing_account_id`, `comments.usage_counted_at` (migration 0021)
