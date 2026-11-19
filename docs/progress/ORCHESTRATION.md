@@ -3,20 +3,64 @@
 Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committed. Resume with `/orchestration --continue`. No secrets here.
 
 ## Run
-- Scope: **M4-T13 only** (user, 2026-11-19: "M4-T13 only: zrok tunnel + live Meta smoke (D12), then stop."). Pre-check answer 2026-11-19: **script + docs only**, the live Meta smoke stays skipped (D12) because no Meta test app credentials exist yet. Then stop (next: Module 5 planning, new run).
-- Sub-agent reads: AGENTS.md, MEMORY.md, only the Module 4 header + D1/D5/D6/D12 + the M4-T13 row from TASKS.md, `docs/project-documentation/modules/module-4-webhooks-queue.md` (tunnel / webhook setup parts).
-- Standing approvals: none needed (no admin/ or client/ changes). Tunnel: the sub-agent may create the zrok2 name `shield-comment-dev` if missing and start/stop the public share briefly to check it; nothing left running (user, 2026-11-19).
+- Scope: **M5-PLAN only** (user, 2026-11-19: "Module 5 planning (M5-PLAN) only, then stop."). Docs only; the decisions it flags are asked at the start of the next run (before M5-T1).
+- Sub-agent reads: AGENTS.md, MEMORY.md, TASKS.md header + Module 4 section (as the format model) + M4-PLAN verification-log entries, `module-5-ai-moderation.md`, only the needed parts of `tech-stack.md` / `module-6-client-dashboard.md` / `screens-inventory.md`, and the existing backend code it plans around.
+- Standing approvals: none needed (no admin/ or client/ code changes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #4 (2026-11-19) · rows this session: 1 · estimate: 55k
+- Session: #5 (2026-11-19) · rows this session: 0 · estimate: 75k
 
 ## State
-done: M4-T13 only (script + docs; live Meta smoke pending) (2026-11-19)
+dispatched M5-PLAN (2026-11-19) · commit: "docs(progress): plan module 5 (M5-PLAN)"
 
 ## Resume
-Run finished. Start a new run with `/orchestration <instructions>` (next: Module 5 planning M5-PLAN; the live Meta smoke runs once the Meta test app exists).
+`/orchestration --continue`
 
-## Next prompt
-RUN COMPLETE (scope M4-T13 only). Next: Module 5 planning (M5-PLAN), new run; the live Meta smoke (checklist in `docs/project-documentation/meta-webhooks-local.md`) runs whenever the Meta test app exists.
+## Next prompt (M5-T1)
+
+PRE-CHECK: needs user decisions Module 5 D1, D2 before dispatch
+
+You are implementing exactly ONE task row, **M5-T1**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
+
+**Read first (only these)**
+1. `AGENTS.md`.
+2. `docs/progress/MEMORY.md` (all). Note the AI gateway fact (Neon SW-T5 line: `AiGatewayModule`/`AiGatewayService`, default model `gpt-oss-20b`, 403 `paid_plan_required` until credits) and the Meta Graph client line (error-kind + scrubbing pattern to mirror).
+3. From `docs/progress/TASKS.md` (use `grep -n`/`sed -n`; the file is large): the Module 5 header paragraph, decisions **D1** and **D2** (and D8 for context only), the `M5-PLAN` row and this `M5-T1` row. If D1/D2 still say "needs user decision" but the answers are recorded below, use the answers and update the decision lines to `ANSWERED <date>`.
+4. Spec: `docs/project-documentation/modules/module-5-ai-moderation.md` (all, it is short). For the gateway's request options (`response_format` / JSON schema support, error bodies, `Retry-After`) use the local Neon skill `.claude/skills/neon-ai-gateway` (or the `neon:neon-ai-gateway` skill) instead of guessing; no live call.
+5. Code to read or reuse: `backend/src/ai-gateway/ai-gateway.service.ts` + `.spec.ts` + `ai-gateway.module.ts`; `backend/src/config/env.validation.ts` (the `NEON_AI_GATEWAY_*` / `AI_GATEWAY_MODEL` fields); `backend/src/meta/meta-graph.errors.ts` (pattern for `kind` + `retryable` + `redactSecrets`); `backend/test/utils/fake-meta-graph.ts` (strict-fake pattern for the new `test/utils/fake-ai-gateway.ts`); `backend/.env.example`.
+
+**Recorded decisions** (the orchestrator fills these in after asking; quote answer + date + ID):
+- D1 (LLM provider, model + who pays): _pending_
+- D2 (AI failure behaviour): _pending_
+
+**Task (M5-T1): backend LLM client hardening (no classifier yet)**
+- Keep `AiGatewayService` as the single LLM entry point (or, if D1 = direct provider, make it provider-neutral with the env D1 names; keep the `NEON_AI_GATEWAY_*` path working). No HTTP routes.
+- `chat()` options: `responseFormat` (`{ type: 'json_schema', name, schema, strict }` → OpenAI-style `response_format`; `{ type: 'json_object' }`); keep `maxTokens`, `temperature`, `timeoutMs`; add a moderation-friendly default timeout constant (e.g. 15 s) without changing the 30 s default for other callers unless you justify it.
+- Result: add `latencyMs`; keep `usage`; `content` from string or text parts (existing `extractText`); empty/missing content → `unexpected_response`.
+- Errors: `AiGatewayError` gains `kind` + `retryable` + optional `retryAfterMs` (from `Retry-After` seconds or HTTP date, capped): `not_configured` (or keep `AiGatewayNotConfiguredError` but give it the same `kind`), `payment_required` (403 `paid_plan_required`, 402), `auth` (401, other 403), `rate_limited` (429), `transient` (5xx, 408), `timeout` (`TimeoutError`), `network` (fetch failure; never pass the original error/URL on), `invalid_request` (400/404/422: e.g. model unknown or `response_format` refused), `unexpected_response` (non-JSON / bad shape); retryable = rate_limited, transient, timeout, network. A model/gateway that rejects `response_format` must be distinguishable (`invalid_request`) so M5-T2 can fall back to `json_object` / prompt-only JSON. Scrub the token from every message; never log prompts, message content or response text (log model, status, kind, ms, token counts only).
+- Pure helpers exported for M5-T2/T8 (e.g. `aiErrorKind(status, body)`, `parseRetryAfter()`).
+- `test/utils/fake-ai-gateway.ts`: strict double for e2e (`enabled`, `chat` = `vi.fn` that throws `Unexpected AiGatewayService.chat call` unless armed with a queued reply/error), typed like `fake-meta-graph.ts`. Not yet wired into `createTestApp` unless trivial.
+- `.env.example`: document any new env (none expected for D1 = Neon).
+
+Tests to write (Vitest, stubbed `fetch`, **no live call**): request body (model, messages, `response_format` both kinds, `max_tokens`, `temperature`), headers (Bearer), URL trailing-slash handling; result (`latencyMs` ≥ 0, usage mapping, text parts, empty content → `unexpected_response`); error-mapping table (402, 401, 403 `paid_plan_required`, 403 other, 400 `response_format` refusal, 404, 408, 422, 429 with `Retry-After` seconds + date + missing, 500, 503, non-JSON body); timeout → `timeout` retryable; fetch throws → `network` without the URL/token in the message; token never in any message; not configured → `not_configured` without a fetch. Fake: unarmed call throws, armed reply returned once.
+
+**Rules:** TS strict, ESM, no `any`. Vitest. No live external calls in tests (Meta/LLM/SSLCommerz/etc. mocked); tests must fail on unexpected requests. Every tenant query is scoped by `workspace_id`. Frontend: TanStack Query for all API calls, client copy via `content(en, bn)`, shadcn OKLCH tokens, `rounded-full` buttons/inputs/pills, `rounded-2xl`/`3xl` cards. A new shadcn component needs `shadcn add` + `animate all` in BOTH apps. Never commit `.env*` (except `.env.example`) or build/test output. **Never stop or kill the user's own processes** (local Postgres 5432, Redis 6379, dev servers); on a port clash use env overrides or stop and report. Don't buy credits or call the live gateway.
+
+**Verify** (run what applies; report real numbers):
+- backend touched: `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test`, `npm run test:e2e`, `npm run lint`, `npx prettier --check "src/**/*.ts" "test/**/*.ts"`. The test DB must end empty except the 4 `plans` rows.
+- admin/client touched: `npm run build`, `npm test`, `npm run lint` in that app (not expected).
+- e2e/ or compose touched: `cd e2e && npm test` (not expected).
+- Current test counts: backend 1032 unit / 494 e2e · admin 246 · client 399 · Playwright 2/2 (so drops are visible).
+
+**If a decision is missing:** if THIS row needs a product decision that is not recorded in TASKS.md/MEMORY.md/this prompt (D1, D2), STOP without coding that part. Report `STATUS: needs-decision` with the question and 2–4 options (recommended first). If your row finishes but the NEXT row (M5-T2) needs decisions (D1, D6, D8, D9), report `STATUS: done`, list them under DECISION NEEDED and start the next prompt with `PRE-CHECK: needs user decisions <ids> before dispatch`.
+
+**Finish (in this order)**
+1. TASKS.md: the row → `✅ <date>` + concise notes (built + choices); D1/D2 lines → ANSWERED if they were answered. Add a Verification log entry at the TOP of `## Verification log`. Add short lasting facts to MEMORY.md (update the AI gateway fact rather than adding a new line) and point its "next" phrase at M5-T2.
+2. Journal `docs/progress/ORCHESTRATION.md`:
+   - append one `## Log` line (`- <date> M5-T1 ✅ · <tests> · <1-line summary>`); the orchestrator adds the commit hash;
+   - append your choices under `## Choices to confirm` as `- M5-T1: …`;
+   - **replace** the `## Next prompt` section with the M5-T2 prompt in this same format. Write `RUN COMPLETE` instead if the run scope in `## Run` is finished, or if no rows are left in the module.
+3. Commit everything, journal included, with `feat(backend): harden ai gateway client for moderation (M5-T1)` (subject must contain `(M5-T1)`) and an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
+4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -38,6 +82,7 @@ RUN COMPLETE (scope M4-T13 only). Next: Module 5 planning (M5-PLAN), new run; th
 - M4-T12: SSR via a server-only loader `prefetchQuery` → server fn → backend direct (forwards X-Forwarded-* + visitor IP, UA, accept-language; no cookie), browser via `/api` `apiFetch` · 404 = query data `{ kind: 'unknown' }` (not an error) so it dehydrates; 429/5xx/network on the server render the loading state and the browser retries once on mount · `retry: false` (no auto retry on 429), Try again = one refetch · no polling while PENDING ("open this page again later") · malformed `?code=` → treated as missing, router 307s to `/data-deletion` (no request) · one "no valid code" message for missing + malformed · page frame = `AuthScreen` card (EN/BN switch, footer link home) + `MetaNotice` (PENDING info, COMPLETED success, unknown + failures error) · dates hand-formatted at fixed UTC+6, 24 h, `19 Nov 2026, 15:05 (Bangladesh time)` / Bangla month names + digits (no `Intl`, so SSR = hydration) · code shown in a pill ("quote this code if you contact our support"; no support address yet) · title English-only like /login, `noindex` · all-digit codes (≈1e-18 chance) would be JSON-parsed by the router and shown as missing (accepted)
 - M4-GATE: live gate checks on a throwaway backend container (compose image, `docker compose run --no-deps -p 3999`, random `META_APP_SECRET` + placeholder META app vars via `-e`, never in `.env`; container, job and secret file removed) instead of e2e-only evidence, since compose has no `META_APP_SECRET` (compose itself answered 503) · admin queue counts proven real with a temporary `comment-moderation` probe job (waiting 1 → removed → 0) via a throwaway super admin (deleted with its sessions + `auth:*` keys) · the 4 backend error-level log lines are my deliberate 503 probes (`AllExceptionsFilter` logs every 5xx at error), not faults · no gate fix
 - M4-T13: `--check` is read-only (doesn't create the name) · script always passes `--force-local` (a running zrok2 agent would otherwise keep the share after Ctrl-C) and adds `--headless` without a TTY · extra `zrok2 share public` flags after `--` · env overrides `TUNNEL_NAME`/`TUNNEL_NAMESPACE`/`TUNNEL_PORT`/`TUNNEL_HOST` (+ `CLIENT_PUBLIC_URL` for the OAuth hint) · public host read from `zrok2 list namespaces --json` (not hard-coded); JSON parsed with node (no jq dependency) · enabled check = `zrok2 status` shows `EnvZId <<SET>>` (output never printed) · backend checks warn only: `/api/health/live` + a wrong-token verify probe (403 = token set, 503 = unset) · OAuth redirect printed as the client origin (M3 D6), not the tunnel · guide at `docs/project-documentation/meta-webhooks-local.md` (one page: setup, env names, dashboard steps, connect + backfill, checklist, troubleshooting) · root `README.md` created (apps, commands, doc links)
+- M5-PLAN: 11 rows + GATE, order LLM client → classifier → golden suite → schema → policy → Graph executor → quota → worker → admin backend → admin UI → live smoke (opt-in) · classifier/golden suite before the schema (pure, no DB) so model quality is known early · no `client/` row (C4–C9, override endpoint + `/rules` UI = Module 6; D5/D10) · proposed comment statuses `PENDING/VISIBLE/NEEDS_REVIEW/HIDDEN/DELETED/SKIPPED/FAILED` + `moderation_actions` log + `moderation_policies` + monthly usage + AI usage aggregate (M5-T4, adjustable) · IG uses `hide=true` and `/replies` (FB `is_hidden` and `/comments`) in M5-T6 · reply at-most-once, hide/delete at-least-once · added `language` to the classifier output (for D6 reply language) · M5-T11 live smoke optional like M4-T13; gate (1) still needs one paid live golden run (D1/D12) · 14 decisions (prompt asked for at least 10 topics; added D2 failure behaviour, D13 which comments, D14 admin visibility)
 
 ## Decisions asked
 - 2026-11-18 M3-T10: D13 0-Pages redirect → entry points only (recorded in TASKS.md D13)
@@ -70,3 +115,4 @@ RUN COMPLETE (scope M4-T13 only). Next: Module 5 planning (M5-PLAN), new run; th
 - 2026-11-19 M4-T12 ✅ 7b2025f · client 399 (was 343) · e2e 2/2 · public SSR /data-deletion status page (en/bn): server-fn lookup in the server HTML, 404/429/5xx/network states + Try again, Dhaka dates, code shown
 - 2026-11-19 M4-GATE ✅ 2f82d8e · backend 1032 unit / 494 e2e · admin 246 · client 399 · Playwright 2/2 · module 4 gate passed: 401 on bad/missing signature, signed delivery 200 in 7.8 ms with one job for 3 deliveries (live, throwaway-secret container), real queue counts on admin; no fix
 - 2026-11-19 M4-T13 ✅ 14da883 · bash -n ✅ · shellcheck n/a · --check exit 0 · live tunnel: public /api/health/live 200, verify/unsigned POST/deauthorize 503 (no META_* in compose), share stopped · backend/admin/client untouched · `scripts/tunnel.sh` (zrok2 `public:shield-comment-dev` created + reserved) + Meta webhook setup guide with live-smoke checklist + root README; live Meta smoke still skipped (D12)
+- 2026-11-19 M5-PLAN ✅ · docs only · Module 5 planned: 11 rows + GATE (M5-T1…T11), decisions D1–D14 open; next prompt = M5-T1 (PRE-CHECK D1, D2)
