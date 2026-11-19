@@ -13,6 +13,7 @@ import {
 } from '../src/db/schema/index.js';
 import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
+import { addDroppedPlanColumns } from './utils/dropped-plan-columns.js';
 
 /** Postgres SQLSTATE of a failed query (Drizzle wraps the `pg` error in `cause`). */
 async function pgCode(
@@ -239,9 +240,15 @@ describe('Promotions schema (e2e)', () => {
       );
       expect(columns.rows.map((r) => r.column_name)).toEqual([
         'monthly_price_bdt',
-        'offer_price_bdt',
         'yearly_monthly_price_bdt',
       ]);
+    });
+
+    it('PR-T7: the old offer + trial plan columns are gone (migration 0029)', async () => {
+      const columns = await db().execute<{ column_name: string }>(
+        sql`select column_name from information_schema.columns where table_name = 'plans' and column_name in ('offer_price_bdt', 'offer_badge', 'trial_days', 'trial_comment_limit')`,
+      );
+      expect(columns.rows).toEqual([]);
     });
 
     it('one "Launch offer" per active plan with an offer + the "Starter 7-day trial"', async () => {
@@ -314,7 +321,6 @@ describe('Promotions schema (e2e)', () => {
         .select({
           slug: plans.slug,
           monthly: plans.monthlyPriceBdt,
-          offer: plans.offerPriceBdt,
           yearly: plans.yearlyMonthlyPriceBdt,
           value: promotions.discountValue,
         })
@@ -334,7 +340,6 @@ describe('Promotions schema (e2e)', () => {
       for (const row of rows) {
         const before = PRICES_BEFORE[row.slug as keyof typeof PRICES_BEFORE];
         expect(row.monthly).toBe(before.list);
-        expect(row.offer).toBe(before.offer);
         expect(row.monthly - row.value!).toBe(before.offer);
         expect(row.yearly! - row.value!).toBe(before.yearly);
       }
@@ -352,6 +357,7 @@ describe('Promotions schema (e2e)', () => {
       const rollback = new Error('rollback');
       await expect(
         db().transaction(async (tx) => {
+          await addDroppedPlanColumns(tx);
           // Already applied: a second run changes nothing.
           await tx.execute(sql.raw(dataSql));
           expect(await readPlans(tx)).toEqual(plansBefore);
@@ -427,7 +433,6 @@ describe('Promotions schema (e2e)', () => {
           descriptionEn: null,
           descriptionBn: null,
           isHighlighted: false,
-          offerPriceBdt: null,
           yearlyMonthlyPriceBdt: null,
           monthlyPriceBdt: 999,
         })
@@ -454,13 +459,11 @@ describe('Promotions schema (e2e)', () => {
       ['description_bn 161 chars', { descriptionBn: 'ব'.repeat(161) }],
       ['negative monthly price', { monthlyPriceBdt: -1 }],
       ['yearly above the monthly list price', { yearlyMonthlyPriceBdt: 1000 }],
-      ['offer above the monthly list price', { offerPriceBdt: 1000 }],
     ])('rejects %s (check)', async (_label, patch) => {
       expect(await pgCode(setPlan(patch))).toBe(CHECK_VIOLATION);
     });
 
-    it('yearly is capped by the list price, not the offer (offer ৳499, yearly ৳949 is fine)', async () => {
-      await setPlan({ offerPriceBdt: 499, yearlyMonthlyPriceBdt: 949 });
+    it('yearly is capped by the monthly list price (৳999 is fine)', async () => {
       await setPlan({ yearlyMonthlyPriceBdt: 999 });
     });
 

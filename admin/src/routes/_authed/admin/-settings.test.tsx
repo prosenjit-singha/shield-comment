@@ -41,7 +41,6 @@ function plan(
   slug: string,
   name: string,
   price: number,
-  offer: [number, string] | null,
   limits: [number, number, number],
   tier: 0 | 1 | 2,
   yearly: number | null = null,
@@ -58,12 +57,7 @@ function plan(
     descriptionEn: null,
     descriptionBn: null,
     isHighlighted: false,
-    offerPriceBdt: offer?.[0] ?? null,
-    offerBadge: offer?.[1] ?? null,
     yearlyMonthlyPriceBdt: yearly,
-    // PW-T1b seed: the sign-up trial lives on Starter only.
-    trialDays: slug === 'starter' ? 7 : null,
-    trialCommentLimit: slug === 'starter' ? 300 : null,
     featureConfig: {
       limits: { connectedPages: limits[0], monthlyComments: limits[1], teamSeats: limits[2], workspaces: limits[2] },
       features: {
@@ -85,9 +79,9 @@ function plan(
 // PR-T7) and must not reach the editor. Growth is the highlighted plan. The GET lists active plans
 // only, so the deactivated Free row (PW-D7) never reaches the screen.
 const seeded = [
-  plan(1, 'starter', 'Starter', 999, [499, '50% Launch Offer'], [1, 2500, 1], 0, 449),
-  { ...plan(2, 'growth', 'Growth', 2499, [1499, '40% Off'], [5, 15000, 3], 1, 1349), isHighlighted: true },
-  plan(3, 'pro', 'Pro', 5999, [3999, '33% Off'], [25, 75000, 10], 2, 3599),
+  plan(1, 'starter', 'Starter', 999, [1, 2500, 1], 0, 449),
+  { ...plan(2, 'growth', 'Growth', 2499, [5, 15000, 3], 1, 1349), isHighlighted: true },
+  plan(3, 'pro', 'Pro', 5999, [25, 75000, 10], 2, 3599),
 ] as const satisfies AdminPlan[]
 const starter: AdminPlan = seeded[0]
 

@@ -31,11 +31,7 @@ const starter: AdminPlan = {
   descriptionEn: null,
   descriptionBn: null,
   isHighlighted: false,
-  offerPriceBdt: null,
-  offerBadge: null,
   yearlyMonthlyPriceBdt: null,
-  trialDays: 7,
-  trialCommentLimit: 300,
   featureConfig: {
     limits: { connectedPages: 1, monthlyComments: 2500, teamSeats: 1, workspaces: 1 },
     features: {
@@ -147,11 +143,6 @@ describe('yearly price (PW-T7)', () => {
     expect(validatePlanDraft(draft({ yearlyMonthlyPriceBdt: '500' })).yearlyMonthlyPriceBdt).toBe(
       "Can't be more than the monthly price (৳499).",
     )
-    // The legacy offer no longer caps it (backend `yearlyPriceError`, PR-T1).
-    expect(
-      validatePlanDraft(draft({}, { ...starter, monthlyPriceBdt: 999, offerPriceBdt: 499, yearlyMonthlyPriceBdt: 949 }))
-        .yearlyMonthlyPriceBdt,
-    ).toBeUndefined()
     expect(validatePlanDraft(draft({ yearlyMonthlyPriceBdt: '4.5' })).yearlyMonthlyPriceBdt).toBe(
       'Use a whole number (digits only).',
     )
@@ -190,12 +181,11 @@ describe('planPatch (minimal PATCH body)', () => {
     expect(planPatch(starter, draft({ monthlyPriceBdt: ' 0499 ', badgeEn: '   ', descriptionBn: '\n' }))).toEqual({})
   })
 
-  it('sends only the changed top-level fields, text trimmed, never the legacy offer/trial fields', () => {
-    const legacy = { ...starter, offerPriceBdt: 299, offerBadge: 'Old', trialDays: 7, trialCommentLimit: 300 }
+  it('sends only the changed top-level fields, text trimmed', () => {
     expect(
       planPatch(
-        legacy,
-        draft({ monthlyPriceBdt: '999', badgeEn: ' Popular ', descriptionBn: ' ছোট দোকানের জন্য ', isHighlighted: true }, legacy),
+        starter,
+        draft({ monthlyPriceBdt: '999', badgeEn: ' Popular ', descriptionBn: ' ছোট দোকানের জন্য ', isHighlighted: true }),
       ),
     ).toEqual({ monthlyPriceBdt: 999, badgeEn: 'Popular', descriptionBn: 'ছোট দোকানের জন্য', isHighlighted: true })
   })

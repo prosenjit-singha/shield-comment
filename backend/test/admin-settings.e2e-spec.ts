@@ -11,6 +11,10 @@ import type {
 import { planAuditLogs, plans } from '../src/db/schema/index.js';
 import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
+import {
+  addDroppedPlanColumns,
+  droppedPlanColumns,
+} from './utils/dropped-plan-columns.js';
 
 const PLANS = '/api/admin/settings/plans';
 const AUDIT = `${PLANS}/audit`;
@@ -96,25 +100,21 @@ describe('Admin plan settings (e2e)', () => {
     await app?.close();
   });
 
-  it('the migrations seeded the four tiers with the launch offers (client.md §7)', async () => {
+  it('the migrations seeded the four tiers (client.md §7; offers + trial are promotions since PR-T1)', async () => {
     expect(
       seeded.map((p) => [
         p.slug,
         p.name,
         p.monthlyPriceBdt,
-        p.offerPriceBdt,
-        p.offerBadge,
         p.yearlyMonthlyPriceBdt,
-        p.trialDays,
-        p.trialCommentLimit,
         p.isActive,
       ]),
     ).toEqual([
-      ['free', 'Free', 0, null, null, null, null, null, false],
+      ['free', 'Free', 0, null, false],
       // Yearly = list price since 0027 (PR-T1): 449 / 1,349 / 3,599 + the launch offer value.
-      ['starter', 'Starter', 999, 499, '50% Launch Offer', 949, 7, 300, true],
-      ['growth', 'Growth', 2499, 1499, '40% Off', 2349, null, null, true],
-      ['pro', 'Pro', 5999, 3999, '33% Off', 5599, null, null, true],
+      ['starter', 'Starter', 999, 949, true],
+      ['growth', 'Growth', 2499, 2349, true],
+      ['pro', 'Pro', 5999, 5599, true],
     ]);
     // Data migrations write no audit rows.
     expect(await auditCount()).toBe(0);
@@ -125,21 +125,20 @@ describe('Admin plan settings (e2e)', () => {
     const rollback = new Error('rollback');
     await expect(
       actors.db.transaction(async (tx) => {
+        await addDroppedPlanColumns(tx);
+        const applied = await droppedPlanColumns(tx);
         // Already applied: running it again changes nothing.
         await runPre0027Sql(tx, offersSql);
         expect(
           await tx.select().from(plans).orderBy(asc(plans.sortOrder)),
         ).toEqual(seeded);
+        expect(await droppedPlanColumns(tx)).toEqual(applied);
         // Back to the 0007 seed values, except growth (edited by an admin) and pro's badge.
-        await tx
-          .update(plans)
-          // The yearly list price (0027) would exceed the lowered list prices below.
-          .set({
-            offerPriceBdt: null,
-            offerBadge: null,
-            yearlyMonthlyPriceBdt: null,
-          })
-          .where(sql`${plans.slug} in ('starter', 'growth', 'pro')`);
+        // The yearly list price (0027) would exceed the lowered list prices below.
+        await tx.execute(sql`
+          update plans set offer_price_bdt = null, offer_badge = null,
+            yearly_monthly_price_bdt = null
+          where slug in ('starter', 'growth', 'pro')`);
         await tx
           .update(plans)
           .set({ monthlyPriceBdt: 499 })
@@ -150,19 +149,23 @@ describe('Admin plan settings (e2e)', () => {
           .where(eq(plans.slug, 'growth'));
         await tx
           .update(plans)
-          .set({ monthlyPriceBdt: 3999, offerBadge: 'Hand-made' })
+          .set({ monthlyPriceBdt: 3999 })
           .where(eq(plans.slug, 'pro'));
+        await tx.execute(
+          sql`update plans set offer_badge = 'Hand-made' where slug = 'pro'`,
+        );
         await runPre0027Sql(tx, offersSql);
         const rows = await tx
           .select()
           .from(plans)
           .orderBy(asc(plans.sortOrder));
+        const offers = await droppedPlanColumns(tx);
         expect(
-          rows.map((p) => [
+          rows.map((p, i) => [
             p.slug,
             p.monthlyPriceBdt,
-            p.offerPriceBdt,
-            p.offerBadge,
+            offers[i]![1],
+            offers[i]![2],
           ]),
         ).toEqual([
           ['free', 0, null, null],
@@ -218,19 +221,22 @@ describe('Admin plan settings (e2e)', () => {
     ]);
     const dataSql = readFileSync(PLAN_DATA_MIGRATION, 'utf8');
     const rollback = new Error('rollback');
-    const pick = (rows: (typeof plans.$inferSelect)[]) =>
-      rows.map((p) => [
-        p.slug,
-        p.featureConfig.limits,
-        p.yearlyMonthlyPriceBdt,
-        p.trialDays,
-        p.trialCommentLimit,
-        p.isActive,
-      ]);
     await expect(
       actors.db.transaction(async (tx) => {
+        await addDroppedPlanColumns(tx);
         const read = () =>
           tx.select().from(plans).orderBy(asc(plans.sortOrder));
+        const pick = async (rows: (typeof plans.$inferSelect)[]) => {
+          const trials = await droppedPlanColumns(tx);
+          return rows.map((p, i) => [
+            p.slug,
+            p.featureConfig.limits,
+            p.yearlyMonthlyPriceBdt,
+            trials[i]![3],
+            trials[i]![4],
+            p.isActive,
+          ]);
+        };
         // Already applied: running it again changes nothing.
         await runPre0027Sql(tx, dataSql);
         expect(await read()).toEqual(seeded);
@@ -259,7 +265,7 @@ describe('Admin plan settings (e2e)', () => {
           where slug = 'pro'`);
         await runPre0027Sql(tx, dataSql);
         const once = await read();
-        expect(pick(once)).toEqual([
+        expect(await pick(once)).toEqual([
           [
             'free',
             {
@@ -389,11 +395,7 @@ describe('Admin plan settings (e2e)', () => {
         'pro',
       ]);
       expect(body.items.map((p) => p.sortOrder)).toEqual([1, 2, 3]);
-      expect(body.items[0]).toMatchObject({
-        yearlyMonthlyPriceBdt: 949,
-        trialDays: 7,
-        trialCommentLimit: 300,
-      });
+      expect(body.items[0]).toMatchObject({ yearlyMonthlyPriceBdt: 949 });
       const growth = body.items[1]!;
       expect(growth).toEqual({
         id: planBySlug('growth').id,
@@ -408,11 +410,6 @@ describe('Admin plan settings (e2e)', () => {
         descriptionEn: null,
         descriptionBn: null,
         isHighlighted: false,
-        // Read-only legacy columns (PR-T7 drops them).
-        offerPriceBdt: 1499,
-        offerBadge: '40% Off',
-        trialDays: null,
-        trialCommentLimit: null,
         featureConfig: {
           limits: {
             connectedPages: 5,
@@ -475,8 +472,6 @@ describe('Admin plan settings (e2e)', () => {
         badgeBn: 'জনপ্রিয়',
         descriptionEn: 'For growing shops',
         descriptionBn: 'বাড়তে থাকা দোকানের জন্য',
-        // Untouched legacy columns.
-        offerPriceBdt: 1499,
         featureConfig: {
           limits: {
             connectedPages: 5,

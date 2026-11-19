@@ -229,17 +229,13 @@ describe('yearlyPriceError (PW-D5, PR-T1)', () => {
 });
 
 describe('toAdminPlan', () => {
-  it('serialises dates, normalises the config and keeps the read-only legacy columns', () => {
+  it('serialises dates, normalises the config, no offer/trial fields (PR-T7)', () => {
     const at = new Date('2026-11-18T10:00:00.000Z');
     const plan = toAdminPlan({
       ...growth(),
       featureConfig: {
         limits: { teamSeats: 3 },
       } as unknown as PlanFeatureConfig,
-      offerPriceBdt: 999,
-      offerBadge: null,
-      trialDays: null,
-      trialCommentLimit: null,
       id: 'id-1',
       slug: 'growth',
       name: 'Growth',
@@ -249,7 +245,6 @@ describe('toAdminPlan', () => {
       updatedAt: at,
     });
     expect(plan.createdAt).toBe('2026-11-18T10:00:00.000Z');
-    expect(plan.offerPriceBdt).toBe(999);
     expect(plan.featureConfig.limits).toEqual({
       connectedPages: 0,
       monthlyComments: 0,
@@ -269,12 +264,8 @@ describe('toAdminPlan', () => {
         'isHighlighted',
         'monthlyPriceBdt',
         'name',
-        'offerBadge',
-        'offerPriceBdt',
         'slug',
         'sortOrder',
-        'trialCommentLimit',
-        'trialDays',
         'updatedAt',
         'yearlyMonthlyPriceBdt',
       ].sort(),

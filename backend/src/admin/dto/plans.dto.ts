@@ -62,14 +62,6 @@ export interface AdminPlan {
   descriptionBn: string | null;
   /** The one highlighted plan (PR-D9). */
   isHighlighted: boolean;
-  /**
-   * Read-only legacy columns (offers and trials are promotions since PR-T1; not editable since
-   * PR-T4; dropped in PR-T7).
-   */
-  offerPriceBdt: number | null;
-  offerBadge: string | null;
-  trialDays: number | null;
-  trialCommentLimit: number | null;
   /** Always complete: every limit and feature key is present. */
   featureConfig: PlanFeatureConfig;
   createdAt: string;

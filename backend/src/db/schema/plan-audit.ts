@@ -31,7 +31,8 @@ export const PLAN_AUDIT_FIELDS = [
  * Field names that only old audit rows carry (renamed or no longer editable). Never written again;
  * kept so `PlanAuditChange` types the stored history and the admin app can label it. PW-T1b:
  * `monthlyAiCredits` (M5-T11) → `monthlyComments`. PR-T4: `originalPriceBdt` → `monthlyPriceBdt`;
- * the offer and trial fields left the plan editor (offers are promotions, PR-D8).
+ * the offer and trial fields left the plan editor (offers are promotions, PR-D8) and their columns
+ * were dropped by migration 0029 (PR-T7).
  */
 export const LEGACY_PLAN_AUDIT_FIELDS = [
   'featureConfig.limits.monthlyAiCredits',

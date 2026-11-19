@@ -35,8 +35,9 @@ export class ListPlanAuditQueryDto {
 
 /**
  * One plan edit. `changes` lists only the fields that changed, in `PLAN_AUDIT_FIELDS` order
- * (`originalPriceBdt`, `offerPriceBdt`, `offerBadge`, `featureConfig.limits.*`,
- * `featureConfig.features.*`); prices are whole BDT, `null` = offer/badge cleared.
+ * (`monthlyPriceBdt`, `yearlyMonthlyPriceBdt`, badges, descriptions, `isHighlighted`,
+ * `featureConfig.limits.*`, `featureConfig.features.*`; old rows may carry
+ * `LEGACY_PLAN_AUDIT_FIELDS`); prices are whole BDT, `null` = cleared.
  */
 export interface PlanAuditEntry {
   id: string;

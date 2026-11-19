@@ -487,27 +487,23 @@ describe('Login as Client', () => {
 describe('Activate plan dialog (PW-T9)', () => {
   // 20 Nov 2026, 10:00 in Dhaka.
   const NOW = new Date('2026-11-20T04:00:00.000Z')
-  const plan = (id: string, slug: string, name: string, prices: [number, number | null, number | null]) => ({
+  const plan = (id: string, slug: string, name: string, prices: [number, number | null]) => ({
     id,
     slug,
     name,
     sortOrder: 0,
     isActive: true,
     monthlyPriceBdt: prices[0],
-    offerPriceBdt: prices[1],
-    offerBadge: null,
-    yearlyMonthlyPriceBdt: prices[2],
-    trialDays: null,
-    trialCommentLimit: null,
+    yearlyMonthlyPriceBdt: prices[1],
     featureConfig: { limits: {}, features: {} },
     createdAt: '',
     updatedAt: '',
   })
   const activePlans = {
     items: [
-      plan('0199a000-0000-7000-8000-0000000000b2', 'starter', 'Starter', [999, 499, 449]),
-      plan('0199a000-0000-7000-8000-0000000000b3', 'growth', 'Growth', [2499, 1499, 1349]),
-      plan('0199a000-0000-7000-8000-0000000000b4', 'pro', 'Pro', [5999, 3999, null]),
+      plan('0199a000-0000-7000-8000-0000000000b2', 'starter', 'Starter', [999, 449]),
+      plan('0199a000-0000-7000-8000-0000000000b3', 'growth', 'Growth', [2499, 1349]),
+      plan('0199a000-0000-7000-8000-0000000000b4', 'pro', 'Pro', [5999, null]),
     ],
   }
   const POST = `POST /api/admin/clients/${acme.id}/subscription`

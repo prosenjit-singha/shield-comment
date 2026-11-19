@@ -131,7 +131,6 @@ describe('Billing + wallet schema (e2e)', () => {
         name: `PWT1 ${tag}`,
         sortOrder: 90,
         monthlyPriceBdt: 999,
-        offerPriceBdt: 499,
         featureConfig: {
           limits: {
             connectedPages: 1,
@@ -559,83 +558,40 @@ describe('Billing + wallet schema (e2e)', () => {
     });
   });
 
-  describe('plans: yearly price + trial columns', () => {
+  describe('plans: yearly price', () => {
     const setPlan = (patch: Partial<typeof plans.$inferInsert>) =>
       db().update(plans).set(patch).where(eq(plans.id, planId));
 
     afterAll(() =>
-      setPlan({
-        offerPriceBdt: 499,
-        yearlyMonthlyPriceBdt: null,
-        trialDays: null,
-        trialCommentLimit: null,
-      }),
+      setPlan({ monthlyPriceBdt: 999, yearlyMonthlyPriceBdt: null }),
     );
 
-    it('the seeded plans carry the PW-T1b data (migration 0022; yearly = list price since 0027)', async () => {
+    it('the seeded plans carry the PW-T1b yearly prices (migration 0022; yearly = list price since 0027)', async () => {
       const rows = await db()
-        .select({
-          slug: plans.slug,
-          yearly: plans.yearlyMonthlyPriceBdt,
-          trialDays: plans.trialDays,
-          trialCommentLimit: plans.trialCommentLimit,
-        })
+        .select({ slug: plans.slug, yearly: plans.yearlyMonthlyPriceBdt })
         .from(plans)
         .where(inArray(plans.slug, ['free', 'starter', 'growth', 'pro']))
         .orderBy(plans.sortOrder);
       expect(rows).toEqual([
-        {
-          slug: 'free',
-          yearly: null,
-          trialDays: null,
-          trialCommentLimit: null,
-        },
-        { slug: 'starter', yearly: 949, trialDays: 7, trialCommentLimit: 300 },
-        {
-          slug: 'growth',
-          yearly: 2349,
-          trialDays: null,
-          trialCommentLimit: null,
-        },
-        { slug: 'pro', yearly: 5599, trialDays: null, trialCommentLimit: null },
+        { slug: 'free', yearly: null },
+        { slug: 'starter', yearly: 949 },
+        { slug: 'growth', yearly: 2349 },
+        { slug: 'pro', yearly: 5599 },
       ]);
     });
 
-    it('accepts the edge values', async () => {
-      await setPlan({
-        yearlyMonthlyPriceBdt: 499,
-        trialDays: 90,
-        trialCommentLimit: 10_000_000,
-      });
-      await setPlan({
-        yearlyMonthlyPriceBdt: 0,
-        trialDays: 1,
-        trialCommentLimit: 0,
-      });
-      // The yearly price is capped by the monthly list price, offer or not (PR-T1).
-      await setPlan({ offerPriceBdt: null, yearlyMonthlyPriceBdt: 999 });
-      await setPlan({ offerPriceBdt: 499, yearlyMonthlyPriceBdt: 999 });
+    it('accepts the edge values (the yearly price is capped by the monthly list price, PR-T1)', async () => {
+      await setPlan({ yearlyMonthlyPriceBdt: 0 });
+      await setPlan({ yearlyMonthlyPriceBdt: 999 });
     });
 
     it.each([
       ['yearly per-month > list price', { yearlyMonthlyPriceBdt: 1000 }],
-      [
-        'yearly per-month > list price (no offer)',
-        { offerPriceBdt: null, yearlyMonthlyPriceBdt: 1000 },
-      ],
       ['negative yearly price', { yearlyMonthlyPriceBdt: -1 }],
       [
         'list price lowered below the yearly price',
-        {
-          yearlyMonthlyPriceBdt: 949,
-          monthlyPriceBdt: 900,
-          offerPriceBdt: 499,
-        },
+        { yearlyMonthlyPriceBdt: 949, monthlyPriceBdt: 900 },
       ],
-      ['0 trial days', { trialDays: 0 }],
-      ['91 trial days', { trialDays: 91 }],
-      ['negative trial comment limit', { trialCommentLimit: -1 }],
-      ['trial comment limit > max', { trialCommentLimit: 10_000_001 }],
     ])('rejects %s (23514)', async (_label, patch) => {
       expect(await pgCode(setPlan(patch))).toBe(CHECK_VIOLATION);
     });

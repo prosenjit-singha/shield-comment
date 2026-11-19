@@ -151,7 +151,6 @@ export class AdminSubscriptionService {
           monthlyPriceBdt: plans.monthlyPriceBdt,
           yearlyMonthlyPriceBdt: plans.yearlyMonthlyPriceBdt,
           featureConfig: plans.featureConfig,
-          trialCommentLimit: plans.trialCommentLimit,
         })
         .from(plans)
         .where(eq(plans.id, input.planId));
@@ -264,7 +263,7 @@ export class AdminSubscriptionService {
           id: plan.id,
           slug: plan.slug,
           featureConfig: normalizeFeatureConfig(plan.featureConfig),
-          trialCommentLimit: plan.trialCommentLimit,
+          trialCommentLimit: null,
         },
       };
       const balances = await this.wallet.startFreshPeriod(

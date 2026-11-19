@@ -69,9 +69,8 @@ describe('startDateError', () => {
 describe('activationPricePreview', () => {
   const starter = { monthlyPriceBdt: 999, yearlyMonthlyPriceBdt: 949 }
 
-  it('monthly shows the list price per month (never the legacy offer)', () => {
+  it('monthly shows the list price per month', () => {
     expect(activationPricePreview(starter, 'month')).toBe('৳999/month')
-    expect(activationPricePreview({ ...starter, offerPriceBdt: 499 } as typeof starter, 'month')).toBe('৳999/month')
   })
 
   it('yearly shows the per-month list price and the yearly charge', () => {

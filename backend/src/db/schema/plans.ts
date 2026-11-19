@@ -25,8 +25,8 @@ import { id, timestamps } from './columns.js';
  *
  * Promotions (PR-T1, migration 0027): a plan holds only its fixed facts (PR-D8). The list price is
  * `monthly_price_bdt` (was `original_price_bdt`); offers live in `promotions` (0027 seeded a
- * "Launch offer" DISCOUNT per plan from `offer_price_bdt`). `offer_price_bdt`, `offer_badge`,
- * `trial_days` and `trial_comment_limit` stay until PR-T7 drops them.
+ * "Launch offer" DISCOUNT per plan from `offer_price_bdt`). Migration 0029 (PR-T7) dropped
+ * `offer_price_bdt`, `offer_badge`, `trial_days` and `trial_comment_limit`.
  */
 
 /** Numeric limits per plan (`feature_config.limits`). Rows 1–3 of the landing pricing matrix + workspaces. */
@@ -64,9 +64,6 @@ export const LEGACY_PLAN_LIMIT_KEYS: Readonly<
   monthlyComments: 'monthlyAiCredits',
 };
 
-/** The only plan with a sign-up trial (PW-D8); the trial columns are accepted on it alone. */
-export const TRIAL_PLAN_SLUG = 'starter';
-
 /** Boolean feature flags (`feature_config.features`). Rows 4–10 of the landing pricing matrix. */
 export const PLAN_FEATURE_KEYS = [
   /** Bangla / Banglish / English AI filter. */
@@ -94,17 +91,16 @@ export interface PlanFeatureConfig {
 
 /** Prices are whole taka per month. */
 export const PLAN_PRICE_MAX_BDT = 1_000_000;
-export const PLAN_OFFER_BADGE_MAX = 40;
 export const PLAN_NAME_MAX = 40;
 /** Optional card badge (PR-D8, en + bn PR-D17), e.g. "Popular". */
 export const PLAN_BADGE_MAX = 24;
 /** Optional short card description (PR-D8, en + bn PR-D17). */
 export const PLAN_DESCRIPTION_MAX = 160;
 
-/** Trial length bounds in days (PW-D8; the admin UI offers 3 / 7 / 14 / 30). */
+/** Trial length bounds in days (PW-D8; TRIAL promotions since PR-T1). */
 export const PLAN_TRIAL_DAYS_MIN = 1;
 export const PLAN_TRIAL_DAYS_MAX = 90;
-/** Upper bound of `trial_comment_limit` (PW-D12) = the monthly comment limit max. */
+/** Upper bound of a TRIAL promotion's `trial_comment_limit` (PW-D12) = the monthly comment limit max. */
 export const PLAN_TRIAL_COMMENT_LIMIT_MAX = PLAN_LIMIT_MAX.monthlyComments;
 
 export const plans = pgTable(
@@ -120,22 +116,11 @@ export const plans = pgTable(
     isActive: boolean().notNull().default(true),
     /** Monthly list price in whole BDT (৳); was `original_price_bdt` (renamed by 0027). */
     monthlyPriceBdt: integer().notNull(),
-    /** Promo price in whole BDT, ≤ original; `null` = no offer (customers pay the original). */
-    offerPriceBdt: integer(),
-    /** Short promo label shown on the pricing card, e.g. "50% Launch Offer". */
-    offerBadge: text(),
     /**
      * Per-month list price in whole BDT when billed yearly (PW-D5; charged × 12), ≤
      * `monthly_price_bdt` (PR-T1; before 0027: ≤ `offer ?? original`). `null` = no yearly option.
      */
     yearlyMonthlyPriceBdt: integer(),
-    /** Trial length in days (PW-D8; Starter only, enforced by the API; seed 7). `null` = no trial. */
-    trialDays: integer(),
-    /**
-     * Comment grant of a trial (PW-D12; Starter only, beside `trial_days`; seed 300). `null` = the
-     * plan's monthly comment limit.
-     */
-    trialCommentLimit: integer(),
     featureConfig: jsonb().$type<PlanFeatureConfig>().notNull(),
     /** Card badge, e.g. "Popular" (PR-D8/D17); `null` = none. bn falls back to en. */
     badgeEn: text(),
@@ -158,16 +143,6 @@ export const plans = pgTable(
     ),
     check('plans_monthly_price_check', sql`monthly_price_bdt >= 0`),
     check(
-      'plans_offer_price_check',
-      sql`offer_price_bdt is null or (offer_price_bdt >= 0 and offer_price_bdt <= monthly_price_bdt)`,
-    ),
-    check(
-      'plans_offer_badge_length',
-      sql.raw(
-        `offer_badge is null or char_length(offer_badge) between 1 and ${PLAN_OFFER_BADGE_MAX}`,
-      ),
-    ),
-    check(
       'plans_yearly_monthly_price_check',
       sql`yearly_monthly_price_bdt is null or (yearly_monthly_price_bdt >= 0 and yearly_monthly_price_bdt <= monthly_price_bdt)`,
     ),
@@ -181,18 +156,6 @@ export const plans = pgTable(
       check(
         `plans_${c}_length`,
         sql.raw(lengthSql(c, 1, PLAN_DESCRIPTION_MAX, true)),
-      ),
-    ),
-    check(
-      'plans_trial_days_check',
-      sql.raw(
-        `trial_days is null or trial_days between ${PLAN_TRIAL_DAYS_MIN} and ${PLAN_TRIAL_DAYS_MAX}`,
-      ),
-    ),
-    check(
-      'plans_trial_comment_limit_check',
-      sql.raw(
-        `trial_comment_limit is null or trial_comment_limit between 0 and ${PLAN_TRIAL_COMMENT_LIMIT_MAX}`,
       ),
     ),
     check(

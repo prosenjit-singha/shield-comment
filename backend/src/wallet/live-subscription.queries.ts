@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray } from 'drizzle-orm';
 import { normalizeFeatureConfig } from '../admin/plan-rules.js';
 import type { Database } from '../db/database.js';
 import {
@@ -32,8 +32,9 @@ export interface LiveSubscription {
     /** Normalised (`normalizeFeatureConfig`): every limit key present. */
     featureConfig: PlanFeatureConfig;
     /**
-     * A trial's comment limit (`null` = the plan's monthly comments): the redemption snapshot of
-     * a promotion trial (PR-T3), else the plan column (sign-up trials before PR-T3).
+     * A trial's comment limit: the redemption snapshot of a promotion trial (PR-T3); `null` = the
+     * plan's monthly comments. Pre-PR-T3 sign-up trials have no redemption: their limit lives in
+     * the trial's wallet period (`wallet_balances.included`, written at trial start; PR-T7).
      */
     trialCommentLimit: number | null;
   };
@@ -55,10 +56,7 @@ const liveColumns = {
   planId: plans.id,
   planSlug: plans.slug,
   featureConfig: plans.featureConfig,
-  // ponytail: the plan-column fallback is for pre-PR-T3 sign-up trials; PR-T7 drops it.
-  trialCommentLimit: sql<
-    number | null
-  >`case when ${promotionRedemptions.id} is null then ${plans.trialCommentLimit} else ${promotionRedemptions.trialCommentLimit} end`,
+  trialCommentLimit: promotionRedemptions.trialCommentLimit,
 };
 
 /** The promotion a subscription redeemed (its trial snapshot), if any. */

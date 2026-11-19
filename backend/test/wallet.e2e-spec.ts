@@ -5,6 +5,8 @@ import type { Database } from '../src/db/database.js';
 import {
   billingAccounts,
   plans,
+  promotionRedemptions,
+  promotions,
   subscriptions,
   walletBalances,
   walletEntries,
@@ -13,7 +15,11 @@ import {
 } from '../src/db/schema/index.js';
 import { findLiveSubscription } from '../src/wallet/live-subscription.queries.js';
 import { WalletService } from '../src/wallet/wallet.service.js';
-import { type Actor, createAuthActors } from './utils/auth-actors.js';
+import {
+  type Actor,
+  createAuthActors,
+  deleteBillingChildren,
+} from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
 
 /** An instant from a Dhaka wall clock (`YYYY-MM-DDTHH:mm`), Asia/Dhaka = UTC+6. */
@@ -54,11 +60,7 @@ describe('Client wallet (e2e)', () => {
   const T0 = dhaka('2026-11-19T15:30');
   const T1 = dhaka('2026-12-19T15:30');
 
-  async function insertPlan(
-    key: string,
-    monthlyComments: number,
-    trialCommentLimit: number | null = null,
-  ) {
+  async function insertPlan(key: string, monthlyComments: number) {
     const [row] = await db()
       .insert(plans)
       .values({
@@ -66,7 +68,6 @@ describe('Client wallet (e2e)', () => {
         name: `PWT2 ${key} ${tag}`,
         sortOrder: 90,
         monthlyPriceBdt: 499,
-        trialCommentLimit,
         featureConfig: featureConfig(
           monthlyComments,
         ) as typeof plans.$inferInsert.featureConfig,
@@ -85,25 +86,7 @@ describe('Client wallet (e2e)', () => {
       })
       .where(eq(plans.id, planIds[key]!));
 
-  async function resetAccounts() {
-    const accounts = [accountA, accountB];
-    const walletIds = db()
-      .select({ id: wallets.id })
-      .from(wallets)
-      .where(inArray(wallets.billingAccountId, accounts));
-    await db()
-      .delete(walletEntries)
-      .where(inArray(walletEntries.walletId, walletIds));
-    await db()
-      .delete(walletBalances)
-      .where(inArray(walletBalances.walletId, walletIds));
-    await db()
-      .delete(wallets)
-      .where(inArray(wallets.billingAccountId, accounts));
-    await db()
-      .delete(subscriptions)
-      .where(inArray(subscriptions.billingAccountId, accounts));
-  }
+  const resetAccounts = () => deleteBillingChildren(db(), [accountA, accountB]);
 
   async function active(
     account: string,
@@ -130,12 +113,42 @@ describe('Client wallet (e2e)', () => {
     return row!.id;
   }
 
+  /**
+   * A TRIALING subscription. With `commentLimit` (a number or `null`) it redeems a TRIAL
+   * promotion whose snapshot holds that limit (PR-T3); without, it has no redemption, like a
+   * pre-PR-T3 sign-up trial (`null` limit = the plan's monthly comments, PR-T7).
+   */
   async function trial(
     account: string,
     planKey: string,
     start: Date,
     end: Date,
+    commentLimit?: number | null,
   ) {
+    let promotionRedemptionId: string | null = null;
+    if (commentLimit !== undefined) {
+      const [promotion] = await db()
+        .insert(promotions)
+        .values({
+          kind: 'TRIAL',
+          name: `PWT2 trial ${tag}`,
+          trialDays: 7,
+          trialCommentLimit: commentLimit,
+          createdBy: a.id,
+        })
+        .returning({ id: promotions.id });
+      const [redemption] = await db()
+        .insert(promotionRedemptions)
+        .values({
+          promotionId: promotion!.id,
+          billingAccountId: account,
+          kind: 'TRIAL',
+          trialDays: 7,
+          trialCommentLimit: commentLimit,
+        })
+        .returning({ id: promotionRedemptions.id });
+      promotionRedemptionId = redemption!.id;
+    }
     const [row] = await db()
       .insert(subscriptions)
       .values({
@@ -147,6 +160,7 @@ describe('Client wallet (e2e)', () => {
         trialEndsAt: end,
         currentTermStart: start,
         currentTermEnd: end,
+        promotionRedemptionId,
       })
       .returning({ id: subscriptions.id });
     return row!.id;
@@ -213,8 +227,7 @@ describe('Client wallet (e2e)', () => {
       .set({ billingAccountId: accountB })
       .where(eq(workspaces.id, b.workspaceId));
     await insertPlan('five', 5);
-    await insertPlan('trial', 10, 3);
-    await insertPlan('trialnull', 10, null);
+    await insertPlan('trial', 10);
   });
 
   afterAll(async () => {
@@ -401,9 +414,9 @@ describe('Client wallet (e2e)', () => {
     );
   });
 
-  it('a trial is one period granted trial_comment_limit (PW-D12)', async () => {
+  it('a trial is one period granted the redemption’s trial_comment_limit (PW-D12, PR-T3)', async () => {
     const end = new Date(T0.getTime() + 40 * DAY);
-    const subId = await trial(accountA, 'trial', T0, end);
+    const subId = await trial(accountA, 'trial', T0, end, 3);
     expect(
       await wallet.consume(
         a.workspaceId,
@@ -451,15 +464,13 @@ describe('Client wallet (e2e)', () => {
     );
   });
 
-  it('openPeriod grants the trial at trial start: a later trial-limit edit does not apply', async () => {
+  it('openPeriod grants the trial at trial start: a later plan-limit edit does not apply', async () => {
     const end = new Date(T0.getTime() + 7 * DAY);
     expect(await wallet.openPeriod(a.workspaceId, T0)).toBe(false);
+    // No redemption (a pre-PR-T3 sign-up trial): the period keeps the plan's 10 granted at start.
     await trial(accountA, 'trial', T0, end);
     expect(await wallet.openPeriod(a.workspaceId, T0)).toBe(true);
-    await db()
-      .update(plans)
-      .set({ trialCommentLimit: 9 })
-      .where(eq(plans.id, planIds.trial!));
+    await setPlanLimit('trial', 99);
     try {
       // Idempotent, inside a caller transaction too.
       expect(
@@ -471,41 +482,50 @@ describe('Client wallet (e2e)', () => {
         await wallet.consume(
           a.workspaceId,
           'monthlyComments',
-          3,
+          10,
           new Date(T0.getTime() + DAY),
         ),
       ).toBe('ok');
       expect(await balancesOf(accountA)).toEqual([
-        expect.objectContaining({ periodStart: T0, included: 3, used: 3 }),
+        expect.objectContaining({ periodStart: T0, included: 10, used: 10 }),
       ]);
       expect(await entriesOf(accountA)).toHaveLength(1);
     } finally {
-      await db()
-        .update(plans)
-        .set({ trialCommentLimit: 3 })
-        .where(eq(plans.id, planIds.trial!));
+      await setPlanLimit('trial', 10);
     }
   });
 
-  it('a trial with trial_comment_limit null grants the plan monthlyComments', async () => {
-    await trial(accountA, 'trialnull', T0, new Date(T0.getTime() + 7 * DAY));
-    expect(
-      await wallet.consume(
-        a.workspaceId,
-        'monthlyComments',
-        1,
-        new Date(T0.getTime() + DAY),
-      ),
-    ).toBe('ok');
-    expect((await balancesOf(accountA))[0]).toMatchObject({
-      included: 10,
-      used: 1,
-    });
-  });
+  it.each([
+    ['a redemption with trial_comment_limit null', null],
+    ['no redemption (pre-PR-T3 sign-up trial)', undefined],
+  ])(
+    'a trial with %s grants the plan monthlyComments',
+    async (_label, limit) => {
+      await trial(
+        accountA,
+        'trial',
+        T0,
+        new Date(T0.getTime() + 7 * DAY),
+        limit,
+      );
+      expect(
+        await wallet.consume(
+          a.workspaceId,
+          'monthlyComments',
+          1,
+          new Date(T0.getTime() + DAY),
+        ),
+      ).toBe('ok');
+      expect((await balancesOf(accountA))[0]).toMatchObject({
+        included: 10,
+        used: 1,
+      });
+    },
+  );
 
   it('a new subscription re-anchors the wallet (trial → paid term)', async () => {
     const trialEnd = new Date(T0.getTime() + 7 * DAY);
-    const trialId = await trial(accountA, 'trial', T0, trialEnd);
+    const trialId = await trial(accountA, 'trial', T0, trialEnd, 3);
     await wallet.consume(
       a.workspaceId,
       'monthlyComments',
@@ -631,7 +651,7 @@ describe('Client wallet (e2e)', () => {
 
   it('balance / balanceMany: values, resetsAt, pooled workspaces, null without a live plan', async () => {
     await active(accountA, 'five', T0, T1);
-    await trial(accountB, 'trial', T0, new Date(T0.getTime() + 7 * DAY));
+    await trial(accountB, 'trial', T0, new Date(T0.getTime() + 7 * DAY), 3);
     const now = dhaka('2026-11-25T12:00');
 
     // Before the first consume: what the period will grant.

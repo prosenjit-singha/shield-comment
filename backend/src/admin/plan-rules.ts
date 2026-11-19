@@ -35,11 +35,6 @@ const SCALAR_FIELDS = [
 ] as const;
 
 export interface PlanRow extends PlanEditableValues {
-  /** Read-only legacy columns (PR-T7 drops them). */
-  offerPriceBdt: number | null;
-  offerBadge: string | null;
-  trialDays: number | null;
-  trialCommentLimit: number | null;
   id: string;
   slug: string;
   name: string;
@@ -210,10 +205,6 @@ export function toAdminPlan(row: PlanRow): AdminPlan {
     descriptionEn: row.descriptionEn,
     descriptionBn: row.descriptionBn,
     isHighlighted: row.isHighlighted,
-    offerPriceBdt: row.offerPriceBdt,
-    offerBadge: row.offerBadge,
-    trialDays: row.trialDays,
-    trialCommentLimit: row.trialCommentLimit,
     featureConfig: normalizeFeatureConfig(row.featureConfig),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

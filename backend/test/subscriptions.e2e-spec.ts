@@ -32,6 +32,7 @@ import {
   TRUSTED_ORIGIN,
 } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
+import { addDroppedPlanColumns } from './utils/dropped-plan-columns.js';
 import { fakeQueue } from './utils/fake-queue.js';
 
 const DAY = 86_400_000;
@@ -145,16 +146,6 @@ describe('Subscriptions + trial by choice (e2e)', () => {
         )
     )[0]!.id;
 
-  const setStarterTrial = (
-    trialDays: number | null,
-    trialCommentLimit: number | null,
-    ex: Executor = db(),
-  ) =>
-    ex
-      .update(plans)
-      .set({ trialDays, trialCommentLimit })
-      .where(eq(plans.id, starterId));
-
   /** Everything a new trial writes, checked against the given trial values. */
   async function expectFreshTrial(
     actor: Actor,
@@ -216,15 +207,6 @@ describe('Subscriptions + trial by choice (e2e)', () => {
     actors = createAuthActors(app);
     service = app.get(SubscriptionService);
     wallet = app.get(WalletService);
-    const [starter] = await db()
-      .select({
-        id: plans.id,
-        trialDays: plans.trialDays,
-        trialCommentLimit: plans.trialCommentLimit,
-      })
-      .from(plans)
-      .where(eq(plans.slug, 'starter'));
-    starterId = starter!.id;
     const idOf = async (slug: string) =>
       (
         await db()
@@ -232,15 +214,13 @@ describe('Subscriptions + trial by choice (e2e)', () => {
           .from(plans)
           .where(eq(plans.slug, slug))
       )[0]!.id;
+    starterId = await idOf('starter');
     growthId = await idOf('growth');
     proId = await idOf('pro');
-    // The seed (0022) this spec is written against.
-    expect(starter).toMatchObject({ trialDays: 7, trialCommentLimit: 300 });
   });
 
   afterAll(async () => {
     if (actors) {
-      await setStarterTrial(7, 300);
       await actors.cleanup();
     }
     await app?.close();
@@ -306,15 +286,8 @@ describe('Subscriptions + trial by choice (e2e)', () => {
 
     it('owner: 201 + summary; TRIALING 7-day Starter, redemption linked, wallet 300 from the promotion snapshot', async () => {
       const owner = await actors.signUp('prt3-happy');
-      // The old plan columns no longer drive new trials.
-      await setStarterTrial(14, 50);
       const before = Date.now();
-      let res: Awaited<ReturnType<typeof start>>;
-      try {
-        res = await start(owner);
-      } finally {
-        await setStarterTrial(7, 300);
-      }
+      const res = await start(owner);
       expect(res.status).toBe(201);
       expect(res.headers['cache-control']).toBe('private, no-store');
       expect(res.body).toMatchObject({
@@ -769,6 +742,8 @@ describe('Subscriptions + trial by choice (e2e)', () => {
 
       await expect(
         db().transaction(async (tx) => {
+          // 0023 reads the Starter trial columns that 0029 (PR-T7) dropped.
+          await addDroppedPlanColumns(tx);
           await unbill(tx, [owner, olderMember, host, oldest, empty]);
           // owner's workspace: an older moderator, but the owner pays.
           await tx.insert(workspaceMembers).values({
@@ -848,7 +823,9 @@ describe('Subscriptions + trial by choice (e2e)', () => {
 
           // trial_days null at migration time: account + link, no trial.
           await unbill(tx, [noTrial]);
-          await setStarterTrial(null, 300, tx);
+          await tx.execute(
+            sql`update plans set trial_days = null where slug = 'starter'`,
+          );
           await tx.execute(sql.raw(backfillSql));
           const noTrialAccount = (await accountOf(noTrial.id, tx))!;
           expect(await linkOf(noTrial.workspaceId, tx)).toBe(noTrialAccount.id);
@@ -858,16 +835,10 @@ describe('Subscriptions + trial by choice (e2e)', () => {
         }),
       ).rejects.toBe(rollback);
 
-      // Rolled back: the sign-up rows are back (account + link, no plan), the Starter trial values
-      // too.
+      // Rolled back: the sign-up rows are back (account + link, no plan).
       const ownerAccount = (await accountOf(owner.id))!;
       expect(await linkOf(owner.workspaceId)).toBe(ownerAccount.id);
       expect(await subsOf(ownerAccount.id)).toEqual([]);
-      const [starter] = await db()
-        .select({ trialDays: plans.trialDays })
-        .from(plans)
-        .where(eq(plans.id, starterId));
-      expect(starter?.trialDays).toBe(7);
     });
   });
 });
