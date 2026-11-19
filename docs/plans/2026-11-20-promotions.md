@@ -202,7 +202,7 @@ There's no invoices table yet. For now:
 | PR-T5 | Admin UI: plan editor fields (en + bn badge/description, highlight), WhatsApp number field, coupon field + saving in Activate plan. Admin vitest. |
 | PR-T5b | Admin UI: `/admin/promotions` nav item, table, "New promotion" / edit dialog, Stop, redemptions view. Admin vitest. (Split from PR-T5 by PR-PLAN.) |
 | PR-T6 | Client UI: `/plans` page (en + bn), trial start, Contact us, banner link, sign-up → `/plans`. Client vitest. |
-| PR-T7 | Migration 0028: drop `offer_price_bdt`, `offer_badge`, `trial_days`, `trial_comment_limit`; remove the last readers; their audit keys become legacy. |
+| PR-T7 | Migration 0029: drop `offer_price_bdt`, `offer_badge`, `trial_days`, `trial_comment_limit`; remove the last readers; their audit keys become legacy. |
 | PR-GATE | All suites, Docker rebuild, browser check (admin promotions + plan editor, client `/plans` trial start, expired trial promotion hidden, coupon via manual activation). |
 
 ## 7. Left to the builder
