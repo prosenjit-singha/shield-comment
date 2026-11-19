@@ -23,10 +23,7 @@ import {
   type OutputRejection,
   parseClassificationOutput,
 } from './classifier-output.js';
-import {
-  type ContextLevel,
-  creditCostForLevel,
-} from './moderation.constants.js';
+import type { ContextLevel } from './moderation.constants.js';
 import {
   buildClassifierMessages,
   CLASSIFIER_OUTPUT_MODES,
@@ -42,9 +39,8 @@ export const CLASSIFIER_MAX_OUTPUT_ATTEMPTS = 2;
 
 export interface ClassificationSuccess extends ClassificationOutput {
   ok: true;
-  /** Level of the data actually sent (drives the credit cost, D8/D15). */
+  /** Level of the data actually sent (D8; stored on the comment). */
   contextLevel: ContextLevel;
-  credits: number;
   promptVersion: string;
   provider: AiProvider;
   model: string;
@@ -109,9 +105,10 @@ function isResponseFormatRefusal(error: AiGatewayError): boolean {
 }
 
 /**
- * Classifies one comment (M5-T5). Pure: no DB, no Graph, no credits (callers reserve
- * `credits` first via `classificationCreditCost`). Expected failures come back as
- * `{ ok: false, kind, retryable }`; only non-AI errors (e.g. the config resolver's DB) throw.
+ * Classifies one comment (M5-T5). Pure: no DB, no Graph, no usage metering (the worker counts
+ * the comment against the monthly comment limit before the first call, PW-T4). Expected
+ * failures come back as `{ ok: false, kind, retryable }`; only non-AI errors (e.g. the config
+ * resolver's DB) throw.
  *
  * Output: `json_schema` (strict) → on a `response_format` refusal `json_object` → prompt-only
  * JSON, per call (nothing remembered). An unusable answer (bad JSON / schema / empty reply) gets
@@ -212,7 +209,6 @@ export class CommentClassifier {
           ok: true,
           ...parsed.value,
           contextLevel: normalized.contextLevel,
-          credits: creditCostForLevel(normalized.contextLevel),
           promptVersion: PROMPT_VERSION,
           provider: reply.provider,
           model: reply.model,

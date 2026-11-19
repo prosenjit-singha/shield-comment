@@ -5,17 +5,17 @@ import {
   type DailyCommentStatsDelta,
   incrementDailyCommentStats,
 } from '../comments/comments.queries.js';
-import { CreditService } from '../credits/credit.service.js';
 import type { Database } from '../db/database.js';
 import type { DailyCommentCounter } from '../db/schema/comments.js';
-import {
-  type ClassifierInput,
-  classificationCreditCost,
-} from './classifier-input.js';
+import { WalletService } from '../wallet/wallet.service.js';
+import type { ClassifierInput } from './classifier-input.js';
 import type { ModerateCommentTarget } from './comment-moderation.job.js';
 import {
+  clearCommentCounted,
   findAutoActionFlags,
+  findWorkspaceBillingAccountId,
   lockModerationComment,
+  markCommentCounted,
   type ModerationComment,
   type ModerationStatePatch,
   type ModerationWorkerExecutor,
@@ -64,7 +64,8 @@ export type ModerationResult =
       kind: 'moderated';
       /** Classified in this run (`false` = a retry that only finished the Meta step). */
       classified: boolean;
-      credits: number;
+      /** This run counted the comment against the monthly comment limit (PW-D1/D2: once). */
+      counted: boolean;
       action: ModerationDecision['action'];
       status: CommentStatus;
       replied: boolean;
@@ -99,30 +100,48 @@ type Prepared =
   | { kind: 'work'; comment: ModerationComment };
 
 /**
- * One comment version through moderation (M5-T12; D2/D3/D4/D6/D7/D8/D11/D13/D15).
+ * The PW-T4 usage step before the AI call: `counted` with the instant this run counted the
+ * comment (`null` = counted before: an edit re-check or a retry, free), or the skip.
+ */
+type UsageStep =
+  | { kind: 'counted'; countedAt: Date | null }
+  | { kind: 'skipped'; reason: 'comment_limit_reached' | 'no_active_plan' };
+
+/** The wallet meter one moderated comment uses (PW-D1). */
+const COMMENT_METER = 'monthlyComments';
+
+/**
+ * One comment version through moderation (M5-T12; D2/D3/D4/D6/D8/D11/D13; PW-T4: PW-D1/D2/D9).
  *
- * tx1 (`FOR UPDATE`): version + stage check, D13/D10 skips → policy + D8 context (Graph caption
- * outside any tx) → `CreditService.reserve(cost)` (refused → `SKIPPED credits_exhausted`) →
- * `classify()` (no tx) → tx2: classification + `credits_charged` + counts; when Meta must act the
- * stage becomes `act` → executor (Graph outside any tx) → tx3: status / stage / counts.
+ * tx1 (`FOR UPDATE`): version + stage check, D13/D10 skips → usage: a comment not counted yet
+ * (`usage_counted_at` null) is counted once, `WalletService.consume(monthlyComments, 1, at)` +
+ * `usage_counted_at = at` (`limit_reached` → `SKIPPED comment_limit_reached`, `no_active_plan` →
+ * `SKIPPED no_active_plan`, no AI call); a counted one (edit re-check, retry) is free → policy +
+ * D8 context (Graph caption outside any tx) → `classify()` (no tx) → tx2: classification +
+ * counts; when Meta must act the stage becomes `act` → executor (Graph outside any tx) → tx3:
+ * status / stage / counts.
  *
  * Idempotency: `comments.moderation_stage` + `edited_at` are the version marker. A duplicate job or
  * a retry after success finds the stage cleared (`already_moderated`); a retry after a failed Meta
- * step finds `act` and only acts (no second AI call, no second charge). Credits are given back
- * (`release`, same `at` as the reserve) when the AI call produced no tokens. Logs ids, kinds and
- * counts only: never comment text, captions, Page names or replies.
+ * step finds `act` and only acts (no second AI call, no count). When this run counted the comment
+ * and the LLM was never reached, the count is given back (`refund` at the same instant) and
+ * `usage_counted_at` cleared. Logs ids, kinds and counts only: never comment text, captions, Page
+ * names or replies.
  */
 @Injectable()
 export class CommentModerationService {
   private readonly logger = new Logger('CommentModeration');
-  /** D7: one "out of credits" warning per workspace per Dhaka day (per process). */
-  private readonly creditWarnings = new Map<string, string>();
+  /** PW-T4: one "comment limit reached" warning per account per Dhaka day (per process). */
+  private limitWarnings: { day: string; accounts: Set<string> } = {
+    day: '',
+    accounts: new Set(),
+  };
 
   constructor(
     @InjectDrizzle() private readonly db: Database,
     private readonly policies: ModerationPolicyService,
     private readonly postContext: PostContextService,
-    private readonly credits: CreditService,
+    private readonly wallet: WalletService,
     private readonly classifier: CommentClassifier,
     private readonly executor: ModerationActionExecutor,
   ) {}
@@ -142,7 +161,7 @@ export class CommentModerationService {
     if (comment.moderationStage === 'act') {
       const stored = storedClassification(comment);
       if (stored) {
-        return this.act(comment, policy, stored, 0, false, attempt, now);
+        return this.act(comment, policy, stored, false, false, attempt, now);
       }
     }
     return this.classify(comment, policy, target, attempt, now);
@@ -185,57 +204,46 @@ export class CommentModerationService {
     attempt: ModerationAttempt,
     now: () => Date,
   ): Promise<ModerationResult> {
-    const context = await this.postContext.forComment(
-      {
-        workspaceId: comment.workspaceId,
-        socialPageId: comment.socialPageId,
-        platform: comment.platform,
-        postId: comment.postId,
-      },
-      policy.aiContextLevel,
-      now,
-    );
-    const input: ClassifierInput = {
-      text: comment.message ?? '',
-      platform: comment.platform,
-      isReply: commentIsReply(
-        comment.platform,
-        comment.postId,
-        comment.rawPayload,
-      ),
-      contextLevel: policy.aiContextLevel,
-      pageName: context.pageName,
-      postCaption: context.postCaption,
-    };
-    const cost = classificationCreditCost(input);
-    if (cost === 0) {
-      // `preClassifySkip` already refused blank text; kept as a guard.
+    const usage = await this.countUsage(comment, now);
+    if (usage.kind === 'skipped') {
       await this.db.transaction((tx) =>
-        this.finishSkipped(tx, comment, 'classify', 'no_text', now()),
+        this.finishSkipped(tx, comment, 'classify', usage.reason, now()),
       );
-      return { kind: 'skipped', reason: 'no_text' };
+      if (usage.reason === 'comment_limit_reached') {
+        await this.warnLimitReached(comment.workspaceId, now());
+      }
+      return { kind: 'skipped', reason: usage.reason };
     }
-
-    const reservedAt = now();
-    const reserved = await this.credits.reserve(
-      comment.workspaceId,
-      cost,
-      reservedAt,
-    );
-    if (!reserved) {
-      await this.db.transaction((tx) =>
-        this.finishSkipped(tx, comment, 'classify', 'credits_exhausted', now()),
-      );
-      this.warnOutOfCredits(comment.workspaceId, reservedAt);
-      return { kind: 'skipped', reason: 'credits_exhausted' };
-    }
+    const { countedAt } = usage;
 
     let result;
     try {
+      const context = await this.postContext.forComment(
+        {
+          workspaceId: comment.workspaceId,
+          socialPageId: comment.socialPageId,
+          platform: comment.platform,
+          postId: comment.postId,
+        },
+        policy.aiContextLevel,
+        now,
+      );
+      const input: ClassifierInput = {
+        text: comment.message ?? '',
+        platform: comment.platform,
+        isReply: commentIsReply(
+          comment.platform,
+          comment.postId,
+          comment.rawPayload,
+        ),
+        contextLevel: policy.aiContextLevel,
+        pageName: context.pageName,
+        postCaption: context.postCaption,
+      };
       result = await this.classifier.classify(input);
     } catch (error) {
-      // Not an AI failure (e.g. the provider settings read failed): nothing reached the LLM.
-      await this.credits.release(comment.workspaceId, cost, reservedAt);
+      // Not an AI failure (e.g. a DB read failed): nothing reached the LLM.
+      await this.giveBack(comment, countedAt, now);
       throw error;
     }
 
@@ -244,53 +252,108 @@ export class CommentModerationService {
         comment,
         target,
         result,
-        cost,
-        reservedAt,
+        countedAt,
         attempt,
         now,
       );
     }
-    await this.recordUsage(result, cost, now());
-    return this.classified(comment, policy, result, cost, attempt, now);
+    await this.recordUsage(result, now());
+    return this.classified(
+      comment,
+      policy,
+      result,
+      countedAt !== null,
+      attempt,
+      now,
+    );
+  }
+
+  /**
+   * PW-T4 (PW-D1/D2/D9): counts the comment once before its first AI call. A comment counted
+   * before runs free. `ok` → `usage_counted_at` = the consume's instant (guarded: if another run
+   * counted it first, this run's count is given back and it runs free).
+   */
+  private async countUsage(
+    comment: ModerationComment,
+    now: () => Date,
+  ): Promise<UsageStep> {
+    if (comment.usageCountedAt !== null) {
+      return { kind: 'counted', countedAt: null };
+    }
+    const at = now();
+    const outcome = await this.wallet.consume(
+      comment.workspaceId,
+      COMMENT_METER,
+      1,
+      at,
+    );
+    if (outcome === 'limit_reached') {
+      return { kind: 'skipped', reason: 'comment_limit_reached' };
+    }
+    if (outcome === 'no_active_plan') {
+      return { kind: 'skipped', reason: 'no_active_plan' };
+    }
+    if (
+      await markCommentCounted(this.db, comment.workspaceId, comment.id, at)
+    ) {
+      return { kind: 'counted', countedAt: at };
+    }
+    await this.wallet.refund(comment.workspaceId, COMMENT_METER, 1, at);
+    return { kind: 'counted', countedAt: null };
+  }
+
+  /**
+   * The LLM was never reached: gives this run's count back (`refund` in the period containing
+   * `countedAt`) and clears `usage_counted_at`. A no-op when this run did not count the comment.
+   */
+  private async giveBack(
+    comment: ModerationComment,
+    countedAt: Date | null,
+    now: () => Date,
+  ): Promise<void> {
+    if (countedAt === null) return;
+    await clearCommentCounted(
+      this.db,
+      comment.workspaceId,
+      comment.id,
+      countedAt,
+      now(),
+    );
+    await this.wallet.refund(comment.workspaceId, COMMENT_METER, 1, countedAt);
   }
 
   private async classifyFailed(
     comment: ModerationComment,
     target: ModerateCommentTarget,
     failure: ClassificationFailure,
-    cost: number,
-    reservedAt: Date,
+    countedAt: Date | null,
     attempt: ModerationAttempt,
     now: () => Date,
   ): Promise<never> {
-    // D7: a call that produced tokens is charged; one that never got an answer is given back.
-    const charged = failure.usage !== undefined;
-    if (!charged) {
-      await this.credits.release(comment.workspaceId, cost, reservedAt);
-    }
-    await this.recordUsage(failure, charged ? cost : 0, now());
+    // PW-T4: a call that produced tokens reached the LLM, so the comment stays counted (a later
+    // run is free); one that never got an answer gives this run's count back.
+    const reached = failure.usage !== undefined;
+    if (!reached) await this.giveBack(comment, countedAt, now);
+    await this.recordUsage(failure, now());
     const final = !failure.retryable || attempt.finalAttempt;
-    if (charged || final) {
+    if (final) {
       await this.db.transaction(async (tx) => {
-        const patch: ModerationStatePatch = charged ? { addCredits: cost } : {};
-        if (final) {
-          // D2: fail open. The stage stays `classify`, so the sweeper retries within 24 h.
-          const status = statusWhenUnfinished(comment.status, 'FAILED');
-          patch.status = status;
-          if (status === 'FAILED') patch.statusReason = failure.kind;
-        }
+        // D2: fail open. The stage stays `classify`, so the sweeper retries within 24 h.
+        const status = statusWhenUnfinished(comment.status, 'FAILED');
+        const patch: ModerationStatePatch = { status };
+        if (status === 'FAILED') patch.statusReason = failure.kind;
         const applied = await updateModerationState(
           tx,
           { ...target, stage: 'classify' },
           patch,
           now(),
         );
-        if (applied && final)
-          await this.count(tx, comment, { failed: 1 }, now());
+        if (applied) await this.count(tx, comment, { failed: 1 }, now());
       });
     }
+    const counted = countedAt !== null && reached;
     this.logger.warn(
-      `Comment ${comment.id} (workspace ${comment.workspaceId}): classification failed (${failure.kind}, attempts ${failure.attempts}, credits ${charged ? cost : 0}${final ? ', final' : ', will retry'})`,
+      `Comment ${comment.id} (workspace ${comment.workspaceId}): classification failed (${failure.kind}, attempts ${failure.attempts}, counted ${counted ? 1 : 0}${final ? ', final' : ', will retry'})`,
     );
     throw new ModerationStepError('classify', failure.kind, failure.retryable);
   }
@@ -300,7 +363,7 @@ export class CommentModerationService {
     comment: ModerationComment,
     policy: ModerationPolicy,
     result: ClassificationSuccess,
-    cost: number,
+    counted: boolean,
     attempt: ModerationAttempt,
     now: () => Date,
   ): Promise<ModerationResult> {
@@ -323,9 +386,8 @@ export class CommentModerationService {
         !sameVersion(current.editedAt, comment.editedAt) ||
         current.moderationStage !== 'classify'
       ) {
-        // A newer edit (its own job classifies it) or another run finished first: the call
-        // happened, so the charge stays on the comment.
-        await updateModerationState(tx, version, { addCredits: cost }, at);
+        // A newer edit (its own job classifies it, free: the comment is counted) or another run
+        // finished first. The call happened, so the count stays.
         return null;
       }
       const flags = await findAutoActionFlags(
@@ -344,7 +406,6 @@ export class CommentModerationService {
           ? 'connection_needs_reauth'
           : null;
       const patch: ModerationStatePatch = {
-        addCredits: cost,
         classification: {
           category: result.category,
           confidence: result.confidence,
@@ -385,7 +446,7 @@ export class CommentModerationService {
     });
 
     this.logger.log(
-      `Comment ${comment.id} (workspace ${comment.workspaceId}): classified ${result.category} (${result.confidence}, ${result.contextLevel}, credits ${cost})${stored ? ` → ${stored.decision.action}` : ' → newer version, not applied'}`,
+      `Comment ${comment.id} (workspace ${comment.workspaceId}): classified ${result.category} (${result.confidence}, ${result.contextLevel}, counted ${counted ? 1 : 0})${stored ? ` → ${stored.decision.action}` : ' → newer version, not applied'}`,
     );
     if (!stored) return { kind: 'skipped', reason: 'stale_version' };
     const { current, decision, metaSkip } = stored;
@@ -393,7 +454,7 @@ export class CommentModerationService {
       return {
         kind: 'moderated',
         classified: true,
-        credits: cost,
+        counted,
         action: metaSkip === null ? decision.action : 'NONE',
         status:
           metaSkip === null
@@ -407,7 +468,7 @@ export class CommentModerationService {
       { ...current, moderationStage: 'act' },
       policy,
       result,
-      cost,
+      counted,
       true,
       attempt,
       now,
@@ -423,7 +484,7 @@ export class CommentModerationService {
     comment: ModerationComment,
     policy: ModerationPolicy,
     classification: DecisionClassification,
-    credits: number,
+    counted: boolean,
     classified: boolean,
     attempt: ModerationAttempt,
     now: () => Date,
@@ -469,7 +530,7 @@ export class CommentModerationService {
       return {
         kind: 'moderated',
         classified,
-        credits,
+        counted,
         action: decision.action,
         status,
         replied,
@@ -571,7 +632,7 @@ export class CommentModerationService {
   }
 
   /**
-   * Writes a skip: stage cleared; `SKIPPED` + reason (D7/D13), except for a human-stamped comment
+   * Writes a skip: stage cleared; `SKIPPED` + reason (D13, PW-D1/D9), except for a human-stamped comment
    * (D10, untouched) and a comment hidden/deleted on Meta (keeps that status).
    */
   private async finishSkipped(
@@ -624,7 +685,6 @@ export class CommentModerationService {
   /** D14 aggregate (platform-wide). Never fails the job: the AI call already happened. */
   private async recordUsage(
     result: ClassificationSuccess | ClassificationFailure,
-    credits: number,
     at: Date,
   ): Promise<void> {
     if (!result.provider || !result.model) return;
@@ -637,7 +697,6 @@ export class CommentModerationService {
         calls,
         inputTokens: result.usage?.promptTokens ?? 0,
         outputTokens: result.usage?.completionTokens ?? 0,
-        credits,
         latencyMs: result.latencyMs,
         ...(!result.ok && calls > 0 && { failures: { [result.kind]: 1 } }),
       });
@@ -648,12 +707,23 @@ export class CommentModerationService {
     }
   }
 
-  private warnOutOfCredits(workspaceId: string, at: Date): void {
+  /** PW-T4: one warning per billing account per Dhaka day (ids only); never fails the job. */
+  private async warnLimitReached(workspaceId: string, at: Date): Promise<void> {
+    let accountId: string | null;
+    try {
+      accountId = await findWorkspaceBillingAccountId(this.db, workspaceId);
+    } catch {
+      accountId = null;
+    }
+    const key = accountId ?? `workspace:${workspaceId}`;
     const day = dhakaDayKey(at);
-    if (this.creditWarnings.get(workspaceId) === day) return;
-    this.creditWarnings.set(workspaceId, day);
+    if (this.limitWarnings.day !== day) {
+      this.limitWarnings = { day, accounts: new Set() };
+    }
+    if (this.limitWarnings.accounts.has(key)) return;
+    this.limitWarnings.accounts.add(key);
     this.logger.warn(
-      `Workspace ${workspaceId}: monthly AI credits used up; comments are skipped (credits_exhausted) until the next month or a plan change`,
+      `Account ${accountId ?? 'none'} (workspace ${workspaceId}): monthly comment limit reached; comments are skipped (comment_limit_reached) until the next reset or a plan change`,
     );
   }
 }

@@ -47,18 +47,6 @@ export function isContextLevel(value: unknown): value is ContextLevel {
   );
 }
 
-/** AI credits per classification call by the level actually sent (D8 + D15). */
-export const CONTEXT_LEVEL_CREDITS: Readonly<Record<ContextLevel, number>> = {
-  comment_only: 1,
-  page_name: 1,
-  post_caption: 2,
-};
-
-/** Credits one call costs at `level` (use the *effective* level: see `normalizeClassifierInput`). */
-export function creditCostForLevel(level: ContextLevel): number {
-  return CONTEXT_LEVEL_CREDITS[level];
-}
-
 /** Longest cached post caption (`post_contexts.caption`, M5-T10), in code points. */
 export const MAX_STORED_CAPTION_CHARS = 2_000;
 /** A cached caption older than this is fetched again from Graph (M5-T10, D8). */
@@ -71,7 +59,7 @@ export const MAX_REASONING_CHARS = 280;
  * Comment status (M5-T7). `PENDING` = stored, not moderated yet · `VISIBLE` = classified, nothing
  * to do (or the action was "none") · `NEEDS_REVIEW` = below the threshold (D4) or a review-mode
  * result · `HIDDEN` / `DELETED` = hidden / deleted on Meta by us (AI or a human) · `SKIPPED` = not
- * classified on purpose (`status_reason`, e.g. `credits_exhausted`) · `FAILED` = the AI or Meta
+ * classified on purpose (`status_reason`, e.g. `comment_limit_reached`) · `FAILED` = the AI or Meta
  * step failed for good (`status_reason` = error kind; the comment stays visible, D2).
  */
 export const COMMENT_STATUSES = [

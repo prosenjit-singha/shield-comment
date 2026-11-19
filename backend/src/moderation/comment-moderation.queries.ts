@@ -1,4 +1,13 @@
-import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+} from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import {
   type CommentPlatform,
@@ -7,6 +16,7 @@ import {
   metaConnections,
   moderationActions,
   socialPages,
+  workspaces,
 } from '../db/schema/index.js';
 import type {
   CommentLanguage,
@@ -41,6 +51,8 @@ export interface ModerationComment {
   deletedAt: Date | null;
   overriddenAt: Date | null;
   moderationStage: ModerationStage | null;
+  /** When the comment was counted against the monthly comment limit (PW-T4); `null` = not yet. */
+  usageCountedAt: Date | null;
   category: ModerationCategory | null;
   confidence: number | null;
   language: CommentLanguage | null;
@@ -72,6 +84,7 @@ export async function lockModerationComment(
       deletedAt: comments.deletedAt,
       overriddenAt: comments.overriddenAt,
       moderationStage: comments.moderationStage,
+      usageCountedAt: comments.usageCountedAt,
       category: comments.category,
       confidence: comments.confidence,
       language: comments.language,
@@ -177,15 +190,12 @@ export interface ModerationStatePatch {
   status?: CommentStatus;
   statusReason?: string | null;
   classification?: StoredClassification;
-  /** Credits to add to `credits_charged` (D7). */
-  addCredits?: number;
 }
 
 /**
  * Applies a worker step to the comment, guarded by the version (`edited_at`) and the stage the
- * step started from: a newer edit (or another run that finished the stage) makes it a no-op for
- * everything but `addCredits`, which is always added (the AI call happened). `true` = the guarded
- * patch applied.
+ * step started from: a newer edit (or another run that finished the stage) makes it a no-op.
+ * `true` = the guarded patch applied.
  */
 export async function updateModerationState(
   tx: ModerationWorkerExecutor,
@@ -202,7 +212,6 @@ export async function updateModerationState(
     eq(comments.workspaceId, target.workspaceId),
     eq(comments.id, target.commentRowId),
   );
-  const credits = patch.addCredits ?? 0;
   const set: Partial<typeof comments.$inferInsert> = { updatedAt: at };
   if (patch.stage !== undefined) set.moderationStage = patch.stage;
   if (patch.status !== undefined) set.status = patch.status;
@@ -210,12 +219,7 @@ export async function updateModerationState(
   if (patch.classification) Object.assign(set, patch.classification);
   const rows = await tx
     .update(comments)
-    .set({
-      ...set,
-      ...(credits > 0 && {
-        creditsCharged: sql`${comments.creditsCharged} + ${credits}`,
-      }),
-    })
+    .set(set)
     .where(
       and(
         scope,
@@ -226,17 +230,71 @@ export async function updateModerationState(
       ),
     )
     .returning({ id: comments.id });
-  if (rows.length > 0) return true;
-  if (credits > 0) {
-    await tx
-      .update(comments)
-      .set({
-        creditsCharged: sql`${comments.creditsCharged} + ${credits}`,
-        updatedAt: at,
-      })
-      .where(scope);
-  }
-  return false;
+  return rows.length > 0;
+}
+
+/**
+ * PW-T4 (PW-D1/D2): marks the comment as counted against the monthly comment limit at `at` (the
+ * instant passed to `WalletService.consume`). Guarded by `usage_counted_at is null`, so a
+ * comment is counted once: `false` = another run counted it first (or it is gone), and the
+ * caller gives its own count back.
+ */
+export async function markCommentCounted(
+  executor: Pick<Database, 'update'>,
+  workspaceId: string,
+  commentRowId: string,
+  at: Date,
+): Promise<boolean> {
+  const rows = await executor
+    .update(comments)
+    .set({ usageCountedAt: at, updatedAt: at })
+    .where(
+      and(
+        eq(comments.workspaceId, workspaceId),
+        eq(comments.id, commentRowId),
+        isNull(comments.usageCountedAt),
+      ),
+    )
+    .returning({ id: comments.id });
+  return rows.length > 0;
+}
+
+/**
+ * PW-T4: undoes `markCommentCounted` when the LLM was never reached (the count was refunded).
+ * Guarded by the same instant, so it never clears a later run's count.
+ */
+export async function clearCommentCounted(
+  executor: Pick<Database, 'update'>,
+  workspaceId: string,
+  commentRowId: string,
+  countedAt: Date,
+  at: Date,
+): Promise<boolean> {
+  const rows = await executor
+    .update(comments)
+    .set({ usageCountedAt: null, updatedAt: at })
+    .where(
+      and(
+        eq(comments.workspaceId, workspaceId),
+        eq(comments.id, commentRowId),
+        eq(comments.usageCountedAt, countedAt),
+      ),
+    )
+    .returning({ id: comments.id });
+  return rows.length > 0;
+}
+
+/** The workspace's billing account id (PW-T4 warn-once key); `null` = none linked. */
+export async function findWorkspaceBillingAccountId(
+  executor: Pick<Database, 'select'>,
+  workspaceId: string,
+): Promise<string | null> {
+  const [row] = await executor
+    .select({ accountId: workspaces.billingAccountId })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId))
+    .limit(1);
+  return row?.accountId ?? null;
 }
 
 /** A comment the sweeper re-queues (ids + version only). */

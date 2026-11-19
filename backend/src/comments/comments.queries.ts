@@ -194,7 +194,6 @@ const workspaceCommentColumns = {
   model: comments.model,
   promptVersion: comments.promptVersion,
   contextLevel: comments.contextLevel,
-  creditsCharged: comments.creditsCharged,
   statusReason: comments.statusReason,
   overriddenAt: comments.overriddenAt,
   createdAt: comments.createdAt,

@@ -1,5 +1,5 @@
+import * as classifierInputModule from './classifier-input.js';
 import {
-  classificationCreditCost,
   type ClassifierInput,
   MAX_CAPTION_CHARS,
   MAX_COMMENT_CHARS,
@@ -7,10 +7,9 @@ import {
   normalizeClassifierInput,
   normalizeText,
 } from './classifier-input.js';
+import * as constantsModule from './moderation.constants.js';
 import {
-  CONTEXT_LEVEL_CREDITS,
   CONTEXT_LEVELS,
-  creditCostForLevel,
   isContextLevel,
   isModerationCategory,
   MODERATION_CATEGORIES,
@@ -43,13 +42,9 @@ describe('moderation constants', () => {
     expect(isContextLevel('everything')).toBe(false);
   });
 
-  it('costs 1 / 1 / 2 credits per level (D15)', () => {
-    expect(CONTEXT_LEVEL_CREDITS).toEqual({
-      comment_only: 1,
-      page_name: 1,
-      post_caption: 2,
-    });
-    expect(creditCostForLevel('post_caption')).toBe(2);
+  it('has no credit cost per level any more (PW-D1: every level counts 1 comment)', () => {
+    expect('CONTEXT_LEVEL_CREDITS' in constantsModule).toBe(false);
+    expect('creditCostForLevel' in constantsModule).toBe(false);
   });
 });
 
@@ -185,32 +180,22 @@ describe('normalizeClassifierInput', () => {
   });
 });
 
-describe('classificationCreditCost', () => {
-  it('charges by what is actually sent', () => {
-    expect(classificationCreditCost(base)).toBe(1);
-    expect(
-      classificationCreditCost({
+describe('classifier input without credits (PW-T4)', () => {
+  it('normalizes to the data sent only: no credits field, no cost helper', () => {
+    expect('classificationCreditCost' in classifierInputModule).toBe(false);
+    for (const input of [
+      base,
+      { ...base, contextLevel: 'page_name' as const, pageName: 'Nakshi' },
+      {
         ...base,
-        contextLevel: 'page_name',
-        pageName: 'Nakshi',
-      }),
-    ).toBe(1);
-    expect(
-      classificationCreditCost({
-        ...base,
-        contextLevel: 'post_caption',
+        contextLevel: 'post_caption' as const,
         pageName: 'Nakshi',
         postCaption: 'Eid sale',
-      }),
-    ).toBe(2);
-    expect(
-      classificationCreditCost({
-        ...base,
-        contextLevel: 'post_caption',
-        pageName: 'Nakshi',
-        postCaption: null,
-      }),
-    ).toBe(1);
-    expect(classificationCreditCost({ ...base, text: '  ' })).toBe(0);
+      },
+    ]) {
+      const normalized = normalizeClassifierInput(input);
+      expect(normalized).not.toBeNull();
+      expect(normalized).not.toHaveProperty('credits');
+    }
   });
 });

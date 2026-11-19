@@ -169,6 +169,13 @@
       "when": 1795108076136,
       "tag": "0023_billing_account_trial_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795108933382,
+      "tag": "0024_comments_drop_credits_charged",
+      "breakpoints": true
     }
   ]
 }

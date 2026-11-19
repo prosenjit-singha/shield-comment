@@ -178,9 +178,7 @@ export const comments = pgTable(
     promptVersion: text(),
     /** The level actually sent (D8; a missing caption drops `post_caption` to `page_name`). */
     contextLevel: text().$type<ContextLevel>(),
-    /** AI credits charged for this comment so far: every classification incl. re-checked edits (D7). */
-    creditsCharged: integer().notNull().default(0),
-    /** Machine code explaining `SKIPPED` / `FAILED` / `NEEDS_REVIEW` (e.g. `credits_exhausted`). */
+    /** Machine code explaining `SKIPPED` / `FAILED` / `NEEDS_REVIEW` (e.g. `comment_limit_reached`). */
     statusReason: text(),
     /** First human moderation action (D10): from then on the AI never changes the comment. */
     overriddenAt: timestamptz(),
@@ -272,7 +270,6 @@ export const comments = pgTable(
       'comments_classification_complete',
       sql.raw(allOrNoneSql(CLASSIFICATION_COLUMNS)),
     ),
-    check('comments_credits_charged_check', sql`${t.creditsCharged} >= 0`),
     check(
       'comments_moderation_stage_check',
       sql.raw(inListSql('moderation_stage', MODERATION_STAGES, true)),

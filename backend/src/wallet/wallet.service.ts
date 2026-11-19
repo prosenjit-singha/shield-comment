@@ -49,7 +49,7 @@ export type WalletExecutor = Pick<Database, 'select' | 'insert' | 'update'>;
 /**
  * The client wallet (PW-T2; user decisions 2026-11-19 PW-D3/D4/D9/D12/D14). One wallet per
  * billing account, one balance row per meter × period, reset monthly on the billing date
- * (Asia/Dhaka, month-end clamp). Not called by moderation yet (PW-T4 replaces `CreditService`).
+ * (Asia/Dhaka, month-end clamp). The moderation worker consumes `monthlyComments` (PW-T4).
  *
  * Periods roll forward lazily: the first `consume` of a period (in one transaction) creates the
  * wallet if missing, moves its stored period, writes the period's balance rows with the plan

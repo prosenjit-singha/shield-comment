@@ -1,7 +1,6 @@
 import type { CommentPlatform } from '../db/schema/comments.js';
 import {
   type ContextLevel,
-  creditCostForLevel,
   DEFAULT_CONTEXT_LEVEL,
   isContextLevel,
 } from './moderation.constants.js';
@@ -59,7 +58,7 @@ function optionalText(
 /**
  * Pure normalisation (D8): returns `null` when the comment has no text left (the classifier
  * answers `empty_text` without a call). A level that asks for data we don't have drops to the
- * level of what is sent, so the credit cost follows the data.
+ * level of what is sent (the level stored on the comment is the one actually sent).
  */
 export function normalizeClassifierInput(
   input: ClassifierInput,
@@ -97,13 +96,4 @@ export function normalizeClassifierInput(
     return { ...base, contextLevel: 'page_name', pageName };
   }
   return { ...base, contextLevel: 'comment_only' };
-}
-
-/**
- * Credits a classification of `input` costs (D8/D15), by what would actually be sent; `0` when
- * nothing would be sent (empty text). M5-T12 reserves this before calling `classify()`.
- */
-export function classificationCreditCost(input: ClassifierInput): number {
-  const normalized = normalizeClassifierInput(input);
-  return normalized ? creditCostForLevel(normalized.contextLevel) : 0;
 }

@@ -5,7 +5,7 @@ import type { ModerationDecision } from './moderation-decision.js';
 import type { CommentStatus } from './moderation.constants.js';
 
 /**
- * Pure rules of the moderation worker (M5-T12; D2, D7, D11, D13 answered 2026-11-19). No I/O.
+ * Pure rules of the moderation worker (M5-T12; D2, D11, D13 answered 2026-11-19; PW-D1/D9). No I/O.
  */
 
 /** Why the worker did not classify a comment (machine codes, fit `comments.status_reason`). */
@@ -28,8 +28,10 @@ export const MODERATION_WORKER_SKIPS = [
   'page_inactive',
   /** No Meta connection, or it was revoked: nothing could act on the result. */
   'connection_inactive',
-  /** D7: the monthly AI credits are used up (no AI call). */
-  'credits_exhausted',
+  /** PW-D1: the account's monthly comment limit is used up (no AI call). */
+  'comment_limit_reached',
+  /** PW-D9: the account has no live plan (trial/term over): moderation pauses, no AI call. */
+  'no_active_plan',
 ] as const;
 export type ModerationWorkerSkip = (typeof MODERATION_WORKER_SKIPS)[number];
 
@@ -40,7 +42,8 @@ const STATUS_SKIPS: ReadonlySet<ModerationWorkerSkip> = new Set([
   'page_disconnected',
   'page_inactive',
   'connection_inactive',
-  'credits_exhausted',
+  'comment_limit_reached',
+  'no_active_plan',
 ]);
 
 /** Does this skip write `SKIPPED` + reason? (`human_override` never touches the status, D10.) */

@@ -304,7 +304,10 @@ export function listCommentModerationActions(
     .orderBy(asc(moderationActions.createdAt), asc(moderationActions.id));
 }
 
-/** One AI usage observation (or a batch) for `daily_ai_usage` (D14). */
+/**
+ * One AI usage observation (or a batch) for `daily_ai_usage` (D14). No credits since PW-T4
+ * (PW-D1): the `credits` column keeps its default 0 until PW-T6b drops it.
+ */
 export interface DailyAiUsageDelta {
   /** Dhaka day (`dhakaDayKey()`). */
   day: string;
@@ -313,7 +316,6 @@ export interface DailyAiUsageDelta {
   calls?: number;
   inputTokens?: number;
   outputTokens?: number;
-  credits?: number;
   /** Latency of one call: added to the sum, raises the max. */
   latencyMs?: number;
   /** Failed calls by machine-code kind (`ClassificationFailureKind`); counted in `failed_calls`. */
@@ -324,7 +326,6 @@ export interface DailyAiUsageIncrements {
   calls: number;
   inputTokens: number;
   outputTokens: number;
-  credits: number;
   failedCalls: number;
   failuresByKind: Record<string, number>;
   latencyMs: number;
@@ -367,7 +368,6 @@ export function dailyAiUsageIncrements(
     calls,
     inputTokens: count(delta.inputTokens, 'inputTokens'),
     outputTokens: count(delta.outputTokens, 'outputTokens'),
-    credits: count(delta.credits, 'credits'),
     failedCalls,
     failuresByKind,
     latencyMs: count(delta.latencyMs, 'latencyMs'),
@@ -393,7 +393,6 @@ export async function recordDailyAiUsage(
       calls: inc.calls,
       inputTokens: inc.inputTokens,
       outputTokens: inc.outputTokens,
-      credits: inc.credits,
       failedCalls: inc.failedCalls,
       failuresByKind: inc.failuresByKind,
       latencyMsSum: inc.latencyMs,
@@ -405,7 +404,6 @@ export async function recordDailyAiUsage(
         calls: sql`${t.calls} + ${inc.calls}`,
         inputTokens: sql`${t.inputTokens} + ${inc.inputTokens}`,
         outputTokens: sql`${t.outputTokens} + ${inc.outputTokens}`,
-        credits: sql`${t.credits} + ${inc.credits}`,
         failedCalls: sql`${t.failedCalls} + ${inc.failedCalls}`,
         failuresByKind: sql`(
           select coalesce(jsonb_object_agg(e.key, e.total), '{}'::jsonb)

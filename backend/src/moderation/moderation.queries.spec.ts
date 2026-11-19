@@ -67,7 +67,12 @@ describe('moderation constants (M5-T7)', () => {
   });
 
   it('machine codes: lower snake case, ≤ 64 chars, no free text', () => {
-    for (const ok of ['credits_exhausted', 'token_invalid', 'not_found', 'a']) {
+    for (const ok of [
+      'comment_limit_reached',
+      'token_invalid',
+      'not_found',
+      'a',
+    ]) {
       expect(isMachineCode(ok)).toBe(true);
     }
     for (const bad of [
@@ -93,7 +98,9 @@ describe('moderation constants (M5-T7)', () => {
       expect(columns.get(name)?.notNull).toBe(false);
     }
     expect(columns.get('confidence')?.getSQLType()).toBe('numeric(4, 3)');
-    expect(columns.get('credits_charged')?.default).toBe(0);
+    // PW-T4: the AI credit counter is gone (comments are counted once: `usage_counted_at`).
+    expect(columns.has('credits_charged')).toBe(false);
+    expect(columns.get('usage_counted_at')?.notNull).toBe(false);
   });
 });
 
@@ -178,7 +185,6 @@ describe('dailyAiUsageIncrements (D14)', () => {
       calls: 0,
       inputTokens: 0,
       outputTokens: 0,
-      credits: 0,
       failedCalls: 0,
       failuresByKind: {},
       latencyMs: 0,
@@ -189,7 +195,6 @@ describe('dailyAiUsageIncrements (D14)', () => {
         calls: 3,
         inputTokens: 900,
         outputTokens: 120,
-        credits: 4,
         latencyMs: 812,
         failures: { timeout: 1, invalid_output: 1, auth: 0 },
       }),
@@ -197,7 +202,6 @@ describe('dailyAiUsageIncrements (D14)', () => {
       calls: 3,
       inputTokens: 900,
       outputTokens: 120,
-      credits: 4,
       failedCalls: 2,
       failuresByKind: { timeout: 1, invalid_output: 1 },
       latencyMs: 812,

@@ -150,7 +150,6 @@ describe('Moderation schema (e2e)', () => {
         .set({
           ...classified,
           status: 'HIDDEN',
-          creditsCharged: 1,
           statusReason: null,
         })
         .where(eq(comments.id, commentA));
@@ -167,7 +166,6 @@ describe('Moderation schema (e2e)', () => {
         ...classified,
         classifiedAt: expect.any(Date),
         status: 'HIDDEN',
-        creditsCharged: 1,
         overriddenAt: null,
       });
       expect(typeof read!.confidence).toBe('number');
@@ -189,7 +187,6 @@ describe('Moderation schema (e2e)', () => {
       ['empty model', { ...classified, model: '' }],
       ['bad prompt version', { ...classified, promptVersion: 'V 2' }],
       ['unknown context level', { ...classified, contextLevel: 'everything' }],
-      ['negative credits', { creditsCharged: -1 }],
       ['free-text status reason', { statusReason: 'The LLM said: no' }],
     ])('rejects %s', async (_label, values) => {
       expect(
@@ -207,10 +204,35 @@ describe('Moderation schema (e2e)', () => {
         .update(comments)
         .set({
           status: 'SKIPPED',
-          statusReason: 'credits_exhausted',
+          statusReason: 'comment_limit_reached',
           overriddenAt: new Date(),
         })
         .where(eq(comments.id, commentA2));
+    });
+
+    it('PW-T4: migration 0024 dropped credits_charged (+ its check); usage_counted_at stays', async () => {
+      const journal = JSON.parse(
+        readFileSync(
+          new URL('../drizzle/meta/_journal.json', import.meta.url),
+          'utf8',
+        ),
+      ) as { entries: { tag: string }[] };
+      expect(journal.entries.map((e) => e.tag)).toContain(
+        '0024_comments_drop_credits_charged',
+      );
+      const columns = await db().execute<{ column_name: string }>(
+        sql`select column_name from information_schema.columns
+            where table_schema = 'public' and table_name = 'comments'
+              and column_name in ('credits_charged', 'usage_counted_at')`,
+      );
+      expect(columns.rows.map((r) => r.column_name)).toEqual([
+        'usage_counted_at',
+      ]);
+      const checks = await db().execute<{ conname: string }>(
+        sql`select conname from pg_constraint
+            where conname = 'comments_credits_charged_check'`,
+      );
+      expect(checks.rows).toEqual([]);
     });
   });
 
@@ -564,7 +586,6 @@ describe('Moderation schema (e2e)', () => {
         calls: 1,
         inputTokens: 300,
         outputTokens: 40,
-        credits: 1,
         latencyMs: 500,
       });
       await Promise.all(
@@ -576,7 +597,6 @@ describe('Moderation schema (e2e)', () => {
             calls: 1,
             inputTokens: 100,
             outputTokens: 10,
-            credits: 2,
             latencyMs: 100 + i,
             failures: i % 2 === 0 ? { timeout: 1 } : {},
           }),
@@ -594,7 +614,8 @@ describe('Moderation schema (e2e)', () => {
         calls: 10,
         inputTokens: 1100,
         outputTokens: 120,
-        credits: 17,
+        // PW-T4: credits are no longer written (column default 0 until PW-T6b drops it).
+        credits: 0,
         failedCalls: 5,
         failuresByKind: { timeout: 4, invalid_output: 1 },
         latencyMsSum: 500 + 8 * 100 + 28 + 2000,

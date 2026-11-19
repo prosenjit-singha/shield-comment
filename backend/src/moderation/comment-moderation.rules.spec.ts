@@ -62,7 +62,8 @@ describe('comment moderation rules', () => {
     expect(skipSetsStatus('human_override')).toBe(false);
     expect(skipSetsStatus('already_moderated')).toBe(false);
     expect(skipSetsStatus('stale_version')).toBe(false);
-    expect(skipSetsStatus('credits_exhausted')).toBe(true);
+    expect(skipSetsStatus('comment_limit_reached')).toBe(true);
+    expect(skipSetsStatus('no_active_plan')).toBe(true);
     expect(skipSetsStatus('no_text')).toBe(true);
   });
 

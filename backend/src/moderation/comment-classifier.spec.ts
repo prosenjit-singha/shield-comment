@@ -97,7 +97,6 @@ describe('CommentClassifier', () => {
         reasoning: 'Fake Nagad lottery prize with a short link.',
         language: 'banglish',
         contextLevel: 'comment_only',
-        credits: 1,
         promptVersion: PROMPT_VERSION,
         provider: 'anthropic',
         model: 'claude-haiku-4-5',
@@ -382,14 +381,16 @@ describe('CommentClassifier', () => {
     expect(last(1)).not.toContain(CAPTION);
     expect(last(2)).toContain(PAGE_NAME);
     expect(last(2)).toContain(CAPTION);
-    expect(results.map((r) => r.ok && [r.contextLevel, r.credits])).toEqual([
-      ['comment_only', 1],
-      ['page_name', 1],
-      ['post_caption', 2],
+    expect(results.map((r) => r.ok && r.contextLevel)).toEqual([
+      'comment_only',
+      'page_name',
+      'post_caption',
     ]);
+    // PW-D1: no credit cost per level any more (every level counts 1 comment, in the worker).
+    expect(results.every((r) => !('credits' in r))).toBe(true);
   });
 
-  it('charges 1 credit when the caption is missing', async () => {
+  it('drops to page_name when the caption is missing', async () => {
     const { fake, classifier } = setup();
     fake.replyWith(answer());
     expect(
@@ -399,7 +400,7 @@ describe('CommentClassifier', () => {
         pageName: PAGE_NAME,
         postCaption: null,
       }),
-    ).toMatchObject({ ok: true, contextLevel: 'page_name', credits: 1 });
+    ).toMatchObject({ ok: true, contextLevel: 'page_name' });
   });
 
   it('truncates the comment at 1,000 chars and collapses whitespace', async () => {

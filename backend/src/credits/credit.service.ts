@@ -21,8 +21,8 @@ export interface CreditUsage {
 
 /**
  * The monthly allowance of a raw plan `feature_config` (missing plan/config = 0). PW-T1b renamed
- * the key back to `limits.monthlyComments` (read here until PW-T4 replaces this service with the
- * wallet; the old `monthlyAiCredits` is a fallback in `normalizeFeatureConfig`).
+ * the key back to `limits.monthlyComments` (read here until PW-T6b removes this service; the old
+ * `monthlyAiCredits` is a fallback in `normalizeFeatureConfig`).
  */
 function monthlyAiCredits(raw: unknown): number {
   if (raw === undefined || raw === null) return 0;
@@ -31,8 +31,8 @@ function monthlyAiCredits(raw: unknown): number {
 
 /**
  * Monthly AI credits (Module 5, M5-T11; user decisions 2026-11-19 D15 + D7 + D8). Exported by
- * `CreditsModule` for the moderation worker (M5-T12: `reserve` before every AI call, `release`
- * when a reserved call never reached the LLM) and the admin views (M5-T13: `usage`).
+ * `CreditsModule` for the admin views only (M5-T13: `usage`); since PW-T4 the moderation worker
+ * counts monthly comments in the wallet instead. Removed by PW-T6b.
  *
  * The allowance is the workspace plan's `limits.monthlyComments` (no plan = the Free plan; an
  * unknown workspace, a missing plan row or a missing key = 0). Every query is scoped by

@@ -1,14 +1,13 @@
-import type { INestApplication } from '@nestjs/common';
+import type { MockInstance } from 'vitest';
+import { type INestApplication, Logger } from '@nestjs/common';
 import { type Job, UnrecoverableError } from 'bullmq';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
 import { AiGatewayError } from '../src/ai-gateway/ai-gateway.errors.js';
 import { AiGatewayService } from '../src/ai-gateway/ai-gateway.service.js';
 import { CommentIngestProcessor } from '../src/comments/comment-ingest.processor.js';
 import type { IngestOutcome } from '../src/comments/comment-ingest.service.js';
 import { dhakaDayKey } from '../src/comments/comments.queries.js';
-import { dhakaMonthKey } from '../src/credits/credit-period.js';
-import { CreditService } from '../src/credits/credit.service.js';
 import {
   TokenCipherService,
   tokenCipherContext,
@@ -21,9 +20,11 @@ import {
   type MetaConnectionStatus,
   moderationActions,
   moderationPolicies,
-  monthlyCreditUsage,
   plans,
   socialPages,
+  subscriptions,
+  walletBalances,
+  wallets,
   workspaces,
 } from '../src/db/schema/index.js';
 import { MetaGraphClient } from '../src/meta/meta-graph.client.js';
@@ -42,6 +43,7 @@ import {
 } from '../src/moderation/comment-moderation.sweeper.js';
 import type { ContextLevel } from '../src/moderation/moderation.constants.js';
 import { QUEUE_NAMES } from '../src/queue/queue.constants.js';
+import { WalletService } from '../src/wallet/wallet.service.js';
 import {
   COMMENT_INGEST_JOB_NAME,
   type CommentIngestJobData,
@@ -52,7 +54,11 @@ import {
   envelope,
   fbCommentValue,
 } from './fixtures/meta-webhook-payloads.js';
-import { type Actor, createAuthActors } from './utils/auth-actors.js';
+import {
+  type Actor,
+  createAuthActors,
+  TRUSTED_ORIGIN,
+} from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
 import { fakeAiGateway } from './utils/fake-ai-gateway.js';
 import {
@@ -70,7 +76,8 @@ const REPLY_EN = 'Thanks! Please message our Page.';
 
 /**
  * M5-T12: the `comment-moderation` worker against the real test DB (decisions D2, D3, D4, D6,
- * D7, D8, D11, D13, D15). The LLM (`AiGatewayService`) and Meta (`MetaGraphClient`) are strict
+ * D8, D11, D13; PW-T4: PW-D1/D2/D9 monthly comments from the account wallet: every sign-up has a
+ * live 7-day Starter trial with 300 comments). The LLM (`AiGatewayService`) and Meta (`MetaGraphClient`) are strict
  * fakes: an unexpected `chat` or Graph call throws, so "no AI call" / "no Graph call" are checked
  * by the fakes themselves. Jobs come from the real ingest worker's hand-off into the `FakeQueue`.
  */
@@ -97,7 +104,7 @@ describe('Comment moderation worker (e2e)', () => {
 
   const queue = () => fakeQueue(app, QUEUE_NAMES.commentModeration);
 
-  async function insertConnection(actor: Actor) {
+  async function insertConnection(actor: Pick<Actor, 'workspaceId'>) {
     const fbUserId = next();
     await db()
       .insert(metaConnections)
@@ -239,8 +246,40 @@ describe('Comment moderation worker (e2e)', () => {
       .from(moderationActions)
       .where(eq(moderationActions.commentId, id))
       .orderBy(moderationActions.createdAt);
-  const used = async (workspaceId: string) =>
-    (await app.get(CreditService).usage(workspaceId)).used;
+  /** `monthlyComments` used in the account's current wallet period (PW-T4). */
+  const used = async (workspaceId: string) => {
+    const balance = await app.get(WalletService).balance(workspaceId);
+    if (!balance) throw new Error('no live plan');
+    return balance.used;
+  };
+  const accountOf = async (workspaceId: string) =>
+    (
+      await db()
+        .select({ id: workspaces.billingAccountId })
+        .from(workspaces)
+        .where(eq(workspaces.id, workspaceId))
+    )[0]!.id!;
+  /** Sets `used` of the account's `monthlyComments` balances (the live period). */
+  const setUsed = async (workspaceId: string, value: number) => {
+    const account = await accountOf(workspaceId);
+    await db()
+      .update(walletBalances)
+      .set({ used: value })
+      .where(
+        and(
+          eq(walletBalances.meter, 'monthlyComments'),
+          inArray(
+            walletBalances.walletId,
+            db()
+              .select({ id: wallets.id })
+              .from(wallets)
+              .where(eq(wallets.billingAccountId, account)),
+          ),
+        ),
+      );
+  };
+  const included = async (workspaceId: string) =>
+    (await app.get(WalletService).balance(workspaceId))!.included;
   const todayStats = async (workspaceId: string, pageId: string) =>
     (
       await db()
@@ -339,8 +378,9 @@ describe('Comment moderation worker (e2e)', () => {
     ]);
   });
 
-  it('ingest → job → fake LLM → fake Graph hide: classified, HIDDEN, 1 credit, counts', async () => {
+  it('ingest → job → fake LLM → fake Graph hide: classified, HIDDEN, counted once, counts', async () => {
     const before = await todayStats(a.workspaceId, pageA.pageId);
+    const usedBefore = await used(a.workspaceId);
     const { rowId, metaId, job } = await newComment();
     expect(job).toMatchObject({
       name: MODERATE_COMMENT_JOB_NAME,
@@ -354,7 +394,7 @@ describe('Comment moderation worker (e2e)', () => {
     expect(result).toEqual({
       kind: 'moderated',
       classified: true,
-      credits: 1,
+      counted: true,
       action: 'HIDE',
       status: 'HIDDEN',
       replied: false,
@@ -372,9 +412,11 @@ describe('Comment moderation worker (e2e)', () => {
       language: 'banglish',
       model: TEST_MODEL,
       contextLevel: 'comment_only',
-      creditsCharged: 1,
+      usageCountedAt: expect.any(Date),
       moderationStage: null,
     });
+    // PW-D1: the comment counts 1 against the account's monthly comments.
+    expect(await used(a.workspaceId)).toBe(usedBefore + 1);
     expect(await actionsOf(rowId)).toEqual([
       expect.objectContaining({
         action: 'HIDE',
@@ -400,11 +442,12 @@ describe('Comment moderation worker (e2e)', () => {
     expect(sent).not.toContain('Rahim');
   });
 
-  it('duplicate job / re-delivered webhook = one action and one charge', async () => {
+  it('duplicate job / re-delivered webhook = one action and one count', async () => {
     const { rowId, job } = await newComment();
     llm('SPAM_IRRELEVANT');
     await run(job);
-    const credits = await used(a.workspaceId);
+    const counted = (await row(rowId)).usageCountedAt;
+    const usedAfter = await used(a.workspaceId);
     expect(await run(job)).toEqual({
       kind: 'skipped',
       reason: 'already_moderated',
@@ -413,8 +456,8 @@ describe('Comment moderation worker (e2e)', () => {
       kind: 'skipped',
       reason: 'already_moderated',
     });
-    expect(await used(a.workspaceId)).toBe(credits);
-    expect((await row(rowId)).creditsCharged).toBe(1);
+    expect(await used(a.workspaceId)).toBe(usedAfter);
+    expect((await row(rowId)).usageCountedAt).toEqual(counted);
     expect(await actionsOf(rowId)).toHaveLength(1);
     expect(graph.hideComment).toHaveBeenCalledTimes(1);
     // The hand-off of a second identical enqueue is ignored by the job id.
@@ -422,11 +465,14 @@ describe('Comment moderation worker (e2e)', () => {
     expect(jobs).toHaveLength(1);
   });
 
-  it('D11: an edit is re-classified (charged again) and an AI-hidden comment is un-hidden when safe', async () => {
+  it('D11 + PW-D2: an edit is re-classified for free and an AI-hidden comment is un-hidden when safe', async () => {
     const { rowId, metaId, job } = await newComment();
     llm('SCAM_PHISHING');
     await run(job);
     expect((await row(rowId)).status).toBe('HIDDEN');
+    const countedAt = (await row(rowId)).usageCountedAt;
+    expect(countedAt).toBeInstanceOf(Date);
+    const usedAfterFirst = await used(a.workspaceId);
 
     const editJob = await editComment(
       pageA,
@@ -446,7 +492,7 @@ describe('Comment moderation worker (e2e)', () => {
       kind: 'moderated',
       action: 'UNHIDE',
       status: 'VISIBLE',
-      credits: 1,
+      counted: false,
     });
     expect(graph.unhideComment).toHaveBeenCalledWith(
       'FACEBOOK',
@@ -456,9 +502,10 @@ describe('Comment moderation worker (e2e)', () => {
     expect(await row(rowId)).toMatchObject({
       status: 'VISIBLE',
       category: 'SAFE_INQUIRY',
-      creditsCharged: 2,
+      usageCountedAt: countedAt,
       moderationStage: null,
     });
+    expect(await used(a.workspaceId)).toBe(usedAfterFirst);
 
     // Escalation: the visible comment is edited into a scam → hidden again.
     const scamJob = await editComment(
@@ -470,8 +517,10 @@ describe('Comment moderation worker (e2e)', () => {
     expect(await run(scamJob)).toMatchObject({
       action: 'HIDE',
       status: 'HIDDEN',
+      counted: false,
     });
-    expect((await row(rowId)).creditsCharged).toBe(3);
+    expect((await row(rowId)).usageCountedAt).toEqual(countedAt);
+    expect(await used(a.workspaceId)).toBe(usedAfterFirst);
   });
 
   it('a job for an older version never applies over a newer edit', async () => {
@@ -502,43 +551,147 @@ describe('Comment moderation worker (e2e)', () => {
     expect(await row(rowId)).toMatchObject({
       status: 'VISIBLE',
       category: null,
-      creditsCharged: 0,
+      usageCountedAt: null,
       moderationStage: null,
     });
     expect(graphCalls()).toBe(0);
   });
 
-  it('D7: out of credits → SKIPPED credits_exhausted, visible, no AI call', async () => {
-    const { limit } = await app.get(CreditService).usage(b.workspaceId);
-    await db().insert(monthlyCreditUsage).values({
-      workspaceId: b.workspaceId,
-      month: dhakaMonthKey(),
-      used: limit,
+  describe('PW-T4: monthly comment limit + plan', () => {
+    let warn: MockInstance<Logger['warn']>;
+    beforeEach(() => {
+      warn = vi.spyOn(Logger.prototype, 'warn');
     });
-    try {
-      const { rowId, job } = await newComment(pageB);
-      expect(await run(job)).toEqual({
+    afterEach(() => warn.mockRestore());
+    const limitWarnings = () =>
+      warn.mock.calls.filter(([message]) =>
+        String(message).includes('monthly comment limit reached'),
+      );
+
+    it('limit reached → SKIPPED comment_limit_reached, visible, no AI call, one warning per account per day', async () => {
+      const limit = await included(b.workspaceId);
+      expect(limit).toBe(300);
+      const usedB = await used(b.workspaceId);
+      await setUsed(b.workspaceId, limit);
+      try {
+        for (let i = 0; i < 2; i++) {
+          const { rowId, job } = await newComment(pageB);
+          expect(await run(job)).toEqual({
+            kind: 'skipped',
+            reason: 'comment_limit_reached',
+          });
+          expect(await row(rowId)).toMatchObject({
+            status: 'SKIPPED',
+            statusReason: 'comment_limit_reached',
+            category: null,
+            usageCountedAt: null,
+            moderationStage: null,
+          });
+        }
+        expect(ai.chat).not.toHaveBeenCalled();
+        expect(graphCalls()).toBe(0);
+        expect(await used(b.workspaceId)).toBe(limit);
+        expect(
+          (await todayStats(b.workspaceId, pageB.pageId))?.skippedCount,
+        ).toBeGreaterThanOrEqual(2);
+        // One warning for the account today (ids only, never the comment text).
+        const warnings = limitWarnings();
+        expect(warnings).toHaveLength(1);
+        expect(String(warnings[0]![0])).toContain(
+          await accountOf(b.workspaceId),
+        );
+        const all = warn.mock.calls.map(([m]) => String(m)).join('\n');
+        expect(all).not.toContain('cashback');
+      } finally {
+        await setUsed(b.workspaceId, usedB);
+      }
+    });
+
+    it('no live plan: expired trial, then no billing account → SKIPPED no_active_plan, nothing sent to Meta', async () => {
+      const c = await actors.signUp('pwt4-noplan');
+      await insertConnection(c);
+      const pageC = await insertPage(c.workspaceId);
+      const account = await accountOf(c.workspaceId);
+      await db()
+        .update(subscriptions)
+        .set({ status: 'EXPIRED' })
+        .where(eq(subscriptions.billingAccountId, account));
+      const expired = await newComment(pageC);
+      expect(await run(expired.job)).toEqual({
         kind: 'skipped',
-        reason: 'credits_exhausted',
+        reason: 'no_active_plan',
       });
-      expect(await row(rowId)).toMatchObject({
+      expect(await row(expired.rowId)).toMatchObject({
         status: 'SKIPPED',
-        statusReason: 'credits_exhausted',
+        statusReason: 'no_active_plan',
         category: null,
-        creditsCharged: 0,
+        usageCountedAt: null,
         moderationStage: null,
       });
+
+      await actors.removeBilling(c);
+      const unlinked = await newComment(pageC);
+      expect(await run(unlinked.job)).toEqual({
+        kind: 'skipped',
+        reason: 'no_active_plan',
+      });
+      expect((await row(unlinked.rowId)).statusReason).toBe('no_active_plan');
       expect(ai.chat).not.toHaveBeenCalled();
       expect(graphCalls()).toBe(0);
-      expect(await used(b.workspaceId)).toBe(limit);
-      expect(
-        (await todayStats(b.workspaceId, pageB.pageId))?.skippedCount,
-      ).toBeGreaterThanOrEqual(1);
-    } finally {
-      await db()
-        .delete(monthlyCreditUsage)
-        .where(eq(monthlyCreditUsage.workspaceId, b.workspaceId));
-    }
+      expect(limitWarnings()).toEqual([]);
+    });
+
+    it('pooled: two workspaces of one account share the 300 (and its warning)', async () => {
+      const res = await actors
+        .http()
+        .post('/api/auth/organization/create')
+        .set('Cookie', a.cookie)
+        .set('Origin', TRUSTED_ORIGIN)
+        .send({ name: 'Second shop', slug: `pwt4-second-${Date.now()}` })
+        .expect(200);
+      const second = { workspaceId: res.body.id as string };
+      actors.trackWorkspace(second.workspaceId);
+      expect(await accountOf(second.workspaceId)).toBe(
+        await accountOf(a.workspaceId),
+      );
+      await insertConnection(second);
+      const pageS = await insertPage(second.workspaceId);
+
+      const usedA = await used(a.workspaceId);
+      expect(await used(second.workspaceId)).toBe(usedA);
+      const limit = await included(a.workspaceId);
+      expect(limit).toBe(300);
+      await setUsed(a.workspaceId, limit - 1);
+      try {
+        // The second workspace uses the account's last comment …
+        const s1 = await newComment(pageS);
+        llm('SAFE_INQUIRY');
+        expect(await run(s1.job)).toMatchObject({
+          kind: 'moderated',
+          counted: true,
+        });
+        expect(await used(a.workspaceId)).toBe(limit);
+        expect(await used(second.workspaceId)).toBe(limit);
+        // … so the first workspace is out, and so is the second one.
+        const a1 = await newComment(pageA);
+        expect(await run(a1.job)).toEqual({
+          kind: 'skipped',
+          reason: 'comment_limit_reached',
+        });
+        const s2 = await newComment(pageS);
+        expect(await run(s2.job)).toEqual({
+          kind: 'skipped',
+          reason: 'comment_limit_reached',
+        });
+        // One warning per account per day, whichever workspace hit it.
+        expect(limitWarnings()).toHaveLength(1);
+        expect(String(limitWarnings()[0]![0])).toContain(
+          await accountOf(a.workspaceId),
+        );
+      } finally {
+        await setUsed(a.workspaceId, usedA);
+      }
+    });
   });
 
   describe('D2: LLM failures', () => {
@@ -548,9 +701,9 @@ describe('Comment moderation worker (e2e)', () => {
         provider: 'neon',
       });
 
-    it('LLM down → retried (credits given back), last attempt → FAILED, still visible', async () => {
+    it('LLM down → retried (count refunded + cleared), last attempt → FAILED, still visible', async () => {
       const { rowId, job } = await newComment();
-      const credits = await used(a.workspaceId);
+      const usedBefore = await used(a.workspaceId);
       ai.failWith(down());
       const first = await run(job, 0).catch((e: unknown) => e);
       expect(first).toBeInstanceOf(Error);
@@ -558,9 +711,9 @@ describe('Comment moderation worker (e2e)', () => {
       expect(await row(rowId)).toMatchObject({
         status: 'PENDING',
         moderationStage: 'classify',
-        creditsCharged: 0,
+        usageCountedAt: null,
       });
-      expect(await used(a.workspaceId)).toBe(credits);
+      expect(await used(a.workspaceId)).toBe(usedBefore);
 
       ai.failWith(down());
       const last = await run(job, 4).catch((e: unknown) => e);
@@ -568,11 +721,11 @@ describe('Comment moderation worker (e2e)', () => {
       expect(await row(rowId)).toMatchObject({
         status: 'FAILED',
         statusReason: 'transient',
-        creditsCharged: 0,
+        usageCountedAt: null,
         // The sweeper retries it within 24 h.
         moderationStage: 'classify',
       });
-      expect(await used(a.workspaceId)).toBe(credits);
+      expect(await used(a.workspaceId)).toBe(usedBefore);
       expect(graphCalls()).toBe(0);
 
       // Once the LLM is back, the next run (sweeper re-queue) classifies it.
@@ -580,43 +733,44 @@ describe('Comment moderation worker (e2e)', () => {
       expect(await run(job)).toMatchObject({ status: 'VISIBLE' });
       expect(await row(rowId)).toMatchObject({
         statusReason: null,
-        creditsCharged: 1,
+        usageCountedAt: expect.any(Date),
       });
+      expect(await used(a.workspaceId)).toBe(usedBefore + 1);
     });
 
     it.each(['not_configured', 'payment_required', 'auth'] as const)(
-      '%s → UnrecoverableError, FAILED, credits given back',
+      '%s → UnrecoverableError, FAILED, count refunded + cleared',
       async (kind) => {
         const { rowId, job } = await newComment();
-        const credits = await used(a.workspaceId);
+        const usedBefore = await used(a.workspaceId);
         ai.failWith(new AiGatewayError(kind, 'nope', { provider: 'neon' }));
         await expect(run(job)).rejects.toBeInstanceOf(UnrecoverableError);
         expect(await row(rowId)).toMatchObject({
           status: 'FAILED',
           statusReason: kind,
-          creditsCharged: 0,
+          usageCountedAt: null,
         });
-        expect(await used(a.workspaceId)).toBe(credits);
+        expect(await used(a.workspaceId)).toBe(usedBefore);
       },
     );
 
-    it('an unusable answer (tokens spent) is charged, FAILED invalid_output, not retried', async () => {
+    it('an unusable answer (LLM reached) stays counted, FAILED invalid_output, not retried', async () => {
       const { rowId, job } = await newComment();
-      const credits = await used(a.workspaceId);
+      const usedBefore = await used(a.workspaceId);
       ai.replyWith({ model: TEST_MODEL, content: 'not json' });
       ai.replyWith({ model: TEST_MODEL, content: '{"category":"MAYBE"}' });
       await expect(run(job)).rejects.toBeInstanceOf(UnrecoverableError);
       expect(await row(rowId)).toMatchObject({
         status: 'FAILED',
         statusReason: 'invalid_output',
-        creditsCharged: 1,
+        usageCountedAt: expect.any(Date),
         category: null,
       });
-      expect(await used(a.workspaceId)).toBe(credits + 1);
+      expect(await used(a.workspaceId)).toBe(usedBefore + 1);
     });
   });
 
-  it('D13: connection NEEDS_REAUTH → classified + charged, Meta action skipped', async () => {
+  it('D13: connection NEEDS_REAUTH → classified + counted, Meta action skipped', async () => {
     const { rowId, job } = await newComment();
     await setConnection(a.workspaceId, 'NEEDS_REAUTH');
     try {
@@ -631,7 +785,7 @@ describe('Comment moderation worker (e2e)', () => {
         status: 'NEEDS_REVIEW',
         statusReason: 'connection_needs_reauth',
         category: 'SCAM_PHISHING',
-        creditsCharged: 1,
+        usageCountedAt: expect.any(Date),
         moderationStage: null,
       });
       expect(graphCalls()).toBe(0);
@@ -664,32 +818,32 @@ describe('Comment moderation worker (e2e)', () => {
     expect(graphCalls()).toBe(0);
   });
 
-  describe('D8: credits by the level actually sent', () => {
+  describe('D8 + PW-D1: the level decides what is sent, every level counts 1 comment', () => {
     afterEach(() =>
       setPolicy(a.workspaceId, { aiContextLevel: 'comment_only' }),
     );
 
     it.each([
-      ['comment_only', null, 'comment_only', 1],
-      ['page_name', null, 'page_name', 1],
-      ['post_caption', CAPTION, 'post_caption', 2],
-      ['post_caption', null, 'page_name', 1],
+      ['comment_only', null, 'comment_only'],
+      ['page_name', null, 'page_name'],
+      ['post_caption', CAPTION, 'post_caption'],
+      ['post_caption', null, 'page_name'],
     ] as const)(
-      'workspace level %s (caption %j) → sent %s, %d credit(s)',
-      async (level: ContextLevel, caption, sentLevel, cost) => {
+      'workspace level %s (caption %j) → sent %s, 1 comment',
+      async (level: ContextLevel, caption, sentLevel) => {
         await setPolicy(a.workspaceId, { aiContextLevel: level });
         if (level === 'post_caption') {
           graph.getPostCaption.mockReset().mockResolvedValue(caption);
         }
         const { rowId, job } = await newComment();
-        const credits = await used(a.workspaceId);
+        const usedBefore = await used(a.workspaceId);
         llm('SAFE_INQUIRY');
-        expect(await run(job)).toMatchObject({ credits: cost });
+        expect(await run(job)).toMatchObject({ counted: true });
         expect(await row(rowId)).toMatchObject({
           contextLevel: sentLevel,
-          creditsCharged: cost,
+          usageCountedAt: expect.any(Date),
         });
-        expect(await used(a.workspaceId)).toBe(credits + cost);
+        expect(await used(a.workspaceId)).toBe(usedBefore + 1);
         const sent = JSON.stringify(ai.chat.mock.calls[0]![0]);
         expect(sent.includes(`Shop ${pageA.pageId}`)).toBe(
           level !== 'comment_only',
@@ -747,8 +901,9 @@ describe('Comment moderation worker (e2e)', () => {
     }
   });
 
-  it('a transient Graph failure retries only the Meta step (no second AI call or charge)', async () => {
+  it('a transient Graph failure retries only the Meta step (no second AI call or count)', async () => {
     const { rowId, job } = await newComment();
+    const usedBefore = await used(a.workspaceId);
     graph.hideComment.mockRejectedValueOnce(
       new MetaGraphError('rate_limited', 'Too many calls', { status: 429 }),
     );
@@ -759,20 +914,21 @@ describe('Comment moderation worker (e2e)', () => {
     expect(await row(rowId)).toMatchObject({
       moderationStage: 'act',
       category: 'SCAM_PHISHING',
-      creditsCharged: 1,
+      usageCountedAt: expect.any(Date),
     });
     // Retry: no LLM answer armed, so a second AI call would throw.
     expect(await run(job, 1)).toMatchObject({
       kind: 'moderated',
       classified: false,
+      counted: false,
       action: 'HIDE',
       status: 'HIDDEN',
     });
     expect(await row(rowId)).toMatchObject({
       status: 'HIDDEN',
-      creditsCharged: 1,
       moderationStage: null,
     });
+    expect(await used(a.workspaceId)).toBe(usedBefore + 1);
   });
 
   it('two workspaces are isolated: a job naming another workspace finds nothing', async () => {
@@ -781,7 +937,7 @@ describe('Comment moderation worker (e2e)', () => {
       ...job,
       data: { workspaceId: b.workspaceId, commentRowId: rowId, editedAt: null },
     };
-    const creditsB = await used(b.workspaceId);
+    const usedB = await used(b.workspaceId);
     expect(await run(forged)).toEqual({
       kind: 'skipped',
       reason: 'comment_not_found',
@@ -791,7 +947,7 @@ describe('Comment moderation worker (e2e)', () => {
     const own = await newComment(pageB);
     llm('ABUSIVE_TOXIC');
     await run(own.job);
-    expect(await used(b.workspaceId)).toBe(creditsB + 1);
+    expect(await used(b.workspaceId)).toBe(usedB + 1);
     expect(graph.hideComment).toHaveBeenCalledWith(
       'FACEBOOK',
       own.metaId,
