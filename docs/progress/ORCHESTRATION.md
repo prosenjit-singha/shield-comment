@@ -7,13 +7,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, TASKS.md header + Module 4 section (as the format model) + M4-PLAN verification-log entries, `module-5-ai-moderation.md`, only the needed parts of `tech-stack.md` / `module-6-client-dashboard.md` / `screens-inventory.md`, and the existing backend code it plans around.
 - Standing approvals: none needed (no admin/ or client/ code changes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #5 (2026-11-19) · rows this session: 0 · estimate: 75k
+- Session: #5 (2026-11-19) · rows this session: 1 · estimate: 90k
 
 ## State
-dispatched M5-PLAN (2026-11-19) · commit: "docs(progress): plan module 5 (M5-PLAN)"
+done: M5-PLAN only (Module 5 planned; D1–D14 open) (2026-11-19)
 
 ## Resume
-`/orchestration --continue`
+Run finished. Start a new run with `/orchestration <instructions>` (e.g. scope M5-T1… until M5-GATE). The run starts by asking Module 5 D1 + D2 (M5-T1 PRE-CHECK); D3–D14 are asked before the rows that need them. Full options: TASKS.md Module 5 section.
 
 ## Next prompt (M5-T1)
 
@@ -115,4 +115,4 @@ Tests to write (Vitest, stubbed `fetch`, **no live call**): request body (model,
 - 2026-11-19 M4-T12 ✅ 7b2025f · client 399 (was 343) · e2e 2/2 · public SSR /data-deletion status page (en/bn): server-fn lookup in the server HTML, 404/429/5xx/network states + Try again, Dhaka dates, code shown
 - 2026-11-19 M4-GATE ✅ 2f82d8e · backend 1032 unit / 494 e2e · admin 246 · client 399 · Playwright 2/2 · module 4 gate passed: 401 on bad/missing signature, signed delivery 200 in 7.8 ms with one job for 3 deliveries (live, throwaway-secret container), real queue counts on admin; no fix
 - 2026-11-19 M4-T13 ✅ 14da883 · bash -n ✅ · shellcheck n/a · --check exit 0 · live tunnel: public /api/health/live 200, verify/unsigned POST/deauthorize 503 (no META_* in compose), share stopped · backend/admin/client untouched · `scripts/tunnel.sh` (zrok2 `public:shield-comment-dev` created + reserved) + Meta webhook setup guide with live-smoke checklist + root README; live Meta smoke still skipped (D12)
-- 2026-11-19 M5-PLAN ✅ · docs only · Module 5 planned: 11 rows + GATE (M5-T1…T11), decisions D1–D14 open; next prompt = M5-T1 (PRE-CHECK D1, D2)
+- 2026-11-19 M5-PLAN ✅ 7448646 · docs only · Module 5 planned: 11 rows + GATE (M5-T1…T11), decisions D1–D14 open; next prompt = M5-T1 (PRE-CHECK D1, D2)
