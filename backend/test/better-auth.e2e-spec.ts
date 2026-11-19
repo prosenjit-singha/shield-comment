@@ -13,8 +13,14 @@ import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import { Public } from '../src/auth/decorators/public.decorator.js';
 import type { Database } from '../src/db/database.js';
-import { users, workspaceMembers, workspaces } from '../src/db/schema/index.js';
+import {
+  billingAccounts,
+  users,
+  workspaceMembers,
+  workspaces,
+} from '../src/db/schema/index.js';
 import { AUTH_SECONDARY_STORAGE } from '../src/redis/redis-secondary-storage.js';
+import { deleteBillingChildren } from './utils/auth-actors.js';
 import { createTestApp, uniqueEmail } from './utils/create-test-app.js';
 import type { createMemorySecondaryStorage } from './utils/memory-secondary-storage.js';
 
@@ -112,8 +118,20 @@ describe('Better Auth (e2e)', () => {
         .from(workspaceMembers)
         .where(inArray(workspaceMembers.userId, ids));
       const workspaceIds = memberships.map((m) => m.id);
+      // Sign-up billing (PW-T3): wallet rows + subscriptions first, accounts after workspaces.
+      const accountIds = (
+        await db
+          .select({ id: billingAccounts.id })
+          .from(billingAccounts)
+          .where(inArray(billingAccounts.ownerUserId, ids))
+      ).map((a) => a.id);
+      await deleteBillingChildren(db, accountIds);
       if (workspaceIds.length)
         await db.delete(workspaces).where(inArray(workspaces.id, workspaceIds));
+      if (accountIds.length)
+        await db
+          .delete(billingAccounts)
+          .where(inArray(billingAccounts.id, accountIds));
       await db.delete(users).where(inArray(users.id, ids));
     }
     await app.close();

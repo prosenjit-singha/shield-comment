@@ -1,4 +1,4 @@
-import { DEFAULT_JOB_OPTIONS } from '../queue/queue.constants.js';
+import type { ScheduledJob } from '../queue/job-schedulers.js';
 
 /**
  * Scheduled jobs on the `meta-token-check` queue (M4-T7, Module 4 D3/D4/D8). BullMQ job schedulers
@@ -8,16 +8,14 @@ import { DEFAULT_JOB_OPTIONS } from '../queue/queue.constants.js';
 export const META_DEBUG_TOKEN_JOB_NAME = 'debug-token';
 export const RAW_PAYLOAD_PURGE_JOB_NAME = 'raw-payload-purge';
 
-/** Cron time zone of every schedule (Bangladesh, no DST). */
-export const SCHEDULE_TIME_ZONE = 'Asia/Dhaka';
+export {
+  isScheduledJobData,
+  SCHEDULE_TIME_ZONE,
+  SCHEDULED_JOB_OPTIONS,
+} from '../queue/job-schedulers.js';
 
-export interface MetaScheduledJob {
-  /** Job scheduler id (stable: upserting the same id updates the schedule in place). */
-  schedulerId: string;
-  name: string;
-  /** Cron pattern (minute hour day month weekday) in `SCHEDULE_TIME_ZONE`. */
-  pattern: string;
-}
+/** A Meta job scheduler (shape shared by every queue: `ScheduledJob`). */
+export type MetaScheduledJob = ScheduledJob;
 
 /**
  * - `debug-token` daily at 03:00 Dhaka (D8).
@@ -36,15 +34,3 @@ export const META_SCHEDULED_JOBS: readonly MetaScheduledJob[] = [
     pattern: '30 3 * * *',
   },
 ];
-
-/** Template options of the scheduled jobs: the D3 defaults (5 attempts, exponential 2 s). */
-export const SCHEDULED_JOB_OPTIONS = { ...DEFAULT_JOB_OPTIONS };
-
-/** Scheduled jobs carry no data; anything but a plain object (or nothing) is rejected. */
-export function isScheduledJobData(data: unknown): boolean {
-  return (
-    data === undefined ||
-    data === null ||
-    (typeof data === 'object' && !Array.isArray(data))
-  );
-}

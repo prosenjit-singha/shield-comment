@@ -11,6 +11,7 @@ describe('QueueRegistry', () => {
   const ingest = fakeQueue('comment-ingest');
   const moderation = fakeQueue('comment-moderation');
   const tokenCheck = fakeQueue('meta-token-check');
+  const billing = fakeQueue('billing');
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -18,19 +19,21 @@ describe('QueueRegistry', () => {
   });
 
   it('returns each queue by name and all of them in D3 order', () => {
-    const registry = new QueueRegistry(ingest, moderation, tokenCheck);
+    const registry = new QueueRegistry(ingest, moderation, tokenCheck, billing);
     expect(registry.get('comment-ingest')).toBe(ingest);
     expect(registry.get('comment-moderation')).toBe(moderation);
     expect(registry.get('meta-token-check')).toBe(tokenCheck);
+    expect(registry.get('billing')).toBe(billing);
     expect(registry.all()).toEqual([
       { name: 'comment-ingest', queue: ingest },
       { name: 'comment-moderation', queue: moderation },
       { name: 'meta-token-check', queue: tokenCheck },
+      { name: 'billing', queue: billing },
     ]);
   });
 
   it('throws for an unknown queue name', () => {
-    const registry = new QueueRegistry(ingest, moderation, tokenCheck);
+    const registry = new QueueRegistry(ingest, moderation, tokenCheck, billing);
     expect(() => registry.get('nope' as never)).toThrow('Unknown queue nope');
   });
 
@@ -43,6 +46,7 @@ describe('QueueRegistry', () => {
       fakeQueue('comment-ingest'),
       fakeQueue('comment-moderation'),
       fakeQueue('meta-token-check'),
+      fakeQueue('billing'),
     ] as const;
     const registry = new QueueRegistry(...queues);
     registry.onModuleInit();

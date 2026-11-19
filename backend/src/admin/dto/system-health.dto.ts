@@ -35,7 +35,7 @@ export interface SystemProcessInfo {
 
 /**
  * BullMQ counts, one row per registered queue (M4-T1: `comment-ingest`, `comment-moderation`,
- * `meta-token-check`). A queue whose counts fail (Redis down) is left out.
+ * `meta-token-check`; PW-T3: `billing`). A queue whose counts fail (Redis down) is left out.
  */
 export interface QueueStats {
   name: string;

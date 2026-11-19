@@ -23,7 +23,7 @@ describe('QueueModule wiring', () => {
     vi.restoreAllMocks();
   });
 
-  it('registers the three D3 queues with the default job options and closes them on shutdown', async () => {
+  it('registers the D3 queues + billing with the default job options and closes them on shutdown', async () => {
     vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const moduleRef = await Test.createTestingModule({
       imports: [

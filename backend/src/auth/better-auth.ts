@@ -3,6 +3,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { admin, organization } from 'better-auth/plugins';
 import { uuidv7 } from 'uuidv7';
+import type { SubscriptionService } from '../billing/subscription.service.js';
 import type { Database } from '../db/database.js';
 import * as schema from '../db/schema/index.js';
 import { CLIENT_IP_HEADER } from './client-ip.js';
@@ -10,6 +11,7 @@ import {
   firstWorkspaceName,
   parseWorkspaceName,
   resolveActiveWorkspace,
+  type SessionBilling,
   WORKSPACE_NAME_MAX,
 } from './first-workspace.js';
 import { impersonationExchange } from './impersonation-exchange.plugin.js';
@@ -34,7 +36,16 @@ export interface BetterAuthSettings {
   secondaryStorage: SecondaryStorage;
   /** Off in e2e: every supertest request shares one "no IP" bucket. */
   rateLimit: boolean;
+  /**
+   * Billing accounts + Starter trial (PW-T3): sign-up / session-create setup and the
+   * `/organization/create` workspace link (`SubscriptionService`).
+   */
+  billing: AuthBilling;
 }
+
+/** The `SubscriptionService` calls Better Auth's hooks make (PW-T3). */
+export type AuthBilling = SessionBilling &
+  Pick<SubscriptionService, 'linkWorkspace'>;
 
 const SIGN_UP_PATH = '/sign-up/email';
 
@@ -177,6 +188,7 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
                 : undefined;
             const activeOrganizationId = await resolveActiveWorkspace(
               db,
+              settings.billing,
               session.userId,
               createName,
             );
@@ -209,6 +221,13 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
         ac: workspaceAc,
         roles: workspaceRoles,
         creatorRole: 'owner',
+        organizationHooks: {
+          // A workspace created after sign-up belongs to the creator's billing account (PW-T3,
+          // plan §3.1); no new trial. The 403 before-hook (no plan / workspace limit) is PW-T5.
+          afterCreateOrganization: async ({ organization, user }) => {
+            await settings.billing.linkWorkspace(user.id, organization.id);
+          },
+        },
         schema: {
           organization: {
             modelName: 'workspace',

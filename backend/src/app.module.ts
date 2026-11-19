@@ -25,6 +25,7 @@ import { MetaCallbacksModule } from './meta-callbacks/meta-callbacks.module.js';
 import { ModerationModule } from './moderation/moderation.module.js';
 import { CreditsModule } from './credits/credits.module.js';
 import { WalletModule } from './wallet/wallet.module.js';
+import { BillingModule } from './billing/billing.module.js';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { WalletModule } from './wallet/wallet.module.js';
     ModerationModule,
     CreditsModule,
     WalletModule,
+    BillingModule,
   ],
 })
 export class AppModule {}

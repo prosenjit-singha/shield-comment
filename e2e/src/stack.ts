@@ -144,6 +144,19 @@ export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary>
         [ids, wsIds],
       );
       const plan = await db.query('delete from plan_audit_logs where admin_id = any($1::uuid[])', [ids]);
+      // Billing (PW-T3: sign-up makes an account + Starter trial + wallet): the run users' accounts
+      // and the run workspaces' accounts; children first (FKs restrict), accounts after workspaces.
+      const accounts = await db.query<{ id: string }>(
+        `select id from billing_accounts where owner_user_id = any($1::uuid[])
+         union select billing_account_id from workspaces where id = any($2::uuid[]) and billing_account_id is not null`,
+        [ids, wsIds],
+      );
+      const accountIds = accounts.rows.map((r) => r.id);
+      const walletIds = 'select id from wallets where billing_account_id = any($1::uuid[])';
+      await db.query(`delete from wallet_entries where wallet_id in (${walletIds})`, [accountIds]);
+      await db.query(`delete from wallet_balances where wallet_id in (${walletIds})`, [accountIds]);
+      await db.query('delete from wallets where billing_account_id = any($1::uuid[])', [accountIds]);
+      await db.query('delete from subscriptions where billing_account_id = any($1::uuid[])', [accountIds]);
       // Moderation (M5-T7): actions reference comments (restrict) → first; policies reference workspaces.
       await db.query('delete from moderation_actions where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from moderation_policies where workspace_id = any($1::uuid[])', [wsIds]);
@@ -161,6 +174,7 @@ export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary>
         [wsIds, ids],
       );
       const deletedWs = await db.query('delete from workspaces where id = any($1::uuid[])', [wsIds]);
+      await db.query('delete from billing_accounts where id = any($1::uuid[])', [accountIds]);
       await db.query('delete from sessions where user_id = any($1::uuid[])', [ids]);
       await db.query('delete from accounts where user_id = any($1::uuid[])', [ids]);
       await db.query('delete from verifications where identifier = any($1)', [emails]);

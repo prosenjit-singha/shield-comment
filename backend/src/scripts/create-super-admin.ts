@@ -2,10 +2,12 @@ import type { SecondaryStorage } from 'better-auth';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { createBetterAuth } from '../auth/better-auth.js';
+import { SubscriptionService } from '../billing/subscription.service.js';
 import { PasswordService } from '../auth/password.service.js';
 import { ensureSuperAdmin, parseSuperAdminInput } from '../auth/super-admin.js';
 import { relaxHappyEyeballsTimeout } from '../common/net/happy-eyeballs.js';
 import * as schema from '../db/schema/index.js';
+import { WalletService } from '../wallet/wallet.service.js';
 
 /**
  * `npm run create-super-admin` (after `npm run build`): creates or promotes the platform super admin.
@@ -56,6 +58,8 @@ try {
     passwords: new PasswordService(),
     secondaryStorage: noopStorage(),
     rateLimit: false,
+    // `createUser` makes no session or workspace, so the billing hooks never run here.
+    billing: new SubscriptionService(db, new WalletService(db)),
   });
   const result = await ensureSuperAdmin(db, auth, input);
   const messages = {

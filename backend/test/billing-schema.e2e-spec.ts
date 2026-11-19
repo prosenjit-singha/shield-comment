@@ -122,6 +122,8 @@ describe('Billing + wallet schema (e2e)', () => {
     actors = createAuthActors(app);
     a = await actors.signUp('pwt1-a');
     b = await actors.signUp('pwt1-b');
+    // Sign-up now starts a Starter trial (PW-T3): this spec builds its own billing rows.
+    await actors.removeBilling(a, b);
     const [plan] = await db()
       .insert(plans)
       .values({
@@ -536,6 +538,7 @@ describe('Billing + wallet schema (e2e)', () => {
 
     it('the actor is set null when the user is deleted; the wallet is restricted', async () => {
       const extra = await actors.signUp('pwt1-actor');
+      await actors.removeBilling(extra);
       const [entry] = await db()
         .insert(walletEntries)
         .values(

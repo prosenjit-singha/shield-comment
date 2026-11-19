@@ -34,6 +34,9 @@ export interface LiveSubscription {
   };
 }
 
+/** A live subscription seen from its billing account (no workspace): what a wallet period needs. */
+export type AccountLiveSubscription = Omit<LiveSubscription, 'workspaceId'>;
+
 /**
  * Shared live-subscription query (PW-T2; reused by PW-T3…T6). Workspace → `billing_account_id`
  * → the subscription with status in `LIVE_SUBSCRIPTION_STATUSES` and `now < current_term_end`

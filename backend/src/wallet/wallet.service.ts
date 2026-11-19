@@ -9,9 +9,9 @@ import {
   workspaces,
 } from '../db/schema/index.js';
 import {
+  type AccountLiveSubscription,
   findLiveSubscription,
   findLiveSubscriptions,
-  type LiveSubscription,
   subscriptionPeriod,
 } from './live-subscription.queries.js';
 import {
@@ -122,6 +122,21 @@ export class WalletService {
       return true;
     };
     return tx ? run(tx) : this.db.transaction(run);
+  }
+
+  /**
+   * `openPeriod` for a subscription the caller just wrote (PW-T3 trial start: the account may have
+   * no workspace yet, so there is nothing to look the plan up by). Opens the period containing
+   * `now` for `live.billingAccountId` with the grant from `live.plan`; a no-op when already open.
+   * Run it inside the transaction that wrote the subscription.
+   */
+  async openSubscriptionPeriod(
+    live: AccountLiveSubscription,
+    now: Date,
+    tx: WalletExecutor,
+  ): Promise<void> {
+    assertWalletInstant(now);
+    await this.writePeriod(tx, live, subscriptionPeriod(live, now));
   }
 
   /**
@@ -304,7 +319,7 @@ export class WalletService {
    */
   private async writePeriod(
     tx: WalletExecutor,
-    live: LiveSubscription,
+    live: AccountLiveSubscription,
     period: WalletPeriod,
   ): Promise<void> {
     const w = wallets;

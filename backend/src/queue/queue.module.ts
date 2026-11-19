@@ -7,7 +7,7 @@ import { QueueRegistry } from './queue.registry.js';
 import { RedisEvictionCheck } from './redis-eviction-check.js';
 
 /**
- * BullMQ foundation (M4-T1, D3): root connection from `REDIS_URL`, the three D3 queues with the
+ * BullMQ foundation (M4-T1, D3): root connection from `REDIS_URL`, the three D3 queues + `billing` (PW-T3) with the
  * default job options, `QueueRegistry` and the startup eviction-policy warning. Global, so any
  * module can `@InjectQueue(QUEUE_NAMES.x)` or declare a `@Processor(QUEUE_NAMES.x)` worker.
  * E2E replaces every queue with an in-memory fake (`test/utils/fake-queue.ts`).

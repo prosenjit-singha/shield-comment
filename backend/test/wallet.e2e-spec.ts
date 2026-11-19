@@ -30,7 +30,7 @@ const featureConfig = (monthlyComments: number) => ({
  * PW-T2: `WalletService` against real Postgres (user decisions 2026-11-19 PW-D3 one wallet per
  * billing account, PW-D4 monthly reset on the billing date, PW-D9 no live plan, PW-D12 trial
  * grant, PW-D14 limit edits from the next reset). Billing accounts and subscriptions are inserted
- * directly (no `SubscriptionService` until PW-T3); every call passes an explicit `now`.
+ * directly (the sign-up trial of PW-T3 is removed first); every call passes an explicit `now`.
  * Throwaway plans (`pwt2-*`) are removed in `afterAll` after `cleanup()`.
  */
 describe('Client wallet (e2e)', () => {
@@ -192,6 +192,8 @@ describe('Client wallet (e2e)', () => {
     b = await actors.signUp('pwt2-b');
     c = await actors.signUp('pwt2-c');
     d = await actors.signUp('pwt2-d');
+    // Sign-up now starts a Starter trial (PW-T3): this spec builds its own accounts.
+    await actors.removeBilling(a, b, c, d);
     const [rowA] = await db()
       .insert(billingAccounts)
       .values({ ownerUserId: a.id })

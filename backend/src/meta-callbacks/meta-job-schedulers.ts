@@ -4,20 +4,15 @@ import {
   Logger,
   type OnApplicationBootstrap,
 } from '@nestjs/common';
-import type { Queue } from 'bullmq';
-import { withTimeout } from '../common/async/with-timeout.js';
-import { QUEUE_NAMES } from '../queue/queue.constants.js';
 import {
-  META_SCHEDULED_JOBS,
-  SCHEDULE_TIME_ZONE,
-  SCHEDULED_JOB_OPTIONS,
-} from './meta-scheduled.jobs.js';
+  registerJobSchedulers,
+  SCHEDULER_REGISTRATION_TIMEOUT_MS,
+  type SchedulerQueue,
+} from '../queue/job-schedulers.js';
+import { QUEUE_NAMES } from '../queue/queue.constants.js';
+import { META_SCHEDULED_JOBS } from './meta-scheduled.jobs.js';
 
-/** How long boot-time registration waits for Redis before it logs a warning. */
-export const SCHEDULER_REGISTRATION_TIMEOUT_MS = 5_000;
-
-/** The part of a BullMQ `Queue` the registrar uses. */
-type SchedulerQueue = Pick<Queue, 'upsertJobScheduler'>;
+export { SCHEDULER_REGISTRATION_TIMEOUT_MS };
 
 /**
  * Registers the `meta-token-check` job schedulers (M4-T7) at startup. Boot never waits for it and
@@ -41,32 +36,12 @@ export class MetaJobSchedulers implements OnApplicationBootstrap {
     this.ready = this.register();
   }
 
-  async register(timeoutMs = SCHEDULER_REGISTRATION_TIMEOUT_MS): Promise<void> {
-    const work = Promise.all(
-      META_SCHEDULED_JOBS.map((job) =>
-        this.queue.upsertJobScheduler(
-          job.schedulerId,
-          { pattern: job.pattern, tz: SCHEDULE_TIME_ZONE },
-          { name: job.name, data: {}, opts: { ...SCHEDULED_JOB_OPTIONS } },
-        ),
-      ),
+  register(timeoutMs = SCHEDULER_REGISTRATION_TIMEOUT_MS): Promise<void> {
+    return registerJobSchedulers(
+      this.queue,
+      META_SCHEDULED_JOBS,
+      this.logger,
+      timeoutMs,
     );
-    const names = META_SCHEDULED_JOBS.map((job) => job.schedulerId).join(', ');
-    try {
-      await withTimeout(work, timeoutMs);
-      this.logger.log(`Job schedulers registered: ${names}`);
-    } catch (error) {
-      const reason =
-        error instanceof Error && error.message === 'timeout'
-          ? `Redis did not answer within ${timeoutMs} ms; still trying in the background`
-          : error instanceof Error
-            ? error.message
-            : 'unknown error';
-      this.logger.warn(`Job schedulers not registered yet (${reason})`);
-      work.then(
-        () => this.logger.log(`Job schedulers registered late: ${names}`),
-        () => undefined,
-      );
-    }
   }
 }

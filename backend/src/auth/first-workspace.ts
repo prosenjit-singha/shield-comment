@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { asc, eq } from 'drizzle-orm';
+import type { SubscriptionService } from '../billing/subscription.service.js';
 import type { Database } from '../db/database.js';
 import { workspaceMembers, workspaces } from '../db/schema/index.js';
 
@@ -48,6 +49,12 @@ export function firstWorkspaceName(body: unknown): string {
   );
 }
 
+/** The billing calls a new session makes (`SubscriptionService`, PW-T3). */
+export type SessionBilling = Pick<
+  SubscriptionService,
+  'setUpOwner' | 'isSetUp'
+>;
+
 /**
  * The workspace a new session starts in: the user's oldest membership. With `createName`
  * (sign-up only) and no membership yet, creates the first workspace with the user as `owner`.
@@ -55,20 +62,38 @@ export function firstWorkspaceName(body: unknown): string {
  * Runs from `databaseHooks.session.create.before`, i.e. after the user row exists and before
  * the session row is written, so the sign-up session (and its cookie cache) already carries
  * `activeOrganizationId`. The Drizzle adapter runs without transactions, so the user row is
- * committed; workspace + owner membership go in one transaction of their own.
+ * committed; workspace + owner membership + billing go in one transaction of their own.
+ *
+ * Billing (PW-T3, PW-D8): sign-up links the new workspace to the user's billing account (made on
+ * first use) and starts the Starter trial with its wallet period, in that same transaction. Later
+ * session creates repair an owner whose oldest workspace has no account, or whose account never had
+ * a subscription (e.g. a sign-up during the 0023 deploy): it gets the account + link + trial then;
+ * an account that already had a subscription never gets another trial.
  */
 export async function resolveActiveWorkspace(
   db: Database,
+  billing: SessionBilling,
   userId: string,
   createName?: string,
 ): Promise<string | null> {
   const [membership] = await db
-    .select({ workspaceId: workspaceMembers.workspaceId })
+    .select({
+      workspaceId: workspaceMembers.workspaceId,
+      role: workspaceMembers.role,
+    })
     .from(workspaceMembers)
     .where(eq(workspaceMembers.userId, userId))
     .orderBy(asc(workspaceMembers.createdAt))
     .limit(1);
-  if (membership) return membership.workspaceId;
+  if (membership) {
+    if (
+      membership.role === 'owner' &&
+      !(await billing.isSetUp(membership.workspaceId))
+    ) {
+      await billing.setUpOwner(userId, membership.workspaceId);
+    }
+    return membership.workspaceId;
+  }
   if (!createName) return null;
 
   return db.transaction(async (tx) => {
@@ -79,6 +104,7 @@ export async function resolveActiveWorkspace(
     await tx
       .insert(workspaceMembers)
       .values({ workspaceId: workspace!.id, userId, role: 'owner' });
+    await billing.setUpOwner(userId, workspace!.id, new Date(), tx);
     return workspace!.id;
   });
 }

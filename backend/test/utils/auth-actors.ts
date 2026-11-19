@@ -52,6 +52,32 @@ export interface Actor {
   workspaceId: string;
 }
 
+/**
+ * Deletes the wallet ledger → balances → wallets → subscriptions of these billing accounts (FKs
+ * restrict), not the accounts themselves (workspaces may still point at them).
+ */
+export async function deleteBillingChildren(
+  db: Pick<Database, 'select' | 'delete'>,
+  accountIds: readonly string[],
+): Promise<void> {
+  if (accountIds.length === 0) return;
+  const ids = [...accountIds];
+  const walletIds = db
+    .select({ id: wallets.id })
+    .from(wallets)
+    .where(inArray(wallets.billingAccountId, ids));
+  await db
+    .delete(walletEntries)
+    .where(inArray(walletEntries.walletId, walletIds));
+  await db
+    .delete(walletBalances)
+    .where(inArray(walletBalances.walletId, walletIds));
+  await db.delete(wallets).where(inArray(wallets.billingAccountId, ids));
+  await db
+    .delete(subscriptions)
+    .where(inArray(subscriptions.billingAccountId, ids));
+}
+
 export function sessionCookie(res: request.Response): string {
   const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
   const cookie = raw?.find((c) => c.startsWith('better-auth.session_token='));
@@ -145,6 +171,31 @@ export function createAuthActors(app: INestApplication<App>) {
   }
 
   /**
+   * Undoes the billing setup sign-up made for these actors (PW-T3): their accounts' wallet rows +
+   * subscriptions, the workspace links and the accounts. For specs that build billing rows
+   * themselves (schema, wallet). Returns nothing; the actors stay usable.
+   */
+  async function removeBilling(...owners: Actor[]): Promise<void> {
+    const ids = owners.map((o) => o.id);
+    if (ids.length === 0) return;
+    const accountIds = (
+      await db
+        .select({ id: billingAccounts.id })
+        .from(billingAccounts)
+        .where(inArray(billingAccounts.ownerUserId, ids))
+    ).map((row) => row.id);
+    if (accountIds.length === 0) return;
+    await deleteBillingChildren(db, accountIds);
+    await db
+      .update(workspaces)
+      .set({ billingAccountId: null })
+      .where(inArray(workspaces.billingAccountId, accountIds));
+    await db
+      .delete(billingAccounts)
+      .where(inArray(billingAccounts.id, accountIds));
+  }
+
+  /**
    * Deletes every tracked workspace and user (members, sessions and accounts cascade). Their
    * billing children (wallet entries, balances, wallets, subscriptions), impersonation, status and
    * plan audit rows, ticket messages and tickets go first: those FKs are `restrict`. Billing
@@ -178,24 +229,7 @@ export function createAuthActors(app: INestApplication<App>) {
             .where(or(...accountRefs))
         ).map((row) => row.id)
       : [];
-    if (accountIds.length) {
-      const walletIds = db
-        .select({ id: wallets.id })
-        .from(wallets)
-        .where(inArray(wallets.billingAccountId, accountIds));
-      await db
-        .delete(walletEntries)
-        .where(inArray(walletEntries.walletId, walletIds));
-      await db
-        .delete(walletBalances)
-        .where(inArray(walletBalances.walletId, walletIds));
-      await db
-        .delete(wallets)
-        .where(inArray(wallets.billingAccountId, accountIds));
-      await db
-        .delete(subscriptions)
-        .where(inArray(subscriptions.billingAccountId, accountIds));
-    }
+    await deleteBillingChildren(db, accountIds);
     const ticketRefs = [
       ...(userIds.length ? [inArray(tickets.userId, userIds)] : []),
       ...(workspaceIds.length
@@ -314,6 +348,9 @@ export function createAuthActors(app: INestApplication<App>) {
     signUpSuperAdmin,
     addMember,
     patchStoredSession,
+    removeBilling,
+    /** Track a workspace created outside `signUp` (e.g. `/organization/create`) for `cleanup()`. */
+    trackWorkspace: (id: string) => workspaceIds.push(id),
     /** Track a user created outside `signUp` so `cleanup()` deletes it. */
     trackUser: (id: string) => userIds.push(id),
     /** Track a Facebook user id so `cleanup()` deletes its Data Deletion requests (M4-T6). */

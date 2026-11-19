@@ -13,6 +13,8 @@ export const QUEUE_NAMES = {
   commentModeration: 'comment-moderation',
   /** Scheduled Meta jobs: `debug_token`, purge (M4-T7). */
   metaTokenCheck: 'meta-token-check',
+  /** Scheduled billing jobs: `subscription-expiry` every 15 min (PW-T3). */
+  billing: 'billing',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -22,6 +24,7 @@ export const ALL_QUEUE_NAMES: readonly QueueName[] = [
   QUEUE_NAMES.commentIngest,
   QUEUE_NAMES.commentModeration,
   QUEUE_NAMES.metaTokenCheck,
+  QUEUE_NAMES.billing,
 ];
 
 const HOUR_SECONDS = 60 * 60;
