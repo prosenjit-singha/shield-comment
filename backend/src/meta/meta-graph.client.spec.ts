@@ -682,6 +682,196 @@ describe('MetaGraphClient', () => {
     });
   });
 
+  describe('comment actions (M5-T9)', () => {
+    const FB_COMMENT = '1010000000000001_2020000000000002';
+    const IG_COMMENT = '17890000000000003';
+    const proof = createHmac('sha256', CONFIG.appSecret)
+      .update(PAGE_TOKEN)
+      .digest('hex');
+    const init = (n = 0) => fetchMock.mock.calls[n]![1]!;
+    const formBody = (n = 0) => {
+      const sent = init(n).body;
+      expect(typeof sent).toBe('string');
+      return Object.fromEntries(new URLSearchParams(sent as string));
+    };
+    const success = () => jsonResponse(200, { success: true });
+
+    function expectPost(path: string, form: Record<string, string>) {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const url = calledUrl();
+      expect(url.origin + url.pathname).toBe(
+        `https://graph.facebook.com/v26.0/${path}`,
+      );
+      // Nothing in the URL: token, proof and fields travel in the form body.
+      expect(url.search).toBe('');
+      expect(init().method).toBe('POST');
+      expect(init().headers).toMatchObject({
+        'Content-Type': 'application/x-www-form-urlencoded',
+      });
+      expect(formBody()).toEqual({
+        ...form,
+        access_token: PAGE_TOKEN,
+        appsecret_proof: proof,
+      });
+    }
+
+    it.each([
+      ['FACEBOOK', FB_COMMENT, 'is_hidden'],
+      ['INSTAGRAM', IG_COMMENT, 'hide'],
+    ] as const)(
+      '%s hide = POST /{comment-id} form %s=true; unhide = %s=false',
+      async (platform, id, field) => {
+        fetchMock.mockResolvedValueOnce(success());
+        await expect(
+          client.hideComment(platform, id, PAGE_TOKEN),
+        ).resolves.toBeUndefined();
+        expectPost(id, { [field]: 'true' });
+        expect(debugSpy).toHaveBeenCalledWith(
+          expect.stringMatching(new RegExp(`^POST /${id} 200 \\d+ms$`)),
+        );
+
+        fetchMock.mockReset().mockResolvedValueOnce(success());
+        await expect(
+          client.unhideComment(platform, id, PAGE_TOKEN),
+        ).resolves.toBeUndefined();
+        expectPost(id, { [field]: 'false' });
+      },
+    );
+
+    it.each([FB_COMMENT, IG_COMMENT])(
+      'delete = DELETE /%s with token + proof in the query, no body',
+      async (id) => {
+        fetchMock.mockResolvedValue(success());
+        await expect(
+          client.deleteComment(id, PAGE_TOKEN),
+        ).resolves.toBeUndefined();
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        const url = calledUrl();
+        expect(url.origin + url.pathname).toBe(
+          `https://graph.facebook.com/v26.0/${id}`,
+        );
+        expect(init().method).toBe('DELETE');
+        expect(init().body).toBeUndefined();
+        expect(Object.fromEntries(url.searchParams)).toEqual({
+          access_token: PAGE_TOKEN,
+          appsecret_proof: proof,
+        });
+      },
+    );
+
+    it.each([
+      ['FACEBOOK', FB_COMMENT, 'comments', '2020000000000002_3030000000000003'],
+      ['INSTAGRAM', IG_COMMENT, 'replies', '17890000000000009'],
+    ] as const)(
+      '%s reply = POST /{comment-id}/%s form message → { id }',
+      async (platform, id, edge, replyId) => {
+        const message = 'ধন্যবাদ! Inbox e price pathachhi & 100% original';
+        fetchMock.mockResolvedValue(jsonResponse(200, { id: replyId }));
+        await expect(
+          client.replyToComment(platform, id, message, PAGE_TOKEN),
+        ).resolves.toEqual({ id: replyId });
+        expectPost(`${id}/${edge}`, { message });
+        expect(debugSpy).toHaveBeenCalledWith(
+          expect.stringMatching(new RegExp(`^POST /${id}/${edge} 200 \\d+ms$`)),
+        );
+        // The reply text never reaches the logs.
+        for (const args of debugSpy.mock.calls) {
+          expect(args.map(String).join(' ')).not.toContain('Inbox');
+        }
+      },
+    );
+
+    it.each([[{ success: false }], [{}], [{ success: 'true' }], [[]]])(
+      'hide/unhide/delete: anything but { success: true } (%j) is unexpected_response',
+      async (body) => {
+        for (const call of [
+          () => client.hideComment('FACEBOOK', FB_COMMENT, PAGE_TOKEN),
+          () => client.unhideComment('INSTAGRAM', IG_COMMENT, PAGE_TOKEN),
+          () => client.deleteComment(FB_COMMENT, PAGE_TOKEN),
+        ]) {
+          fetchMock.mockResolvedValueOnce(jsonResponse(200, body));
+          expect(await caught(call())).toMatchObject({
+            kind: 'unexpected_response',
+            status: 200,
+            retryable: false,
+          });
+        }
+      },
+    );
+
+    it.each([[{}], [{ id: 42 }], [{ id: 'abc' }], [{ success: true }], [[]]])(
+      'reply: a body without a comment id (%j) is unexpected_response',
+      async (body) => {
+        fetchMock.mockResolvedValueOnce(jsonResponse(200, body));
+        expect(
+          await caught(
+            client.replyToComment('FACEBOOK', FB_COMMENT, 'hi', PAGE_TOKEN),
+          ),
+        ).toMatchObject({ kind: 'unexpected_response' });
+      },
+    );
+
+    it.each([
+      [100, 33, 'not_found', false],
+      [100, undefined, 'invalid_request', false],
+      [190, undefined, 'token_invalid', false],
+      [4, undefined, 'rate_limited', true],
+      [200, undefined, 'permission', false],
+      [2, undefined, 'transient', true],
+    ] as const)(
+      'Graph error #%i/%s → %s (retryable %s) for every comment action',
+      async (code, subcode, kind, retryable) => {
+        for (const call of [
+          () => client.hideComment('FACEBOOK', FB_COMMENT, PAGE_TOKEN),
+          () => client.unhideComment('INSTAGRAM', IG_COMMENT, PAGE_TOKEN),
+          () => client.deleteComment(IG_COMMENT, PAGE_TOKEN),
+          () =>
+            client.replyToComment('INSTAGRAM', IG_COMMENT, 'hi', PAGE_TOKEN),
+        ]) {
+          fetchMock.mockResolvedValueOnce(
+            graphError(400, {
+              message: `Object with ID '${FB_COMMENT}' does not exist ${PAGE_TOKEN}`,
+              type: 'GraphMethodException',
+              code,
+              ...(subcode ? { error_subcode: subcode } : {}),
+            }),
+          );
+          const error = await caught(call());
+          expect(error).toMatchObject({ kind, code, retryable });
+          expect(error.message).not.toContain(PAGE_TOKEN);
+        }
+      },
+    );
+
+    it('network failure → retryable network error without the token', async () => {
+      fetchMock.mockRejectedValue(new TypeError(`failed ${PAGE_TOKEN}`));
+      const error = await caught(
+        client.hideComment('FACEBOOK', FB_COMMENT, PAGE_TOKEN),
+      );
+      expect(error).toMatchObject({ kind: 'network', retryable: true });
+      expect(error.message).not.toContain(PAGE_TOKEN);
+    });
+
+    it('rejects a bad comment id, empty token, empty message or disabled client without calling fetch', async () => {
+      await expect(
+        client.hideComment('FACEBOOK', '../me', PAGE_TOKEN),
+      ).rejects.toThrow('Comment id');
+      await expect(client.deleteComment('1_2_3_4', PAGE_TOKEN)).rejects.toThrow(
+        'Comment id',
+      );
+      await expect(
+        client.unhideComment('INSTAGRAM', IG_COMMENT, ''),
+      ).rejects.toThrow('Token');
+      await expect(
+        client.replyToComment('FACEBOOK', FB_COMMENT, '  ', PAGE_TOKEN),
+      ).rejects.toThrow('message');
+      await expect(
+        new MetaGraphClient(null).deleteComment(FB_COMMENT, PAGE_TOKEN),
+      ).rejects.toBeInstanceOf(MetaNotConfiguredError);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe('errors', () => {
     it.each([
       [190, 463, 'token_invalid', false],
@@ -696,6 +886,8 @@ describe('MetaGraphClient', () => {
       [200, undefined, 'permission', false],
       [299, undefined, 'permission', false],
       [100, undefined, 'invalid_request', false],
+      [100, 33, 'not_found', false],
+      [100, 34, 'invalid_request', false],
       [1, undefined, 'transient', true],
       [2, undefined, 'transient', true],
       [368, undefined, 'unknown', false],

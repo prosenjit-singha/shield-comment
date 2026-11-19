@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { CommentPlatform } from '../db/schema/comments.js';
 import { META_APP_CONFIG, type MetaAppConfig } from './meta-graph.config.js';
 import {
   graphErrorFromResponse,
@@ -59,6 +60,11 @@ export interface MetaPermissions {
   declined: string[];
 }
 
+/** Meta id of a reply we posted (`POST …/comments` or `…/replies` answers `{ id }`). */
+export interface MetaReply {
+  id: string;
+}
+
 type Query = Record<string, string>;
 type HttpMethod = 'GET' | 'POST' | 'DELETE';
 
@@ -72,6 +78,13 @@ const nonEmpty = (value: unknown): value is string =>
 /** Graph ids are JSON strings; numeric strings only (the DB checks the same). */
 const isGraphId = (value: unknown): value is string =>
   typeof value === 'string' && /^[0-9]{1,32}$/.test(value);
+
+/**
+ * FB/IG comment id: numeric, or numeric parts joined by `_` (FB `<postId>_<commentId>`); the same
+ * rule as `comments.comment_id` and `moderation_actions.reply_comment_id`.
+ */
+const isCommentId = (value: unknown): value is string =>
+  typeof value === 'string' && /^[0-9]{1,32}(_[0-9]{1,32}){0,2}$/.test(value);
 
 function unexpected(what: string): MetaGraphError {
   return new MetaGraphError('unexpected_response', `Meta Graph: ${what}`, {
@@ -301,6 +314,100 @@ export class MetaGraphClient {
     if (!isRecord(body) || body.success !== true) {
       throw unexpected('permissions delete did not answer success');
     }
+  }
+
+  /**
+   * Hides a comment from everyone but its author and the Page (M5-T9, Module 5 D3/D10/D11):
+   * FB `POST /{comment-id}` form `is_hidden=true`, IG `POST /{ig-comment-id}` form `hide=true`,
+   * with the **Page** token + `appsecret_proof`. Meta answers `{ success: true }` (anything else is
+   * `unexpected_response`); hiding a hidden comment is fine. A comment that no longer exists is
+   * `not_found`.
+   */
+  async hideComment(
+    platform: CommentPlatform,
+    commentId: string,
+    pageToken: string,
+  ): Promise<void> {
+    await this.setCommentHidden(platform, commentId, true, pageToken);
+  }
+
+  /** The reverse of `hideComment`: form `is_hidden=false` (FB) / `hide=false` (IG). */
+  async unhideComment(
+    platform: CommentPlatform,
+    commentId: string,
+    pageToken: string,
+  ): Promise<void> {
+    await this.setCommentHidden(platform, commentId, false, pageToken);
+  }
+
+  /**
+   * `DELETE /{comment-id}` (FB and IG) with the Page token + proof in the query (M5-T9). Meta
+   * answers `{ success: true }`; an already deleted comment is `not_found` (the caller treats that
+   * as done).
+   */
+  async deleteComment(commentId: string, pageToken: string): Promise<void> {
+    const body = await this.requestWithToken(
+      'DELETE',
+      this.commentPath(commentId),
+      {},
+      pageToken,
+    );
+    if (!isRecord(body) || body.success !== true) {
+      throw unexpected('comment delete did not answer success');
+    }
+  }
+
+  /**
+   * Replies to a comment as the Page (M5-T9, D6): FB `POST /{comment-id}/comments`, IG
+   * `POST /{ig-comment-id}/replies`, form `message` + Page token + proof. Meta answers `{ id }` of
+   * the new reply. Not idempotent on Meta's side: the caller makes sure it runs once.
+   */
+  async replyToComment(
+    platform: CommentPlatform,
+    commentId: string,
+    message: string,
+    pageToken: string,
+  ): Promise<MetaReply> {
+    if (message.trim().length === 0) {
+      throw new Error('Reply message must not be empty');
+    }
+    const edge = platform === 'INSTAGRAM' ? 'replies' : 'comments';
+    const body = await this.requestWithToken(
+      'POST',
+      `${this.commentPath(commentId)}/${edge}`,
+      { message },
+      pageToken,
+    );
+    if (!isRecord(body) || !isCommentId(body.id)) {
+      throw unexpected(`${edge} did not answer an id`);
+    }
+    return { id: body.id };
+  }
+
+  private async setCommentHidden(
+    platform: CommentPlatform,
+    commentId: string,
+    hidden: boolean,
+    pageToken: string,
+  ): Promise<void> {
+    const field = platform === 'INSTAGRAM' ? 'hide' : 'is_hidden';
+    const body = await this.requestWithToken(
+      'POST',
+      this.commentPath(commentId),
+      { [field]: hidden ? 'true' : 'false' },
+      pageToken,
+    );
+    if (!isRecord(body) || body.success !== true) {
+      throw unexpected(`comment ${field} did not answer success`);
+    }
+  }
+
+  /** The id becomes a URL segment, so it is checked first. */
+  private commentPath(commentId: string): string {
+    if (!isCommentId(commentId)) {
+      throw new Error('Comment id must be a Graph comment id');
+    }
+    return commentId;
   }
 
   private parseToken(body: unknown): MetaAccessToken {

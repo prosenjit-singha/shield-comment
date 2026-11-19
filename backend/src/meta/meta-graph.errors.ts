@@ -9,6 +9,9 @@
  * - `rate_limited`: 4, 17, 32, 613, 80000–80014 (app / user / Page / business-use-case limits).
  * - `permission`: 10, 200–299 (permission missing or not granted).
  * - `invalid_request`: 100 (bad parameter; also an invalid, expired or reused OAuth `code`).
+ * - `not_found`: 100 with subcode 33 ("Object with ID … does not exist, cannot be loaded due to
+ *   missing permissions, or does not support this operation"): the comment is already gone
+ *   (M5-T9; a DELETE treats it as done). Not retryable.
  * - `transient`: 1, 2, `is_transient`, or HTTP 5xx without a Graph error body.
  * - `network`: fetch failed or timed out (no response).
  * - `unexpected_response`: 2xx with a body we can't read, or too many result pages.
@@ -19,6 +22,7 @@ export type MetaGraphErrorKind =
   | 'rate_limited'
   | 'permission'
   | 'invalid_request'
+  | 'not_found'
   | 'transient'
   | 'network'
   | 'unexpected_response'
@@ -77,6 +81,8 @@ export class MetaNotConfiguredError extends Error {
 
 const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
 const TOKEN_CODES = new Set([102, 190]);
+/** Graph error subcode of code 100 for "object does not exist" (M5-T9). */
+const OBJECT_MISSING_SUBCODE = 33;
 /** Meta messages are short; cap them anyway so an odd body can't flood logs. */
 const MESSAGE_MAX = 300;
 
@@ -84,6 +90,7 @@ export function graphErrorKind(
   code: number | undefined,
   status: number,
   isTransient: boolean,
+  subcode?: number,
 ): MetaGraphErrorKind {
   if (code !== undefined) {
     if (TOKEN_CODES.has(code)) return 'token_invalid';
@@ -91,7 +98,11 @@ export function graphErrorKind(
       return 'rate_limited';
     }
     if (code === 10 || (code >= 200 && code <= 299)) return 'permission';
-    if (code === 100) return 'invalid_request';
+    if (code === 100) {
+      return subcode === OBJECT_MISSING_SUBCODE
+        ? 'not_found'
+        : 'invalid_request';
+    }
     if (code === 1 || code === 2 || isTransient) return 'transient';
     return 'unknown';
   }
@@ -135,7 +146,12 @@ export function graphErrorFromResponse(
   const error = isRecord(body) && isRecord(body.error) ? body.error : null;
   const code = num(error?.code);
   const subcode = num(error?.error_subcode);
-  const kind = graphErrorKind(code, status, error?.is_transient === true);
+  const kind = graphErrorKind(
+    code,
+    status,
+    error?.is_transient === true,
+    subcode,
+  );
   const raw = redactSecrets(str(error?.message) ?? `HTTP ${status}`, secrets);
   const text = raw.length > MESSAGE_MAX ? `${raw.slice(0, MESSAGE_MAX)}…` : raw;
   const codes =
