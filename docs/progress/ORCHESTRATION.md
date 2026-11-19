@@ -8,10 +8,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)").
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #9 (2026-11-19) · rows this session: 7 · estimate: 210k
+- Session: #9 (2026-11-19) · rows this session: 8 · estimate: 235k
 
 ## State
-dispatched PW-T6 (2026-11-19) · commit: "feat(backend): add public plans and billing summary endpoints (PW-T6)"
+verified PW-T6
 
 ## Resume
 `/orchestration --continue`
@@ -245,4 +245,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-19 PW-T3 ✅ 75f5826 · backend 1793 unit (+1 skipped; was 1766) + e2e 805 (was 794) · e2e/ 2/2 · Starter trial at sign-up (account + workspace link + TRIALING + wallet in the sign-up tx, repair on sign-in), `/organization/create` linked, `SubscriptionService.expireDue` + `billing` queue `subscription-expiry` every 15 min, backfill 0023 (PW-D15); next PW-T4
 - 2026-11-19 PW-T4 ✅ 2ef47a9 · backend 1802 unit (+1 skipped; was 1793) + e2e 807 (was 805) · worker counts each comment once via `WalletService.consume('monthlyComments')` (`usage_counted_at`), skips `comment_limit_reached` (warn once per account per Dhaka day) / `no_active_plan`, refund + clear on no-LLM paths; credit cost code + `comments.credits_charged` (migration 0024) removed, `daily_ai_usage.credits` no longer written
 - 2026-11-19 PW-T5 ✅ 5450fbd · backend 1819 unit (+1 skipped; was 1802) + e2e 823 (was 807) · Pages pooled across the billing account (409 `NO_ACTIVE_PLAN` / pooled `PAGE_LIMIT_REACHED`, account row lock), `/organization/create` before-hook 403 `no_active_plan` / `workspace_limit_reached`, `LimitService.seatsLeft`, plan flags from the live subscription, Free fallback removed
-- 2026-11-19 PW-T6 ✅ · backend 1830 unit (+1 skipped; was 1819) + e2e 833 (was 823) · public `GET /api/plans` (active plans, `planPrice` monthly + yearly, limits, flags, Starter trial fields; `public, max-age=60`) + any-member `GET /api/workspaces/:workspaceId/billing/summary` (plan/interval/status incl. EXPIRED/CANCELED/NONE, trial/term ends, comments from the wallet, pooled workspaces + Pages); no migration
+- 2026-11-19 PW-T6 ✅ 6d7d4eb · backend 1830 unit (+1 skipped; was 1819) + e2e 833 (was 823) · public `GET /api/plans` (active plans, `planPrice` monthly + yearly, limits, flags, Starter trial fields; `public, max-age=60`) + any-member `GET /api/workspaces/:workspaceId/billing/summary` (plan/interval/status incl. EXPIRED/CANCELED/NONE, trial/term ends, comments from the wallet, pooled workspaces + Pages); no migration
