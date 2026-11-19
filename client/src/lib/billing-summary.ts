@@ -36,6 +36,8 @@ export interface BillingSummary {
   comments: BillingUsage & { resetsAt: string | null }
   workspaces: BillingUsage
   pages: BillingUsage
+  /** PR-T3: `POST …/billing/trial` can succeed (billing account, no live plan, never had a trial). */
+  trialEligible: boolean
 }
 
 const summaryPath = (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/billing/summary`

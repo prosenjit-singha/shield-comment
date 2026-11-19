@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { CirclePause, Gauge, Hourglass } from 'lucide-react'
 import { useId } from 'react'
 import { useLanguage } from '@/hooks/use-language'
@@ -69,8 +70,8 @@ const ICONS = { trial: Hourglass, paused: CirclePause, limit_reached: Gauge } as
  * Plan status banner in the `_app` shell (PW-T8, plan §3.7, PW-D9): "Trial ends in N days" while on
  * the sign-up trial, "Moderation paused: choose a plan" without a live plan, "Comment limit reached"
  * when the wallet is used up. Read from the workspace billing summary; nothing shows while it loads,
- * when it fails, or for a paid plan with comments left (it never blocks the shell). No link yet:
- * choosing a plan is Module 8 (`/billing`).
+ * when it fails, or for a paid plan with comments left (it never blocks the shell). Every banner that
+ * asks the client to choose a plan links to `/plans` (PR-T6, reading 5).
  */
 export function PlanStatusBanner({ workspaceId }: { workspaceId: string }) {
   const { content, language } = useLanguage()
@@ -82,6 +83,7 @@ export function PlanStatusBanner({ workspaceId }: { workspaceId: string }) {
   const { title, body } = bannerCopy(state, content, language)
   const Icon = ICONS[state.kind]
   const urgent = state.kind !== 'trial'
+  const choosePlan = state.kind !== 'limit_reached' || state.trial
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6">
@@ -101,6 +103,14 @@ export function PlanStatusBanner({ workspaceId }: { workspaceId: string }) {
             {title}
           </strong>{' '}
           <span>{body}</span>
+          {choosePlan ? (
+            <>
+              {' '}
+              <Link to="/plans" className="font-medium text-primary underline-offset-4 hover:underline">
+                {content('See plans', 'প্ল্যান দেখুন')}
+              </Link>
+            </>
+          ) : null}
         </p>
       </div>
     </div>

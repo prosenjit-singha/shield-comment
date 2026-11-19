@@ -30,6 +30,7 @@ const routeTree = rootRoute.addChildren([
   LoginRoute.update({ id: '/login', path: '/login', getParentRoute: () => rootRoute } as never),
   RegisterRoute.update({ id: '/register', path: '/register', getParentRoute: () => rootRoute } as never),
   stub('/onboarding', 'Onboarding stub'),
+  stub('/plans', 'Plans stub'),
   stub('/', 'Landing stub'),
   stub('/dashboard', 'Dashboard stub'),
   stub('/orders', 'Orders stub'),

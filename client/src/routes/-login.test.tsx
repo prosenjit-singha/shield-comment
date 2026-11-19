@@ -9,6 +9,7 @@ const USER = { id: 'u1', email: 'rahim@shop.bd', name: 'Rahim', emailVerified: f
 const SESSION = { session: { id: 's1', userId: 'u1', impersonatedBy: null }, user: USER }
 const WORKSPACE_SESSION = { session: { ...SESSION.session, activeOrganizationId: 'w1' }, user: USER }
 const PAGES = '/api/workspaces/w1/pages'
+const SUMMARY = '/api/workspaces/w1/billing/summary'
 type Respond = () => Response | Promise<Response>
 const pagesWith = (activeCount: number): Respond => () => json(200, { items: [], pageLimit: { limit: 3, activeCount } })
 
@@ -16,7 +17,11 @@ const pagesWith = (activeCount: number): Respond => () => json(200, { items: [],
  * Sign-in succeeds; get-session answers "signed out" until then (the /login guard) and `session` after
  * it; the D13 pages check answers with `pages`.
  */
-function signInFlow(pages: Respond, session: Respond = () => json(200, WORKSPACE_SESSION)) {
+function signInFlow(
+  pages: Respond,
+  session: Respond = () => json(200, WORKSPACE_SESSION),
+  summary: Respond = () => json(200, { status: 'ACTIVE' }),
+) {
   let signedIn = false
   return {
     '/api/auth/sign-in/email': () => {
@@ -25,6 +30,7 @@ function signInFlow(pages: Respond, session: Respond = () => json(200, WORKSPACE
     },
     '/api/auth/get-session': () => (signedIn ? session() : json(200, null)),
     [PAGES]: pages,
+    [SUMMARY]: summary,
   }
 }
 
@@ -102,6 +108,18 @@ describe.each(['en', 'bn'] as const)('/login (%s)', (language) => {
       expect(callsTo(PAGES)[0]!.method).toBe('GET')
       // Cached for the `_app` guard and the wizard.
       expect(queryClient.getQueryData(['workspace', 'w1', 'pages'])).toMatchObject({ pageLimit: { activeCount: 0 } })
+    })
+
+    it.each(['NONE', 'EXPIRED'] as const)('goes to /plans only when the account never had a plan (summary %s)', async (status) => {
+      mockApi(signInFlow(pagesWith(0), undefined, () => json(200, { status })))
+      const { history } = renderAuthRoute('/login', language)
+      await fillAndSubmit(language)
+
+      const target = status === 'NONE' ? '/plans' : '/onboarding'
+      expect(await screen.findByText(status === 'NONE' ? 'Plans stub' : 'Onboarding stub')).toBeTruthy()
+      expect(history.location.pathname).toBe(target)
+      expect(callsTo(SUMMARY)).toHaveLength(1)
+      expect(callsTo(PAGES)).toHaveLength(status === 'NONE' ? 0 : 1)
     })
 
     it('goes to /dashboard when at least one Page is active', async () => {

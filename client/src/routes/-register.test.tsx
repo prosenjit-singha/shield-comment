@@ -7,12 +7,14 @@ vi.mock('@/server/session', () => ({ getServerSession: vi.fn() }))
 const USER = { id: 'u1', email: 'rahim@shop.bd', name: 'Rahim', emailVerified: false }
 const SESSION = { session: { id: 's1', userId: 'u1', impersonatedBy: null, activeOrganizationId: 'w1' }, user: USER }
 const PAGES = '/api/workspaces/w1/pages'
+const SUMMARY = '/api/workspaces/w1/billing/summary'
 
 /**
  * Sign-up succeeds; get-session answers "signed out" until then (the /register guard) and the new
- * session after it; the D13 pages check answers with `pages` (default: `activeCount` active Pages).
+ * session after it; the PR-T6 plan check answers with `summary` (default: a live plan) and the D13
+ * pages check with `pages` (default: `activeCount` active Pages).
  */
-function signUpFlow(activeCount: number, pages?: () => Response) {
+function signUpFlow(activeCount: number, pages?: () => Response, summary: () => Response = () => json(200, { status: 'ACTIVE' })) {
   let signedUp = false
   return {
     '/api/auth/sign-up/email': () => {
@@ -21,6 +23,7 @@ function signUpFlow(activeCount: number, pages?: () => Response) {
     },
     '/api/auth/get-session': () => json(200, signedUp ? SESSION : null),
     [PAGES]: pages ?? (() => json(200, { items: [], pageLimit: { limit: 1, activeCount } })),
+    [SUMMARY]: summary,
   }
 }
 
@@ -123,6 +126,32 @@ describe.each(['en', 'bn'] as const)('/register (%s)', (language) => {
     expect(callsTo(PAGES)).toHaveLength(1)
     expect(queryClient.getQueryData(['auth', 'session'])).toMatchObject({ session: { activeOrganizationId: 'w1' } })
     expect(queryClient.getQueryData(['workspace', 'w1', 'pages'])).toMatchObject({ pageLimit: { activeCount: 0 } })
+  })
+
+  it('lands on /plans while the account has no plan (PR-T6, reading 5), without the pages check', async () => {
+    mockApi(signUpFlow(0, undefined, () => json(200, { status: 'NONE', plan: null, trialEligible: true })))
+    const { history, queryClient } = renderAuthRoute('/register', language)
+    await fill(language)
+    submit(language)
+
+    expect(await screen.findByText('Plans stub')).toBeTruthy()
+    expect(history.location.pathname).toBe('/plans')
+    expect(history.length).toBe(1)
+    expect(callsTo(SUMMARY)).toHaveLength(1)
+    expect(callsTo(PAGES)).toHaveLength(0)
+    // Cached for the shell banner and the trial button.
+    expect(queryClient.getQueryData(['workspace', 'w1', 'billing', 'summary'])).toMatchObject({ trialEligible: true })
+  })
+
+  it('skips the plan step when the summary check fails', async () => {
+    mockApi(signUpFlow(0, undefined, () => json(503, { statusCode: 503, message: 'down' })))
+    const { history } = renderAuthRoute('/register', language)
+    await fill(language)
+    submit(language)
+
+    expect(await screen.findByText('Onboarding stub')).toBeTruthy()
+    expect(history.location.pathname).toBe('/onboarding')
+    expect(callsTo(SUMMARY)).toHaveLength(1)
   })
 
   it('goes to /dashboard when the workspace already has an active Page', async () => {

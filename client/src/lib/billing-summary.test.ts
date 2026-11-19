@@ -21,6 +21,7 @@ function summary(overrides: Partial<BillingSummary> = {}): BillingSummary {
     comments: { used: 12, limit: 300, resetsAt: '2026-11-27T09:00:00.000Z' },
     workspaces: { used: 1, limit: 1 },
     pages: { used: 0, limit: 1 },
+    trialEligible: false,
     ...overrides,
   }
 }

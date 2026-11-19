@@ -18,13 +18,14 @@ import { Route as AppRoute } from '@/routes/_app'
 import { Route as DashboardRoute } from '@/routes/_app/dashboard'
 import { Route as OnboardingRoute } from '@/routes/_app/onboarding'
 import { Route as PagesRoute } from '@/routes/_app/pages'
+import { Route as PlansRoute } from '@/routes/_app/plans'
 import { createLanguageStore, LanguageStoreContext } from '@/stores/language-store'
 import { useUiStore } from '@/stores/ui-store'
 import { json } from './auth-routes'
 
 /**
- * Harness for the logged-in Meta screens (`/onboarding` M3-T10, `/pages` M3-T11): the real `_app`
- * layout + `/onboarding` + `/pages` + `/dashboard` route files under a bare root (the generated tree pulls
+ * Harness for the logged-in screens (`/onboarding` M3-T10, `/pages` M3-T11, `/plans` PR-T6): the real `_app`
+ * layout + `/onboarding` + `/pages` + `/dashboard` + `/plans` route files under a bare root (the generated tree pulls
  * in the Start server functions), with a stub /login. Test files must still
  * `vi.mock('@/server/session', …)` themselves (vi.mock is hoisted per file).
  */
@@ -37,6 +38,7 @@ const routeTree = rootRoute.addChildren([
     OnboardingRoute.update(childOptions('/onboarding')),
     PagesRoute.update(childOptions('/pages')),
     DashboardRoute.update(childOptions('/dashboard')),
+    PlansRoute.update(childOptions('/plans')),
   ]),
   loginRoute,
 ])
@@ -191,6 +193,7 @@ export function billingSummary(overrides: Partial<BillingSummary> = {}): Billing
     comments: { used: 120, limit: 2500, resetsAt: '2026-12-15T18:00:00.000Z' },
     workspaces: { used: 1, limit: 1 },
     pages: { used: 1, limit: 1 },
+    trialEligible: false,
     ...overrides,
   }
 }
