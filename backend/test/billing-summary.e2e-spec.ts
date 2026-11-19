@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import { normalizeFeatureConfig } from '../src/admin/plan-rules.js';
@@ -14,7 +14,6 @@ import {
   walletBalances,
   wallets,
 } from '../src/db/schema/index.js';
-import { planPrice } from '../src/plans/plan-price.js';
 import { WalletService } from '../src/wallet/wallet.service.js';
 import {
   type Actor,
@@ -23,25 +22,14 @@ import {
 } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
 
-const PUBLIC_PLAN_KEYS = [
-  'features',
-  'id',
-  'limits',
-  'monthly',
-  'name',
-  'slug',
-  'trialCommentLimit',
-  'trialDays',
-  'yearly',
-];
-
 /**
- * PW-T6: public `GET /api/plans` + the client `GET /api/workspaces/:workspaceId/billing/summary`
+ * PW-T6: the client `GET /api/workspaces/:workspaceId/billing/summary` (public `GET /api/plans`
+ * moved to promotions.e2e-spec.ts with its PR-T2 shape)
  * (plan §3.7; user decisions 2026-11-19 PW-D5/D6 prices, PW-D9 paused, PW-D11 pooled). Real
  * Postgres; every sign-up starts on the Starter trial (PW-T3). Pages are inserted directly with
  * real ciphertexts (the summary never reads them).
  */
-describe('Public plans + billing summary (e2e)', () => {
+describe('Billing summary (e2e)', () => {
   let app: INestApplication<App>;
   let actors: ReturnType<typeof createAuthActors>;
   let cipher: TokenCipherService;
@@ -124,63 +112,6 @@ describe('Public plans + billing summary (e2e)', () => {
   afterAll(async () => {
     await actors?.cleanup();
     await app?.close();
-  });
-
-  describe('GET /api/plans (public)', () => {
-    it('without a session: the 3 active plans in admin order, no free, both intervals, Starter trial only, no admin fields', async () => {
-      const res = await http().get('/api/plans').expect(200);
-      expect(res.headers['cache-control']).toBe('public, max-age=60');
-      const items = res.body.items as Record<string, unknown>[];
-      const active = await db()
-        .select()
-        .from(plans)
-        .where(eq(plans.isActive, true))
-        .orderBy(asc(plans.sortOrder), asc(plans.name));
-      expect(items.map((p) => p.slug)).toEqual(active.map((p) => p.slug));
-      expect(items.map((p) => p.slug)).toEqual(['starter', 'growth', 'pro']);
-      for (const [i, item] of items.entries()) {
-        const row = active[i]!;
-        expect(Object.keys(item).sort()).toEqual(PUBLIC_PLAN_KEYS);
-        const config = normalizeFeatureConfig(row.featureConfig);
-        expect(item).toEqual({
-          id: row.id,
-          slug: row.slug,
-          name: row.name,
-          monthly: planPrice(row, 'month'),
-          yearly: planPrice(row, 'year'),
-          limits: config.limits,
-          features: config.features,
-          trialDays: row.slug === 'starter' ? row.trialDays : null,
-          trialCommentLimit:
-            row.slug === 'starter'
-              ? (row.trialCommentLimit ?? config.limits.monthlyComments)
-              : null,
-        });
-        // Seeded yearly prices exist for every active plan (PW-T1b).
-        expect(item.yearly).not.toBeNull();
-        expect(Object.keys(item.limits as object).sort()).toEqual([
-          'connectedPages',
-          'monthlyComments',
-          'teamSeats',
-          'workspaces',
-        ]);
-      }
-      const starter = items.find((p) => p.slug === 'starter')!;
-      expect(starter.trialDays).toBe(7);
-      expect(starter.trialCommentLimit).toBe(300);
-      const raw = JSON.stringify(res.body);
-      for (const field of [
-        'isActive',
-        'sortOrder',
-        'updatedAt',
-        'createdAt',
-        'featureConfig',
-        'adminId',
-        'free',
-      ]) {
-        expect(raw).not.toContain(field);
-      }
-    });
   });
 
   describe('GET …/billing/summary: auth + roles', () => {

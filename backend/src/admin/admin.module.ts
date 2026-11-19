@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AiGatewayModule } from '../ai-gateway/ai-gateway.module.js';
 import { TokenCipherModule } from '../crypto/token-cipher.module.js';
 import { HealthModule } from '../health/health.module.js';
+import { PromotionsModule } from '../promotions/promotions.module.js';
 import { WalletModule } from '../wallet/wallet.module.js';
 import { AdminAiSettingsController } from './admin-ai-settings.controller.js';
 import { AdminAiSettingsService } from './admin-ai-settings.service.js';
@@ -20,7 +21,13 @@ import { AdminSystemService } from './admin-system.service.js';
 
 /** Super admin API (`/api/admin/*`). Every controller here uses `SuperAdminGuard`. */
 @Module({
-  imports: [HealthModule, AiGatewayModule, TokenCipherModule, WalletModule],
+  imports: [
+    HealthModule,
+    AiGatewayModule,
+    TokenCipherModule,
+    WalletModule,
+    PromotionsModule,
+  ],
   controllers: [
     AdminClientsController,
     AdminDashboardController,

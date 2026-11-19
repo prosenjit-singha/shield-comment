@@ -17,6 +17,7 @@ import {
   workspaces,
 } from '../db/schema/index.js';
 import { planPrice } from '../plans/plan-price.js';
+import { PromotionService } from '../promotions/promotion.service.js';
 import type { AccountLiveSubscription } from '../wallet/live-subscription.queries.js';
 import { WalletService } from '../wallet/wallet.service.js';
 import { normalizeFeatureConfig } from './plan-rules.js';
@@ -55,6 +56,7 @@ export class AdminSubscriptionService {
   constructor(
     @InjectDrizzle() private readonly db: Database,
     private readonly wallet: WalletService,
+    private readonly promotions: PromotionService,
   ) {}
 
   /**
@@ -115,8 +117,6 @@ export class AdminSubscriptionService {
           name: plans.name,
           isActive: plans.isActive,
           monthlyPriceBdt: plans.monthlyPriceBdt,
-          offerPriceBdt: plans.offerPriceBdt,
-          offerBadge: plans.offerBadge,
           yearlyMonthlyPriceBdt: plans.yearlyMonthlyPriceBdt,
           featureConfig: plans.featureConfig,
           trialCommentLimit: plans.trialCommentLimit,
@@ -129,7 +129,12 @@ export class AdminSubscriptionService {
           code: CODES.planNotAvailable,
         });
       }
-      const price = planPrice(plan, input.interval);
+      // The plan's best live discount, so the snapshot = the shown price (PR-T2). Not claimed
+      // (no redemption) until PR-T3b.
+      const discounts = (
+        await this.promotions.liveDiscountsFor([plan.id], now)
+      ).get(plan.id)!;
+      const price = planPrice(plan, input.interval, discounts);
       if (!price) {
         throw new BadRequestException({
           message: 'This plan has no yearly price',
