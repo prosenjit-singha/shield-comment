@@ -1,0 +1,763 @@
+{
+  "format": 1,
+  "source": "hand-made",
+  "note": "HAND-MADE replay (M5-T6), NOT model output: checks pipeline + scorer in CI until M5-T16 records real answers. Planted: comp-07 and spam-05 wrong, scam-02 bad JSON then ok, safe-03 response_format refusal then ok, abuse-04 invalid twice. Bump promptVersion by hand when PROMPT_VERSION changes.",
+  "provider": "neon",
+  "model": "handmade-replay",
+  "promptVersion": "moderation-v1",
+  "contextLevel": "comment_only",
+  "recordedAt": "2026-11-19T00:00:00.000Z",
+  "items": {
+    "safe-01": {
+      "textSha256": "d96bbbbb5cffbe9e",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "model": "handmade-replay",
+          "latencyMs": 500,
+          "usage": {
+            "promptTokens": 2400,
+            "completionTokens": 60,
+            "totalTokens": 2460
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "safe-02": {
+      "textSha256": "e1de9b603d57d92e",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 537,
+          "usage": {
+            "promptTokens": 2407,
+            "completionTokens": 64,
+            "totalTokens": 2471
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "safe-03": {
+      "textSha256": "adadc8cf8cc4ce37",
+      "calls": [
+        {
+          "error": {
+            "kind": "invalid_request",
+            "status": 400,
+            "message": "AI neon 400: response_format json_schema is not supported (hand-made)",
+            "param": "response_format"
+          },
+          "latencyMs": 0
+        },
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 574,
+          "usage": {
+            "promptTokens": 2414,
+            "completionTokens": 68,
+            "totalTokens": 2482
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "safe-04": {
+      "textSha256": "f40ce6221d719c25",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 611,
+          "usage": {
+            "promptTokens": 2421,
+            "completionTokens": 72,
+            "totalTokens": 2493
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "safe-05": {
+      "textSha256": "3dfcca7b63b35f5d",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "model": "handmade-replay",
+          "latencyMs": 648,
+          "usage": {
+            "promptTokens": 2428,
+            "completionTokens": 76,
+            "totalTokens": 2504
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "safe-06": {
+      "textSha256": "5afdd002a3ed9245",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 685,
+          "usage": {
+            "promptTokens": 2435,
+            "completionTokens": 60,
+            "totalTokens": 2495
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "safe-07": {
+      "textSha256": "ffa5920ea1b983ae",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 722,
+          "usage": {
+            "promptTokens": 2442,
+            "completionTokens": 64,
+            "totalTokens": 2506
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "safe-08": {
+      "textSha256": "1984308dbc08cf0b",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 759,
+          "usage": {
+            "promptTokens": 2449,
+            "completionTokens": 68,
+            "totalTokens": 2517
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "safe-09": {
+      "textSha256": "1b810f1c9270d19f",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "model": "handmade-replay",
+          "latencyMs": 796,
+          "usage": {
+            "promptTokens": 2456,
+            "completionTokens": 72,
+            "totalTokens": 2528
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "safe-10": {
+      "textSha256": "68fe42a1cb99275b",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "model": "handmade-replay",
+          "latencyMs": 833,
+          "usage": {
+            "promptTokens": 2463,
+            "completionTokens": 76,
+            "totalTokens": 2539
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "comp-01": {
+      "textSha256": "545857bb51bbbbd6",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 870,
+          "usage": {
+            "promptTokens": 2470,
+            "completionTokens": 60,
+            "totalTokens": 2530
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "comp-02": {
+      "textSha256": "7492b92f009d7d76",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "model": "handmade-replay",
+          "latencyMs": 907,
+          "usage": {
+            "promptTokens": 2477,
+            "completionTokens": 64,
+            "totalTokens": 2541
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "comp-03": {
+      "textSha256": "84883f63877db41e",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 944,
+          "usage": {
+            "promptTokens": 2484,
+            "completionTokens": 68,
+            "totalTokens": 2552
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "comp-04": {
+      "textSha256": "69193845faeee33c",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 981,
+          "usage": {
+            "promptTokens": 2491,
+            "completionTokens": 72,
+            "totalTokens": 2563
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "comp-05": {
+      "textSha256": "cfe24a2f08372c2e",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 1018,
+          "usage": {
+            "promptTokens": 2498,
+            "completionTokens": 76,
+            "totalTokens": 2574
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "comp-06": {
+      "textSha256": "eef9410652403c9a",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "model": "handmade-replay",
+          "latencyMs": 1055,
+          "usage": {
+            "promptTokens": 2505,
+            "completionTokens": 60,
+            "totalTokens": 2565
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "comp-07": {
+      "textSha256": "369792bc65bc17d5",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.55,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 1092,
+          "usage": {
+            "promptTokens": 2512,
+            "completionTokens": 64,
+            "totalTokens": 2576
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "comp-08": {
+      "textSha256": "28a4a26c0473fc96",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 529,
+          "usage": {
+            "promptTokens": 2519,
+            "completionTokens": 68,
+            "totalTokens": 2587
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "comp-09": {
+      "textSha256": "97f554c551052e6e",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 566,
+          "usage": {
+            "promptTokens": 2526,
+            "completionTokens": 72,
+            "totalTokens": 2598
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "scam-01": {
+      "textSha256": "98a27bc3020d6485",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "model": "handmade-replay",
+          "latencyMs": 603,
+          "usage": {
+            "promptTokens": 2533,
+            "completionTokens": 76,
+            "totalTokens": 2609
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "scam-02": {
+      "textSha256": "7d822b398373e7b3",
+      "calls": [
+        {
+          "content": "Sorry, I can only answer in prose.",
+          "model": "handmade-replay",
+          "latencyMs": 640,
+          "usage": {
+            "promptTokens": 2540,
+            "completionTokens": 60,
+            "totalTokens": 2600
+          },
+          "finishReason": "stop"
+        },
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 640,
+          "usage": {
+            "promptTokens": 2540,
+            "completionTokens": 60,
+            "totalTokens": 2600
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "scam-03": {
+      "textSha256": "982f39e58a581a5c",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 677,
+          "usage": {
+            "promptTokens": 2547,
+            "completionTokens": 64,
+            "totalTokens": 2611
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "scam-04": {
+      "textSha256": "f8aa45e7eda9af11",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 714,
+          "usage": {
+            "promptTokens": 2554,
+            "completionTokens": 68,
+            "totalTokens": 2622
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "scam-05": {
+      "textSha256": "7c300fd7e3b5a48b",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "model": "handmade-replay",
+          "latencyMs": 751,
+          "usage": {
+            "promptTokens": 2561,
+            "completionTokens": 72,
+            "totalTokens": 2633
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "scam-06": {
+      "textSha256": "b35e139a1bd985df",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 788,
+          "usage": {
+            "promptTokens": 2568,
+            "completionTokens": 76,
+            "totalTokens": 2644
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "scam-07": {
+      "textSha256": "7e4d5ec344c91cde",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 825,
+          "usage": {
+            "promptTokens": 2575,
+            "completionTokens": 60,
+            "totalTokens": 2635
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "scam-08": {
+      "textSha256": "f221c880e1115476",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 862,
+          "usage": {
+            "promptTokens": 2582,
+            "completionTokens": 64,
+            "totalTokens": 2646
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "scam-09": {
+      "textSha256": "6319c77de5b263e4",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 899,
+          "usage": {
+            "promptTokens": 2589,
+            "completionTokens": 68,
+            "totalTokens": 2657
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "scam-10": {
+      "textSha256": "fc8e831ca6fa6f0f",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "model": "handmade-replay",
+          "latencyMs": 936,
+          "usage": {
+            "promptTokens": 2596,
+            "completionTokens": 72,
+            "totalTokens": 2668
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "spam-01": {
+      "textSha256": "3a82d88a8f1d48df",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 973,
+          "usage": {
+            "promptTokens": 2603,
+            "completionTokens": 76,
+            "totalTokens": 2679
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "spam-02": {
+      "textSha256": "86701690f5f4dd1d",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 1010,
+          "usage": {
+            "promptTokens": 2610,
+            "completionTokens": 60,
+            "totalTokens": 2670
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "spam-03": {
+      "textSha256": "f71b250d5ccd3cb3",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "model": "handmade-replay",
+          "latencyMs": 1047,
+          "usage": {
+            "promptTokens": 2617,
+            "completionTokens": 64,
+            "totalTokens": 2681
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "spam-04": {
+      "textSha256": "17f90132102a4e0b",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 1084,
+          "usage": {
+            "promptTokens": 2624,
+            "completionTokens": 68,
+            "totalTokens": 2692
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "spam-05": {
+      "textSha256": "80b8c65a943f5651",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.6,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 521,
+          "usage": {
+            "promptTokens": 2631,
+            "completionTokens": 72,
+            "totalTokens": 2703
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "spam-06": {
+      "textSha256": "03b2131246ed46b1",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "model": "handmade-replay",
+          "latencyMs": 558,
+          "usage": {
+            "promptTokens": 2638,
+            "completionTokens": 76,
+            "totalTokens": 2714
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "spam-07": {
+      "textSha256": "68812cc5ffa799ff",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 595,
+          "usage": {
+            "promptTokens": 2645,
+            "completionTokens": 60,
+            "totalTokens": 2705
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "spam-08": {
+      "textSha256": "2b5604e792d8afef",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 632,
+          "usage": {
+            "promptTokens": 2652,
+            "completionTokens": 64,
+            "totalTokens": 2716
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "abuse-01": {
+      "textSha256": "7439461353fcd27e",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"ABUSIVE_TOXIC\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "model": "handmade-replay",
+          "latencyMs": 669,
+          "usage": {
+            "promptTokens": 2659,
+            "completionTokens": 68,
+            "totalTokens": 2727
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "abuse-02": {
+      "textSha256": "eba66eec4e23c3c4",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"ABUSIVE_TOXIC\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 706,
+          "usage": {
+            "promptTokens": 2666,
+            "completionTokens": 72,
+            "totalTokens": 2738
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "abuse-03": {
+      "textSha256": "198330cf8a4d9243",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"ABUSIVE_TOXIC\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 743,
+          "usage": {
+            "promptTokens": 2673,
+            "completionTokens": 76,
+            "totalTokens": 2749
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "abuse-04": {
+      "textSha256": "00180c16f8ac0edd",
+      "calls": [
+        {
+          "content": "{\"category\":\"RUDE\",\"confidence_score\":0.9}",
+          "model": "handmade-replay",
+          "latencyMs": 780,
+          "usage": {
+            "promptTokens": 2680,
+            "completionTokens": 60,
+            "totalTokens": 2740
+          },
+          "finishReason": "stop"
+        },
+        {
+          "content": "{\"category\":\"RUDE\",\"confidence_score\":0.9}",
+          "model": "handmade-replay",
+          "latencyMs": 780,
+          "usage": {
+            "promptTokens": 2680,
+            "completionTokens": 60,
+            "totalTokens": 2740
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "abuse-05": {
+      "textSha256": "1259123684cd8847",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"ABUSIVE_TOXIC\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "model": "handmade-replay",
+          "latencyMs": 817,
+          "usage": {
+            "promptTokens": 2687,
+            "completionTokens": 64,
+            "totalTokens": 2751
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "abuse-06": {
+      "textSha256": "9a13a63a61b14cd0",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"ABUSIVE_TOXIC\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 854,
+          "usage": {
+            "promptTokens": 2694,
+            "completionTokens": 68,
+            "totalTokens": 2762
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "abuse-07": {
+      "textSha256": "de66e1bb52987be6",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"ABUSIVE_TOXIC\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 891,
+          "usage": {
+            "promptTokens": 2701,
+            "completionTokens": 72,
+            "totalTokens": 2773
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "abuse-08": {
+      "textSha256": "fb3ee692d491116f",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"ABUSIVE_TOXIC\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "model": "handmade-replay",
+          "latencyMs": 928,
+          "usage": {
+            "promptTokens": 2708,
+            "completionTokens": 76,
+            "totalTokens": 2784
+          },
+          "finishReason": "stop"
+        }
+      ]
+    }
+  }
+}
