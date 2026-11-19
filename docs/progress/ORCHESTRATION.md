@@ -7,10 +7,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.)
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #6 (2026-11-19) · rows this session: 0 · estimate: 60k
+- Session: #6 (2026-11-19) · rows this session: 1 · estimate: 75k
 
 ## State
-dispatched M5-PLAN decisions (2026-11-19) · commit: "docs(progress): record module 5 decisions (M5-PLAN)"
+verified M5-PLAN decisions
 
 ## Resume
 `/orchestration --continue`
@@ -129,4 +129,4 @@ Tests to write (Vitest, stubbed `fetch`, **no live call**): env resolver (defaul
 - 2026-11-19 M4-GATE ✅ 2f82d8e · backend 1032 unit / 494 e2e · admin 246 · client 399 · Playwright 2/2 · module 4 gate passed: 401 on bad/missing signature, signed delivery 200 in 7.8 ms with one job for 3 deliveries (live, throwaway-secret container), real queue counts on admin; no fix
 - 2026-11-19 M4-T13 ✅ 14da883 · bash -n ✅ · shellcheck n/a · --check exit 0 · live tunnel: public /api/health/live 200, verify/unsigned POST/deauthorize 503 (no META_* in compose), share stopped · backend/admin/client untouched · `scripts/tunnel.sh` (zrok2 `public:shield-comment-dev` created + reserved) + Meta webhook setup guide with live-smoke checklist + root README; live Meta smoke still skipped (D12)
 - 2026-11-19 M5-PLAN ✅ 7448646 · docs only · Module 5 planned: 11 rows + GATE (M5-T1…T11), decisions D1–D14 open; next prompt = M5-T1 (PRE-CHECK D1, D2)
-- 2026-11-19 M5-PLAN decisions ✅ · docs only · Module 5 D1–D14 answered + D15 credits + D16 AI provider settings; rows re-planned to M5-T1…T17 + GATE; next prompt = M5-T1
+- 2026-11-19 M5-PLAN decisions ✅ c4e11b6 · docs only · Module 5 D1–D14 answered + D15 credits + D16 AI provider settings; rows re-planned to M5-T1…T17 + GATE; next prompt = M5-T1
