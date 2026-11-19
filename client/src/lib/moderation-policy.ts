@@ -18,13 +18,6 @@ export type AiContextLevel = (typeof AI_CONTEXT_LEVELS)[number]
 
 export const DEFAULT_AI_CONTEXT_LEVEL: AiContextLevel = 'comment_only'
 
-/** D8/D15 credits per analysed comment (`CONTEXT_LEVEL_CREDITS`; a post without a caption costs 1). */
-export const AI_CONTEXT_LEVEL_CREDITS: Readonly<Record<AiContextLevel, number>> = {
-  comment_only: 1,
-  page_name: 1,
-  post_caption: 2,
-}
-
 export type ModerationMode = 'AUTO' | 'REVIEW'
 export type ModerationCategory = 'SAFE_INQUIRY' | 'COMPETITOR_POACH' | 'SCAM_PHISHING' | 'SPAM_IRRELEVANT' | 'ABUSIVE_TOXIC'
 export type PolicyAction = 'NONE' | 'HIDE' | 'DELETE'

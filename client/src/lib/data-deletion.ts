@@ -122,3 +122,17 @@ export function formatDhakaDateTime(iso: string, language: Language): string {
   if (language === 'bn') return `${toBanglaDigits(`${day} ${BN_MONTHS[month]} ${year}, ${clock}`)} (বাংলাদেশ সময়)`
   return `${day} ${EN_MONTHS[month]} ${year}, ${clock} (Bangladesh time)`
 }
+
+/**
+ * `15 Dec` / `১৫ ডিসেম্বর` (Bangladesh day, no year). Same hand-built rule as `formatDhakaDateTime`;
+ * also used by the plan status banner (PW-T8).
+ */
+export function formatDhakaDayMonth(iso: string, language: Language): string {
+  const time = Date.parse(iso)
+  if (Number.isNaN(time)) return iso
+  const dhaka = new Date(time + DHAKA_OFFSET_MS)
+  const day = dhaka.getUTCDate()
+  const month = dhaka.getUTCMonth()
+  if (language === 'bn') return `${toBanglaDigits(String(day))} ${BN_MONTHS[month]}`
+  return `${day} ${EN_MONTHS[month]}`
+}

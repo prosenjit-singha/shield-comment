@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { AppTopBar } from '@/components/app-shell/app-top-bar'
 import { ImpersonationBanner } from '@/components/app-shell/impersonation-banner'
 import { ImpersonationEnded } from '@/components/app-shell/impersonation-ended'
+import { PlanStatusBanner } from '@/components/app-shell/plan-banner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useLanguage } from '@/hooks/use-language'
 import { authErrorMessage, type AuthError } from '@/lib/auth-errors'
@@ -46,6 +47,7 @@ function AppLayout() {
   const navigate = useNavigate()
   const { content } = useLanguage()
   const impersonated = Boolean(session.session.impersonatedBy)
+  const workspaceId = session.session.activeOrganizationId
   const [impersonationEnded, setImpersonationEnded] = useState(false)
 
   const signOut = useMutation<void, AuthError>({
@@ -83,6 +85,8 @@ function AppLayout() {
         onSignOut={impersonated ? undefined : () => signOut.mutate()}
         signingOut={signOut.isPending}
       />
+      {/* PW-T8: trial / paused / limit banner from the billing summary (none while loading or on failure). */}
+      {workspaceId ? <PlanStatusBanner workspaceId={workspaceId} /> : null}
       {signOut.error && !signOut.isPending ? (
         <div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6">
           <div

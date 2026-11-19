@@ -12,6 +12,7 @@ import {
   policyApi,
   renderAppRoute,
   stubAppGlobals,
+  summaryApi,
 } from '@/test/app-routes'
 import { callsTo, fetchMock, json, mockApi } from '@/test/auth-routes'
 
@@ -32,25 +33,25 @@ const copy = {
   en: {
     title: 'AI analysis',
     intro: 'The commenter’s name and profile are never sent.',
+    tradeOff: 'Sending more gives a better filter but shares more of your data.',
+    countsOnce: 'Each comment counts once toward your monthly comment limit, whatever you choose.',
+    credit: /credit/i,
     options: {
       comment_only: {
         label: 'Comment only',
-        cost: '1 credit per comment',
         detail: 'Pro: sends the least data. Con: the AI reads only the comment text, so it can miss context.',
       },
       page_name: {
         label: '+ Page name',
-        cost: '1 credit per comment',
         detail:
-          'Pro: better at catching competitors who try to pull your buyers away, at the same cost. Con: your Page name is sent too.',
+          'Pro: better at catching competitors who try to pull your buyers away. Con: your Page name is sent too.',
       },
       post_caption: {
         label: '+ Post caption',
-        cost: '2 credits per comment',
         detail:
-          'Pro: the most context, so the best filter. Con: costs 2 credits per comment, and your Page name and the post caption are sent too.',
+          'Pro: the most context, so the best filter. Con: your Page name and the post caption are sent too.',
       },
-    } satisfies Record<AiContextLevel, { label: string; cost: string; detail: string }>,
+    } satisfies Record<AiContextLevel, { label: string; detail: string }>,
     default: 'Default',
     save: 'Save',
     saving: 'Saving…',
@@ -64,25 +65,25 @@ const copy = {
   bn: {
     title: 'AI বিশ্লেষণ',
     intro: 'কমেন্টকারীর নাম ও প্রোফাইল কখনো পাঠানো হয় না।',
+    tradeOff: 'বেশি তথ্য পাঠালে ফিল্টার আরও ভালো হয়, তবে আপনার বেশি তথ্য শেয়ার হয়।',
+    countsOnce: 'যেটাই বেছে নিন, প্রতিটি কমেন্ট আপনার মাসিক কমেন্ট সীমায় একবারই গোনা হয়।',
+    credit: /ক্রেডিট|credit/i,
     options: {
       comment_only: {
         label: 'শুধু কমেন্ট',
-        cost: 'প্রতি কমেন্টে ১ ক্রেডিট',
         detail: 'সুবিধা: সবচেয়ে কম তথ্য পাঠানো হয়। অসুবিধা: AI শুধু কমেন্টের লেখা পড়ে, তাই প্রসঙ্গ বুঝতে ভুল হতে পারে।',
       },
       page_name: {
         label: '+ পেজের নাম',
-        cost: 'প্রতি কমেন্টে ১ ক্রেডিট',
         detail:
-          'সুবিধা: একই খরচে আপনার ক্রেতা টেনে নিতে চাওয়া প্রতিযোগীদের আরও ভালোভাবে ধরে। অসুবিধা: আপনার পেজের নামও পাঠানো হয়।',
+          'সুবিধা: আপনার ক্রেতা টেনে নিতে চাওয়া প্রতিযোগীদের আরও ভালোভাবে ধরে। অসুবিধা: আপনার পেজের নামও পাঠানো হয়।',
       },
       post_caption: {
         label: '+ পোস্টের ক্যাপশন',
-        cost: 'প্রতি কমেন্টে ২ ক্রেডিট',
         detail:
-          'সুবিধা: সবচেয়ে বেশি প্রসঙ্গ, তাই সবচেয়ে ভালো ফিল্টার। অসুবিধা: প্রতি কমেন্টে ২ ক্রেডিট লাগে, আর আপনার পেজের নাম ও পোস্টের ক্যাপশনও পাঠানো হয়।',
+          'সুবিধা: সবচেয়ে বেশি প্রসঙ্গ, তাই সবচেয়ে ভালো ফিল্টার। অসুবিধা: আপনার পেজের নাম ও পোস্টের ক্যাপশনও পাঠানো হয়।',
       },
-    } satisfies Record<AiContextLevel, { label: string; cost: string; detail: string }>,
+    } satisfies Record<AiContextLevel, { label: string; detail: string }>,
     default: 'ডিফল্ট',
     save: 'সেভ করুন',
     saving: 'সেভ হচ্ছে…',
@@ -116,12 +117,17 @@ describe.each(['en', 'bn'] as const)('/pages AI analysis card (%s)', (language) 
   const radio = (level: AiContextLevel) => screen.findByRole('radio', { name: t.options[level].label })
   const saveButton = () => screen.getByRole('button', { name: t.save })
 
-  it('shows the 3 options with label, pro/con and credit cost; the default is selected and Save is off', async () => {
+  it('shows the 3 options with label and data trade-off (no credit costs); the default is selected and Save is off', async () => {
     mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...pagesApi([page()]) })
     renderAppRoute('/pages', language)
 
     const region = await card()
     expect(region.textContent).toContain(t.intro)
+    expect(region.textContent).toContain(t.tradeOff)
+    expect(region.textContent).toContain(t.countsOnce)
+    // PW-D1: every level counts 1 comment, so no credit cost anywhere on the card.
+    expect(region.textContent).not.toMatch(t.credit)
+    expect(region.querySelector('[data-credits]')).toBeNull()
     // Below the Pages list.
     const list = screen.getByRole('list', { name: /Your Pages|আপনার পেজসমূহ/ })
     expect(list.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -131,14 +137,13 @@ describe.each(['en', 'bn'] as const)('/pages AI analysis card (%s)', (language) 
     for (const [index, level] of LEVELS.entries()) {
       const input = await radio(level)
       expect(input).toBe(radios[index])
-      // The accessible description carries the cost + the one-line pro/con.
+      // The accessible description is the one-line pro/con.
       const description = (input.getAttribute('aria-describedby') ?? '')
         .split(' ')
         .map((id) => document.getElementById(id)?.textContent)
         .join(' ')
-      expect(description).toBe(`${t.options[level].cost} ${t.options[level].detail}`)
+      expect(description).toBe(t.options[level].detail)
       const option = region.querySelector(`[data-level="${level}"]`)!
-      expect(option.querySelector('[data-credits]')?.getAttribute('data-credits')).toBe(level === 'post_caption' ? '2' : '1')
       expect(option.textContent?.includes(t.default)).toBe(level === 'comment_only')
     }
     expect(((await radio('comment_only')) as HTMLInputElement).checked).toBe(true)
@@ -331,6 +336,7 @@ describe.each(['en', 'bn'] as const)('/pages AI analysis card (%s)', (language) 
     fetchMock.mockReset()
     mockApi({
       '/api/auth/get-session': () => json(200, SESSION),
+      ...summaryApi(),
       [PAGES]: () => json(403, { statusCode: 403, message: 'Forbidden' }),
     })
     renderAppRoute('/pages', language)

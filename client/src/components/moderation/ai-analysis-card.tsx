@@ -8,9 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useLanguage } from '@/hooks/use-language'
 import { toApiError, type ApiError } from '@/lib/api'
 import type { ContentFn } from '@/lib/auth-errors'
-import { bnNumber } from '@/lib/language'
 import {
-  AI_CONTEXT_LEVEL_CREDITS,
   AI_CONTEXT_LEVELS,
   aiContextLevelMutationKey,
   aiContextLevelSaveErrorMessage,
@@ -42,32 +40,25 @@ function optionCopy(level: AiContextLevel, content: ContentFn): { label: string;
       return {
         label: content('+ Page name', '+ পেজের নাম'),
         detail: content(
-          'Pro: better at catching competitors who try to pull your buyers away, at the same cost. Con: your Page name is sent too.',
-          'সুবিধা: একই খরচে আপনার ক্রেতা টেনে নিতে চাওয়া প্রতিযোগীদের আরও ভালোভাবে ধরে। অসুবিধা: আপনার পেজের নামও পাঠানো হয়।',
+          'Pro: better at catching competitors who try to pull your buyers away. Con: your Page name is sent too.',
+          'সুবিধা: আপনার ক্রেতা টেনে নিতে চাওয়া প্রতিযোগীদের আরও ভালোভাবে ধরে। অসুবিধা: আপনার পেজের নামও পাঠানো হয়।',
         ),
       }
     case 'post_caption':
       return {
         label: content('+ Post caption', '+ পোস্টের ক্যাপশন'),
         detail: content(
-          'Pro: the most context, so the best filter. Con: costs 2 credits per comment, and your Page name and the post caption are sent too.',
-          'সুবিধা: সবচেয়ে বেশি প্রসঙ্গ, তাই সবচেয়ে ভালো ফিল্টার। অসুবিধা: প্রতি কমেন্টে ২ ক্রেডিট লাগে, আর আপনার পেজের নাম ও পোস্টের ক্যাপশনও পাঠানো হয়।',
+          'Pro: the most context, so the best filter. Con: your Page name and the post caption are sent too.',
+          'সুবিধা: সবচেয়ে বেশি প্রসঙ্গ, তাই সবচেয়ে ভালো ফিল্টার। অসুবিধা: আপনার পেজের নাম ও পোস্টের ক্যাপশনও পাঠানো হয়।',
         ),
       }
   }
 }
 
-function creditCost(level: AiContextLevel, content: ContentFn): string {
-  const credits = AI_CONTEXT_LEVEL_CREDITS[level]
-  return content(
-    `${credits} ${credits === 1 ? 'credit' : 'credits'} per comment`,
-    `প্রতি কমেন্টে ${bnNumber(credits)} ক্রেডিট`,
-  )
-}
-
 /**
  * C6 "AI analysis" card (M5-T15, D8): how much the AI sees per comment, stored as `aiContextLevel` in
- * the workspace moderation policy (D5). Shown on `/pages` once the Pages list loaded (owner/admin;
+ * the workspace moderation policy (D5). Every level counts 1 comment (PW-D1), so the card shows only
+ * the data trade-off (credit costs dropped in PW-T8). Shown on `/pages` once the Pages list loaded (owner/admin;
  * impersonated sessions may change it, like the Page toggle). Save sends `{ aiContextLevel }` only
  * when the choice differs from the saved one, then writes the answer into the policy cache.
  */
@@ -108,8 +99,8 @@ export function AiAnalysisCard({ workspaceId }: { workspaceId: string }) {
         </CardTitle>
         <CardDescription className="text-pretty">
           {content(
-            'Choose what the AI sees when it checks a comment. Sending more costs more credits but gives a better filter. The commenter’s name and profile are never sent.',
-            'কমেন্ট যাচাইয়ের সময় AI কী কী দেখবে তা বেছে নিন। বেশি তথ্য পাঠালে বেশি ক্রেডিট লাগে, কিন্তু ফিল্টার আরও ভালো হয়। কমেন্টকারীর নাম ও প্রোফাইল কখনো পাঠানো হয় না।',
+            'Choose what the AI sees when it checks a comment. Sending more gives a better filter but shares more of your data. Each comment counts once toward your monthly comment limit, whatever you choose. The commenter’s name and profile are never sent.',
+            'কমেন্ট যাচাইয়ের সময় AI কী কী দেখবে তা বেছে নিন। বেশি তথ্য পাঠালে ফিল্টার আরও ভালো হয়, তবে আপনার বেশি তথ্য শেয়ার হয়। যেটাই বেছে নিন, প্রতিটি কমেন্ট আপনার মাসিক কমেন্ট সীমায় একবারই গোনা হয়। কমেন্টকারীর নাম ও প্রোফাইল কখনো পাঠানো হয় না।',
           )}
         </CardDescription>
       </CardHeader>
@@ -225,7 +216,7 @@ function AiContextOption({
         checked={checked}
         onChange={() => onSelect(level)}
         aria-labelledby={`${id}-label`}
-        aria-describedby={`${id}-cost ${id}-detail`}
+        aria-describedby={`${id}-detail`}
         className="mt-1 size-4 shrink-0 accent-primary"
       />
       <span className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -238,13 +229,6 @@ function AiContextOption({
               {content('Default', 'ডিফল্ট')}
             </span>
           ) : null}
-          <span
-            id={`${id}-cost`}
-            data-credits={AI_CONTEXT_LEVEL_CREDITS[level]}
-            className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
-          >
-            {creditCost(level, content)}
-          </span>
         </span>
         <span id={`${id}-detail`} className="text-sm text-pretty text-muted-foreground">
           {detail}

@@ -13,7 +13,8 @@ import { languageFromCookieString, type Language } from '@/lib/language'
 import { createQueryClient } from '@/lib/query-client'
 import { createLanguageStore, LanguageStoreContext } from '@/stores/language-store'
 import { useUiStore } from '@/stores/ui-store'
-import { callsTo, fetchMock, json, mockApi } from '@/test/auth-routes'
+import { billingSummary, SUMMARY, summaryApi } from '@/test/app-routes'
+import { apiCalls, callsTo, fetchMock, json, mockApi } from '@/test/auth-routes'
 import { Route as AppRoute } from './_app'
 
 // The server-render session function needs the Start compiler; the browser path never calls it.
@@ -34,6 +35,9 @@ const routeTree = rootRoute.addChildren([appRoute.addChildren([dashboardRoute]),
 const USER = { id: 'u1', email: 'owner@shop.bd', name: 'Rahim', emailVerified: false }
 const SESSION = { session: { id: 's1', userId: 'u1', impersonatedBy: null }, user: USER }
 const IMPERSONATED = { session: { id: 's2', userId: 'u1', impersonatedBy: 'admin-1' }, user: USER }
+/** With an active workspace: the shell loads its billing summary (PW-T8 banner). */
+const IN_WORKSPACE = { session: { ...SESSION.session, activeOrganizationId: 'w1' }, user: USER }
+const IMPERSONATED_IN_WORKSPACE = { session: { ...IMPERSONATED.session, activeOrganizationId: 'w1' }, user: USER }
 
 const copy = {
   en: {
@@ -298,6 +302,169 @@ describe('_app shell', () => {
       expect(callsTo('/api/auth/sign-out')).toHaveLength(2)
       expect(queryClient.getQueryData(['workspace', 'stats'])).toBeUndefined()
       await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    })
+  })
+})
+
+describe('plan status banner (PW-T8)', () => {
+  // 20 Nov 2026, 15:00 in Bangladesh.
+  const NOW = new Date('2026-11-20T09:00:00.000Z')
+  const planCopy = {
+    en: {
+      trial5: 'Trial ends in 5 days',
+      trial1: 'Trial ends in 1 day',
+      today: 'Trial ends today',
+      trialBody: 'After that, moderation pauses until you choose a plan.',
+      paused: 'Moderation paused: choose a plan',
+      pausedBody: 'New comments aren’t checked. Your comments stay visible and your Pages stay connected.',
+      limit: 'Comment limit reached',
+      limitBody: 'New comments aren’t checked until your limit resets on 15 Dec.',
+      trialLimitBody: 'You’ve used all the comments in your trial. New comments aren’t checked until you choose a plan.',
+    },
+    bn: {
+      trial5: 'ট্রায়াল শেষ হবে ৫ দিনে',
+      trial1: 'ট্রায়াল শেষ হবে ১ দিনে',
+      today: 'ট্রায়াল আজ শেষ হবে',
+      trialBody: 'এরপর প্ল্যান বেছে না নেওয়া পর্যন্ত মডারেশন বন্ধ থাকবে।',
+      paused: 'মডারেশন বন্ধ আছে: একটি প্ল্যান বেছে নিন',
+      pausedBody: 'নতুন কমেন্ট যাচাই করা হচ্ছে না। আপনার কমেন্টগুলো দেখা যাবে এবং পেজগুলো কানেক্টেড থাকবে।',
+      limit: 'কমেন্টের সীমা শেষ',
+      limitBody: '১৫ ডিসেম্বর সীমা রিসেট না হওয়া পর্যন্ত নতুন কমেন্ট যাচাই করা হবে না।',
+      trialLimitBody: 'ট্রায়ালের সব কমেন্ট ব্যবহার হয়ে গেছে। প্ল্যান বেছে না নেওয়া পর্যন্ত নতুন কমেন্ট যাচাই করা হবে না।',
+    },
+  } as const
+
+  /** A trial ending `days` Bangladesh days from NOW, at 15:00. */
+  const trial = (days: number, comments = { used: 12, limit: 300 }) => {
+    const end = new Date(NOW.getTime() + days * 24 * 60 * 60 * 1000).toISOString()
+    const resetsAt = end // a trial is one wallet period
+    return billingSummary({ status: 'TRIALING', interval: null, trialEndsAt: end, termEndsAt: end, comments: { ...comments, resetsAt } })
+  }
+  const planBanner = () => screen.queryByTestId('plan-banner')
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: NOW })
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  describe.each(['en', 'bn'] as const)('%s', (language) => {
+    const t = planCopy[language]
+
+    it('shows the trial countdown (Bangla digits in bn) as a status', async () => {
+      mockApi({ '/api/auth/get-session': () => json(200, IN_WORKSPACE), ...summaryApi(() => json(200, trial(5))) })
+      renderApp('/dashboard', language)
+
+      const status = await screen.findByRole('status', { name: t.trial5 })
+      expect(status.dataset.kind).toBe('trial')
+      expect(status.textContent).toContain(t.trialBody)
+      expect(status.className).toContain('rounded-2xl')
+      expect(screen.getByText('Dashboard stub')).toBeTruthy()
+      expect(callsTo(SUMMARY)).toHaveLength(1)
+      expect(callsTo(SUMMARY)[0]!.method).toBe('GET')
+    })
+
+    it('says "1 day" (singular) and "ends today" on the last day', async () => {
+      mockApi({ '/api/auth/get-session': () => json(200, IN_WORKSPACE), ...summaryApi(() => json(200, trial(1))) })
+      renderApp('/dashboard', language)
+      expect(await screen.findByRole('status', { name: t.trial1 })).toBeTruthy()
+      cleanup()
+
+      mockApi({ '/api/auth/get-session': () => json(200, IN_WORKSPACE), ...summaryApi(() => json(200, trial(0.1))) })
+      renderApp('/dashboard', language)
+      expect(await screen.findByRole('status', { name: t.today })).toBeTruthy()
+    })
+
+    it.each(['EXPIRED', 'CANCELED', 'NONE'] as const)('shows "moderation paused" for %s', async (status) => {
+      const ended = billingSummary({
+        status,
+        plan: status === 'NONE' ? null : { slug: 'starter', name: 'Starter' },
+        comments: { used: 0, limit: 0, resetsAt: null },
+        workspaces: { used: 1, limit: 0 },
+        pages: { used: 1, limit: 0 },
+      })
+      mockApi({ '/api/auth/get-session': () => json(200, IN_WORKSPACE), ...summaryApi(() => json(200, ended)) })
+      renderApp('/dashboard', language)
+
+      const banner = await screen.findByRole('status', { name: t.paused })
+      expect(banner.dataset.kind).toBe('paused')
+      expect(banner.textContent).toContain(t.pausedBody)
+      // No link target yet (`/billing` = Module 8): plain text.
+      expect(within(banner).queryByRole('link')).toBeNull()
+      expect(screen.getByText('Dashboard stub')).toBeTruthy()
+    })
+
+    it('shows "comment limit reached" with the reset day on a paid plan, and the trial wording on a trial', async () => {
+      const used = billingSummary({ comments: { used: 2500, limit: 2500, resetsAt: '2026-12-14T18:00:00.000Z' } })
+      mockApi({ '/api/auth/get-session': () => json(200, IN_WORKSPACE), ...summaryApi(() => json(200, used)) })
+      renderApp('/dashboard', language)
+      const banner = await screen.findByRole('status', { name: t.limit })
+      expect(banner.dataset.kind).toBe('limit_reached')
+      expect(banner.textContent).toContain(t.limitBody)
+      cleanup()
+
+      mockApi({
+        '/api/auth/get-session': () => json(200, IN_WORKSPACE),
+        ...summaryApi(() => json(200, trial(5, { used: 300, limit: 300 }))),
+      })
+      renderApp('/dashboard', language)
+      expect((await screen.findByRole('status', { name: t.limit })).textContent).toContain(t.trialLimitBody)
+    })
+
+    it('shows nothing for a paid plan with comments left', async () => {
+      mockApi({ '/api/auth/get-session': () => json(200, IN_WORKSPACE), ...summaryApi() })
+      renderApp('/dashboard', language)
+
+      expect(await screen.findByText('Dashboard stub')).toBeTruthy()
+      await waitFor(() => expect(callsTo(SUMMARY)).toHaveLength(1))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(planBanner()).toBeNull()
+      expect(screen.queryByRole('status')).toBeNull()
+    })
+
+    it.each([
+      { name: '500', respond: () => json(500, { message: 'boom' }) },
+      { name: '403', respond: () => json(403, { statusCode: 403, message: 'Forbidden' }) },
+      { name: 'network error', respond: () => Promise.reject(new TypeError('Failed to fetch')) },
+    ])('shows nothing (and keeps the shell) when the summary fails: $name', async ({ respond }) => {
+      mockApi({ '/api/auth/get-session': () => json(200, IN_WORKSPACE), ...summaryApi(respond) })
+      renderApp('/dashboard', language)
+
+      expect(await screen.findByText('Dashboard stub')).toBeTruthy()
+      await waitFor(() => expect(callsTo(SUMMARY)).toHaveLength(1))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(planBanner()).toBeNull()
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('shows nothing while the summary loads, and never blocks the page', async () => {
+      mockApi({ '/api/auth/get-session': () => json(200, IN_WORKSPACE), ...summaryApi(() => new Promise<Response>(() => {})) })
+      renderApp('/dashboard', language)
+
+      expect(await screen.findByText('Dashboard stub')).toBeTruthy()
+      expect(planBanner()).toBeNull()
+    })
+
+    it('does not ask for a summary without an active workspace', async () => {
+      mockApi({ '/api/auth/get-session': () => json(200, SESSION) })
+      renderApp('/dashboard', language)
+
+      expect(await screen.findByText('Dashboard stub')).toBeTruthy()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(planBanner()).toBeNull()
+      expect(apiCalls().map((call) => call.path)).toEqual(['/api/auth/get-session'])
+    })
+
+    it('sits under the impersonation banner when both show', async () => {
+      mockApi({ '/api/auth/get-session': () => json(200, IMPERSONATED_IN_WORKSPACE), ...summaryApi(() => json(200, trial(5))) })
+      renderApp('/dashboard', language)
+
+      const plan = await screen.findByRole('status', { name: t.trial5 })
+      const impersonation = banner()
+      expect(impersonation).toBeTruthy()
+      expect(impersonation!.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(impersonation!.contains(plan)).toBe(false)
     })
   })
 })

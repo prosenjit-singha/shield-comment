@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/api'
 import {
-  AI_CONTEXT_LEVEL_CREDITS,
   AI_CONTEXT_LEVELS,
   aiContextLevelSaveErrorMessage,
   DEFAULT_AI_CONTEXT_LEVEL,
@@ -46,10 +45,10 @@ afterEach(() => {
 })
 
 describe('AI context levels (D8)', () => {
-  it('mirrors the backend levels, default and credit costs', () => {
+  it('mirrors the backend levels and default (no credit costs since PW-D1)', async () => {
     expect(AI_CONTEXT_LEVELS).toEqual(['comment_only', 'page_name', 'post_caption'])
     expect(DEFAULT_AI_CONTEXT_LEVEL).toBe('comment_only')
-    expect(AI_CONTEXT_LEVEL_CREDITS).toEqual({ comment_only: 1, page_name: 1, post_caption: 2 })
+    expect(Object.keys(await import('@/lib/moderation-policy')).some((name) => /credit/i.test(name))).toBe(false)
   })
 
   it('isAiContextLevel accepts only the known levels', () => {

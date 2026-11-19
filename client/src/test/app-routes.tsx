@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-router'
 import { render } from '@testing-library/react'
 import { vi } from 'vitest'
+import type { BillingSummary } from '@/lib/billing-summary'
 import type { Language } from '@/lib/language'
 import type { WorkspaceMetaConnection, WorkspacePage } from '@/lib/meta-pages'
 import type { AiContextLevel, ModerationPolicy } from '@/lib/moderation-policy'
@@ -49,6 +50,7 @@ export const OAUTH_URL = '/api/workspaces/w1/meta/oauth/url'
 export const toggleUrl = (id: string) => `${PAGES}/${id}/toggle`
 export const DISCONNECT = '/api/workspaces/w1/meta/connection'
 export const POLICY = '/api/workspaces/w1/moderation/policy'
+export const SUMMARY = '/api/workspaces/w1/billing/summary'
 export const META_DIALOG = 'https://www.facebook.com/v26.0/dialog/oauth?client_id=1&state=abc'
 
 export function page(overrides: Partial<WorkspacePage> = {}): WorkspacePage {
@@ -102,8 +104,13 @@ export function pagesApi(
       pageLimit: { limit, activeCount: state.filter((item) => item.isActive).length },
       connection: current,
     })
-  // `/pages` also loads the moderation policy once the list loaded (M5-T15 "AI analysis" card).
-  const handlers: Record<string, (init?: RequestInit) => Response | Promise<Response>> = { [PAGES]: list, ...policyApi() }
+  // `/pages` also loads the moderation policy once the list loaded (M5-T15 "AI analysis" card), and the
+  // `_app` shell the billing summary (PW-T8 banner; a paid plan = no banner).
+  const handlers: Record<string, (init?: RequestInit) => Response | Promise<Response>> = {
+    [PAGES]: list,
+    ...policyApi(),
+    ...summaryApi(),
+  }
   const { onDisconnect } = options
   if (onDisconnect) {
     handlers[DISCONNECT] = async () => {
@@ -169,6 +176,32 @@ export function policyApi(level: AiContextLevel = 'comment_only', options: Polic
       const changed = next !== current.aiContextLevel
       current = { ...current, aiContextLevel: next, updatedAt: changed ? '2026-11-19T10:00:00.000Z' : current.updatedAt }
       return json(200, { ...current, changed })
+    },
+  }
+}
+
+/** A billing summary (PW-T6 contract); default = a paid Starter month with comments left (no banner). */
+export function billingSummary(overrides: Partial<BillingSummary> = {}): BillingSummary {
+  return {
+    plan: { slug: 'starter', name: 'Starter' },
+    interval: 'month',
+    status: 'ACTIVE',
+    trialEndsAt: null,
+    termEndsAt: '2026-12-15T18:00:00.000Z',
+    comments: { used: 120, limit: 2500, resetsAt: '2026-12-15T18:00:00.000Z' },
+    workspaces: { used: 1, limit: 1 },
+    pages: { used: 1, limit: 1 },
+    ...overrides,
+  }
+}
+
+/** `GET …/billing/summary` (the `_app` shell banner, PW-T8): answers `respond` (default: `billingSummary()`). */
+export function summaryApi(respond: () => Response | Promise<Response> = () => json(200, billingSummary())) {
+  return {
+    [SUMMARY]: (init?: RequestInit) => {
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method !== 'GET') throw new Error(`Unexpected ${method} ${SUMMARY}`)
+      return respond()
     },
   }
 }

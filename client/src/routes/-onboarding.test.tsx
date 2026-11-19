@@ -13,6 +13,8 @@ import {
   pagesApi,
   renderAppRoute,
   stubAppGlobals,
+  SUMMARY,
+  summaryApi,
   toggleUrl,
 } from '@/test/app-routes'
 import { apiCalls, callsTo, fetchMock, json, mockApi } from '@/test/auth-routes'
@@ -349,6 +351,7 @@ describe.each(['en', 'bn'] as const)('/onboarding (%s)', (language) => {
       let fail = true
       mockApi({
         '/api/auth/get-session': () => json(200, SESSION),
+        ...summaryApi(),
         [PAGES]: () => (fail ? new Response('<html>Bad Gateway</html>', { status: 502 }) : json(200, { items: [page()], pageLimit: { limit: 1, activeCount: 0 } })),
       })
       renderOnboarding('/onboarding', language)
@@ -400,6 +403,7 @@ describe('/dashboard with 0 active Pages', () => {
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeTruthy()
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(history.location.pathname).toBe('/dashboard')
-    expect(apiCalls().map((call) => call.path)).toEqual(['/api/auth/get-session'])
+    // Only the session + the shell's billing summary (PW-T8 banner): no Pages call.
+    expect(apiCalls().map((call) => call.path)).toEqual(['/api/auth/get-session', SUMMARY])
   })
 })

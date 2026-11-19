@@ -8,7 +8,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import { render } from '@testing-library/react'
-import { vi } from 'vitest'
+import { onTestFinished, vi } from 'vitest'
 import type { Language } from '@/lib/language'
 import { createQueryClient } from '@/lib/query-client'
 import { Route as LoginRoute } from '@/routes/login'
@@ -47,12 +47,23 @@ export function json(status: number, body: unknown, headers: Record<string, stri
 /** Gets the `fetch` init (method, body) for paths that answer more than one method. */
 type Handler = (init?: RequestInit) => Response | Promise<Response>
 
-/** Answers by pathname; get-session defaults to "signed out". Unknown paths fail the test loudly. */
+/**
+ * Answers by pathname; get-session defaults to "signed out". An unknown path rejects the fetch, and
+ * because `apiFetch` turns that into a network error (which a screen may quietly handle), the test
+ * also fails when it finishes.
+ */
 export function mockApi(handlers: Record<string, Handler>): void {
+  const unexpected: string[] = []
+  onTestFinished(() => {
+    if (unexpected.length > 0) throw new Error(`Unexpected fetch: ${[...new Set(unexpected)].join(', ')}`)
+  })
   fetchMock.mockImplementation(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost')
     const handler = handlers[url.pathname] ?? (url.pathname === '/api/auth/get-session' ? () => json(200, null) : undefined)
-    if (!handler) throw new Error(`Unexpected fetch ${url.pathname}`)
+    if (!handler) {
+      unexpected.push(url.pathname)
+      throw new Error(`Unexpected fetch ${url.pathname}`)
+    }
     return handler(init)
   })
 }

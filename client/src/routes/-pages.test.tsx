@@ -15,6 +15,8 @@ import {
   pagesApi,
   renderAppRoute,
   stubAppGlobals,
+  summaryApi,
+  policyApi,
   toggleUrl,
 } from '@/test/app-routes'
 import { callsTo, fetchMock, json, mockApi } from '@/test/auth-routes'
@@ -284,6 +286,8 @@ describe.each(['en', 'bn'] as const)('/pages (%s)', (language) => {
       let fail = true
       mockApi({
         '/api/auth/get-session': () => json(200, SESSION),
+        ...policyApi(),
+        ...summaryApi(),
         [PAGES]: () =>
           fail
             ? new Response('<html>Bad Gateway</html>', { status: 502 })
