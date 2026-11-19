@@ -35,4 +35,41 @@ describe('fakeAiGateway', () => {
     expect(fake.pending).toBe(0);
     await expect(fake.isConfigured()).resolves.toBe(true);
   });
+
+  it('throws on an unarmed testConnection call', async () => {
+    const fake = fakeAiGateway().replyWith('chat only');
+    await expect(fake.testConnection()).rejects.toThrow(
+      'Unexpected AiGatewayService.testConnection call',
+    );
+  });
+
+  it('answers each armed connection result exactly once', async () => {
+    const boom = new Error('resolver down');
+    const fake = fakeAiGateway()
+      .connectionResult({
+        ok: true,
+        provider: 'anthropic',
+        model: 'claude-haiku-4-5',
+        latencyMs: 12,
+      })
+      .connectionResult({ ok: false, kind: 'auth', latencyMs: 3 })
+      .connectionResult(boom);
+    expect(fake.pending).toBe(3);
+    await expect(fake.testConnection()).resolves.toMatchObject({
+      ok: true,
+      provider: 'anthropic',
+    });
+    await expect(fake.testConnection()).resolves.toEqual({
+      ok: false,
+      kind: 'auth',
+      latencyMs: 3,
+    });
+    await expect(fake.testConnection()).rejects.toBe(boom);
+    await expect(fake.testConnection()).rejects.toThrow('Unexpected');
+    expect(fake.pending).toBe(0);
+    fake.connectionResult({ ok: false, kind: 'timeout', latencyMs: 1 });
+    fake.reset();
+    expect(fake.pending).toBe(0);
+    expect(fake.testConnection).not.toHaveBeenCalled();
+  });
 });

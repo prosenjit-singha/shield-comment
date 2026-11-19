@@ -4,7 +4,7 @@ import {
   type AiProviderAdapter,
   postJson,
 } from './ai-adapter.js';
-import { AiGatewayError } from './ai-gateway.errors.js';
+import { AiGatewayError, EMPTY_CONTENT_REASON } from './ai-gateway.errors.js';
 import type { AiProvider, AiProviderConfig } from './ai-provider.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -78,11 +78,11 @@ export function parseChatCompletion(
   body: unknown,
   status = 200,
 ): AiAdapterResult {
-  const unexpected = (what: string) =>
+  const unexpected = (what: string, reason?: string) =>
     new AiGatewayError(
       'unexpected_response',
       `AI ${provider} ${status}: ${what}`,
-      { status, provider },
+      { status, provider, reason },
     );
   if (!isRecord(body)) throw unexpected('response is not a JSON object');
   const choice = Array.isArray(body.choices)
@@ -91,7 +91,8 @@ export function parseChatCompletion(
   if (!isRecord(choice)) throw unexpected('no choices in the response');
   const message = isRecord(choice.message) ? choice.message : {};
   const content = extractText(message.content);
-  if (content.trim().length === 0) throw unexpected('empty message content');
+  if (content.trim().length === 0)
+    throw unexpected('empty message content', EMPTY_CONTENT_REASON);
   const usage = isRecord(body.usage) ? body.usage : undefined;
   return {
     model:

@@ -5,10 +5,12 @@ import type { AiProvider } from './ai-provider.js';
  * they are safe to log; provider messages are scrubbed and capped.
  *
  * - `not_configured`: no provider config / no adapter for the provider. Not retried.
- * - `payment_required`: 402, Neon 403 `paid_plan_required`, OpenAI 429 `insufficient_quota`. Not retried.
+ * - `payment_required`: 402 (Anthropic `billing_error`), Neon 403 `paid_plan_required`, OpenAI 429
+ *   `insufficient_quota`, Anthropic 429 `enforced_spend_limit_reached` (spend cap) and 400 "credit
+ *   balance is too low". Not retried.
  * - `auth`: 401, any other 403, Gemini 400 `API_KEY_INVALID`. Not retried.
  * - `rate_limited`: 429 (honour `retryAfterMs`). Retried.
- * - `transient`: 5xx, 408. Retried.
+ * - `transient`: 5xx (incl. Anthropic 529 `overloaded_error`), 408. Retried.
  * - `timeout`: the per-call timeout fired. Retried.
  * - `network`: fetch failed before a response. Retried.
  * - `invalid_request`: 400 / 404 / 422 / other 4xx (unknown model, `response_format` refused,
@@ -26,6 +28,12 @@ export type AiErrorKind =
   | 'network'
   | 'invalid_request'
   | 'unexpected_response';
+
+/**
+ * `reason` of an `unexpected_response` whose 2xx answer had no text (e.g. a reasoning model cut
+ * off by a tiny `max_tokens`). `testConnection` counts it as reachable.
+ */
+export const EMPTY_CONTENT_REASON = 'empty_content';
 
 const RETRYABLE: ReadonlySet<AiErrorKind> = new Set([
   'rate_limited',
@@ -109,16 +117,20 @@ export interface AiErrorBodyDetails {
 /**
  * Reads the provider error body: OpenAI/Neon `{ error: { message, type, code, param,
  * unavailable_reason } }`, Neon `{ message, unavailable_reason }`, Gemini OpenAI-compat
- * `[{ error: { code, message, status, details } }]`.
+ * `[{ error: { code, message, status, details } }]`, Anthropic `{ type: 'error', error: { type,
+ * message, details?: { error_code } } }`.
  */
 export function aiErrorDetails(body: unknown): AiErrorBodyDetails {
   const root = Array.isArray(body) ? (body[0] as unknown) : body;
   if (!isRecord(root)) return {};
   const inner = isRecord(root.error) ? root.error : root;
   const type = str(inner.type) ?? str(inner.status);
+  // Anthropic: `{ type: 'error', error: { type, message, details?: { error_code } } }`.
+  const details = isRecord(inner.details) ? inner.details : {};
   const code =
     str(inner.code) ??
-    (typeof inner.code === 'number' ? String(inner.code) : undefined);
+    (typeof inner.code === 'number' ? String(inner.code) : undefined) ??
+    str(details.error_code);
   const unavailable =
     str(inner.unavailable_reason) ?? str(root.unavailable_reason);
   const reason =
@@ -145,7 +157,15 @@ const PAYMENT_REASONS = new Set([
   'paid_plan_required',
   'insufficient_quota',
   'billing_not_active',
+  // Anthropic: 402 type, and the 429 monthly spend cap (`error.details.error_code`).
+  'billing_error',
+  'enforced_spend_limit_reached',
 ]);
+
+/** Anthropic answers an organization without credits with 400 "Your credit balance is too low…". */
+function isNoCreditBody(body: unknown): boolean {
+  return /credit balance is too low/i.test(aiErrorDetails(body).message ?? '');
+}
 
 /** HTTP status + error body → kind. Pure; shared by every adapter (M5-T2 maps Anthropic onto it). */
 export function aiErrorKind(status: number, body: unknown): AiErrorKind {
@@ -158,6 +178,7 @@ export function aiErrorKind(status: number, body: unknown): AiErrorKind {
   if (status === 429) return paymentTag ? 'payment_required' : 'rate_limited';
   if (status === 408 || status >= 500) return 'transient';
   if (status === 400 && isInvalidApiKeyBody(body)) return 'auth';
+  if (status === 400 && isNoCreditBody(body)) return 'payment_required';
   if (status >= 400) return 'invalid_request';
   return 'unexpected_response';
 }

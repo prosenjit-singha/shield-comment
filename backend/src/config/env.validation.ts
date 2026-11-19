@@ -134,7 +134,7 @@ export class EnvironmentVariables {
   @IsString()
   GEMINI_API_KEY?: string;
 
-  /** Anthropic API key (`AI_PROVIDER=anthropic`; adapter lands in M5-T2). */
+  /** Anthropic API key (`AI_PROVIDER=anthropic`, native Messages API). */
   @IsOptional()
   @IsString()
   ANTHROPIC_API_KEY?: string;

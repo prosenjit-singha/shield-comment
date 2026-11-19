@@ -46,8 +46,8 @@ export interface AiAdapterResult {
 }
 
 /**
- * One wire dialect. M5-T1: `OpenAiCompatibleAdapter` (Neon, OpenAI, Google). M5-T2 adds the
- * Anthropic Messages adapter and registers it in `AiGatewayService`.
+ * One wire dialect: `OpenAiCompatibleAdapter` (Neon, OpenAI, Google) and `AnthropicAdapter`
+ * (native Messages API), registered per provider in `AiGatewayService`.
  */
 export interface AiProviderAdapter {
   chat(

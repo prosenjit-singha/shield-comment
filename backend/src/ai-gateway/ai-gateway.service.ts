@@ -6,9 +6,13 @@ import type {
   ChatMessage,
 } from './ai-adapter.js';
 import {
+  type AiErrorKind,
   AiGatewayError,
   AiGatewayNotConfiguredError,
+  EMPTY_CONTENT_REASON,
+  redactAiSecrets,
 } from './ai-gateway.errors.js';
+import { AnthropicAdapter } from './anthropic.adapter.js';
 import {
   AI_CONFIG_RESOLVER,
   type AiConfigResolver,
@@ -35,6 +39,29 @@ export const DEFAULT_TIMEOUT_MS = 30_000;
  */
 export const MODERATION_TIMEOUT_MS = 15_000;
 
+/** Connection probe (M5-T2, D16 "Test connection"): one tiny fixed call. */
+export const CONNECTION_TEST_TIMEOUT_MS = 10_000;
+export const CONNECTION_TEST_MAX_TOKENS = 16;
+export const CONNECTION_TEST_MESSAGES: readonly ChatMessage[] = [
+  { role: 'user', content: 'Reply with the single word OK.' },
+];
+
+/**
+ * Probe outcome. Never contains the key; `message` is the scrubbed provider message (≤ 300 chars).
+ * `ok: true` = the provider accepted the key + model and answered 2xx (an empty reply cut off by
+ * the tiny `max_tokens` still counts).
+ */
+export type AiConnectionTestResult =
+  | { ok: true; provider: AiProvider; model: string; latencyMs: number }
+  | {
+      ok: false;
+      kind: AiErrorKind;
+      latencyMs: number;
+      provider?: AiProvider;
+      model?: string;
+      message?: string;
+    };
+
 export interface ChatOptions {
   /** Overrides the resolved config's model for this call. */
   model?: string;
@@ -42,7 +69,7 @@ export interface ChatOptions {
   temperature?: number;
   timeoutMs?: number;
   responseFormat?: AiResponseFormat;
-  /** Explicit provider config instead of the resolver (M5-T2 `testConnection`, M5-T6 script). */
+  /** Explicit provider config instead of the resolver (e.g. the M5-T6 golden-suite script). */
   config?: AiProviderConfig;
 }
 
@@ -71,11 +98,11 @@ export class AiGatewayService {
     @Inject(AI_CONFIG_RESOLVER) private readonly resolver: AiConfigResolver,
   ) {
     const openAiCompatible = new OpenAiCompatibleAdapter();
-    // M5-T2 registers `anthropic` here.
     this.adapters = {
       neon: openAiCompatible,
       openai: openAiCompatible,
       google: openAiCompatible,
+      anthropic: new AnthropicAdapter(),
     };
   }
 
@@ -129,5 +156,71 @@ export class AiGatewayService {
       );
       throw failure;
     }
+  }
+
+  /**
+   * "Test connection" probe for any provider: the saved config (resolver) or a draft `config`.
+   * Never throws for provider failures: every `AiGatewayError` becomes `{ ok: false, kind }`.
+   * Logs kind + ms only.
+   */
+  async testConnection(
+    config?: AiProviderConfig,
+  ): Promise<AiConnectionTestResult> {
+    const target = config ?? (await this.resolver.resolve());
+    if (!target) {
+      this.logger.log('connection test failed kind=not_configured ms=0');
+      return { ok: false, kind: 'not_configured', latencyMs: 0 };
+    }
+    const { provider, model } = target;
+    const adapter = this.adapters[provider];
+    if (!adapter) {
+      this.logger.log('connection test failed kind=not_configured ms=0');
+      return {
+        ok: false,
+        kind: 'not_configured',
+        latencyMs: 0,
+        provider,
+        model,
+      };
+    }
+    const started = performance.now();
+    const elapsed = () => Math.max(0, Math.round(performance.now() - started));
+    try {
+      await adapter.chat(target, {
+        model,
+        messages: [...CONNECTION_TEST_MESSAGES],
+        maxTokens: CONNECTION_TEST_MAX_TOKENS,
+        signal: AbortSignal.timeout(CONNECTION_TEST_TIMEOUT_MS),
+      });
+    } catch (error) {
+      const latencyMs = elapsed();
+      const failure =
+        error instanceof AiGatewayError
+          ? error
+          : new AiGatewayError(
+              'unexpected_response',
+              `AI ${provider}: unexpected failure`,
+              { provider },
+            );
+      const reachable =
+        failure.kind === 'unexpected_response' &&
+        failure.reason === EMPTY_CONTENT_REASON;
+      if (!reachable) {
+        this.logger.log(
+          `connection test failed kind=${failure.kind} ms=${latencyMs}`,
+        );
+        return {
+          ok: false,
+          kind: failure.kind,
+          latencyMs,
+          provider,
+          model,
+          message: redactAiSecrets(failure.message, [target.apiKey]),
+        };
+      }
+    }
+    const latencyMs = elapsed();
+    this.logger.log(`connection test ok ms=${latencyMs}`);
+    return { ok: true, provider, model, latencyMs };
   }
 }

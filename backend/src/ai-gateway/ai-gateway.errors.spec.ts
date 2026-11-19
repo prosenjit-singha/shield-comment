@@ -10,6 +10,10 @@ import {
 } from './ai-gateway.errors.js';
 
 const err = (body: Record<string, unknown>) => ({ error: body });
+const ant = (type: string, message: string, extra = {}) => ({
+  type: 'error',
+  error: { type, message, ...extra },
+});
 
 describe('aiErrorKind', () => {
   it.each([
@@ -69,13 +73,35 @@ describe('aiErrorKind', () => {
     [500, undefined, 'transient'],
     [503, 'Service Unavailable', 'transient'],
     [302, undefined, 'unexpected_response'],
+    // Anthropic `{ type: 'error', error: { type, message } }` (M5-T2).
+    [401, ant('authentication_error', 'invalid x-api-key'), 'auth'],
+    [403, ant('permission_error', 'no'), 'auth'],
+    [402, ant('billing_error', 'billing'), 'payment_required'],
+    [
+      400,
+      ant('invalid_request_error', 'Your credit balance is too low to access'),
+      'payment_required',
+    ],
+    [400, ant('invalid_request_error', 'messages: empty'), 'invalid_request'],
+    [404, ant('not_found_error', 'model: x'), 'invalid_request'],
+    [413, ant('request_too_large', 'too big'), 'invalid_request'],
+    [429, ant('rate_limit_error', 'slow'), 'rate_limited'],
+    [
+      429,
+      ant('rate_limit_error', 'cap', {
+        details: { error_code: 'enforced_spend_limit_reached' },
+      }),
+      'payment_required',
+    ],
+    [500, ant('api_error', 'oops'), 'transient'],
+    [529, ant('overloaded_error', 'Overloaded'), 'transient'],
   ] as const)('%i %j → %s', (status, body, kind) => {
     expect(aiErrorKind(status, body)).toBe(kind);
   });
 });
 
 describe('aiErrorDetails', () => {
-  it('reads OpenAI, Neon and Gemini error shapes', () => {
+  it('reads OpenAI, Neon, Gemini and Anthropic error shapes', () => {
     expect(
       aiErrorDetails(
         err({
@@ -109,6 +135,22 @@ describe('aiErrorDetails', () => {
       reason: 'RESOURCE_EXHAUSTED',
       code: '429',
     });
+    expect(
+      aiErrorDetails(
+        ant('rate_limit_error', 'cap', {
+          details: { error_code: 'enforced_spend_limit_reached' },
+        }),
+      ),
+    ).toEqual({
+      message: 'cap',
+      reason: 'enforced_spend_limit_reached',
+      type: 'rate_limit_error',
+      code: 'enforced_spend_limit_reached',
+      param: undefined,
+    });
+    expect(aiErrorDetails(ant('overloaded_error', 'Overloaded'))).toMatchObject(
+      { reason: 'overloaded_error', type: 'overloaded_error' },
+    );
     expect(aiErrorDetails('<html>')).toEqual({});
   });
 });

@@ -187,21 +187,13 @@ describe('AiGatewayService', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('reports anthropic as not_configured until its adapter exists, without a fetch', async () => {
-    const { svc } = makeService(CONFIGS.anthropic);
-    await expect(svc.isConfigured()).resolves.toBe(false);
-    const e = await failure(svc.chat(MESSAGES));
-    expect(e).toMatchObject({
-      kind: 'not_configured',
-      provider: 'anthropic',
-      retryable: false,
-    });
-    expect(e.message).toContain('anthropic');
-    expect(e.message).not.toContain(KEYS.anthropic);
+  it('reports every provider as configured once it has a config (anthropic since M5-T2)', async () => {
+    for (const provider of ['neon', 'openai', 'google', 'anthropic'] as const) {
+      await expect(
+        makeService(CONFIGS[provider]).svc.isConfigured(),
+      ).resolves.toBe(true);
+    }
     expect(fetchMock).not.toHaveBeenCalled();
-    await expect(makeService(CONFIGS.neon).svc.isConfigured()).resolves.toBe(
-      true,
-    );
   });
 
   it('turns empty content into unexpected_response', async () => {
@@ -209,7 +201,11 @@ describe('AiGatewayService', () => {
       jsonResponse(200, { choices: [{ message: { content: '' } }] }),
     );
     const e = await failure(makeService(CONFIGS.neon).svc.chat(MESSAGES));
-    expect(e).toMatchObject({ kind: 'unexpected_response', retryable: false });
+    expect(e).toMatchObject({
+      kind: 'unexpected_response',
+      retryable: false,
+      reason: 'empty_content',
+    });
   });
 
   it('turns a non-JSON 200 body into unexpected_response', async () => {
