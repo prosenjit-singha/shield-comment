@@ -29,6 +29,7 @@ const { content } = useLanguage();
 6. **How It Works (3 Steps):** Connect Page -> Enable Bangla/Banglish AI -> Watch ROAS climb.
 7. **Standardized BDT Promo Pricing (Identical 10-Row Matrix):**
    Benchmarked against [FeedGuardians](https://autoposter.ai/alternatives/feedguardians) and [CommentGuard](https://commentguard.io/pricing/), every card renders promo strikethrough pricing and the **exact same 10-row `PlanFeatureConfig` checklist**:
+   > **Promotions (2026-11-20, TASKS.md section PR):** offers come from **promotions**, not plan badges: the struck price + "50% off" / "৳200 off" (plain text, no badge) come from the best live DISCOUNT; "Start free N-day trial" from a live TRIAL; coupons never show on cards. A plan's own optional badge (e.g. "Popular") and short description are en + bn. **One highlighted card** (strong style + primary button; the others secondary). Until Module 8 checkout the buy button is **"Contact us"** (WhatsApp chat with the admin-set number; hidden when unset). Monthly/Yearly switch with "Save up to N%". The badge strings in the list below are the old launch-offer badges, kept for reference.
    - **Starter:** ~~৳999~~ **৳499/mo** (`50% Launch Offer`)
    - **Growth (Most Popular):** ~~৳2,499~~ **৳1,499/mo** (`40% Off`)
    - **Agency:** ~~৳5,999~~ **৳3,999/mo** (`33% Off`)
