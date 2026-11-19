@@ -8,10 +8,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)").
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #9 (2026-11-19) · rows this session: 0 · estimate: 60k
+- Session: #9 (2026-11-19) · rows this session: 1 · estimate: 75k
 
 ## State
-dispatched PW-PLAN (2026-11-19) · commit: "docs(progress): plan subscriptions, trial and client wallet (PW-PLAN)"
+verified PW-PLAN
 
 ## Resume
 `/orchestration --continue`
@@ -227,4 +227,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-19 M5-T14 ✅ 4fc788d · admin 323 (was 282) · admin UI: `/admin/system` AI moderation card (today / 7 d, cost USD + ৳, failures, per model, unavailable + empty states), dashboard comments real-data tests, clients credits bar (`used / limit`, capped, `null` placeholder)
 - 2026-11-19 M5-T15 ✅ d5299b4 · client 426 (was 399) · client "AI analysis" card on /pages (D8 level via the D5 policy API, en + bn, save only when changed, 403/load-error/retry, impersonated ok)
 - 2026-11-19 M5-T16 🟡 blocked: Neon AI Gateway still refuses for billing (403 → `payment_required`) on `gpt-oss-20b` (`--limit 5` smoke, stopped at item 1) and `gpt-oss-120b` (`--limit 1`); no model ran, nothing recorded or set active, $0 spent; no direct provider keys exist
-- 2026-11-19 PW-PLAN ✅ · docs only · PW section in TASKS.md (PW-D1…D16, 12 rows incl. PW-T1b/PW-T6b splits + PW-T9 manual activation), plan doc approved (+ `trial_comment_limit`), Module 5 D7/D14/D15 superseded, Module 5/8 specs + MEMORY updated; next PW-T1
+- 2026-11-19 PW-PLAN ✅ e7dfc59 · docs only · PW section in TASKS.md (PW-D1…D16, 12 rows incl. PW-T1b/PW-T6b splits + PW-T9 manual activation), plan doc approved (+ `trial_comment_limit`), Module 5 D7/D14/D15 superseded, Module 5/8 specs + MEMORY updated; next PW-T1
