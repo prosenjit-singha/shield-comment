@@ -120,7 +120,8 @@ export function metaReturnNotices(search: MetaReturnSearch, content: ContentFn):
   return notices
 }
 
-function genericFailure(error: ApiError, content: ContentFn): string {
+/** Network / 401 / 5xx / other status sentence shared by the error messages. */
+export function genericFailure(error: ApiError, content: ContentFn): string {
   if (error.isNetwork) {
     return content(
       'Can’t reach the server. Check your connection and try again.',

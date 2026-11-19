@@ -12,6 +12,7 @@ import { MetaDisconnectSection } from '@/components/meta/meta-disconnect'
 import { MetaNotice, MetaReturnNotices, PagesLoadErrorNotice } from '@/components/meta/meta-notice'
 import { InstagramPill, PageLimitPill } from '@/components/meta/page-identity'
 import { PageToggleRow, type PageToggleError } from '@/components/meta/page-toggle-row'
+import { AiAnalysisCard } from '@/components/moderation/ai-analysis-card'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -44,6 +45,7 @@ import {
  * Page token). M4-T11: a banner + Reconnect when the connection is NEEDS_REAUTH / REVOKED (D9), the
  * toggle's 409 `CONNECTION_NEEDS_REAUTH`, and Disconnect with a confirm dialog (D7). Impersonated sessions
  * can't reconnect or disconnect (D5/D7: backend 403) but may toggle; their empty state has no Connect CTA.
+ * M5-T15: the "AI analysis" card (D8 context level) below the list once it loaded.
  */
 export const Route = createFileRoute('/_app/pages')({
   validateSearch: (search: Record<string, unknown>): MetaReturnSearch => validateMetaReturnSearch(search),
@@ -247,6 +249,9 @@ function PagesView({
           </CardContent>
         </Card>
       )}
+
+      {/* M5-T15 (D8): the list is owner/admin-only, so a loaded list means the role fits (impersonated ok). */}
+      {pages.isSuccess ? <AiAnalysisCard workspaceId={workspaceId} /> : null}
 
       {/* D7: owner/admin only. The list itself is owner/admin-only (403 otherwise), so a loaded list means
           the role fits; a 403 anyway (role changed meanwhile) is shown in the dialog. */}

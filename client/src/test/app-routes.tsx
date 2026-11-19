@@ -11,6 +11,7 @@ import { render } from '@testing-library/react'
 import { vi } from 'vitest'
 import type { Language } from '@/lib/language'
 import type { WorkspaceMetaConnection, WorkspacePage } from '@/lib/meta-pages'
+import type { AiContextLevel, ModerationPolicy } from '@/lib/moderation-policy'
 import { createQueryClient } from '@/lib/query-client'
 import { Route as AppRoute } from '@/routes/_app'
 import { Route as DashboardRoute } from '@/routes/_app/dashboard'
@@ -47,6 +48,7 @@ export const PAGES = '/api/workspaces/w1/pages'
 export const OAUTH_URL = '/api/workspaces/w1/meta/oauth/url'
 export const toggleUrl = (id: string) => `${PAGES}/${id}/toggle`
 export const DISCONNECT = '/api/workspaces/w1/meta/connection'
+export const POLICY = '/api/workspaces/w1/moderation/policy'
 export const META_DIALOG = 'https://www.facebook.com/v26.0/dialog/oauth?client_id=1&state=abc'
 
 export function page(overrides: Partial<WorkspacePage> = {}): WorkspacePage {
@@ -100,7 +102,8 @@ export function pagesApi(
       pageLimit: { limit, activeCount: state.filter((item) => item.isActive).length },
       connection: current,
     })
-  const handlers: Record<string, () => Response | Promise<Response>> = { [PAGES]: list }
+  // `/pages` also loads the moderation policy once the list loaded (M5-T15 "AI analysis" card).
+  const handlers: Record<string, (init?: RequestInit) => Response | Promise<Response>> = { [PAGES]: list, ...policyApi() }
   const { onDisconnect } = options
   if (onDisconnect) {
     handlers[DISCONNECT] = async () => {
@@ -120,6 +123,54 @@ export function pagesApi(
     }
   }
   return handlers
+}
+
+export function policy(overrides: Partial<ModerationPolicy> = {}): ModerationPolicy {
+  const rule = (action: 'NONE' | 'HIDE') => ({ action, autoReply: false, replyEn: null, replyBn: null })
+  return {
+    workspaceId: 'w1',
+    mode: 'AUTO',
+    confidenceThreshold: 0.7,
+    aiContextLevel: 'comment_only',
+    categories: {
+      SAFE_INQUIRY: rule('NONE'),
+      COMPETITOR_POACH: rule('HIDE'),
+      SCAM_PHISHING: rule('HIDE'),
+      SPAM_IRRELEVANT: rule('HIDE'),
+      ABUSIVE_TOXIC: rule('HIDE'),
+    },
+    autoReplyAvailable: false,
+    updatedAt: '2026-11-19T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
+export interface PolicyApiOptions {
+  /** Answers the GET instead of the stored policy. */
+  onGet?: () => Response | Promise<Response>
+  /** Answers the PATCH (gets the parsed body) instead of storing it. */
+  onPatch?: (body: unknown) => Response | Promise<Response>
+}
+
+/**
+ * A stateful moderation policy API (M5-T8 contract): GET returns the policy; PATCH `{ aiContextLevel }`
+ * stores it and answers `{ ...policy, changed }`. Any other method fails the test.
+ */
+export function policyApi(level: AiContextLevel = 'comment_only', options: PolicyApiOptions = {}) {
+  let current = policy({ aiContextLevel: level })
+  return {
+    [POLICY]: async (init?: RequestInit) => {
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method === 'GET') return options.onGet ? options.onGet() : json(200, current)
+      if (method !== 'PATCH') throw new Error(`Unexpected ${method} ${POLICY}`)
+      const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
+      if (options.onPatch) return options.onPatch(body)
+      const next = (body as { aiContextLevel: AiContextLevel }).aiContextLevel
+      const changed = next !== current.aiContextLevel
+      current = { ...current, aiContextLevel: next, updatedAt: changed ? '2026-11-19T10:00:00.000Z' : current.updatedAt }
+      return json(200, { ...current, changed })
+    },
+  }
 }
 
 /** jsdom gaps the `_app` shell needs (top-bar theme toggle reads matchMedia; the router scrolls). */

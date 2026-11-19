@@ -44,15 +44,16 @@ export function json(status: number, body: unknown, headers: Record<string, stri
   })
 }
 
-type Handler = () => Response | Promise<Response>
+/** Gets the `fetch` init (method, body) for paths that answer more than one method. */
+type Handler = (init?: RequestInit) => Response | Promise<Response>
 
 /** Answers by pathname; get-session defaults to "signed out". Unknown paths fail the test loudly. */
 export function mockApi(handlers: Record<string, Handler>): void {
-  fetchMock.mockImplementation(async (input) => {
+  fetchMock.mockImplementation(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost')
     const handler = handlers[url.pathname] ?? (url.pathname === '/api/auth/get-session' ? () => json(200, null) : undefined)
     if (!handler) throw new Error(`Unexpected fetch ${url.pathname}`)
-    return handler()
+    return handler(init)
   })
 }
 
