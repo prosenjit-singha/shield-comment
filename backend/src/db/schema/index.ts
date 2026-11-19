@@ -12,3 +12,4 @@ export * from './plan-audit.js';
 export * from './meta.js';
 export * from './comments.js';
 export * from './meta-data-deletion.js';
+export * from './ai-settings.js';

@@ -26,10 +26,12 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 
 /**
  * 5xx `code`s a client may see (opt-in, each one deliberate): the toggle's 502 when Graph
- * `subscribed_apps` fails (M4-T8, D10). Other 5xx never carry `code`; `details` stay 4xx-only.
+ * `subscribed_apps` fails (M4-T8, D10); the AI key save 503 without a token cipher (M5-T3). Other
+ * 5xx never carry `code`; `details` stay 4xx-only.
  */
 export const PUBLIC_SERVER_ERROR_CODES: ReadonlySet<string> = new Set([
   'META_SUBSCRIBE_FAILED',
+  'KEY_ENCRYPTION_NOT_CONFIGURED',
 ]);
 
 /**

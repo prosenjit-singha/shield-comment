@@ -8,6 +8,7 @@ import type { BetterAuth } from '../../src/auth/better-auth.js';
 import { ensureSuperAdmin } from '../../src/auth/super-admin.js';
 import type { Database } from '../../src/db/database.js';
 import {
+  aiSettingsAuditLogs,
   comments,
   dailyCommentStats,
   impersonationAuditLogs,
@@ -183,10 +184,15 @@ export function createAuthActors(app: INestApplication<App>) {
     ];
     if (statusRefs.length)
       await db.delete(workspaceStatusAuditLogs).where(or(...statusRefs));
-    if (userIds.length)
+    if (userIds.length) {
       await db
         .delete(planAuditLogs)
         .where(inArray(planAuditLogs.adminId, userIds));
+      // AI settings audit (M5-T3): actor FK restrict. Settings/key rows use `set null`.
+      await db
+        .delete(aiSettingsAuditLogs)
+        .where(inArray(aiSettingsAuditLogs.adminId, userIds));
+    }
     if (workspaceIds.length) {
       // Webhook rows (M4-T2) reference workspaces (restrict) and Pages (comments: set null).
       await db

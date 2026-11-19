@@ -35,7 +35,10 @@ export function aiConfigFromEnv(
   return { provider, model, apiKey, baseUrl: DEFAULT_AI_BASE_URLS[provider] };
 }
 
-/** Env-only `AiConfigResolver` (M5-T1). M5-T3 keeps it as the fallback of the DB resolver. */
+/**
+ * Env-only `AiConfigResolver` (M5-T1). Since M5-T3 the app uses `DbAiConfigResolver` (DB → env per
+ * field); this one stays for tooling that runs without a database.
+ */
 @Injectable()
 export class EnvAiConfigResolver implements AiConfigResolver {
   private readonly config: AiProviderConfig | null;

@@ -6,6 +6,7 @@ import { AiGatewayModule } from '../ai-gateway/ai-gateway.module.js';
 import { AiGatewayService } from '../ai-gateway/ai-gateway.service.js';
 import { relaxHappyEyeballsTimeout } from '../common/net/happy-eyeballs.js';
 import { validateEnv } from '../config/env.validation.js';
+import { DbModule } from '../db/db.module.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { StorageService } from '../storage/storage.service.js';
 
@@ -17,6 +18,8 @@ import { StorageService } from '../storage/storage.service.js';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
+    // The AI config resolver reads the admin settings (M5-T3) before falling back to env.
+    DbModule,
     StorageModule,
     AiGatewayModule,
   ],

@@ -13,8 +13,12 @@ const ALGORITHM = 'aes-256-gcm';
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 
-/** What a token is for. Extend when a new encrypted column appears. */
-export type TokenPurpose = 'meta_user_token' | 'meta_page_token';
+/**
+ * What a token is for. Extend when a new encrypted column appears. `ai_provider_key` (M5-T3) is a
+ * platform secret: its context uses the workspace part `platform` (see `aiProviderKeyContext`).
+ */
+export type TokenPurpose =
+  'meta_user_token' | 'meta_page_token' | 'ai_provider_key';
 
 /**
  * AAD context = purpose + workspace + subject (FB user id / Page id). A ciphertext

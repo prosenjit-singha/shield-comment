@@ -45,8 +45,8 @@ export const DEFAULT_AI_BASE_URLS: Readonly<
 };
 
 /**
- * The only place that reads LLM config. M5-T1 ships `EnvAiConfigResolver`; M5-T3 swaps in a DB
- * resolver (admin settings, keys encrypted) that falls back to env.
+ * The only place that reads LLM config. The app binds `DbAiConfigResolver` (M5-T3: admin settings,
+ * keys encrypted, `.env` fallback per field); `EnvAiConfigResolver` (M5-T1) is env-only.
  * `null` = the active provider has no key (or, for Neon, no base URL): calls fail `not_configured`.
  */
 export interface AiConfigResolver {
