@@ -8,8 +8,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { normalizeFeatureConfig } from '../admin/plan-rules.js';
 import type { Database } from '../db/database.js';
+import {
+  findLiveSubscription,
+  type LiveSubscription,
+} from '../wallet/live-subscription.queries.js';
 import {
   PAGE_TOGGLE_ERROR_CODES,
   type TogglePageResponse,
@@ -20,26 +23,49 @@ import {
 import { findWorkspacePageToken } from './page-subscription.queries.js';
 import { PageSubscriptionService } from './page-subscription.service.js';
 import {
-  countActivePages,
-  findPlanFeatureConfig,
+  countPooledActivePages,
+  findWorkspaceBilling,
   findWorkspaceConnection,
   findWorkspacePage,
-  findWorkspacePlanId,
   listWorkspacePages,
+  lockBillingAccount,
   type PagesExecutor,
   setPageActive,
 } from './social-pages.queries.js';
 
 /**
- * `connectedPages` from a plan's raw `feature_config` (D10). A missing plan row (e.g. no Free
- * plan seeded) or a malformed value gives 0: activation fails closed rather than unlimited.
+ * `limits.connectedPages` of the live plan (PW-T5: pooled per billing account, PW-D11). No live
+ * plan = 0 (PW-D7: no Free fallback); the plan's config is already normalised (a malformed value
+ * is 0, so activation fails closed rather than unlimited).
  */
-export function connectedPagesLimit(featureConfig: unknown): number {
-  if (featureConfig === undefined || featureConfig === null) return 0;
-  return normalizeFeatureConfig(featureConfig).limits.connectedPages;
+export function connectedPagesLimit(
+  live: Pick<LiveSubscription, 'plan'> | null,
+): number {
+  return live?.plan.featureConfig.limits.connectedPages ?? 0;
 }
 
-/** 409 when one more active Page would exceed the limit (an over-limit workspace can only switch off). */
+/**
+ * 409 `NO_ACTIVE_PLAN` (PW-T5, PW-D9 + the confirmed PW-PLAN reading) when the workspace's account
+ * has no live plan (no account, trial/term over): switching **on** is refused, off always works.
+ */
+export function assertLivePlan(
+  live: LiveSubscription | null,
+): asserts live is LiveSubscription {
+  if (!live) throw noActivePlan();
+}
+
+const noActivePlan = () =>
+  new ConflictException({
+    message:
+      'Your plan has ended, so pages can’t be switched on. Choose a plan to turn protection back on.',
+    error: 'Conflict',
+    code: PAGE_TOGGLE_ERROR_CODES.noActivePlan,
+  });
+
+/**
+ * 409 when one more active Page would exceed the limit (an over-limit account can only switch
+ * off). `activeCount` is pooled across the account's workspaces (PW-T5).
+ */
 export function assertCanActivate(usage: WorkspacePageLimit): void {
   if (usage.activeCount >= usage.limit) {
     throw new ConflictException({
@@ -93,20 +119,21 @@ export class SocialPagesService {
   ) {}
 
   /**
-   * The workspace's Pages (no tokens) + its `connectedPages` limit and active count + the Meta
-   * connection status (M4-T9, D9; `null` = not connected).
+   * The workspace's Pages (no tokens) + the account's pooled `connectedPages` usage (PW-T5:
+   * `limit` of the live plan, 0 without one; `activeCount` across all the account's workspaces) +
+   * the Meta connection status (M4-T9, D9; `null` = not connected).
    */
   async list(workspaceId: string): Promise<WorkspacePagesResponse> {
-    const [items, limit, connection] = await Promise.all([
+    const [items, usage, connection] = await Promise.all([
       listWorkspacePages(this.db, workspaceId),
-      this.pageLimit(this.db, workspaceId),
+      this.pageUsage(this.db, workspaceId),
       findWorkspaceConnection(this.db, workspaceId),
     ]);
     return {
       items,
       pageLimit: {
-        limit,
-        activeCount: items.filter((page) => page.isActive).length,
+        limit: connectedPagesLimit(usage.live),
+        activeCount: usage.activeCount,
       },
       connection: connection ?? null,
     };
@@ -117,7 +144,8 @@ export class SocialPagesService {
    *
    * **On** (M4-T8, D10): pre-checks that need no Graph call (Page of this workspace, already on =
    * no-op without Graph, connection `ACTIVE` (M4-T9, D9: else 409 `CONNECTION_NEEDS_REAUTH`), has
-   * a token, under the limit), Meta + cipher configured (else 503),
+   * a token, a live plan (PW-T5: else 409 `NO_ACTIVE_PLAN`), under the account's pooled limit),
+   * Meta + cipher configured (else 503),
    * decrypt the Page token, `POST /{page-id}/subscribed_apps` **outside** any transaction. Graph
    * failure → 502 `META_SUBSCRIBE_FAILED`, nothing written (a `token_invalid` also marks the
    * connection NEEDS_REAUTH); an undecryptable token → 409 `PAGE_TOKEN_MISSING` (reconnect). Then
@@ -145,9 +173,11 @@ export class SocialPagesService {
     if (current.isActive) return { page: current, changed: false };
     assertConnectionActive(await findWorkspaceConnection(this.db, workspaceId));
     if (!current.hasToken) throw tokenMissing();
+    const usage = await this.pageUsage(this.db, workspaceId);
+    assertLivePlan(usage.live);
     assertCanActivate({
-      limit: await this.pageLimit(this.db, workspaceId),
-      activeCount: await countActivePages(this.db, workspaceId),
+      limit: connectedPagesLimit(usage.live),
+      activeCount: usage.activeCount,
     });
     if (!this.subscriptions.configured) {
       throw new ServiceUnavailableException(
@@ -194,9 +224,11 @@ export class SocialPagesService {
    * 2. `FOR UPDATE` on the Page row, scoped by `workspace_id` + `id` (another workspace's id → 404);
    * 3. same value → no-op (`changed: false`, no UPDATE, `updated_at` kept);
    * 4. activating: connection not `ACTIVE` (read under the workspace lock) → 409
-   *    `CONNECTION_NEEDS_REAUTH` (M4-T9); no stored token → 409 `PAGE_TOKEN_MISSING`; active count
-   *    ≥ plan limit → 409 `PAGE_LIMIT_REACHED` with `details { limit, activeCount }`.
-   *    Deactivating is always allowed (also while NEEDS_REAUTH/REVOKED).
+   *    `CONNECTION_NEEDS_REAUTH` (M4-T9); no stored token → 409 `PAGE_TOKEN_MISSING`; no billing
+   *    account or no live plan → 409 `NO_ACTIVE_PLAN` (PW-T5); else `FOR NO KEY UPDATE` on the
+   *    billing account row (activations of all its workspaces serialise) and the pooled active
+   *    count ≥ the plan limit → 409 `PAGE_LIMIT_REACHED` with `details { limit, activeCount }`.
+   *    Deactivating is always allowed (also while NEEDS_REAUTH/REVOKED or without a plan).
    */
   private toggleInTx(
     workspaceId: string,
@@ -204,7 +236,7 @@ export class SocialPagesService {
     isActive: boolean,
   ): Promise<TogglePageResponse> {
     return this.db.transaction(async (tx) => {
-      const workspace = await findWorkspacePlanId(tx, workspaceId, true);
+      const workspace = await findWorkspaceBilling(tx, workspaceId, true);
       if (!workspace) throw pageNotFound();
       const page = await findWorkspacePage(tx, workspaceId, id, true);
       if (!page) throw pageNotFound();
@@ -214,11 +246,18 @@ export class SocialPagesService {
         assertConnectionActive(await findWorkspaceConnection(tx, workspaceId));
         if (!page.hasToken) throw tokenMissing();
         // Sequential: one transaction = one pg client (no concurrent queries on it).
-        const limit = connectedPagesLimit(
-          await findPlanFeatureConfig(tx, workspace.planId),
-        );
-        const activeCount = await countActivePages(tx, workspaceId);
-        assertCanActivate({ limit, activeCount });
+        if (
+          workspace.billingAccountId === null ||
+          !(await lockBillingAccount(tx, workspace.billingAccountId))
+        ) {
+          throw noActivePlan();
+        }
+        const live = await findLiveSubscription(tx, workspaceId);
+        assertLivePlan(live);
+        assertCanActivate({
+          limit: connectedPagesLimit(live),
+          activeCount: await countPooledActivePages(tx, workspaceId),
+        });
       }
 
       const updated = await setPageActive(tx, workspaceId, id, isActive);
@@ -227,14 +266,15 @@ export class SocialPagesService {
     });
   }
 
-  /** `connectedPages` of the workspace's plan, or of the Free plan when it has none (D10). */
-  private async pageLimit(
+  /** The workspace's live plan + the account's pooled active Page count (no locks). */
+  private async pageUsage(
     executor: PagesExecutor,
     workspaceId: string,
-  ): Promise<number> {
-    const workspace = await findWorkspacePlanId(executor, workspaceId);
-    return connectedPagesLimit(
-      await findPlanFeatureConfig(executor, workspace?.planId ?? null),
-    );
+  ): Promise<{ live: LiveSubscription | null; activeCount: number }> {
+    const [live, activeCount] = await Promise.all([
+      findLiveSubscription(executor, workspaceId),
+      countPooledActivePages(executor, workspaceId),
+    ]);
+    return { live, activeCount };
   }
 }

@@ -3,6 +3,7 @@ import { getDrizzleToken } from '@nestjs/drizzle';
 import { AuthModule as BetterAuthModule } from '@thallesp/nestjs-better-auth';
 import type { SecondaryStorage } from 'better-auth';
 import { BillingModule } from '../billing/billing.module.js';
+import { LimitService } from '../billing/limit.service.js';
 import { SubscriptionService } from '../billing/subscription.service.js';
 import {
   NodeEnv,
@@ -23,7 +24,8 @@ import { PasswordService } from './password.service.js';
  * - The integration's `AuthGuard` is the global guard: every route needs a session unless it
  *   (or its controller) has `@Public()` (src/auth/decorators/public.decorator.ts).
  * - `AUTH_SECONDARY_STORAGE` comes from the global RedisModule.
- * - `SubscriptionService` (from `BillingModule`): sign-up trial + workspace links (PW-T3).
+ * - `SubscriptionService` (from `BillingModule`): sign-up trial + workspace links (PW-T3);
+ *   `LimitService`: the `/organization/create` workspace limit (PW-T5).
  * - Client IP (rate limit, session `ipAddress`): `X-Forwarded-For`, else the socket address
  *   (src/auth/client-ip.ts).
  */
@@ -34,12 +36,14 @@ export const AuthModule = BetterAuthModule.forRootAsync({
     ConfigService,
     AUTH_SECONDARY_STORAGE,
     SubscriptionService,
+    LimitService,
   ],
   useFactory: (
     db: Database,
     config: ConfigService<EnvironmentVariables, true>,
     secondaryStorage: SecondaryStorage,
     billing: SubscriptionService,
+    limits: LimitService,
   ) => ({
     auth: createBetterAuth(db, {
       secret: config.get('BETTER_AUTH_SECRET', { infer: true }),
@@ -50,6 +54,7 @@ export const AuthModule = BetterAuthModule.forRootAsync({
       secondaryStorage,
       rateLimit: config.get('NODE_ENV', { infer: true }) !== NodeEnv.Test,
       billing,
+      limits,
     }),
     disableTrustedOriginsCors: true,
     // Fills a missing/unusable X-Forwarded-For with the socket address before Better Auth reads

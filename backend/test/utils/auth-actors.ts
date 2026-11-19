@@ -1,7 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import { AuthService } from '@thallesp/nestjs-better-auth';
-import { eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import type { BetterAuth } from '../../src/auth/better-auth.js';
@@ -19,6 +19,7 @@ import {
   moderationPolicies,
   monthlyCreditUsage,
   planAuditLogs,
+  plans,
   postContexts,
   socialPages,
   subscriptions,
@@ -195,6 +196,63 @@ export function createAuthActors(app: INestApplication<App>) {
       .where(inArray(billingAccounts.id, accountIds));
   }
 
+  /** The owner's billing account id (created at sign-up, PW-T3). */
+  async function accountIdOf(owner: Actor): Promise<string> {
+    const [row] = await db
+      .select({ id: billingAccounts.id })
+      .from(billingAccounts)
+      .where(eq(billingAccounts.ownerUserId, owner.id));
+    expect(row, 'billing account').toBeDefined();
+    return row!.id;
+  }
+
+  /**
+   * Ends the owner's live subscription (`EXPIRED`, e.g. the sign-up trial ran out; PW-D9). The
+   * term end is left as is: readers stop at the status.
+   */
+  async function expirePlan(owner: Actor): Promise<void> {
+    await db
+      .update(subscriptions)
+      .set({ status: 'EXPIRED' })
+      .where(
+        and(
+          eq(subscriptions.billingAccountId, await accountIdOf(owner)),
+          inArray(subscriptions.status, ['TRIALING', 'ACTIVE']),
+        ),
+      );
+  }
+
+  /**
+   * Replaces the owner's live subscription with a paid `ACTIVE` monthly one on the plan `slug`
+   * (started a minute ago, 30 days long, price snapshot 999): e.g. Growth for its higher limits
+   * and flags (PW-T5). Returns the new subscription id.
+   */
+  async function activatePlan(owner: Actor, slug: string): Promise<string> {
+    const accountId = await accountIdOf(owner);
+    await expirePlan(owner);
+    const [plan] = await db
+      .select({ id: plans.id })
+      .from(plans)
+      .where(eq(plans.slug, slug));
+    expect(plan, `plan ${slug}`).toBeDefined();
+    const start = new Date(Date.now() - 60_000);
+    const [row] = await db
+      .insert(subscriptions)
+      .values({
+        billingAccountId: accountId,
+        planId: plan!.id,
+        interval: 'month',
+        status: 'ACTIVE',
+        startedAt: start,
+        currentTermStart: start,
+        currentTermEnd: new Date(start.getTime() + 30 * 24 * 3_600_000),
+        pricePerMonthBdt: 999,
+        chargedBdt: 999,
+      })
+      .returning({ id: subscriptions.id });
+    return row!.id;
+  }
+
   /**
    * Deletes every tracked workspace and user (members, sessions and accounts cascade). Their
    * billing children (wallet entries, balances, wallets, subscriptions), impersonation, status and
@@ -349,6 +407,9 @@ export function createAuthActors(app: INestApplication<App>) {
     addMember,
     patchStoredSession,
     removeBilling,
+    accountIdOf,
+    expirePlan,
+    activatePlan,
     /** Track a workspace created outside `signUp` (e.g. `/organization/create`) for `cleanup()`. */
     trackWorkspace: (id: string) => workspaceIds.push(id),
     /** Track a user created outside `signUp` so `cleanup()` deletes it. */

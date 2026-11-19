@@ -3,6 +3,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { admin, organization } from 'better-auth/plugins';
 import { uuidv7 } from 'uuidv7';
+import type { LimitService } from '../billing/limit.service.js';
 import type { SubscriptionService } from '../billing/subscription.service.js';
 import type { Database } from '../db/database.js';
 import * as schema from '../db/schema/index.js';
@@ -16,6 +17,7 @@ import {
 } from './first-workspace.js';
 import { impersonationExchange } from './impersonation-exchange.plugin.js';
 import type { PasswordService } from './password.service.js';
+import { assertWorkspaceCreateAllowed } from './workspace-limit.js';
 import {
   platformAc,
   platformRoles,
@@ -41,11 +43,16 @@ export interface BetterAuthSettings {
    * `/organization/create` workspace link (`SubscriptionService`).
    */
   billing: AuthBilling;
+  /** Account-pooled workspace limit for `/organization/create` (PW-T5, `LimitService`). */
+  limits: AuthLimits;
 }
 
 /** The `SubscriptionService` calls Better Auth's hooks make (PW-T3). */
 export type AuthBilling = SessionBilling &
   Pick<SubscriptionService, 'linkWorkspace'>;
+
+/** The `LimitService` call the `/organization/create` before-hook makes (PW-T5). */
+export type AuthLimits = Pick<LimitService, 'canCreateWorkspace'>;
 
 const SIGN_UP_PATH = '/sign-up/email';
 
@@ -222,8 +229,17 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
         roles: workspaceRoles,
         creatorRole: 'owner',
         organizationHooks: {
+          // PW-T5 (plan §3.6, PW-D10/D11): the creator's account needs a live plan (else 403
+          // `no_active_plan`) with room under `limits.workspaces` (else 403
+          // `workspace_limit_reached`). The sign-up workspace is made by first-workspace.ts, not
+          // through this hook.
+          beforeCreateOrganization: async ({ user }) => {
+            assertWorkspaceCreateAllowed(
+              await settings.limits.canCreateWorkspace(user.id),
+            );
+          },
           // A workspace created after sign-up belongs to the creator's billing account (PW-T3,
-          // plan §3.1); no new trial. The 403 before-hook (no plan / workspace limit) is PW-T5.
+          // plan §3.1); no new trial.
           afterCreateOrganization: async ({ organization, user }) => {
             await settings.billing.linkWorkspace(user.id, organization.id);
           },

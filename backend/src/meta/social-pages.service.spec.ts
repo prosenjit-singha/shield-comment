@@ -5,7 +5,10 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { normalizeFeatureConfig } from '../admin/plan-rules.js';
 import type { Database } from '../db/database.js';
+import * as liveQueries from '../wallet/live-subscription.queries.js';
+import type { LiveSubscription } from '../wallet/live-subscription.queries.js';
 import type {
   WorkspaceMetaConnection,
   WorkspacePage,
@@ -16,6 +19,7 @@ import * as queries from './social-pages.queries.js';
 import {
   assertCanActivate,
   assertConnectionActive,
+  assertLivePlan,
   connectedPagesLimit,
   SocialPagesService,
 } from './social-pages.service.js';
@@ -23,11 +27,15 @@ import {
 vi.mock('./social-pages.queries.js', () => ({
   listWorkspacePages: vi.fn(),
   findWorkspacePage: vi.fn(),
-  findWorkspacePlanId: vi.fn(),
-  findPlanFeatureConfig: vi.fn(),
-  countActivePages: vi.fn(),
+  findWorkspaceBilling: vi.fn(),
+  lockBillingAccount: vi.fn(),
+  countPooledActivePages: vi.fn(),
   setPageActive: vi.fn(),
   findWorkspaceConnection: vi.fn(),
+}));
+
+vi.mock('../wallet/live-subscription.queries.js', () => ({
+  findLiveSubscription: vi.fn(),
 }));
 
 vi.mock('./page-subscription.queries.js', () => ({
@@ -36,9 +44,11 @@ vi.mock('./page-subscription.queries.js', () => ({
 
 const q = vi.mocked(queries);
 const sq = vi.mocked(subscriptionQueries);
+const lq = vi.mocked(liveQueries);
 const WS = '019a0000-0000-7000-8000-000000000001';
 const PAGE = '019a0000-0000-7000-8000-0000000000a1';
 const PLAN = '019a0000-0000-7000-8000-0000000000c1';
+const ACCOUNT = '019a0000-0000-7000-8000-0000000000b1';
 
 const connection = (
   patch: Partial<WorkspaceMetaConnection> = {},
@@ -52,6 +62,25 @@ const connection = (
 const config = (connectedPages: unknown) => ({
   limits: { connectedPages, monthlyComments: 500, teamSeats: 1, workspaces: 1 },
   features: {},
+});
+
+/** The workspace's live subscription (PW-T5) with `connectedPages` normalised like the query. */
+const live = (connectedPages: unknown): LiveSubscription => ({
+  workspaceId: WS,
+  billingAccountId: ACCOUNT,
+  subscriptionId: '019a0000-0000-7000-8000-0000000000d1',
+  status: 'TRIALING',
+  interval: 'month',
+  startedAt: new Date('2026-11-18T00:00:00.000Z'),
+  trialEndsAt: new Date('2026-11-25T00:00:00.000Z'),
+  currentTermStart: new Date('2026-11-18T00:00:00.000Z'),
+  currentTermEnd: new Date('2026-11-25T00:00:00.000Z'),
+  plan: {
+    id: PLAN,
+    slug: 'starter',
+    featureConfig: normalizeFeatureConfig(config(connectedPages)),
+    trialCommentLimit: 300,
+  },
 });
 
 const page = (patch: Partial<WorkspacePage> = {}): WorkspacePage => ({
@@ -121,19 +150,37 @@ beforeEach(() => {
   vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
 });
 
-describe('connectedPagesLimit', () => {
-  it('reads limits.connectedPages through normalizeFeatureConfig', () => {
-    expect(connectedPagesLimit(config(5))).toBe(5);
-    expect(connectedPagesLimit(config(0))).toBe(0);
+describe('connectedPagesLimit (PW-T5)', () => {
+  it('reads the live plan’s normalised limits.connectedPages', () => {
+    expect(connectedPagesLimit(live(5))).toBe(5);
+    expect(connectedPagesLimit(live(0))).toBe(0);
   });
 
-  it('fails closed (0) for a missing plan or a malformed value', () => {
-    expect(connectedPagesLimit(undefined)).toBe(0);
+  it('no live plan → 0 (no Free fallback); a malformed value is 0 (fail closed)', () => {
     expect(connectedPagesLimit(null)).toBe(0);
-    expect(connectedPagesLimit({})).toBe(0);
-    expect(connectedPagesLimit(config(-1))).toBe(0);
-    expect(connectedPagesLimit(config(1.5))).toBe(0);
-    expect(connectedPagesLimit(config('3'))).toBe(0);
+    expect(connectedPagesLimit(live(-1))).toBe(0);
+    expect(connectedPagesLimit(live(1.5))).toBe(0);
+    expect(connectedPagesLimit(live('3'))).toBe(0);
+  });
+});
+
+describe('assertLivePlan (PW-T5)', () => {
+  it('passes with a live plan', () => {
+    expect(() => assertLivePlan(live(1))).not.toThrow();
+  });
+
+  it('no live plan → 409 NO_ACTIVE_PLAN without details', () => {
+    let thrown: unknown;
+    try {
+      assertLivePlan(null);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(ConflictException);
+    const body = (thrown as ConflictException).getResponse();
+    expect(body).toMatchObject({ error: 'Conflict', code: 'NO_ACTIVE_PLAN' });
+    expect(body).not.toHaveProperty('details');
+    expect((body as { message: string }).message).toMatch(/plan/i);
   });
 });
 
@@ -193,7 +240,7 @@ describe('assertConnectionActive (M4-T9, D9)', () => {
 });
 
 describe('SocialPagesService.list', () => {
-  it('returns the pages + the plan limit and active count + the connection', async () => {
+  it('returns the pages + the live plan limit and the pooled active count + the connection', async () => {
     const { svc, db } = setup();
     const items = [
       page({ isActive: true }),
@@ -201,14 +248,15 @@ describe('SocialPagesService.list', () => {
       page({ id: 'c', isActive: true }),
     ];
     q.listWorkspacePages.mockResolvedValue(items);
-    q.findWorkspacePlanId.mockResolvedValue({ planId: PLAN });
-    q.findPlanFeatureConfig.mockResolvedValue(config(5));
+    lq.findLiveSubscription.mockResolvedValue(live(5));
+    // 2 on here + 1 in another workspace of the account.
+    q.countPooledActivePages.mockResolvedValue(3);
     q.findWorkspaceConnection.mockResolvedValue(
       connection({ status: 'NEEDS_REAUTH', tokenExpiresAt: null }),
     );
     await expect(svc.list(WS)).resolves.toEqual({
       items,
-      pageLimit: { limit: 5, activeCount: 2 },
+      pageLimit: { limit: 5, activeCount: 3 },
       connection: {
         status: 'NEEDS_REAUTH',
         statusChangedAt: new Date('2026-11-18T00:00:00.000Z'),
@@ -217,22 +265,21 @@ describe('SocialPagesService.list', () => {
     });
     expect(q.findWorkspaceConnection).toHaveBeenCalledWith(db, WS);
     expect(q.listWorkspacePages).toHaveBeenCalledWith(db, WS);
-    expect(q.findWorkspacePlanId).toHaveBeenCalledWith(db, WS);
-    expect(q.findPlanFeatureConfig).toHaveBeenCalledWith(db, PLAN);
+    expect(lq.findLiveSubscription).toHaveBeenCalledWith(db, WS);
+    expect(q.countPooledActivePages).toHaveBeenCalledWith(db, WS);
   });
 
-  it('no plan → the Free plan (planId null); no connection → connection null', async () => {
-    const { svc, db } = setup();
+  it('no live plan → limit 0 (pooled count still shown); no connection → connection null', async () => {
+    const { svc } = setup();
     q.listWorkspacePages.mockResolvedValue([]);
-    q.findWorkspacePlanId.mockResolvedValue({ planId: null });
-    q.findPlanFeatureConfig.mockResolvedValue(config(1));
+    lq.findLiveSubscription.mockResolvedValue(null);
+    q.countPooledActivePages.mockResolvedValue(2);
     q.findWorkspaceConnection.mockResolvedValue(undefined);
     await expect(svc.list(WS)).resolves.toEqual({
       items: [],
-      pageLimit: { limit: 1, activeCount: 0 },
+      pageLimit: { limit: 0, activeCount: 2 },
       connection: null,
     });
-    expect(q.findPlanFeatureConfig).toHaveBeenCalledWith(db, null);
   });
 });
 
@@ -240,8 +287,9 @@ describe('SocialPagesService.toggle', () => {
   const CIPHERTEXT = 'v1:k1:iv:tag:ct';
 
   function arm(options: {
-    workspace?: { planId: string | null } | undefined;
+    workspace?: { billingAccountId: string | null } | undefined;
     current?: WorkspacePage | undefined;
+    /** `null` = no live plan. */
     limit?: unknown;
     activeCount?: number;
     connection?: WorkspaceMetaConnection | undefined;
@@ -249,14 +297,19 @@ describe('SocialPagesService.toggle', () => {
     q.findWorkspaceConnection.mockResolvedValue(
       'connection' in options ? options.connection : connection(),
     );
-    q.findWorkspacePlanId.mockResolvedValue(
-      'workspace' in options ? options.workspace : { planId: null },
+    q.findWorkspaceBilling.mockResolvedValue(
+      'workspace' in options
+        ? options.workspace
+        : { billingAccountId: ACCOUNT },
     );
+    q.lockBillingAccount.mockResolvedValue(true);
     q.findWorkspacePage.mockResolvedValue(
       'current' in options ? options.current : page(),
     );
-    q.findPlanFeatureConfig.mockResolvedValue(config(options.limit ?? 1));
-    q.countActivePages.mockResolvedValue(options.activeCount ?? 0);
+    lq.findLiveSubscription.mockResolvedValue(
+      options.limit === null ? null : live(options.limit ?? 1),
+    );
+    q.countPooledActivePages.mockResolvedValue(options.activeCount ?? 0);
     q.setPageActive.mockImplementation(async (_e, _w, _id, isActive) =>
       page({ isActive, updatedAt: new Date('2026-11-18T01:00:00.000Z') }),
     );
@@ -269,7 +322,7 @@ describe('SocialPagesService.toggle', () => {
     });
   }
 
-  it('activates under the limit: pre-checks, subscribes, then locks workspace → page in one tx', async () => {
+  it('activates under the limit: pre-checks, subscribes, then locks workspace → page → account in one tx', async () => {
     const { svc, db, tx, subs, order, transactions } = setup();
     arm({ limit: 1, activeCount: 0 });
     const result = await svc.toggle(WS, PAGE, true);
@@ -278,7 +331,8 @@ describe('SocialPagesService.toggle', () => {
     expect(transactions()).toBe(1);
     // Pre-checks on the db (no locks), then Graph, then the tx.
     expect(q.findWorkspacePage).toHaveBeenNthCalledWith(1, db, WS, PAGE);
-    expect(q.countActivePages).toHaveBeenNthCalledWith(1, db, WS);
+    expect(lq.findLiveSubscription).toHaveBeenNthCalledWith(1, db, WS);
+    expect(q.countPooledActivePages).toHaveBeenNthCalledWith(1, db, WS);
     expect(sq.findWorkspacePageToken).toHaveBeenCalledWith(db, WS, PAGE);
     expect(subs.subscribe).toHaveBeenCalledWith({
       id: PAGE,
@@ -288,17 +342,30 @@ describe('SocialPagesService.toggle', () => {
       encryptedPageAccessToken: CIPHERTEXT,
     });
     expect(order).toEqual(['subscribe', 'tx']);
-    expect(q.findWorkspacePlanId).toHaveBeenCalledWith(tx, WS, true);
+    expect(q.findWorkspaceBilling).toHaveBeenCalledWith(tx, WS, true);
     expect(q.findWorkspacePage).toHaveBeenCalledWith(tx, WS, PAGE, true);
-    const txCall = (mock: { mock: { calls: unknown[][] } }) =>
-      mock.mock.calls.findIndex((args) => args[0] === tx);
-    const planIdx = txCall(q.findWorkspacePlanId);
-    const pageIdx = txCall(q.findWorkspacePage);
-    expect(
-      q.findWorkspacePlanId.mock.invocationCallOrder[planIdx]!,
-    ).toBeLessThan(q.findWorkspacePage.mock.invocationCallOrder[pageIdx]!);
-    expect(q.findPlanFeatureConfig).toHaveBeenCalledWith(tx, null);
-    expect(q.countActivePages).toHaveBeenCalledWith(tx, WS);
+    expect(q.lockBillingAccount).toHaveBeenCalledWith(tx, ACCOUNT);
+    const txOrder = (mock: {
+      mock: { calls: unknown[][]; invocationCallOrder: number[] };
+    }) =>
+      mock.mock.invocationCallOrder[
+        mock.mock.calls.findIndex((args) => args[0] === tx)
+      ]!;
+    // Lock order workspace → page → account; plan + pooled count read under the account lock.
+    expect(txOrder(q.findWorkspaceBilling)).toBeLessThan(
+      txOrder(q.findWorkspacePage),
+    );
+    expect(txOrder(q.findWorkspacePage)).toBeLessThan(
+      txOrder(q.lockBillingAccount),
+    );
+    expect(txOrder(q.lockBillingAccount)).toBeLessThan(
+      txOrder(lq.findLiveSubscription),
+    );
+    expect(txOrder(q.lockBillingAccount)).toBeLessThan(
+      txOrder(q.countPooledActivePages),
+    );
+    expect(lq.findLiveSubscription).toHaveBeenCalledWith(tx, WS);
+    expect(q.countPooledActivePages).toHaveBeenCalledWith(tx, WS);
     expect(q.setPageActive).toHaveBeenCalledWith(tx, WS, PAGE, true);
     expect(subs.unsubscribeBestEffort).not.toHaveBeenCalled();
   });
@@ -373,7 +440,7 @@ describe('SocialPagesService.toggle', () => {
     const { svc, tx, subs, order } = setup();
     arm({ limit: 1 });
     // Pre-check sees 0 active; under the lock another Page is already on.
-    q.countActivePages.mockImplementation(async (executor) =>
+    q.countPooledActivePages.mockImplementation(async (executor) =>
       (executor as unknown) === tx ? 1 : 0,
     );
     const body = await conflictBody(svc.toggle(WS, PAGE, true));
@@ -401,7 +468,7 @@ describe('SocialPagesService.toggle', () => {
       const body = await conflictBody(svc.toggle(WS, PAGE, true));
       expect(body).toMatchObject({ code: 'CONNECTION_NEEDS_REAUTH' });
       expect(q.findWorkspaceConnection).toHaveBeenCalledWith(db, WS);
-      expect(q.countActivePages).not.toHaveBeenCalled();
+      expect(q.countPooledActivePages).not.toHaveBeenCalled();
       expect(sq.findWorkspacePageToken).not.toHaveBeenCalled();
       expect(subs.subscribe).not.toHaveBeenCalled();
       expect(transactions()).toBe(0);
@@ -420,14 +487,14 @@ describe('SocialPagesService.toggle', () => {
     expect(body).toMatchObject({ code: 'CONNECTION_NEEDS_REAUTH' });
     expect(q.findWorkspaceConnection).toHaveBeenCalledWith(tx, WS);
     // Read under the workspace lock.
-    const lockIdx = q.findWorkspacePlanId.mock.calls.findIndex(
+    const lockIdx = q.findWorkspaceBilling.mock.calls.findIndex(
       (args) => (args[0] as unknown) === tx,
     );
     const readIdx = q.findWorkspaceConnection.mock.calls.findIndex(
       (args) => (args[0] as unknown) === tx,
     );
     expect(
-      q.findWorkspacePlanId.mock.invocationCallOrder[lockIdx]!,
+      q.findWorkspaceBilling.mock.invocationCallOrder[lockIdx]!,
     ).toBeLessThan(
       q.findWorkspaceConnection.mock.invocationCallOrder[readIdx]!,
     );
@@ -478,18 +545,18 @@ describe('SocialPagesService.toggle', () => {
     expect(q.setPageActive).toHaveBeenCalledWith(tx, WS, PAGE, false);
   });
 
-  it('uses the workspace plan’s limit when it has one', async () => {
-    const { svc, tx } = setup();
-    arm({ workspace: { planId: PLAN }, limit: 5, activeCount: 4 });
+  it('uses the live plan’s limit against the pooled count', async () => {
+    const { svc } = setup();
+    arm({ limit: 5, activeCount: 4 });
     await expect(svc.toggle(WS, PAGE, true)).resolves.toMatchObject({
       changed: true,
     });
-    expect(q.findPlanFeatureConfig).toHaveBeenCalledWith(tx, PLAN);
   });
 
-  it('409 PAGE_LIMIT_REACHED at the limit (no plan → Free limit): pre-check, no Graph, no tx', async () => {
+  it('409 PAGE_LIMIT_REACHED at the pooled limit: pre-check, no Graph, no tx', async () => {
     const { svc, subs, transactions } = setup();
-    arm({ workspace: { planId: null }, limit: 1, activeCount: 1 });
+    // The 1 active Page is in another workspace of the account.
+    arm({ limit: 1, activeCount: 1 });
     const body = await conflictBody(svc.toggle(WS, PAGE, true));
     expect(body).toMatchObject({
       code: 'PAGE_LIMIT_REACHED',
@@ -500,12 +567,63 @@ describe('SocialPagesService.toggle', () => {
     expect(transactions()).toBe(0);
   });
 
-  it('409 when the plan row is missing (limit 0, fail closed)', async () => {
-    const { svc } = setup();
-    arm({});
-    q.findPlanFeatureConfig.mockResolvedValue(undefined);
+  it('409 NO_ACTIVE_PLAN without a live plan (pre-check): no Graph, no tx', async () => {
+    const { svc, subs, transactions } = setup();
+    arm({ limit: null, activeCount: 0 });
     const body = await conflictBody(svc.toggle(WS, PAGE, true));
-    expect(body).toMatchObject({ details: { limit: 0, activeCount: 0 } });
+    expect(body).toMatchObject({ code: 'NO_ACTIVE_PLAN' });
+    expect(body).not.toHaveProperty('details');
+    expect(subs.subscribe).not.toHaveBeenCalled();
+    expect(transactions()).toBe(0);
+  });
+
+  it('plan ends between the pre-check and the tx → 409 NO_ACTIVE_PLAN + best-effort unsubscribe', async () => {
+    const { svc, tx, subs, order } = setup();
+    arm({});
+    lq.findLiveSubscription.mockImplementation(async (executor) =>
+      (executor as unknown) === tx ? null : live(1),
+    );
+    const body = await conflictBody(svc.toggle(WS, PAGE, true));
+    expect(body).toMatchObject({ code: 'NO_ACTIVE_PLAN' });
+    expect(order).toEqual(['subscribe', 'tx', 'unsubscribe']);
+    expect(subs.unsubscribeBestEffort).toHaveBeenCalledWith(WS, PAGE);
+    expect(q.countPooledActivePages).not.toHaveBeenCalledWith(tx, WS);
+    expect(q.setPageActive).not.toHaveBeenCalled();
+  });
+
+  it('workspace without a billing account → 409 NO_ACTIVE_PLAN in the tx, no account lock', async () => {
+    const { svc, subs } = setup();
+    arm({ workspace: { billingAccountId: null } });
+    const body = await conflictBody(svc.toggle(WS, PAGE, true));
+    expect(body).toMatchObject({ code: 'NO_ACTIVE_PLAN' });
+    expect(q.lockBillingAccount).not.toHaveBeenCalled();
+    expect(subs.unsubscribeBestEffort).toHaveBeenCalledWith(WS, PAGE);
+    expect(q.setPageActive).not.toHaveBeenCalled();
+  });
+
+  it('NO_ACTIVE_PLAN comes after the connection and token checks', async () => {
+    const { svc } = setup();
+    arm({ limit: null, current: page({ hasToken: false }) });
+    expect(await conflictBody(svc.toggle(WS, PAGE, true))).toMatchObject({
+      code: 'PAGE_TOKEN_MISSING',
+    });
+    vi.resetAllMocks();
+    const second = setup();
+    arm({ limit: null, connection: undefined });
+    expect(await conflictBody(second.svc.toggle(WS, PAGE, true))).toMatchObject(
+      { code: 'CONNECTION_NEEDS_REAUTH' },
+    );
+  });
+
+  it('switch off works without a live plan (no plan read)', async () => {
+    const { svc, tx } = setup();
+    arm({ current: page({ isActive: true }), limit: null });
+    await expect(svc.toggle(WS, PAGE, false)).resolves.toMatchObject({
+      changed: true,
+      page: { isActive: false },
+    });
+    expect(lq.findLiveSubscription).not.toHaveBeenCalled();
+    expect(q.setPageActive).toHaveBeenCalledWith(tx, WS, PAGE, false);
   });
 
   it('409 PAGE_TOKEN_MISSING when activating a Page without a token, before the limit check', async () => {
@@ -514,7 +632,7 @@ describe('SocialPagesService.toggle', () => {
     const body = await conflictBody(svc.toggle(WS, PAGE, true));
     expect(body).toMatchObject({ code: 'PAGE_TOKEN_MISSING' });
     expect(body.message).toMatch(/reconnect/i);
-    expect(q.countActivePages).not.toHaveBeenCalled();
+    expect(q.countPooledActivePages).not.toHaveBeenCalled();
     expect(q.setPageActive).not.toHaveBeenCalled();
     expect(subs.subscribe).not.toHaveBeenCalled();
   });
@@ -524,8 +642,8 @@ describe('SocialPagesService.toggle', () => {
     arm({ current: page({ isActive: true }), limit: 0, activeCount: 9 });
     const result = await svc.toggle(WS, PAGE, false);
     expect(result).toMatchObject({ changed: true, page: { isActive: false } });
-    expect(q.findPlanFeatureConfig).not.toHaveBeenCalled();
-    expect(q.countActivePages).not.toHaveBeenCalled();
+    expect(lq.findLiveSubscription).not.toHaveBeenCalled();
+    expect(q.countPooledActivePages).not.toHaveBeenCalled();
     expect(q.setPageActive).toHaveBeenCalledWith(tx, WS, PAGE, false);
   });
 
@@ -548,7 +666,7 @@ describe('SocialPagesService.toggle', () => {
         changed: false,
       });
       expect(q.setPageActive).not.toHaveBeenCalled();
-      expect(q.countActivePages).not.toHaveBeenCalled();
+      expect(q.countPooledActivePages).not.toHaveBeenCalled();
       expect(subs.subscribe).not.toHaveBeenCalled();
       expect(subs.unsubscribeBestEffort).not.toHaveBeenCalled();
     }

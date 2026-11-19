@@ -1,15 +1,16 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { normalizeFeatureConfig } from '../admin/plan-rules.js';
 import type { Database } from '../db/database.js';
-import * as pageQueries from '../meta/social-pages.queries.js';
+import * as liveQueries from '../wallet/live-subscription.queries.js';
+import type { LiveSubscription } from '../wallet/live-subscription.queries.js';
 import {
   ModerationPolicyService,
   workspacePlanFeatures,
 } from './moderation-policy.service.js';
 import * as queries from './moderation.queries.js';
 
-vi.mock('../meta/social-pages.queries.js', () => ({
-  findWorkspacePlanId: vi.fn(),
-  findPlanFeatureConfig: vi.fn(),
+vi.mock('../wallet/live-subscription.queries.js', () => ({
+  findLiveSubscription: vi.fn(),
 }));
 
 vi.mock('./moderation.queries.js', async (importOriginal) => {
@@ -24,7 +25,7 @@ vi.mock('./moderation.queries.js', async (importOriginal) => {
 });
 
 const q = vi.mocked(queries);
-const pq = vi.mocked(pageQueries);
+const lq = vi.mocked(liveQueries);
 const WS = '019a0000-0000-7000-8000-000000000001';
 const PLAN = '019a0000-0000-7000-8000-0000000000c1';
 const UPDATED_AT = new Date('2026-11-19T08:00:00.000Z');
@@ -66,6 +67,25 @@ const features = (autoReplyTemplates: boolean) => ({
   features: { autoReplyTemplates },
 });
 
+/** A live subscription of the workspace's account whose plan has `autoReplyTemplates`. */
+const live = (autoReplyTemplates: boolean): LiveSubscription => ({
+  workspaceId: WS,
+  billingAccountId: '019a0000-0000-7000-8000-0000000000b1',
+  subscriptionId: '019a0000-0000-7000-8000-0000000000d1',
+  status: 'ACTIVE',
+  interval: 'month',
+  startedAt: UPDATED_AT,
+  trialEndsAt: null,
+  currentTermStart: UPDATED_AT,
+  currentTermEnd: new Date('2026-12-19T08:00:00.000Z'),
+  plan: {
+    id: PLAN,
+    slug: autoReplyTemplates ? 'growth' : 'starter',
+    featureConfig: normalizeFeatureConfig(features(autoReplyTemplates)),
+    trialCommentLimit: null,
+  },
+});
+
 function setup() {
   const tx = { tag: 'tx' };
   let transactions = 0;
@@ -82,32 +102,30 @@ function setup() {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  pq.findWorkspacePlanId.mockResolvedValue({ planId: null });
-  pq.findPlanFeatureConfig.mockResolvedValue(features(false));
+  lq.findLiveSubscription.mockResolvedValue(live(false));
   q.getOrCreateModerationPolicy.mockResolvedValue(row());
   q.lockModerationPolicy.mockResolvedValue(row());
 });
 
-describe('workspacePlanFeatures', () => {
-  it('no plan → the Free plan lookup (planId null)', async () => {
+describe('workspacePlanFeatures (PW-T5: live plan)', () => {
+  it('reads the flag from the live subscription’s plan', async () => {
     const db = {} as Database;
-    expect(await workspacePlanFeatures(db, WS)).toEqual({
-      autoReplyTemplates: false,
-    });
-    expect(pq.findPlanFeatureConfig).toHaveBeenCalledWith(db, null);
-  });
-
-  it('reads the workspace plan flag', async () => {
-    pq.findWorkspacePlanId.mockResolvedValue({ planId: PLAN });
-    pq.findPlanFeatureConfig.mockResolvedValue(features(true));
-    expect(await workspacePlanFeatures({} as Database, WS)).toEqual({
+    const now = new Date('2026-11-19T09:00:00.000Z');
+    lq.findLiveSubscription.mockResolvedValue(live(true));
+    expect(await workspacePlanFeatures(db, WS, now)).toEqual({
       autoReplyTemplates: true,
     });
-    expect(pq.findPlanFeatureConfig).toHaveBeenCalledWith({}, PLAN);
+    expect(lq.findLiveSubscription).toHaveBeenCalledWith(db, WS, now);
   });
 
-  it('a missing plan row fails closed', async () => {
-    pq.findPlanFeatureConfig.mockResolvedValue(undefined);
+  it('a live plan without the feature → off', async () => {
+    expect(await workspacePlanFeatures({} as Database, WS)).toEqual({
+      autoReplyTemplates: false,
+    });
+  });
+
+  it('no live plan (no account, trial or term over) → every flag off', async () => {
+    lq.findLiveSubscription.mockResolvedValue(null);
     expect(await workspacePlanFeatures({} as Database, WS)).toEqual({
       autoReplyTemplates: false,
     });
@@ -117,7 +135,7 @@ describe('workspacePlanFeatures', () => {
 describe('ModerationPolicyService', () => {
   it('get: lazy row + autoReplyAvailable', async () => {
     const { service, db } = setup();
-    pq.findPlanFeatureConfig.mockResolvedValue(features(true));
+    lq.findLiveSubscription.mockResolvedValue(live(true));
     const res = await service.get(WS);
     expect(q.getOrCreateModerationPolicy).toHaveBeenCalledWith(db, WS);
     expect(res).toMatchObject({
@@ -215,7 +233,7 @@ describe('ModerationPolicyService', () => {
 
   it('update: 400 when switching on without both texts', async () => {
     const { service } = setup();
-    pq.findPlanFeatureConfig.mockResolvedValue(features(true));
+    lq.findLiveSubscription.mockResolvedValue(live(true));
     await expect(
       service.update(WS, {
         categories: { SAFE_INQUIRY: { autoReply: true, replyEn: 'Hi' } },

@@ -29,7 +29,10 @@ import { SocialPagesService } from './social-pages.service.js';
 export class SocialPagesController {
   constructor(private readonly pages: SocialPagesService) {}
 
-  /** `{ items: WorkspacePage[], pageLimit: { limit, activeCount } }`. */
+  /**
+   * `{ items: WorkspacePage[], pageLimit: { limit, activeCount }, connection }`; `pageLimit` is
+   * pooled across the billing account (PW-T5; no live plan → `limit` 0).
+   */
   @Get()
   list(
     @CurrentWorkspace() workspace: WorkspaceContext,
@@ -39,7 +42,8 @@ export class SocialPagesController {
 
   /**
    * `{ isActive }` → `{ page, changed }`. 400 non-uuid id / bad body, 404 not this workspace's Page,
-   * 409 `code: PAGE_TOKEN_MISSING` or `PAGE_LIMIT_REACHED` (`details: { limit, activeCount }`),
+   * 409 `code: CONNECTION_NEEDS_REAUTH`, `PAGE_TOKEN_MISSING`, `NO_ACTIVE_PLAN` (PW-T5) or
+   * `PAGE_LIMIT_REACHED` (`details: { limit, activeCount }`, pooled per billing account),
    * switch-on only (M4-T8): 502 `code: META_SUBSCRIBE_FAILED` (Graph `subscribed_apps` failed,
    * nothing changed), 503 when Meta or the token cipher is not configured.
    */

@@ -2,6 +2,7 @@ import type { SecondaryStorage } from 'better-auth';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { createBetterAuth } from '../auth/better-auth.js';
+import { LimitService } from '../billing/limit.service.js';
 import { SubscriptionService } from '../billing/subscription.service.js';
 import { PasswordService } from '../auth/password.service.js';
 import { ensureSuperAdmin, parseSuperAdminInput } from '../auth/super-admin.js';
@@ -60,6 +61,7 @@ try {
     rateLimit: false,
     // `createUser` makes no session or workspace, so the billing hooks never run here.
     billing: new SubscriptionService(db, new WalletService(db)),
+    limits: new LimitService(db),
   });
   const result = await ensureSuperAdmin(db, auth, input);
   const messages = {

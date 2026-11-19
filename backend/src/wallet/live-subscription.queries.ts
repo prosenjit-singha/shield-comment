@@ -37,6 +37,30 @@ export interface LiveSubscription {
 /** A live subscription seen from its billing account (no workspace): what a wallet period needs. */
 export type AccountLiveSubscription = Omit<LiveSubscription, 'workspaceId'>;
 
+/** The columns of a live subscription + its plan (shared by the workspace and account queries). */
+const liveColumns = {
+  billingAccountId: subscriptions.billingAccountId,
+  subscriptionId: subscriptions.id,
+  status: subscriptions.status,
+  interval: subscriptions.interval,
+  startedAt: subscriptions.startedAt,
+  trialEndsAt: subscriptions.trialEndsAt,
+  currentTermStart: subscriptions.currentTermStart,
+  currentTermEnd: subscriptions.currentTermEnd,
+  planId: plans.id,
+  planSlug: plans.slug,
+  featureConfig: plans.featureConfig,
+  trialCommentLimit: plans.trialCommentLimit,
+};
+
+/** A subscription row that is live at `now`: TRIALING / ACTIVE and `now < current_term_end`. */
+function isLiveAt(now: Date) {
+  return and(
+    inArray(subscriptions.status, [...LIVE_SUBSCRIPTION_STATUSES]),
+    gt(subscriptions.currentTermEnd, now),
+  );
+}
+
 /**
  * Shared live-subscription query (PW-T2; reused by PW-T3…T6). Workspace → `billing_account_id`
  * → the subscription with status in `LIVE_SUBSCRIPTION_STATUSES` and `now < current_term_end`
@@ -49,28 +73,13 @@ function liveSubscriptionQuery(
   now: Date,
 ) {
   return db
-    .select({
-      workspaceId: workspaces.id,
-      billingAccountId: subscriptions.billingAccountId,
-      subscriptionId: subscriptions.id,
-      status: subscriptions.status,
-      interval: subscriptions.interval,
-      startedAt: subscriptions.startedAt,
-      trialEndsAt: subscriptions.trialEndsAt,
-      currentTermStart: subscriptions.currentTermStart,
-      currentTermEnd: subscriptions.currentTermEnd,
-      planId: plans.id,
-      planSlug: plans.slug,
-      featureConfig: plans.featureConfig,
-      trialCommentLimit: plans.trialCommentLimit,
-    })
+    .select({ workspaceId: workspaces.id, ...liveColumns })
     .from(workspaces)
     .innerJoin(
       subscriptions,
       and(
         eq(subscriptions.billingAccountId, workspaces.billingAccountId),
-        inArray(subscriptions.status, [...LIVE_SUBSCRIPTION_STATUSES]),
-        gt(subscriptions.currentTermEnd, now),
+        isLiveAt(now),
       ),
     )
     .innerJoin(plans, eq(plans.id, subscriptions.planId))
@@ -79,9 +88,10 @@ function liveSubscriptionQuery(
 
 type LiveRow = Awaited<ReturnType<typeof liveSubscriptionQuery>>[number];
 
-function toLiveSubscription(row: LiveRow): LiveSubscription {
+function toAccountLiveSubscription(
+  row: Omit<LiveRow, 'workspaceId'>,
+): AccountLiveSubscription {
   return {
-    workspaceId: row.workspaceId,
     billingAccountId: row.billingAccountId,
     subscriptionId: row.subscriptionId,
     status: row.status === 'TRIALING' ? 'TRIALING' : 'ACTIVE',
@@ -97,6 +107,10 @@ function toLiveSubscription(row: LiveRow): LiveSubscription {
       trialCommentLimit: row.trialCommentLimit,
     },
   };
+}
+
+function toLiveSubscription(row: LiveRow): LiveSubscription {
+  return { workspaceId: row.workspaceId, ...toAccountLiveSubscription(row) };
 }
 
 /**
@@ -125,6 +139,26 @@ export async function findLiveSubscriptions(
   if (ids.length === 0) return new Map();
   const rows = await liveSubscriptionQuery(db, ids, now);
   return new Map(rows.map((row) => [row.workspaceId, toLiveSubscription(row)]));
+}
+
+/**
+ * The billing account's live plan at `now`, or `null` (PW-T5: workspace creation and seat limits
+ * are checked per account, before a workspace exists). One query, scoped by the account id.
+ */
+export async function findAccountLiveSubscription(
+  db: LiveSubscriptionExecutor,
+  billingAccountId: string,
+  now: Date = new Date(),
+): Promise<AccountLiveSubscription | null> {
+  const [row] = await db
+    .select(liveColumns)
+    .from(subscriptions)
+    .innerJoin(plans, eq(plans.id, subscriptions.planId))
+    .where(
+      and(eq(subscriptions.billingAccountId, billingAccountId), isLiveAt(now)),
+    )
+    .limit(1);
+  return row ? toAccountLiveSubscription(row) : null;
 }
 
 /**

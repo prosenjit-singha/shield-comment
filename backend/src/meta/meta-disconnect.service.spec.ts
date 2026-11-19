@@ -22,7 +22,7 @@ vi.mock('./meta-disconnect.queries.js', () => ({
 }));
 
 vi.mock('./social-pages.queries.js', () => ({
-  findWorkspacePlanId: vi.fn(),
+  findWorkspaceBilling: vi.fn(),
 }));
 
 const q = vi.mocked(queries);
@@ -124,7 +124,7 @@ function arm(
     ...options.snapshot,
   };
   const locked = { ...snapshot, ...options.locked };
-  pq.findWorkspacePlanId.mockResolvedValue({ planId: null });
+  pq.findWorkspaceBilling.mockResolvedValue({ billingAccountId: null });
   q.findDisconnectConnection.mockImplementation(async (_e, _w, lock) =>
     lock ? locked.connection : snapshot.connection,
   );
@@ -189,7 +189,7 @@ describe('MetaDisconnectService.disconnect', () => {
     expect(q.findDisconnectConnection).toHaveBeenCalledWith(db, WS);
     expect(q.findDisconnectPages).toHaveBeenCalledWith(db, WS);
     // In the tx: workspace lock → connection lock → Pages lock → stamp → delete Pages → connection.
-    expect(pq.findWorkspacePlanId).toHaveBeenCalledWith(tx, WS, true);
+    expect(pq.findWorkspaceBilling).toHaveBeenCalledWith(tx, WS, true);
     expect(q.findDisconnectConnection).toHaveBeenCalledWith(tx, WS, true);
     expect(q.findDisconnectPages).toHaveBeenCalledWith(tx, WS, true);
     const ids = PAGES.map((p) => p.id);
@@ -198,7 +198,7 @@ describe('MetaDisconnectService.disconnect', () => {
     expect(q.deleteWorkspaceConnection).toHaveBeenCalledWith(tx, WS, CONN.id);
     expect(q.facebookUserStillConnected).toHaveBeenCalledWith(tx, FB);
     const seq = [
-      pq.findWorkspacePlanId.mock.invocationCallOrder[0]!,
+      pq.findWorkspaceBilling.mock.invocationCallOrder[0]!,
       q.findDisconnectConnection.mock.invocationCallOrder[1]!,
       q.findDisconnectPages.mock.invocationCallOrder[1]!,
       q.keepPageComments.mock.invocationCallOrder[0]!,
@@ -393,7 +393,7 @@ describe('MetaDisconnectService.disconnect', () => {
   it('workspace row gone under the lock → nothing deleted', async () => {
     const { svc, graph } = setup();
     arm();
-    pq.findWorkspacePlanId.mockResolvedValue(undefined);
+    pq.findWorkspaceBilling.mockResolvedValue(undefined);
     await expect(svc.disconnect(session(), workspace)).resolves.toEqual({
       disconnected: false,
       pagesDeleted: 0,

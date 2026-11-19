@@ -20,7 +20,6 @@ import {
   type MetaConnectionStatus,
   moderationActions,
   moderationPolicies,
-  plans,
   socialPages,
   subscriptions,
   walletBalances,
@@ -54,11 +53,7 @@ import {
   envelope,
   fbCommentValue,
 } from './fixtures/meta-webhook-payloads.js';
-import {
-  type Actor,
-  createAuthActors,
-  TRUSTED_ORIGIN,
-} from './utils/auth-actors.js';
+import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
 import { fakeAiGateway } from './utils/fake-ai-gateway.js';
 import {
@@ -642,15 +637,20 @@ describe('Comment moderation worker (e2e)', () => {
     });
 
     it('pooled: two workspaces of one account share the 300 (and its warning)', async () => {
-      const res = await actors
-        .http()
-        .post('/api/auth/organization/create')
-        .set('Cookie', a.cookie)
-        .set('Origin', TRUSTED_ORIGIN)
-        .send({ name: 'Second shop', slug: `pwt4-second-${Date.now()}` })
-        .expect(200);
-      const second = { workspaceId: res.body.id as string };
+      // Inserted directly: the Starter trial allows 1 workspace, so `/organization/create` is
+      // refused since PW-T5 (covered in pooled-limits.e2e-spec.ts). Linked to a's account as
+      // the after-hook would.
+      const [created] = await db()
+        .insert(workspaces)
+        .values({
+          name: 'Second shop',
+          slug: `pwt4-second-${Date.now()}`,
+          billingAccountId: await accountOf(a.workspaceId),
+        })
+        .returning({ id: workspaces.id });
+      const second = { workspaceId: created!.id };
       actors.trackWorkspace(second.workspaceId);
+      await actors.addMember(second.workspaceId, a.id, 'owner');
       expect(await accountOf(second.workspaceId)).toBe(
         await accountOf(a.workspaceId),
       );
@@ -857,14 +857,10 @@ describe('Comment moderation worker (e2e)', () => {
   });
 
   it('D6: growth plan + switch on → hide and one auto-reply in the comment language', async () => {
-    const [growth] = await db()
-      .select()
-      .from(plans)
-      .where(eq(plans.slug, 'growth'));
-    await db()
-      .update(workspaces)
-      .set({ planId: growth!.id })
-      .where(eq(workspaces.id, a.workspaceId));
+    // PW-T5: the flag comes from the account's live subscription. a stays on this Growth term for
+    // the rest of the spec (later tests only compare `used` before/after, and policy auto-reply
+    // is switched off again below).
+    await actors.activatePlan(a, 'growth');
     await setPolicy(a.workspaceId, {
       scamPhishingAutoReply: true,
       scamPhishingReplyEn: REPLY_EN,
@@ -894,10 +890,6 @@ describe('Comment moderation worker (e2e)', () => {
       ]);
     } finally {
       await setPolicy(a.workspaceId, { scamPhishingAutoReply: false });
-      await db()
-        .update(workspaces)
-        .set({ planId: null })
-        .where(eq(workspaces.id, a.workspaceId));
     }
   });
 

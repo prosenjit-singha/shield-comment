@@ -1,8 +1,8 @@
-import { and, asc, count, eq, sql } from 'drizzle-orm';
+import { and, asc, count, eq, or, sql } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import {
+  billingAccounts,
   metaConnections,
-  plans,
   socialPages,
   workspaces,
 } from '../db/schema/index.js';
@@ -12,15 +12,13 @@ import type {
 } from './dto/workspace-pages.dto.js';
 
 /**
- * Queries behind the workspace pages API (M3-T6). Every `social_pages` query is scoped by
- * `workspace_id`; none ever selects a token column (only `hasToken`).
+ * Queries behind the workspace pages API (M3-T6; pooled per billing account since PW-T5). Every
+ * `social_pages` query is scoped by `workspace_id` (the pooled count by the workspace's own
+ * `billing_account_id`); none ever selects a token column (only `hasToken`).
  */
 
 /** A database or a transaction. */
 export type PagesExecutor = Pick<Database, 'select' | 'update'>;
-
-/** Slug of the plan whose limits apply to a workspace without a plan (D10). */
-export const FALLBACK_PLAN_SLUG = 'free';
 
 const pageColumns = {
   id: socialPages.id,
@@ -67,39 +65,39 @@ export async function findWorkspacePage(
 }
 
 /**
- * The workspace's `plan_id` (`null` = no plan). `lock` takes `FOR NO KEY UPDATE` on the
- * workspace row: it serialises the workspace's page toggles (so two activations can't both pass
- * the limit) without blocking FK checks of rows that reference the workspace.
+ * The workspace's `billing_account_id` (`null` = no account, so no live plan). `lock` takes
+ * `FOR NO KEY UPDATE` on the workspace row: it serialises the workspace's page toggles (and Meta
+ * disconnect) without blocking FK checks of rows that reference the workspace.
  * `undefined` = no such workspace.
  */
-export async function findWorkspacePlanId(
+export async function findWorkspaceBilling(
   executor: PagesExecutor,
   workspaceId: string,
   lock = false,
-): Promise<{ planId: string | null } | undefined> {
+): Promise<{ billingAccountId: string | null } | undefined> {
   const query = executor
-    .select({ planId: workspaces.planId })
+    .select({ billingAccountId: workspaces.billingAccountId })
     .from(workspaces)
     .where(eq(workspaces.id, workspaceId));
   const [row] = await (lock ? query.for('no key update') : query);
   return row;
 }
 
-/** Raw `feature_config` of the plan, or of the Free plan when `planId` is `null`. */
-export async function findPlanFeatureConfig(
+/**
+ * `FOR NO KEY UPDATE` on the billing account row (PW-T5, PW-D11): Page activations of **all** the
+ * account's workspaces run one at a time, so two workspaces can't both pass the pooled limit.
+ * Taken after the workspace lock (lock order workspace → account → page). `false` = no such row.
+ */
+export async function lockBillingAccount(
   executor: PagesExecutor,
-  planId: string | null,
-): Promise<unknown> {
+  billingAccountId: string,
+): Promise<boolean> {
   const [row] = await executor
-    .select({ featureConfig: plans.featureConfig })
-    .from(plans)
-    .where(
-      planId === null
-        ? eq(plans.slug, FALLBACK_PLAN_SLUG)
-        : eq(plans.id, planId),
-    )
-    .limit(1);
-  return row?.featureConfig;
+    .select({ id: billingAccounts.id })
+    .from(billingAccounts)
+    .where(eq(billingAccounts.id, billingAccountId))
+    .for('no key update');
+  return row !== undefined;
 }
 
 /**
@@ -121,18 +119,30 @@ export async function findWorkspaceConnection(
   return row;
 }
 
-/** Active Pages of the workspace. */
-export async function countActivePages(
+/**
+ * Active Pages pooled across the workspace's billing account (PW-D11): every workspace with the
+ * same `billing_account_id`, or only this workspace when it has no account. One query; the
+ * account comes from the workspace row itself, so another tenant's Pages are never counted.
+ */
+export async function countPooledActivePages(
   executor: PagesExecutor,
   workspaceId: string,
 ): Promise<number> {
+  const accountOfWorkspace = executor
+    .select({ id: workspaces.billingAccountId })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId));
   const [row] = await executor
     .select({ value: count() })
     .from(socialPages)
+    .innerJoin(workspaces, eq(workspaces.id, socialPages.workspaceId))
     .where(
       and(
-        eq(socialPages.workspaceId, workspaceId),
         eq(socialPages.isActive, true),
+        or(
+          eq(socialPages.workspaceId, workspaceId),
+          eq(workspaces.billingAccountId, accountOfWorkspace),
+        ),
       ),
     );
   return row?.value ?? 0;

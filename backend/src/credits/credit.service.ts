@@ -4,12 +4,43 @@ import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { normalizeFeatureConfig } from '../admin/plan-rules.js';
 import type { Database } from '../db/database.js';
 import { monthlyCreditUsage, plans, workspaces } from '../db/schema/index.js';
-import {
-  FALLBACK_PLAN_SLUG,
-  findPlanFeatureConfig,
-  findWorkspacePlanId,
-} from '../meta/social-pages.queries.js';
 import { assertCreditCost, dhakaMonthKey } from './credit-period.js';
+
+/**
+ * Legacy (Module 3 D10): the plan whose limits applied to a workspace without `plan_id`. Pages and
+ * moderation stopped reading it in PW-T5 (PW-D7: no Free plan); only this admin-only service still
+ * does, until PW-T6b removes it with `workspaces.plan_id`.
+ */
+const FALLBACK_PLAN_SLUG = 'free';
+
+/** The workspace's `plan_id` (`null` = none); `undefined` = no such workspace. */
+async function findWorkspacePlanId(
+  db: Database,
+  workspaceId: string,
+): Promise<{ planId: string | null } | undefined> {
+  const [row] = await db
+    .select({ planId: workspaces.planId })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId));
+  return row;
+}
+
+/** Raw `feature_config` of the plan, or of the legacy `free` row when `planId` is `null`. */
+async function findPlanFeatureConfig(
+  db: Database,
+  planId: string | null,
+): Promise<unknown> {
+  const [row] = await db
+    .select({ featureConfig: plans.featureConfig })
+    .from(plans)
+    .where(
+      planId === null
+        ? eq(plans.slug, FALLBACK_PLAN_SLUG)
+        : eq(plans.id, planId),
+    )
+    .limit(1);
+  return row?.featureConfig;
+}
 
 /** `CreditService.usage()`: credits used this Dhaka month, the plan's monthly allowance, the month. */
 export interface CreditUsage {

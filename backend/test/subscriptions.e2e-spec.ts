@@ -348,6 +348,8 @@ describe('Subscriptions + Starter trial (e2e)', () => {
     it('links the new workspace to the creator account, no second trial', async () => {
       const owner = await actors.signUp('pwt3-second');
       const account = (await accountOf(owner.id))!;
+      // Starter allows 1 workspace (PW-T5): a paid Growth term (3) makes room for the second.
+      await actors.activatePlan(owner, 'growth');
       const res = await actors
         .http()
         .post('/api/auth/organization/create')
@@ -359,7 +361,11 @@ describe('Subscriptions + Starter trial (e2e)', () => {
       actors.trackWorkspace(workspaceId);
       expect(workspaceId).not.toBe(owner.workspaceId);
       expect(await linkOf(workspaceId)).toBe(account.id);
-      expect(await subsOf(account.id)).toHaveLength(1);
+      // The ended trial + the Growth term: no second trial was started.
+      expect((await subsOf(account.id)).map((sub) => sub.status)).toEqual([
+        'EXPIRED',
+        'ACTIVE',
+      ]);
       // Pooled: both workspaces see the same live plan and wallet.
       const [first, second] = await Promise.all([
         service.activePlan(owner.workspaceId),

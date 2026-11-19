@@ -19,7 +19,7 @@ import {
 } from './meta-disconnect.queries.js';
 import { MetaGraphClient } from './meta-graph.client.js';
 import { MetaGraphError } from './meta-graph.errors.js';
-import { findWorkspacePlanId } from './social-pages.queries.js';
+import { findWorkspaceBilling } from './social-pages.queries.js';
 
 /** A token decrypted before the transaction, tied to the ciphertext it came from. */
 interface DecryptedToken {
@@ -137,7 +137,7 @@ export class MetaDisconnectService {
         userStillConnected: false,
       };
       // Sequential: one transaction = one pg client. Lock order = the Page toggle's.
-      if (!(await findWorkspacePlanId(tx, workspaceId, true))) return empty;
+      if (!(await findWorkspaceBilling(tx, workspaceId, true))) return empty;
       const connection = await findDisconnectConnection(tx, workspaceId, true);
       const pages = await findDisconnectPages(tx, workspaceId, true);
       const pageRowIds = pages.map((page) => page.id);

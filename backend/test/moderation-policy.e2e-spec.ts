@@ -2,11 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
-import {
-  moderationPolicies,
-  plans,
-  workspaces,
-} from '../src/db/schema/index.js';
+import { moderationPolicies } from '../src/db/schema/index.js';
 import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
 
@@ -63,14 +59,8 @@ describe('Moderation policy API (e2e)', () => {
     superAdmin = await actors.signUpSuperAdmin('m5t8-super');
     await actors.addMember(owner.workspaceId, moderator.id, 'moderator');
     await actors.addMember(owner.workspaceId, wsAdmin.id, 'admin');
-    const [growthPlan] = await actors.db
-      .select({ id: plans.id })
-      .from(plans)
-      .where(eq(plans.slug, 'growth'));
-    await actors.db
-      .update(workspaces)
-      .set({ planId: growthPlan!.id })
-      .where(eq(workspaces.id, growth.workspaceId));
+    // PW-T5: flags come from the account's live subscription (sign-up = Starter trial).
+    await actors.activatePlan(growth, 'growth');
   });
 
   afterAll(async () => {
@@ -128,13 +118,41 @@ describe('Moderation policy API (e2e)', () => {
       expect(again.body.updatedAt).toBe(res.body.updatedAt);
     });
 
-    it('autoReplyAvailable follows the plan (Growth on, no plan = Free off)', async () => {
+    it('autoReplyAvailable follows the live plan (Growth on, Starter trial off)', async () => {
       expect(
         (await get(growth.cookie, growth.workspaceId).expect(200)).body
           .autoReplyAvailable,
       ).toBe(true);
       expect(
         (await get(other.cookie, other.workspaceId).expect(200)).body
+          .autoReplyAvailable,
+      ).toBe(false);
+    });
+
+    it('no live plan (Growth term ended, or no billing account) → flags off, PATCH on → 409', async () => {
+      const ended = await actors.signUp('pwt5-flags-ended');
+      await actors.activatePlan(ended, 'growth');
+      expect(
+        (await get(ended.cookie, ended.workspaceId).expect(200)).body
+          .autoReplyAvailable,
+      ).toBe(true);
+      await actors.expirePlan(ended);
+      expect(
+        (await get(ended.cookie, ended.workspaceId).expect(200)).body
+          .autoReplyAvailable,
+      ).toBe(false);
+      const res = await patch(ended.cookie, ended.workspaceId, {
+        categories: {
+          SCAM_PHISHING: { autoReply: true, replyEn: EN, replyBn: BN },
+        },
+      }).expect(409);
+      expect(res.body.code).toBe('PLAN_FEATURE_UNAVAILABLE');
+
+      const orphan = await actors.signUp('pwt5-flags-orphan');
+      await actors.activatePlan(orphan, 'growth');
+      await actors.removeBilling(orphan);
+      expect(
+        (await get(orphan.cookie, orphan.workspaceId).expect(200)).body
           .autoReplyAvailable,
       ).toBe(false);
     });
@@ -292,7 +310,7 @@ describe('Moderation policy API (e2e)', () => {
   });
 
   describe('plan feature (D6)', () => {
-    it('409 PLAN_FEATURE_UNAVAILABLE on a plan without autoReplyTemplates (no plan = Free)', async () => {
+    it('409 PLAN_FEATURE_UNAVAILABLE on a plan without autoReplyTemplates (Starter trial)', async () => {
       const res = await patch(owner.cookie, owner.workspaceId, {
         categories: {
           SAFE_INQUIRY: { autoReply: true, replyEn: EN, replyBn: BN },
@@ -308,7 +326,7 @@ describe('Moderation policy API (e2e)', () => {
       );
     });
 
-    it('texts may still be saved with the switch off on Free', async () => {
+    it('texts may still be saved with the switch off on Starter', async () => {
       const res = await patch(owner.cookie, owner.workspaceId, {
         categories: { SAFE_INQUIRY: { replyEn: EN, replyBn: BN } },
       }).expect(200);

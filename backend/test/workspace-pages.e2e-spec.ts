@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import { normalizeFeatureConfig } from '../src/admin/plan-rules.js';
@@ -8,6 +8,7 @@ import {
   tokenCipherContext,
 } from '../src/crypto/token-cipher.service.js';
 import {
+  billingAccounts,
   type MetaConnectionStatus,
   metaConnections,
   plans,
@@ -15,7 +16,11 @@ import {
   workspaces,
 } from '../src/db/schema/index.js';
 import { MetaGraphClient } from '../src/meta/meta-graph.client.js';
-import { type Actor, createAuthActors } from './utils/auth-actors.js';
+import {
+  type Actor,
+  createAuthActors,
+  TRUSTED_ORIGIN,
+} from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
 import { fakePageSubscriptionGraph } from './utils/fake-meta-graph.js';
 
@@ -44,7 +49,7 @@ describe('Workspace pages API (e2e)', () => {
   let wsAdmin: Actor;
   let outsider: Actor;
   let superAdmin: Actor;
-  let freeLimit: number;
+  let starterLimit: number;
   let growthLimit: number;
 
   const http = () => request(app.getHttpServer());
@@ -165,19 +170,13 @@ describe('Workspace pages API (e2e)', () => {
     for (const actor of [owner, other, growth]) {
       await insertConnection(actor.workspaceId, 'ACTIVE');
     }
-    freeLimit = await limitOf('free');
+    // Every sign-up runs on a Starter trial (PW-T3); the limit comes from the live plan (PW-T5).
+    starterLimit = await limitOf('starter');
     growthLimit = await limitOf('growth');
-    // The limit tests need room for at least one active Page on Free and more on Growth.
-    expect(freeLimit).toBeGreaterThanOrEqual(1);
-    expect(growthLimit).toBeGreaterThan(freeLimit);
-    const [growthPlan] = await db()
-      .select({ id: plans.id })
-      .from(plans)
-      .where(eq(plans.slug, 'growth'));
-    await db()
-      .update(workspaces)
-      .set({ planId: growthPlan!.id })
-      .where(eq(workspaces.id, growth.workspaceId));
+    // The limit tests need room for at least one active Page on Starter and more on Growth.
+    expect(starterLimit).toBeGreaterThanOrEqual(1);
+    expect(growthLimit).toBeGreaterThan(starterLimit);
+    await actors.activatePlan(growth, 'growth');
   });
 
   afterAll(async () => {
@@ -290,7 +289,7 @@ describe('Workspace pages API (e2e)', () => {
 
     beforeAll(async () => {
       // Inserted out of name order; one with IG, one without a token (missing on re-connect).
-      for (let i = freeLimit; i >= 0; i--) {
+      for (let i = starterLimit; i >= 0; i--) {
         const row = await insertPage(owner.workspaceId, `Shop ${i}`, {
           ig: i === 0,
         });
@@ -304,7 +303,7 @@ describe('Workspace pages API (e2e)', () => {
       ).id;
     });
 
-    it('GET lists the workspace’s Pages sorted by name, without tokens, with the Free limit', async () => {
+    it('GET lists the workspace’s Pages sorted by name, without tokens, with the Starter (trial) limit', async () => {
       const res = record(
         await http()
           .get(listPath(owner.workspaceId))
@@ -316,7 +315,10 @@ describe('Workspace pages API (e2e)', () => {
         'items',
         'pageLimit',
       ]);
-      expect(res.body.pageLimit).toEqual({ limit: freeLimit, activeCount: 0 });
+      expect(res.body.pageLimit).toEqual({
+        limit: starterLimit,
+        activeCount: 0,
+      });
       // M4-T9 (D9): status only, no Facebook user id, no token.
       expect(res.body.connection).toEqual({
         status: 'ACTIVE',
@@ -364,7 +366,10 @@ describe('Workspace pages API (e2e)', () => {
       expect(res.body.items.map((p: { id: string }) => p.id)).toEqual([
         foreign,
       ]);
-      expect(res.body.pageLimit).toEqual({ limit: freeLimit, activeCount: 1 });
+      expect(res.body.pageLimit).toEqual({
+        limit: starterLimit,
+        activeCount: 1,
+      });
     });
 
     it('toggle on → { page, changed: true }, row active, updated_at moves', async () => {
@@ -411,12 +416,12 @@ describe('Workspace pages API (e2e)', () => {
       expect(off.body.changed).toBe(false);
     });
 
-    it('409 PAGE_LIMIT_REACHED with limit + active count once the Free limit is used', async () => {
-      // Fill the rest of the Free limit.
-      for (const id of ownerPages.slice(1, freeLimit)) {
+    it('409 PAGE_LIMIT_REACHED with limit + active count once the Starter limit is used', async () => {
+      // Fill the rest of the Starter limit.
+      for (const id of ownerPages.slice(1, starterLimit)) {
         record(await toggle(owner, owner.workspaceId, id, true).expect(200));
       }
-      const last = ownerPages[freeLimit]!;
+      const last = ownerPages[starterLimit]!;
       const before = await rowOf(last);
       const res = record(
         await toggle(owner, owner.workspaceId, last, true).expect(409),
@@ -425,7 +430,7 @@ describe('Workspace pages API (e2e)', () => {
         statusCode: 409,
         error: 'Conflict',
         code: 'PAGE_LIMIT_REACHED',
-        details: { limit: freeLimit, activeCount: freeLimit },
+        details: { limit: starterLimit, activeCount: starterLimit },
       });
       expect(res.body.message).toMatch(/plan/i);
       expect(await rowOf(last)).toEqual(before);
@@ -436,8 +441,8 @@ describe('Workspace pages API (e2e)', () => {
           .expect(200),
       );
       expect(list.body.pageLimit).toEqual({
-        limit: freeLimit,
-        activeCount: freeLimit,
+        limit: starterLimit,
+        activeCount: starterLimit,
       });
     });
 
@@ -455,11 +460,11 @@ describe('Workspace pages API (e2e)', () => {
         await toggle(
           owner,
           owner.workspaceId,
-          ownerPages[freeLimit]!,
+          ownerPages[starterLimit]!,
           true,
         ).expect(200),
       );
-      expect((await rowOf(ownerPages[freeLimit]!)).isActive).toBe(true);
+      expect((await rowOf(ownerPages[starterLimit]!)).isActive).toBe(true);
     });
 
     it('409 PAGE_TOKEN_MISSING for a Page without a token', async () => {
@@ -468,7 +473,7 @@ describe('Workspace pages API (e2e)', () => {
         await toggle(
           owner,
           owner.workspaceId,
-          ownerPages[freeLimit]!,
+          ownerPages[starterLimit]!,
           false,
         ).expect(200),
       );
@@ -536,7 +541,7 @@ describe('Workspace pages API (e2e)', () => {
     });
 
     it('concurrent activations can’t both pass the limit (workspace row lock)', async () => {
-      // freeLimit - 1 Pages are on now (ownerPages[1..freeLimit-1]); one slot is left.
+      // starterLimit - 1 Pages are on now (ownerPages[1..starterLimit-1]); one slot is left.
       const extra = await insertPage(owner.workspaceId, 'Shop race');
       const [a, b] = [ownerPages[0]!, extra.id];
       // A concurrent toggle of `a` holds the workspace lock and has switched `a` on, uncommitted.
@@ -570,7 +575,7 @@ describe('Workspace pages API (e2e)', () => {
           return res;
         });
         await new Promise((resolve) => setTimeout(resolve, 300));
-        // Without the lock it would have counted the committed (freeLimit - 1) and answered 200.
+        // Without the lock it would have counted the committed (starterLimit - 1) and answered 200.
         expect(settled).toBe(false);
       } finally {
         release();
@@ -579,8 +584,8 @@ describe('Workspace pages API (e2e)', () => {
       const res = record(await pending);
       expect(res.status).toBe(409);
       expect(res.body.details).toEqual({
-        limit: freeLimit,
-        activeCount: freeLimit,
+        limit: starterLimit,
+        activeCount: starterLimit,
       });
       expect((await rowOf(b)).isActive).toBe(false);
       const list = record(
@@ -590,8 +595,8 @@ describe('Workspace pages API (e2e)', () => {
           .expect(200),
       );
       expect(list.body.pageLimit).toEqual({
-        limit: freeLimit,
-        activeCount: freeLimit,
+        limit: starterLimit,
+        activeCount: starterLimit,
       });
     });
   });
@@ -635,7 +640,7 @@ describe('Workspace pages API (e2e)', () => {
       });
       expect(await listOf(none)).toEqual({
         items: [],
-        pageLimit: { limit: freeLimit, activeCount: 0 },
+        pageLimit: { limit: starterLimit, activeCount: 0 },
         connection: null,
       });
     });
@@ -695,8 +700,8 @@ describe('Workspace pages API (e2e)', () => {
     });
   });
 
-  describe('workspace with a plan', () => {
-    it('uses its plan’s connectedPages instead of Free', async () => {
+  describe('workspace with a paid plan', () => {
+    it('uses the live Growth subscription’s connectedPages', async () => {
       const ids: string[] = [];
       for (let i = 0; i <= growthLimit; i++) {
         ids.push((await insertPage(growth.workspaceId, `G ${i}`)).id);
@@ -726,6 +731,225 @@ describe('Workspace pages API (e2e)', () => {
         limit: growthLimit,
         activeCount: growthLimit,
       });
+    });
+  });
+  describe('pooled per billing account + no live plan (PW-T5, PW-D7/D9/D11)', () => {
+    let pool: Actor;
+    let second: string;
+
+    beforeAll(async () => {
+      pool = await actors.signUp('pwt5-pool');
+      // Growth (room for 3 workspaces) so `/organization/create` passes the workspace limit.
+      await actors.activatePlan(pool, 'growth');
+      const res = record(
+        await http()
+          .post('/api/auth/organization/create')
+          .set('Cookie', pool.cookie)
+          .set('Origin', TRUSTED_ORIGIN)
+          .send({ name: 'Pool second', slug: `pwt5-pool-${Date.now()}` })
+          .expect(200),
+      );
+      second = res.body.id as string;
+      actors.trackWorkspace(second);
+      await insertConnection(pool.workspaceId, 'ACTIVE');
+      await insertConnection(second, 'ACTIVE');
+    });
+
+    const pageLimitOf = async (workspaceId: string) =>
+      record(
+        await http()
+          .get(listPath(workspaceId))
+          .set('Cookie', pool.cookie)
+          .expect(200),
+      ).body.pageLimit as { limit: number; activeCount: number };
+
+    it('the limit is hit from the other workspace: 409 with pooled details; switching off frees it', async () => {
+      // growthLimit - 1 Pages on in the first workspace, the last slot taken from the second one.
+      for (let i = 0; i < growthLimit - 1; i++) {
+        await insertPage(pool.workspaceId, `P ${i}`, { isActive: true });
+      }
+      const inSecond = await insertPage(second, 'S on');
+      record(await toggle(pool, second, inSecond.id, true).expect(200));
+      expect(await pageLimitOf(pool.workspaceId)).toEqual({
+        limit: growthLimit,
+        activeCount: growthLimit,
+      });
+      expect(await pageLimitOf(second)).toEqual({
+        limit: growthLimit,
+        activeCount: growthLimit,
+      });
+
+      const blocked = await insertPage(pool.workspaceId, 'P blocked');
+      const res = record(
+        await toggle(pool, pool.workspaceId, blocked.id, true).expect(409),
+      );
+      expect(res.body).toMatchObject({
+        code: 'PAGE_LIMIT_REACHED',
+        details: { limit: growthLimit, activeCount: growthLimit },
+      });
+      expect((await rowOf(blocked.id)).isActive).toBe(false);
+      // The same from the second workspace.
+      const blocked2 = await insertPage(second, 'S blocked');
+      expect(
+        record(await toggle(pool, second, blocked2.id, true).expect(409)).body
+          .code,
+      ).toBe('PAGE_LIMIT_REACHED');
+
+      // Switching off in the second workspace frees the pooled slot for the first.
+      record(await toggle(pool, second, inSecond.id, false).expect(200));
+      record(
+        await toggle(pool, pool.workspaceId, blocked.id, true).expect(200),
+      );
+      expect(await pageLimitOf(second)).toEqual({
+        limit: growthLimit,
+        activeCount: growthLimit,
+      });
+    });
+
+    it('another account’s active Pages never count', async () => {
+      // `other` has an active Page; its own count stays its own.
+      const res = record(
+        await http()
+          .get(listPath(other.workspaceId))
+          .set('Cookie', other.cookie)
+          .expect(200),
+      );
+      expect(res.body.pageLimit).toEqual({
+        limit: starterLimit,
+        activeCount: 1,
+      });
+    });
+
+    it('concurrent activations in two workspaces can’t both pass (billing account lock)', async () => {
+      // The pool is full (growthLimit on): switch one Page of the first workspace off, so one
+      // pooled slot is left.
+      const [onInFirst] = await db()
+        .select({ id: socialPages.id })
+        .from(socialPages)
+        .where(
+          and(
+            eq(socialPages.workspaceId, pool.workspaceId),
+            eq(socialPages.isActive, true),
+          ),
+        )
+        .limit(1);
+      record(
+        await toggle(pool, pool.workspaceId, onInFirst!.id, false).expect(200),
+      );
+      const freed = await insertPage(second, 'S freed');
+      const fromFirst = await insertPage(pool.workspaceId, 'P race');
+      // A concurrent toggle in the second workspace holds the account lock and has switched
+      // `freed` on (uncommitted): the last slot.
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let locked!: () => void;
+      const lockTaken = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const accountId = await actors.accountIdOf(pool);
+      const holder = db().transaction(async (tx) => {
+        await tx
+          .select({ id: billingAccounts.id })
+          .from(billingAccounts)
+          .where(eq(billingAccounts.id, accountId))
+          .for('no key update');
+        await tx
+          .update(socialPages)
+          .set({ isActive: true })
+          .where(eq(socialPages.id, freed.id));
+        locked();
+        await gate;
+      });
+      await lockTaken;
+      let settled = false;
+      let pending: Promise<request.Response>;
+      try {
+        pending = toggle(pool, pool.workspaceId, fromFirst.id, true).then(
+          (res) => {
+            settled = true;
+            return res;
+          },
+        );
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        // Without the account lock it would have counted growthLimit - 1 and answered 200.
+        expect(settled).toBe(false);
+      } finally {
+        release();
+        await holder;
+      }
+      const res = record(await pending);
+      expect(res.status).toBe(409);
+      expect(res.body.details).toEqual({
+        limit: growthLimit,
+        activeCount: growthLimit,
+      });
+      expect((await rowOf(fromFirst.id)).isActive).toBe(false);
+    });
+
+    it('expired plan: GET limit 0, switch on → 409 NO_ACTIVE_PLAN without Graph, switch off → 200', async () => {
+      const ended = await actors.signUp('pwt5-ended');
+      await insertConnection(ended.workspaceId, 'ACTIVE');
+      const on = await insertPage(ended.workspaceId, 'E on', {
+        isActive: true,
+      });
+      const off = await insertPage(ended.workspaceId, 'E off');
+      await actors.expirePlan(ended);
+      graph.subscribePageApp.mockClear();
+
+      const list = record(
+        await http()
+          .get(listPath(ended.workspaceId))
+          .set('Cookie', ended.cookie)
+          .expect(200),
+      );
+      expect(list.body.pageLimit).toEqual({ limit: 0, activeCount: 1 });
+
+      const res = record(
+        await toggle(ended, ended.workspaceId, off.id, true).expect(409),
+      );
+      expect(res.body).toMatchObject({
+        statusCode: 409,
+        error: 'Conflict',
+        code: 'NO_ACTIVE_PLAN',
+      });
+      expect(res.body).not.toHaveProperty('details');
+      expect(graph.subscribePageApp).not.toHaveBeenCalled();
+      expect((await rowOf(off.id)).isActive).toBe(false);
+
+      // Already on = no-op (no 409); switching off always works.
+      expect(
+        record(await toggle(ended, ended.workspaceId, on.id, true).expect(200))
+          .body.changed,
+      ).toBe(false);
+      record(await toggle(ended, ended.workspaceId, on.id, false).expect(200));
+      expect((await rowOf(on.id)).isActive).toBe(false);
+    });
+
+    it('no billing account (removed) → 409 NO_ACTIVE_PLAN; connection check still first', async () => {
+      const orphan = await actors.signUp('pwt5-orphan');
+      const page = await insertPage(orphan.workspaceId, 'O');
+      await actors.removeBilling(orphan);
+      // No connection yet: CONNECTION_NEEDS_REAUTH comes before the plan check.
+      expect(
+        record(
+          await toggle(orphan, orphan.workspaceId, page.id, true).expect(409),
+        ).body.code,
+      ).toBe('CONNECTION_NEEDS_REAUTH');
+      await insertConnection(orphan.workspaceId, 'ACTIVE');
+      expect(
+        record(
+          await toggle(orphan, orphan.workspaceId, page.id, true).expect(409),
+        ).body.code,
+      ).toBe('NO_ACTIVE_PLAN');
+      const list = record(
+        await http()
+          .get(listPath(orphan.workspaceId))
+          .set('Cookie', orphan.cookie)
+          .expect(200),
+      );
+      expect(list.body.pageLimit).toEqual({ limit: 0, activeCount: 0 });
     });
   });
 });

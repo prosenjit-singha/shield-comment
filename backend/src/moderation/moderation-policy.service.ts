@@ -4,13 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { normalizeFeatureConfig } from '../admin/plan-rules.js';
 import type { Database } from '../db/database.js';
 import {
-  findPlanFeatureConfig,
-  findWorkspacePlanId,
-  type PagesExecutor,
-} from '../meta/social-pages.queries.js';
+  findLiveSubscription,
+  type LiveSubscriptionExecutor,
+} from '../wallet/live-subscription.queries.js';
 import type {
   ModerationPolicyResponse,
   ModerationPolicyUpdateResponse,
@@ -34,18 +32,19 @@ import {
 } from './moderation.queries.js';
 
 /**
- * The plan flags moderation reads (D6), from the workspace's plan or the Free plan when it has
- * none (Module 3 D10). A missing plan row fails closed (no auto-reply).
+ * The plan flags moderation reads (D6), from the live subscription's plan of the workspace's
+ * billing account (PW-T5, `findLiveSubscription`). No live plan (no account, trial/term over) =
+ * every flag off (PW-D7: no Free fallback).
  */
 export async function workspacePlanFeatures(
-  executor: PagesExecutor,
+  executor: LiveSubscriptionExecutor,
   workspaceId: string,
+  now: Date = new Date(),
 ): Promise<DecisionPlanFeatures> {
-  const workspace = await findWorkspacePlanId(executor, workspaceId);
-  const raw = await findPlanFeatureConfig(executor, workspace?.planId ?? null);
-  if (raw === undefined || raw === null) return { autoReplyTemplates: false };
+  const live = await findLiveSubscription(executor, workspaceId, now);
   return {
-    autoReplyTemplates: normalizeFeatureConfig(raw).features.autoReplyTemplates,
+    autoReplyTemplates:
+      live?.plan.featureConfig.features.autoReplyTemplates ?? false,
   };
 }
 

@@ -22,7 +22,11 @@ export interface WorkspacePage {
   updatedAt: Date;
 }
 
-/** The workspace's `connectedPages` plan limit (no plan = the Free plan) and how many Pages are on. */
+/**
+ * The live plan's `connectedPages` limit (no live plan = 0, PW-T5) and how many Pages are on across
+ * **all** workspaces of the billing account (pooled, PW-D11; only this workspace when it has no
+ * account).
+ */
 export interface WorkspacePageLimit {
   limit: number;
   activeCount: number;
@@ -62,8 +66,16 @@ export const PAGE_TOGGLE_ERROR_CODES = {
    * or no connection row): reconnect Facebook first. Checked before the token and limit checks.
    */
   connectionNeedsReauth: 'CONNECTION_NEEDS_REAUTH',
-  /** Activating past the plan's `connectedPages`; `details` = `WorkspacePageLimit`. */
+  /**
+   * Activating past the live plan's `connectedPages`, counted across all workspaces of the billing
+   * account (PW-T5, PW-D11); `details` = `WorkspacePageLimit` (pooled).
+   */
   limitReached: 'PAGE_LIMIT_REACHED',
+  /**
+   * 409 (PW-T5, PW-D7/D9): activating while the workspace's billing account has no live plan (no
+   * account, trial or term over). Checked where the limit is; switching off always works.
+   */
+  noActivePlan: 'NO_ACTIVE_PLAN',
   /** Activating a Page without a stored token (missing on re-connect): reconnect Meta first. */
   tokenMissing: 'PAGE_TOKEN_MISSING',
   /** 502 (M4-T8, D10): Graph `subscribed_apps` failed on switch-on; nothing changed. */
