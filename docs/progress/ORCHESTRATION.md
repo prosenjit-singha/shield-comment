@@ -8,13 +8,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)").
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #10 (2026-11-20) · rows this session: 2 · estimate: 66k
+- Session: #10 (2026-11-20) · rows this session: 3 · estimate: 82k
 
 ## State
-dispatched PW-GATE (2026-11-20) · commit: "docs(progress): pass plans and wallet gate (PW-GATE)"
+paused: run boundary (PW-GATE passed 2026-11-20) + user input needed (M5-T16: Neon AI credits or a provider key)
 
 ## Resume
-`/orchestration --continue` → dispatches PW-T8 (client plan status banner), then PW-T9 (admin manual activation) and PW-GATE; then M5-T16 (needs Neon AI credits or a provider key: asked at its pre-check) → M5-GATE.
+`/orchestration --continue` → pre-check of M5-T16 asks first: buy Neon AI Gateway credits (the $5 minimum covers gpt-oss-20b / gpt-oss-120b / claude-haiku-5-5), give a direct provider key, or keep M5-T16 parked and go to M5-GATE without the live accuracy result. Then M5-T16 → M5-GATE.
 
 ## Next prompt (M5-T16)
 
@@ -206,4 +206,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-20 PW-T7 ✅ 3ba60b4 · admin 346 (was 323) · build ✅ · lint ✅ · plan editor yearly per-month + Starter trial (length presets, comment limit), audit labels; clients plan · interval · status badge + monthly comments bar; AI card without credits
 - 2026-11-20 PW-T8 ✅ · `3e7b6e2` · client 464 (was 426) · build ✅ · lint ✅ · `_app` plan status banner from the billing summary (trial countdown in Dhaka days / moderation paused / comment limit reached, en + bn), AI card without credits, `mockApi` fails on unexpected requests
 - 2026-11-20 PW-T9 ✅ · `b086a82` · backend 1869 unit (+1 skipped; was 1824) + e2e 850 (was 825) · admin 371 (was 346) · e2e/ 2/2 · admin manual plan activation: migration 0026 `subscription_audit_logs`, `POST /api/admin/clients/:workspaceId/subscription` (CANCELED → new ACTIVE term with snapshots, fresh wallet period + `PLAN_GRANT` by the admin, audit with IP/UA), "Activate plan" dialog on `/admin/clients`
-- 2026-11-20 PW-GATE ✅ · backend 1869 unit (+1 skipped) + e2e 850 · admin 371 · client 464 · e2e/ 2/2 (host + docker) · plans & wallet gate passed: all suites green, compose rebuilt (migrate no-op), browser check of plan editor, clients list + manual activation and client trial/paused banner (en + bn); gate fix: Activate plan dialog copy without a live plan
+- 2026-11-20 PW-GATE ✅ · `a904a24` · backend 1869 unit (+1 skipped) + e2e 850 · admin 371 · client 464 · e2e/ 2/2 (host + docker) · plans & wallet gate passed: all suites green, compose rebuilt (migrate no-op), browser check of plan editor, clients list + manual activation and client trial/paused banner (en + bn); gate fix: Activate plan dialog copy without a live plan
