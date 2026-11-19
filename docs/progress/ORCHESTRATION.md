@@ -7,13 +7,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.)
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #7 (2026-11-19) · rows this session: 5 · estimate: 115k
+- Session: #7 (2026-11-19) · rows this session: 6 · estimate: 130k
 
 ## State
-dispatched M5-T15 (2026-11-19) · commit: "feat(client): add ai analysis context card to pages (M5-T15)"
+verified M5-T15 (2026-11-19)
 
 ## Resume
-`/orchestration --continue` (next: M5-T15; no decision pending)
+`/orchestration --continue` (next: M5-T16 live golden bake-off; PRE-CHECK pending)
 
 ## Next prompt (M5-T16)
 
@@ -159,4 +159,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-19 M5-T12 ✅ b394ec6 · backend 1649 unit (+1 skipped; was 1600) + e2e 694 (was 671) · moderation worker: hand-off job per comment version, CommentModerationProcessor (reserve → classify → decide → act, stage marker migration 0020, release on no-token failures, D2 retry/FAILED), D2 sweeper every 15 min
 - 2026-11-19 M5-T13 ✅ 4d0a77d · backend 1699 unit (+1 skipped; was 1649) + e2e 705 (was 694) · admin AI data: `/admin/system/health` `ai` (today + 7 d per provider/model, cost USD/BDT from price table + env), dashboard comments from `daily_comment_stats`, client items `credits` (batched `usageMany`) (orchestrator note: commit subject is 75 chars, over the 72 rule; left as is, since commits are never amended)
 - 2026-11-19 M5-T14 ✅ 4fc788d · admin 323 (was 282) · admin UI: `/admin/system` AI moderation card (today / 7 d, cost USD + ৳, failures, per model, unavailable + empty states), dashboard comments real-data tests, clients credits bar (`used / limit`, capped, `null` placeholder)
-- 2026-11-19 M5-T15 ✅ · client 426 (was 399) · client "AI analysis" card on /pages (D8 level via the D5 policy API, en + bn, save only when changed, 403/load-error/retry, impersonated ok)
+- 2026-11-19 M5-T15 ✅ d5299b4 · client 426 (was 399) · client "AI analysis" card on /pages (D8 level via the D5 policy API, en + bn, save only when changed, 403/load-error/retry, impersonated ok)
