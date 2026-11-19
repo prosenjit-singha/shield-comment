@@ -183,6 +183,13 @@
       "when": 1795111398509,
       "tag": "0025_drop_plan_id_and_credits",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1795113822118,
+      "tag": "0026_subscription_audit_logs",
+      "breakpoints": true
     }
   ]
 }

@@ -140,6 +140,109 @@ export class WalletService {
   }
 
   /**
+   * Starts a **fresh** period for a paid term the caller just wrote (PW-T9 admin manual
+   * activation, PW-D16): the wallet is re-anchored at the term start, the period containing `now`
+   * gets balance rows with `used` 0 and the plan's grant **even when a row with that
+   * `period_start` already exists** (`openPeriod` would keep its `used`), plus one `PLAN_GRANT`
+   * entry per meter with `actorUserId` (the admin). Other balance rows still open at `now` (the
+   * ended trial / term) are closed at `now`, so a later `refund(at)` lands in the right period.
+   * `added` (future top-ups) is kept. Run it inside the transaction that wrote the subscription;
+   * returns the fresh balance of each meter.
+   */
+  async startFreshPeriod(
+    live: AccountLiveSubscription,
+    now: Date,
+    tx: WalletExecutor,
+    actorUserId: string,
+  ): Promise<Map<WalletMeter, WalletBalance>> {
+    assertWalletInstant(now);
+    const period = subscriptionPeriod(live, now);
+    const values = {
+      cycleAnchorAt: period.anchor,
+      currentPeriodStart: period.start,
+      currentPeriodEnd: period.end,
+    };
+    const [wallet] = await tx
+      .insert(wallets)
+      .values({ billingAccountId: live.billingAccountId, ...values })
+      .onConflictDoUpdate({
+        target: wallets.billingAccountId,
+        set: { ...values, updatedAt: sql`now()` },
+      })
+      .returning({ id: wallets.id });
+    const walletId = wallet!.id;
+    const b = walletBalances;
+    await tx
+      .update(b)
+      .set({ periodEnd: now })
+      .where(
+        and(
+          eq(b.walletId, walletId),
+          ne(b.periodStart, period.start),
+          sql`${b.periodStart} < ${now}`,
+          gt(b.periodEnd, now),
+        ),
+      );
+    const trialing = live.status === 'TRIALING';
+    const rows = await tx
+      .insert(b)
+      .values(
+        WALLET_METER_KEYS.map((meter) => ({
+          walletId,
+          meter,
+          periodStart: period.start,
+          periodEnd: period.end,
+          included: meterGrant(meter, live.plan, trialing),
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [b.walletId, b.meter, b.periodStart],
+        set: {
+          periodEnd: sql`excluded.period_end`,
+          included: sql`excluded.included`,
+          used: 0,
+          updatedAt: sql`now()`,
+        },
+      })
+      .returning({
+        meter: b.meter,
+        included: b.included,
+        added: b.added,
+      });
+    await tx.insert(walletEntries).values(
+      rows.map((row) => ({
+        walletId,
+        meter: row.meter,
+        periodStart: period.start,
+        kind: 'PLAN_GRANT' as const,
+        amount: row.included,
+        reference: live.subscriptionId,
+        actorUserId,
+      })),
+    );
+    this.logger.debug(
+      `wallet fresh period account=${live.billingAccountId} wallet=${walletId} subscription=${live.subscriptionId} actor=${actorUserId} meters=${rows.length}`,
+    );
+    return new Map(
+      rows.map((row) => {
+        const meter = row.meter as WalletMeter;
+        return [
+          meter,
+          {
+            meter,
+            included: row.included,
+            added: row.added,
+            used: 0,
+            available: row.included + row.added,
+            periodStart: period.start,
+            resetsAt: period.end,
+          },
+        ];
+      }),
+    );
+  }
+
+  /**
    * Gives back `n` of `meter` to the balance whose period contains `at` (the consume's instant
    * or its period start), never below 0. Scoped to the workspace's account wallet; works after
    * the plan ended. `false` = no such balance (nothing to give back).

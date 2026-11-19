@@ -5,12 +5,14 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
   Layers,
   LogIn,
   RotateCcw,
   SearchX,
 } from 'lucide-react'
 import { useId, useState } from 'react'
+import { ActivatePlanDialog } from '@/components/clients/activate-plan-dialog'
 import { ClientStatusDialog, type StatusChange } from '@/components/clients/client-status-dialog'
 import { useLoginAsClient } from '@/components/clients/use-login-as-client'
 import { PageHeader } from '@/components/placeholder-page'
@@ -96,6 +98,7 @@ function ClientsPage() {
   const query = useQuery(clientsQueryOptions(search))
   const loginAs = useLoginAsClient()
   const [statusChange, setStatusChange] = useState<StatusChange | null>(null)
+  const [activating, setActivating] = useState<AdminClient | null>(null)
 
   /** Any filter change goes back to page 1; `replace` keeps typing out of the history stack. */
   const setFilters = (patch: Partial<ClientsSearch>) =>
@@ -154,6 +157,7 @@ function ClientsPage() {
                         loggingIn={loginAs.pendingId === client.id}
                         onLoginAs={() => loginAs.start(client)}
                         onChangeStatus={(status) => setStatusChange({ client, status })}
+                        onActivatePlan={() => setActivating(client)}
                       />
                     ))
                   : Array.from({ length: 6 }, (_, i) => <SkeletonRow key={i} />)}
@@ -177,6 +181,7 @@ function ClientsPage() {
       </section>
 
       <ClientStatusDialog change={statusChange} onClose={() => setStatusChange(null)} />
+      <ActivatePlanDialog client={activating} onClose={() => setActivating(null)} />
     </div>
   )
 }
@@ -330,11 +335,13 @@ function ClientRow({
   loggingIn,
   onLoginAs,
   onChangeStatus,
+  onActivatePlan,
 }: {
   client: AdminClient
   loggingIn: boolean
   onLoginAs: () => void
   onChangeStatus: (status: ClientStatus) => void
+  onActivatePlan: () => void
 }) {
   const suspended = client.status === 'SUSPENDED'
   const loginBlocked = suspended
@@ -381,6 +388,16 @@ function ClientRow({
       </TableCell>
       <TableCell className={`${stickyActions} pr-4 transition-colors group-hover/row:bg-muted`}>
         <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onActivatePlan}
+            title={client.owner ? undefined : 'This client has no owner, so it has no billing account.'}
+            aria-label={`Activate plan: ${client.name}`}
+          >
+            <CreditCard data-icon="inline-start" />
+            Activate plan
+          </Button>
           <Button
             variant="outline"
             size="sm"

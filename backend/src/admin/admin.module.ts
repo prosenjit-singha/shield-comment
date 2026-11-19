@@ -13,6 +13,7 @@ import { AdminDashboardController } from './admin-dashboard.controller.js';
 import { AdminDashboardService } from './admin-dashboard.service.js';
 import { AdminImpersonationService } from './admin-impersonation.service.js';
 import { AdminPlansService } from './admin-plans.service.js';
+import { AdminSubscriptionService } from './admin-subscription.service.js';
 import { AdminSettingsController } from './admin-settings.controller.js';
 import { AdminSystemController } from './admin-system.controller.js';
 import { AdminSystemService } from './admin-system.service.js';
@@ -35,6 +36,7 @@ import { AdminSystemService } from './admin-system.service.js';
     AdminDashboardService,
     AdminImpersonationService,
     AdminPlansService,
+    AdminSubscriptionService,
     AdminSystemService,
   ],
 })

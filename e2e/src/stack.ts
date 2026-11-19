@@ -152,6 +152,12 @@ export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary>
         [ids, wsIds],
       );
       const accountIds = accounts.rows.map((r) => r.id);
+      // Manual activation audit (PW-T9) references admins, accounts, workspaces, plans and
+      // subscriptions (all restrict) → before the subscriptions.
+      await db.query(
+        'delete from subscription_audit_logs where admin_id = any($1::uuid[]) or billing_account_id = any($2::uuid[]) or workspace_id = any($3::uuid[])',
+        [ids, accountIds, wsIds],
+      );
       const walletIds = 'select id from wallets where billing_account_id = any($1::uuid[])';
       await db.query(`delete from wallet_entries where wallet_id in (${walletIds})`, [accountIds]);
       await db.query(`delete from wallet_balances where wallet_id in (${walletIds})`, [accountIds]);

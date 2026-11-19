@@ -483,3 +483,183 @@ describe('Login as Client', () => {
     expect(button.disabled).toBe(true)
   })
 })
+
+describe('Activate plan dialog (PW-T9)', () => {
+  // 20 Nov 2026, 10:00 in Dhaka.
+  const NOW = new Date('2026-11-20T04:00:00.000Z')
+  const plan = (id: string, slug: string, name: string, prices: [number, number | null, number | null]) => ({
+    id,
+    slug,
+    name,
+    sortOrder: 0,
+    isActive: true,
+    originalPriceBdt: prices[0],
+    offerPriceBdt: prices[1],
+    offerBadge: null,
+    yearlyMonthlyPriceBdt: prices[2],
+    trialDays: null,
+    trialCommentLimit: null,
+    featureConfig: { limits: {}, features: {} },
+    createdAt: '',
+    updatedAt: '',
+  })
+  const activePlans = {
+    items: [
+      plan('0199a000-0000-7000-8000-0000000000b2', 'starter', 'Starter', [999, 499, 449]),
+      plan('0199a000-0000-7000-8000-0000000000b3', 'growth', 'Growth', [2499, 1499, 1349]),
+      plan('0199a000-0000-7000-8000-0000000000b4', 'pro', 'Pro', [5999, 3999, null]),
+    ],
+  }
+  const POST = `POST /api/admin/clients/${acme.id}/subscription`
+  const activated = {
+    subscription: {
+      status: 'ACTIVE',
+      interval: 'year',
+      trialEndsAt: null,
+      termEndsAt: '2027-11-19T18:00:00.000Z',
+      plan: { id: activePlans.items[0]!.id, slug: 'starter', name: 'Starter' },
+    },
+    comments: { used: 0, limit: 2500, resetsAt: '2026-12-19T18:00:00.000Z' },
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(NOW)
+    handlers['GET /api/admin/settings/plans'] = () => json(activePlans)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  async function openFor(name: string) {
+    await renderList()
+    fireEvent.click(screen.getByRole('button', { name: `Activate plan: ${name}` }))
+    const dialog = await screen.findByRole('dialog', { name: `Activate a plan for ${name}` })
+    await within(dialog).findByRole('radio', { name: /Growth/ })
+    return dialog
+  }
+  const radio = (dialog: HTMLElement, name: RegExp) => within(dialog).getByRole('radio', { name }) as HTMLButtonElement
+  const submitButton = (dialog: HTMLElement) =>
+    within(dialog).getByRole('button', { name: /Activate plan|Activating/ }) as HTMLButtonElement
+  const price = (dialog: HTMLElement) => within(dialog).getByTestId('activation-price').textContent
+
+  it('defaults to the live plan, Monthly, today (Dhaka) with 31-day bounds and a monthly preview', async () => {
+    const dialog = await openFor('Acme Fashion')
+    expect(radio(dialog, /Growth/).getAttribute('aria-checked')).toBe('true')
+    expect(radio(dialog, /Starter/).getAttribute('aria-checked')).toBe('false')
+    expect(radio(dialog, /Monthly/).getAttribute('aria-checked')).toBe('true')
+    const date = within(dialog).getByLabelText('Start date') as HTMLInputElement
+    expect(date.value).toBe('2026-11-20')
+    expect(date.min).toBe('2026-10-20')
+    expect(date.max).toBe('2026-11-20')
+    expect(price(dialog)).toBe('৳1,499/month')
+    expect(within(dialog).getByText('Growth · term ends 20 Dec 2026')).toBeTruthy()
+    expect(within(dialog).getByText(/Ends Growth \(Yearly\) right away/)).toBeTruthy()
+    expect(submitButton(dialog).disabled).toBe(true)
+  })
+
+  it('defaults to the first plan without a live plan', async () => {
+    const dialog = await openFor('Bazaar BD')
+    expect(radio(dialog, /Starter/).getAttribute('aria-checked')).toBe('true')
+    expect(price(dialog)).toBe('৳499/month')
+    expect(within(dialog).getByText(/Ends no active plan right away/)).toBeTruthy()
+  })
+
+  it('disables Yearly without a yearly price and previews the yearly charge', async () => {
+    const dialog = await openFor('Acme Fashion')
+    fireEvent.click(radio(dialog, /Pro/))
+    expect(radio(dialog, /Yearly/).disabled).toBe(true)
+    expect(within(dialog).getByText('Pro has no yearly price.')).toBeTruthy()
+
+    fireEvent.click(radio(dialog, /Starter/))
+    expect(radio(dialog, /Yearly/).disabled).toBe(false)
+    fireEvent.click(radio(dialog, /Yearly/))
+    expect(price(dialog)).toBe('৳449/month · billed ৳5,388 yearly')
+    expect(within(dialog).getByText('Starter · term ends 20 Nov 2027')).toBeTruthy()
+
+    // Back to a plan without a yearly price: falls back to Monthly.
+    fireEvent.click(radio(dialog, /Pro/))
+    expect(radio(dialog, /Monthly/).getAttribute('aria-checked')).toBe('true')
+    expect(price(dialog)).toBe('৳3,999/month')
+  })
+
+  it.each([
+    ['2026-10-19', /at most 31 days ago/],
+    ['2026-11-21', /can’t be in the future/],
+    ['2026-10-20', /would already be over/],
+    ['', /Pick a start date/],
+  ])('rejects start date %j', async (value, message) => {
+    const dialog = await openFor('Acme Fashion')
+    fireEvent.change(within(dialog).getByLabelText('Reason'), { target: { value: 'Paid' } })
+    fireEvent.change(within(dialog).getByLabelText('Start date'), { target: { value } })
+    expect(within(dialog).getByRole('alert').textContent).toMatch(message)
+    expect(submitButton(dialog).disabled).toBe(true)
+  })
+
+  it('requires a reason (trimmed, ≤ 500) and counts its characters', async () => {
+    const dialog = await openFor('Acme Fashion')
+    const reason = within(dialog).getByLabelText('Reason')
+    expect(within(dialog).getByText('0/500')).toBeTruthy()
+    fireEvent.blur(reason)
+    expect(within(dialog).getByRole('alert').textContent).toBe('A reason is required.')
+    fireEvent.change(reason, { target: { value: 'x'.repeat(501) } })
+    expect(within(dialog).getByRole('alert').textContent).toMatch(/500 characters/)
+    expect(within(dialog).getByText('501/500')).toBeTruthy()
+    expect(submitButton(dialog).disabled).toBe(true)
+    fireEvent.change(reason, { target: { value: '  Paid  ' } })
+    expect(within(dialog).getByText('4/500')).toBeTruthy()
+    expect(submitButton(dialog).disabled).toBe(false)
+  })
+
+  it('POSTs the body, shows a pending state, then toasts, closes and refreshes the list', async () => {
+    let resolve: (res: Response) => void = () => {}
+    const post = vi.fn(
+      (_url: URL, init: RequestInit) =>
+        new Promise<Response>((r) => {
+          void init
+          resolve = r
+        }),
+    )
+    handlers[POST] = post
+    const dialog = await openFor('Acme Fashion')
+    const calls = listCalls().length
+    fireEvent.click(radio(dialog, /Starter/))
+    fireEvent.click(radio(dialog, /Yearly/))
+    fireEvent.change(within(dialog).getByLabelText('Start date'), { target: { value: '2026-11-01' } })
+    fireEvent.change(within(dialog).getByLabelText('Reason'), { target: { value: '  Paid by bKash  ' } })
+    fireEvent.click(submitButton(dialog))
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(String(post.mock.calls[0]![1].body))).toEqual({
+      planId: activePlans.items[0]!.id,
+      interval: 'year',
+      startDate: '2026-11-01',
+      reason: 'Paid by bKash',
+    })
+    await waitFor(() => expect(submitButton(dialog).textContent).toBe('Activating…'))
+    expect(submitButton(dialog).disabled).toBe(true)
+
+    resolve(json(activated, 201))
+    expect(await screen.findByText('Acme Fashion is now on Starter (Yearly).')).toBeTruthy()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(listCalls().length).toBeGreaterThan(calls))
+  })
+
+  it.each([
+    [409, 'NO_BILLING_ACCOUNT', 'This client has no billing account', /no billing account \(no owner\)/],
+    [400, 'TERM_ALREADY_ENDED', 'This term would already be over', /would already be over/],
+    [400, 'PLAN_NOT_AVAILABLE', 'This plan is not available', /no longer available/],
+    [400, undefined, 'reason must be shorter than or equal to 500 characters', /reason must be shorter/],
+    [404, undefined, 'Workspace not found', /no longer exists/],
+  ])('shows a %i (%s) inline and keeps the dialog open', async (status, code, message, shown) => {
+    handlers[POST] = () =>
+      json({ statusCode: status, error: 'Error', message, ...(code ? { code } : {}), path: '/api', timestamp: '' }, status)
+    const dialog = await openFor('Acme Fashion')
+    fireEvent.change(within(dialog).getByLabelText('Reason'), { target: { value: 'Paid' } })
+    fireEvent.click(submitButton(dialog))
+    const alert = await within(dialog).findByRole('alert')
+    expect(alert.textContent).toMatch(shown)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(submitButton(dialog).disabled).toBe(false)
+  })
+})

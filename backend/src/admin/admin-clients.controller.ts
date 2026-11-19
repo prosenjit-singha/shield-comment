@@ -22,6 +22,12 @@ import {
 } from './admin-impersonation.service.js';
 import { ListClientsQueryDto } from './dto/list-clients-query.dto.js';
 import { UpdateClientStatusDto } from './dto/update-client-status.dto.js';
+import {
+  ActivateClientPlanDto,
+  type ActivateClientPlanResponse,
+} from './dto/activate-client-plan.dto.js';
+import { AdminSubscriptionService } from './admin-subscription.service.js';
+import { auditUserAgent } from './plan-rules.js';
 
 @Controller('admin/clients')
 @UseGuards(SuperAdminGuard)
@@ -29,6 +35,7 @@ export class AdminClientsController {
   constructor(
     private readonly clients: AdminClientsService,
     private readonly impersonation: AdminImpersonationService,
+    private readonly subscriptions: AdminSubscriptionService,
   ) {}
 
   /**
@@ -72,5 +79,26 @@ export class AdminClientsController {
       session.user.id,
       requestIp(req),
     );
+  }
+
+  /**
+   * Manual plan activation (PW-T9, PW-D16): `{ planId, interval, startDate, reason }` → 201
+   * `{ subscription, comments }`. Ends the account's live subscription (CANCELED) and starts a
+   * new ACTIVE term with a fresh wallet period; audit-logged with IP + user agent. 404 unknown
+   * workspace, 409 `NO_BILLING_ACCOUNT`, 400 validation / `START_DATE_OUT_OF_RANGE` /
+   * `TERM_ALREADY_ENDED` / `PLAN_NOT_AVAILABLE` / `YEARLY_PRICE_MISSING`.
+   */
+  @Post(':workspaceId/subscription')
+  activatePlan(
+    @Param('workspaceId') workspaceId: string,
+    @Body() body: ActivateClientPlanDto,
+    @Session() session: AuthSession,
+    @Req() req: Request,
+  ): Promise<ActivateClientPlanResponse> {
+    return this.subscriptions.activate(workspaceId, body, {
+      adminId: session.user.id,
+      ipAddress: requestIp(req),
+      userAgent: auditUserAgent(req.headers['user-agent']),
+    });
   }
 }

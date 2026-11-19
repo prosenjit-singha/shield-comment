@@ -3,6 +3,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { ListClientsQueryDto } from './list-clients-query.dto.js';
 import { UpdateClientStatusDto } from './update-client-status.dto.js';
+import { ActivateClientPlanDto } from './activate-client-plan.dto.js';
 
 /** Same options as the global ValidationPipe (src/app.setup.ts). */
 async function check<T extends object>(
@@ -110,5 +111,56 @@ describe('UpdateClientStatusDto', () => {
     expect(
       (await check(UpdateClientStatusDto, { status: 'ACTIVE', reason })).fields,
     ).toEqual([]);
+  });
+});
+
+describe('ActivateClientPlanDto (PW-T9)', () => {
+  const valid = {
+    planId: '019a0000-0000-7000-8000-000000000001',
+    interval: 'year',
+    startDate: '2026-11-20',
+    reason: '  Paid by bKash  ',
+  };
+
+  it('accepts a valid body and trims the reason', async () => {
+    const { dto, fields } = await check(ActivateClientPlanDto, valid);
+    expect(fields).toEqual([]);
+    expect(dto).toMatchObject({ interval: 'year', reason: 'Paid by bKash' });
+    const month = await check(ActivateClientPlanDto, {
+      ...valid,
+      interval: 'month',
+    });
+    expect(month.fields).toEqual([]);
+  });
+
+  it.each([
+    [{ planId: 'growth' }, 'planId'],
+    [{ planId: undefined }, 'planId'],
+    [{ interval: 'week' }, 'interval'],
+    [{ interval: undefined }, 'interval'],
+    [{ startDate: '2026-02-30' }, 'startDate'],
+    [{ startDate: '20-11-2026' }, 'startDate'],
+    [{ startDate: '2026-11-20T00:00:00Z' }, 'startDate'],
+    [{ startDate: 20261120 }, 'startDate'],
+    [{ startDate: undefined }, 'startDate'],
+    [{ reason: '   ' }, 'reason'],
+    [{ reason: undefined }, 'reason'],
+    [{ reason: 'x'.repeat(501) }, 'reason'],
+    [{ reason: 42 }, 'reason'],
+    [{ extra: true }, 'extra'],
+  ])('rejects %j', async (override, field) => {
+    const { fields } = await check(ActivateClientPlanDto, {
+      ...valid,
+      ...override,
+    });
+    expect(fields).toContain(field);
+  });
+
+  it('accepts a 500-character reason', async () => {
+    const { fields } = await check(ActivateClientPlanDto, {
+      ...valid,
+      reason: 'x'.repeat(500),
+    });
+    expect(fields).toEqual([]);
   });
 });

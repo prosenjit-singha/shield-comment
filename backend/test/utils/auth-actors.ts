@@ -21,6 +21,7 @@ import {
   plans,
   postContexts,
   socialPages,
+  subscriptionAuditLogs,
   subscriptions,
   ticketMessages,
   tickets,
@@ -53,8 +54,9 @@ export interface Actor {
 }
 
 /**
- * Deletes the wallet ledger → balances → wallets → subscriptions of these billing accounts (FKs
- * restrict), not the accounts themselves (workspaces may still point at them).
+ * Deletes the manual-activation audit rows (PW-T9) → wallet ledger → balances → wallets →
+ * subscriptions of these billing accounts (FKs restrict), not the accounts themselves (workspaces
+ * may still point at them).
  */
 export async function deleteBillingChildren(
   db: Pick<Database, 'select' | 'delete'>,
@@ -62,6 +64,9 @@ export async function deleteBillingChildren(
 ): Promise<void> {
   if (accountIds.length === 0) return;
   const ids = [...accountIds];
+  await db
+    .delete(subscriptionAuditLogs)
+    .where(inArray(subscriptionAuditLogs.billingAccountId, ids));
   const walletIds = db
     .select({ id: wallets.id })
     .from(wallets)
@@ -286,6 +291,19 @@ export function createAuthActors(app: INestApplication<App>) {
             .where(or(...accountRefs))
         ).map((row) => row.id)
       : [];
+    // Manual activation audit (PW-T9): admin, workspace and account FKs restrict.
+    const subscriptionAuditRefs = [
+      ...(userIds.length
+        ? [inArray(subscriptionAuditLogs.adminId, userIds)]
+        : []),
+      ...(workspaceIds.length
+        ? [inArray(subscriptionAuditLogs.workspaceId, workspaceIds)]
+        : []),
+    ];
+    if (subscriptionAuditRefs.length)
+      await db
+        .delete(subscriptionAuditLogs)
+        .where(or(...subscriptionAuditRefs));
     await deleteBillingChildren(db, accountIds);
     const ticketRefs = [
       ...(userIds.length ? [inArray(tickets.userId, userIds)] : []),
