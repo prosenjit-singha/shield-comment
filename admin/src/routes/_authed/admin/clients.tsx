@@ -41,12 +41,15 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   type AdminClient,
+  type ClientCredits,
   type ClientPlan,
   type ClientSort,
   type ClientStatus,
   CLIENTS_PAGE_SIZE,
   type ClientsSearch,
   clientsQueryOptions,
+  creditPercent,
+  formatCreditPeriod,
   formatDhakaDate,
   NO_PLAN,
   validateClientsSearch,
@@ -106,7 +109,7 @@ function ClientsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Clients"
-        description="Every F-commerce workspace on ShieldComment, with plan, quota and status."
+        description="Every F-commerce workspace on ShieldComment, with plan, AI credits this month and status."
       />
 
       <section
@@ -133,7 +136,7 @@ function ClientsPage() {
                   <TableHead className="pl-4">Client</TableHead>
                   <TableHead>Owner</TableHead>
                   <TableHead>Plan</TableHead>
-                  <TableHead>Quota</TableHead>
+                  <TableHead>Credits</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className={`${stickyActions} pr-4 text-right`}>
@@ -367,7 +370,7 @@ function ClientRow({
         <PlanBadge plan={client.plan} />
       </TableCell>
       <TableCell>
-        <QuotaBar />
+        <CreditsBar credits={client.credits} />
       </TableCell>
       <TableCell>
         <StatusPill status={client.status} />
@@ -417,12 +420,39 @@ function PlanBadge({ plan }: { plan: ClientPlan | null }) {
   )
 }
 
-/** Placeholder until quota data exists: an empty bar in the final slot. */
-function QuotaBar() {
+/**
+ * AI credits this Dhaka month (M5-T14, D15): `used / limit`, bar capped at 100 %. `null` (the
+ * backend couldn't read the usage) keeps the empty placeholder bar.
+ */
+function CreditsBar({ credits }: { credits: ClientCredits | null }) {
+  if (!credits) {
+    return (
+      <div className="flex w-28 flex-col gap-1.5" data-testid="credits-bar">
+        <Progress value={0} aria-label="AI credits used" aria-valuetext="Not available" className="h-1.5" />
+        <span className="text-xs text-muted-foreground">No data yet</span>
+      </div>
+    )
+  }
+  const percent = creditPercent(credits)
+  const label = `${credits.used.toLocaleString('en-US')} / ${credits.limit.toLocaleString('en-US')}`
+  const period = formatCreditPeriod(credits.period)
+  const over = credits.limit > 0 ? credits.used >= credits.limit : credits.used > 0
   return (
-    <div className="flex w-24 flex-col gap-1.5" data-testid="quota-bar">
-      <Progress value={0} aria-label="Quota used" className="h-1.5" />
-      <span className="text-xs text-muted-foreground">No plan yet</span>
+    <div
+      className="flex w-28 flex-col gap-1.5"
+      data-testid="credits-bar"
+      title={`${label} AI credits used in ${period} (Dhaka time)`}
+    >
+      <Progress
+        value={percent}
+        aria-label="AI credits used"
+        aria-valuenow={Math.round(percent)}
+        aria-valuetext={`${label} credits in ${period}`}
+        className={`h-1.5 ${over ? '[&>[data-slot=progress-indicator]]:bg-destructive' : ''}`}
+      />
+      <span className={`text-xs tabular-nums ${over ? 'text-destructive' : 'text-muted-foreground'}`}>
+        {label}
+      </span>
     </div>
   )
 }

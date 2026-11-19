@@ -29,6 +29,7 @@ const acme: AdminClient = {
   plan: { id: '0199a000-0000-7000-8000-0000000000b3', slug: 'growth', name: 'Growth' },
   owner: { id: 'o1', email: 'rahim@acme.bd', name: 'Rahim Uddin' },
   memberCount: 3,
+  credits: { used: 4200, limit: 15_000, period: '2026-11' },
 }
 const bazaar: AdminClient = {
   id: '0199a000-0000-7000-8000-000000000002',
@@ -39,6 +40,7 @@ const bazaar: AdminClient = {
   plan: null,
   owner: { id: 'o2', email: 'karim@bazaar.bd', name: 'Karim' },
   memberCount: 1,
+  credits: null,
 }
 const list: ClientList = { items: [acme, bazaar], total: 2, skip: 0, take: 20 }
 /** `GET /api/admin/settings/plans` (only the fields the plan filter reads). */
@@ -133,13 +135,54 @@ describe('/admin/clients list', () => {
     expect(screen.getByText('1–2 of 2 clients')).toBeTruthy()
   })
 
-  it('shows the plan name, a muted dash for no plan, and the Quota placeholder on every row', async () => {
+  it('shows the plan name, a muted dash for no plan, and the credits bar column', async () => {
     await renderList()
     expect(row('Acme Fashion').getByLabelText('Plan: Growth').textContent).toBe('Growth')
     expect(row('Bazaar BD').getByLabelText('Plan: none yet').textContent).toBe('—')
     expect(screen.getAllByLabelText('Plan: none yet')).toHaveLength(1)
-    expect(screen.getAllByText('No plan yet')).toHaveLength(2)
-    expect(screen.getAllByTestId('quota-bar')).toHaveLength(2)
+    expect(screen.getAllByTestId('credits-bar')).toHaveLength(2)
+    expect(screen.getAllByRole('columnheader').map((th) => th.textContent)).toContain('Credits')
+    expect(screen.queryByRole('columnheader', { name: 'Quota' })).toBeNull()
+    expect(screen.getByText(/with plan, AI credits this month and status/)).toBeTruthy()
+  })
+
+  it('shows used / limit credits this month with the period in the bar label', async () => {
+    await renderList()
+    const bar = row('Acme Fashion').getByRole('progressbar', { name: 'AI credits used' })
+    expect(bar.getAttribute('aria-valuenow')).toBe('28')
+    expect(bar.getAttribute('aria-valuetext')).toBe('4,200 / 15,000 credits in November 2026')
+    expect(row('Acme Fashion').getByText('4,200 / 15,000')).toBeTruthy()
+    const wrapper = row('Acme Fashion').getByTestId('credits-bar')
+    expect(wrapper.getAttribute('title')).toBe('4,200 / 15,000 AI credits used in November 2026 (Dhaka time)')
+    expect(row('Acme Fashion').getByText('4,200 / 15,000').className).toContain('text-muted-foreground')
+  })
+
+  it('keeps the empty placeholder bar when credits are null', async () => {
+    await renderList()
+    const bar = row('Bazaar BD').getByRole('progressbar', { name: 'AI credits used' })
+    expect(bar.getAttribute('aria-valuetext')).toBe('Not available')
+    expect(row('Bazaar BD').getByText('No data yet')).toBeTruthy()
+    expect(row('Bazaar BD').queryByText(/ \/ /)).toBeNull()
+  })
+
+  it('caps the bar at 100 % when usage passes the limit and handles a 0 limit', async () => {
+    handlers['GET /api/admin/clients'] = () =>
+      json({
+        ...list,
+        items: [
+          { ...acme, credits: { used: 16_500, limit: 15_000, period: '2026-11' } },
+          { ...bazaar, credits: { used: 0, limit: 0, period: '2026-11' } },
+        ],
+      })
+    await renderList()
+    const over = row('Acme Fashion').getByRole('progressbar', { name: 'AI credits used' })
+    expect(over.getAttribute('aria-valuenow')).toBe('100')
+    expect(row('Acme Fashion').getByText('16,500 / 15,000').className).toContain('text-destructive')
+
+    const zero = row('Bazaar BD').getByRole('progressbar', { name: 'AI credits used' })
+    expect(zero.getAttribute('aria-valuenow')).toBe('0')
+    expect(zero.getAttribute('aria-valuetext')).toBe('0 / 0 credits in November 2026')
+    expect(row('Bazaar BD').getByText('0 / 0')).toBeTruthy()
   })
 
   it('shows the muted dash on every row while no client has a plan', async () => {

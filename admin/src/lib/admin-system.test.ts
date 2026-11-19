@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatBdtAmount,
   formatBytes,
+  formatCallLatency,
   formatDhakaClock,
   formatDhakaDateTime,
+  formatFailureKind,
   formatLatency,
+  formatModelPrice,
+  formatTokens,
   formatUptime,
+  formatUsd,
   type MigrationStatus,
   migrationState,
+  sortedFailures,
   SYSTEM_POLL_INTERVAL_MS,
   systemHealthQueryOptions,
 } from '@/lib/admin-system'
@@ -72,5 +79,65 @@ describe('migrationState', () => {
     ['unknown', { known: false, applied: 0, shipped: 0, pending: 0, latest: null }, 'unknown'],
   ])('%s', (_label, m, expected) => {
     expect(migrationState(m)).toBe(expected)
+  })
+})
+
+describe('AI usage formatters', () => {
+  it.each<[number | null, string]>([
+    [null, 'n/a'],
+    [0, '$0.00'],
+    [0.000001, '$0.000001'],
+    [0.000123, '$0.000123'],
+    [0.00999, '$0.00999'],
+    [0.072861, '$0.0729'],
+    [0.5, '$0.50'],
+    [1.524, '$1.52'],
+    [1234.5, '$1,234.50'],
+  ])('formatUsd(%s) = %s', (v, expected) => {
+    expect(formatUsd(v)).toBe(expected)
+  })
+
+  it.each<[number | null, string]>([
+    [null, 'n/a'],
+    [0, '৳0.00'],
+    [8.89, '৳8.89'],
+    [1234.5, '৳1,234.50'],
+  ])('formatBdtAmount(%s) = %s', (v, expected) => {
+    expect(formatBdtAmount(v)).toBe(expected)
+  })
+
+  it.each([
+    [0, '0'],
+    [98_765, '98,765'],
+    [150_000, '150K'],
+    [1_234_567, '1.2M'],
+    [3_400_000_000, '3.4B'],
+  ])('formatTokens(%s) = %s', (v, expected) => {
+    expect(formatTokens(v)).toBe(expected)
+  })
+
+  it.each<[number | null, string]>([
+    [null, '—'],
+    [842.4, '842 ms'],
+    [1200, '1.2 s'],
+    [12_480, '12.5 s'],
+  ])('formatCallLatency(%s) = %s', (v, expected) => {
+    expect(formatCallLatency(v)).toBe(expected)
+  })
+
+  it('labels failure kinds and sorts them by count', () => {
+    expect(formatFailureKind('rate_limited')).toBe('Rate limited')
+    expect(formatFailureKind('timeout')).toBe('Timeout')
+    expect(sortedFailures({ timeout: 2, auth: 2, rate_limited: 5, zero: 0 })).toEqual([
+      ['rate_limited', 5],
+      ['auth', 2],
+      ['timeout', 2],
+    ])
+  })
+
+  it('formats model prices per 1M tokens', () => {
+    expect(formatModelPrice({ input: 0.4, output: 1.6 })).toBe('$0.40 / $1.60')
+    expect(formatModelPrice({ input: 0.075, output: 0.3 })).toBe('$0.075 / $0.30')
+    expect(formatModelPrice(null)).toBe('n/a')
   })
 })

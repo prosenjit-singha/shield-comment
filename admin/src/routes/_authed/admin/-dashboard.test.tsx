@@ -200,7 +200,7 @@ describe('/admin/dashboard rendering', () => {
     expect(kpiValue('activeClients')).toBe('12')
     expect(kpi('Active clients').getByText('+4 new in this range')).toBeTruthy()
     expect(screen.queryByText('No clients in this range yet')).toBeNull()
-    // Still placeholders until their data exists.
+    // All-zero comments keep the empty state.
     expect(screen.getByText('No comments scanned yet')).toBeTruthy()
     expect(screen.getByText('No plans yet')).toBeTruthy()
     expect(screen.getByText('No payments yet')).toBeTruthy()
@@ -223,6 +223,37 @@ describe('/admin/dashboard rendering', () => {
     expect(tiers.getByText('Starter')).toBeTruthy()
     expect(tiers.getByText('50%')).toBeTruthy()
     expect(screen.getByTestId('gateways-chart')).toBeTruthy()
+  })
+
+  it('renders real daily comment counts (M5-T13) in the comments chart and the KPI', async () => {
+    const scanned = [0, 120, 340, 0, 95, 410, 260]
+    const blocked = [0, 8, 21, 0, 4, 37, 12]
+    respond = () => {
+      const stats = growthFixture()
+      stats.kpis.commentsScanned = scanned.reduce((a, b) => a + b, 0)
+      stats.series.comments = stats.series.comments.map((p, i) => ({ ...p, scanned: scanned[i]!, blocked: blocked[i]! }))
+      return json(stats)
+    }
+    await renderDashboard('/admin/dashboard?range=7d')
+    expect(kpiValue('commentsScanned')).toBe('1,225')
+    expect(kpi('Comments scanned').getByText('In this range')).toBeTruthy()
+    const chart = screen.getByTestId('comments-chart')
+    expect(screen.queryByText('No comments scanned yet')).toBeNull()
+    expect(chart.firstElementChild?.className ?? '').not.toContain('opacity-40')
+    expect(chart.firstElementChild?.getAttribute('aria-hidden')).toBeNull()
+    // Same slot and legend as the empty state: no layout change.
+    const card = screen.getByRole('region', { name: 'Comments scanned vs. spam blocked' })
+    expect(within(card).getByText('Scanned')).toBeTruthy()
+    expect(within(card).getByText('Blocked')).toBeTruthy()
+  })
+
+  it('keeps the comments empty state and caption for an all-zero range', async () => {
+    await renderDashboard()
+    expect(kpiValue('commentsScanned')).toBe('0')
+    expect(kpi('Comments scanned').getByText('None scanned in this range')).toBeTruthy()
+    const chart = screen.getByTestId('comments-chart')
+    expect(within(chart).getByText('No comments scanned yet')).toBeTruthy()
+    expect(chart.firstElementChild?.className).toContain('opacity-40')
   })
 
   it('renders real plan tiers (M2-T12b) in API order while the other placeholders stay empty', async () => {

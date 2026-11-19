@@ -1,9 +1,10 @@
 import { queryOptions } from '@tanstack/react-query'
+import type { AiProvider } from '@/lib/admin-ai-settings'
 import { apiFetch } from '@/lib/api'
 
 /**
  * `GET /api/admin/system/health` (M2-T10, user decision 2026-11-18). Mirrors the backend's
- * `src/admin/dto/system-health.dto.ts`. `queues` is `[]` until the BullMQ moderation queues exist.
+ * `src/admin/dto/system-health.dto.ts` (`ai` since M5-T13).
  */
 export type ProbeStatus = 'up' | 'down'
 
@@ -54,6 +55,59 @@ export interface SystemHealthResponse {
   process: SystemProcessInfo
   queues: QueueStats[]
   migrations: MigrationStatus
+  /** AI moderation usage (M5-T13). `null` when the backend couldn't read it (rest unaffected). */
+  ai: AiUsageReport | null
+}
+
+/** Usage of one provider + model, or a window's total (D14, M5-T13 `AiUsageStats`). */
+export interface AiUsageStats {
+  /** Classification requests, retries included. */
+  calls: number
+  failedCalls: number
+  /** Failed calls by machine-code kind (`timeout`, `rate_limited`, …); `{}` when none. */
+  failuresByKind: Record<string, number>
+  inputTokens: number
+  outputTokens: number
+  /** Workspace credits charged for these calls. */
+  credits: number
+  /** `null` without calls. */
+  avgLatencyMs: number | null
+  maxLatencyMs: number | null
+  /** List-price estimate, 6 decimals. Per model `null` = no price; total `null` = every model unpriced. */
+  estimatedCostUsd: number | null
+  /** `estimatedCostUsd` × `usdToBdtRate`, 2 decimals (same `null` rule). */
+  estimatedCostBdt: number | null
+}
+
+/** USD per 1M tokens. */
+export interface AiModelPrice {
+  input: number
+  output: number
+}
+
+export interface AiModelUsage extends AiUsageStats {
+  provider: AiProvider
+  model: string
+  /** `null` = the price table doesn't know this model (its cost is `null`). */
+  priceUsdPer1M: AiModelPrice | null
+}
+
+/** Dhaka days `from`…`to` (inclusive, `YYYY-MM-DD`). */
+export interface AiUsageWindow {
+  from: string
+  to: string
+  /** `unpricedModels` = models with calls but no price, left out of the cost total. */
+  totals: AiUsageStats & { unpricedModels: number }
+  /** Sorted by provider, then model. */
+  models: AiModelUsage[]
+}
+
+/** The A6 "AI moderation" card (D14): platform-wide, today + the last 7 Dhaka days. */
+export interface AiUsageReport {
+  timezone: 'Asia/Dhaka'
+  usdToBdtRate: number
+  today: AiUsageWindow
+  last7Days: AiUsageWindow
 }
 
 /**
@@ -142,4 +196,61 @@ export function formatDhakaDateTime(iso: string): string {
 /** `14:05:09` in Bangladesh time (the "last checked" clock). */
 export function formatDhakaClock(iso: string): string {
   return dhakaClock.format(new Date(iso))
+}
+
+const usdFormats = [2, 4, 6].map(
+  (digits) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: digits }),
+)
+
+/**
+ * Estimated USD cost (the API sends 6 decimals): `$12.35` from $1, `$0.0123` from a cent,
+ * `$0.000123` below; `null` (no price) → `n/a`.
+ */
+export function formatUsd(value: number | null): string {
+  if (value === null) return 'n/a'
+  const abs = Math.abs(value)
+  const format = abs >= 1 || abs === 0 ? usdFormats[0]! : abs >= 0.01 ? usdFormats[1]! : usdFormats[2]!
+  return format.format(value)
+}
+
+const bdtFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+/** `৳1,234.50` (2 decimals); `null` (no price) → `n/a`. */
+export function formatBdtAmount(value: number | null): string {
+  if (value === null) return 'n/a'
+  return `${value < 0 ? '-' : ''}৳${bdtFormat.format(Math.abs(value))}`
+}
+
+const compactCount = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
+
+/** Token counts: `98,765` in full below 100,000, then `150K`, `1.2M`, `3.4B`. */
+export function formatTokens(value: number): string {
+  return value < 100_000 ? value.toLocaleString('en-US') : compactCount.format(value)
+}
+
+/** Call latency: `850 ms`, `1.2 s`, `12.5 s`; `null` (no calls) → `—`. */
+export function formatCallLatency(ms: number | null): string {
+  if (ms === null) return '—'
+  if (ms < 1000) return `${Math.round(ms)} ms`
+  return `${(ms / 1000).toFixed(1)} s`
+}
+
+/** Machine-code failure kind → label: `rate_limited` → `Rate limited`. */
+export function formatFailureKind(kind: string): string {
+  const words = kind.replace(/_/g, ' ').trim()
+  return words ? words[0]!.toUpperCase() + words.slice(1) : kind
+}
+
+/** Failure kinds, most frequent first (ties by name). */
+export function sortedFailures(byKind: Record<string, number>): [string, number][] {
+  return Object.entries(byKind)
+    .filter(([, n]) => n > 0)
+    .sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
+}
+
+/** `$0.15 / $0.60` (input / output per 1M tokens); `null` → `n/a`. */
+export function formatModelPrice(price: AiModelPrice | null): string {
+  if (price === null) return 'n/a'
+  return `${formatUsd(price.input)} / ${formatUsd(price.output)}`
 }

@@ -1,7 +1,7 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
 
-/** `GET /api/admin/clients` item (M1-T1 / M2-T3 / M2-T12b). */
+/** `GET /api/admin/clients` item (M1-T1 / M2-T3 / M2-T12b / M5-T13 credits). */
 export type ClientStatus = 'ACTIVE' | 'SUSPENDED'
 export interface ClientOwner {
   id: string
@@ -14,6 +14,15 @@ export interface ClientPlan {
   slug: string
   name: string
 }
+/**
+ * AI credits of the current Asia/Dhaka month (M5-T13, D15): `used` may pass `limit` after an
+ * admin lowers the plan's limit; `limit` 0 = no credits. `period` = `YYYY-MM`.
+ */
+export interface ClientCredits {
+  used: number
+  limit: number
+  period: string
+}
 export interface AdminClient {
   id: string
   name: string
@@ -23,6 +32,8 @@ export interface AdminClient {
   plan: ClientPlan | null
   owner: ClientOwner | null
   memberCount: number
+  /** `null` when the backend couldn't read the usage (placeholder bar). */
+  credits: ClientCredits | null
 }
 export interface ClientList {
   items: AdminClient[]
@@ -150,4 +161,32 @@ const dhakaDate = new Intl.DateTimeFormat('en-GB', {
 
 export function formatDhakaDate(iso: string): string {
   return dhakaDate.format(new Date(iso))
+}
+
+const MONTHS_LONG = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+]
+
+/** `2026-11` → `November 2026` (the credits period, Dhaka month); anything else as is. */
+export function formatCreditPeriod(period: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(period)
+  const month = match ? MONTHS_LONG[Number(match[2]) - 1] : undefined
+  return match && month ? `${month} ${match[1]}` : period
+}
+
+/** Bar fill 0–100 (%): `used / limit`, capped at 100; limit 0 → 100 when anything was used, else 0. */
+export function creditPercent({ used, limit }: Pick<ClientCredits, 'used' | 'limit'>): number {
+  if (limit <= 0) return used > 0 ? 100 : 0
+  return Math.min(100, Math.max(0, (used / limit) * 100))
 }

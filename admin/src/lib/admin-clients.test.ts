@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clientListParams, validateClientsSearch } from '@/lib/admin-clients'
+import { clientListParams, creditPercent, formatCreditPeriod, validateClientsSearch } from '@/lib/admin-clients'
 
 describe('validateClientsSearch', () => {
   it('returns every key, undefined when missing (router merges raw search under the result)', () => {
@@ -61,5 +61,25 @@ describe('clientListParams', () => {
     expect(clientListParams({ plan: 'starter', page: 2 }).toString()).toBe(
       'plan=starter&sort=newest&skip=20&take=20',
     )
+  })
+})
+
+describe('credits helpers', () => {
+  it.each([
+    [{ used: 0, limit: 500 }, 0],
+    [{ used: 125, limit: 500 }, 25],
+    [{ used: 500, limit: 500 }, 100],
+    [{ used: 900, limit: 500 }, 100],
+    [{ used: 0, limit: 0 }, 0],
+    [{ used: 3, limit: 0 }, 100],
+  ])('creditPercent(%o) = %s', (credits, expected) => {
+    expect(creditPercent(credits)).toBe(expected)
+  })
+
+  it('formats the Dhaka month period', () => {
+    expect(formatCreditPeriod('2026-11')).toBe('November 2026')
+    expect(formatCreditPeriod('2027-01')).toBe('January 2027')
+    expect(formatCreditPeriod('2026-13')).toBe('2026-13')
+    expect(formatCreditPeriod('soon')).toBe('soon')
   })
 })

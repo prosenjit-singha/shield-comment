@@ -1,13 +1,25 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import type { LucideIcon } from 'lucide-react'
-import { Cpu, Database, GitBranch, Layers, RefreshCw, RotateCcw, Server } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { Cpu, Database, GitBranch, Layers, RefreshCw, RotateCcw, Server, Sparkles } from 'lucide-react'
+import { type ReactNode, useState } from 'react'
 import { PageHeader } from '@/components/placeholder-page'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { aiProviderLabels } from '@/lib/admin-ai-settings'
+import { formatRangeLabel } from '@/lib/admin-dashboard'
 import {
+  type AiUsageReport,
+  type AiUsageWindow,
   type DependencyProbe,
+  formatBdtAmount,
+  formatCallLatency,
+  formatFailureKind,
+  formatModelPrice,
+  formatTokens,
+  formatUsd,
+  sortedFailures,
   formatBytes,
   formatDhakaClock,
   formatDhakaDateTime,
@@ -28,7 +40,7 @@ export const Route = createFileRoute('/_authed/admin/system')({
 
 /**
  * A6 (M2-T10, user decision 2026-11-18): DB + Redis with response times, process info, BullMQ
- * queue counts and the latest Drizzle migration. Polls every 30 s only while the tab is visible:
+ * queue counts, the latest Drizzle migration and AI moderation usage (M5-T14, D14). Polls every 30 s only while the tab is visible:
  * the endpoint queries the DB, and Neon's free compute should be allowed to sleep.
  */
 function SystemPage() {
@@ -40,7 +52,7 @@ function SystemPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <PageHeader
           title="System"
-          description="Live health of the database, Redis, the API process, queues and migrations."
+          description="Live health of the database, Redis, the API process, queues, migrations and AI moderation."
         />
         <div className="flex items-center gap-3 sm:shrink-0">
           <p className="text-xs text-muted-foreground" aria-live="polite">
@@ -95,6 +107,9 @@ function SystemPage() {
           </div>
 
           <QueuesCard queues={data?.queues} />
+
+          {/* An older backend without `ai` reads as unavailable, not as loading forever. */}
+          <AiUsageCard ai={data ? (data.ai ?? null) : undefined} />
         </>
       )}
 
@@ -369,6 +384,209 @@ function QueuesCard({ queues }: { queues: QueueStats[] | undefined }) {
         </div>
       )}
     </Panel>
+  )
+}
+
+type AiWindowKey = 'today' | 'last7Days'
+
+const aiWindowLabels: Record<AiWindowKey, string> = { today: 'Today', last7Days: 'Last 7 days' }
+
+const count = (n: number) => n.toLocaleString('en-US')
+
+/**
+ * A6 "AI moderation" (M5-T14, D14): platform-wide classification calls, tokens, credits, cost
+ * estimate (USD + ৳), latency and failures for today or the last 7 Dhaka days, per provider +
+ * model. `ai` undefined = loading, `null` = the backend couldn't read the usage.
+ */
+function AiUsageCard({ ai }: { ai: AiUsageReport | null | undefined }) {
+  const [windowKey, setWindowKey] = useState<AiWindowKey>('today')
+  return (
+    <Panel
+      title="AI moderation"
+      icon={Sparkles}
+      aside={
+        ai ? (
+          <Tabs value={windowKey} onValueChange={(v) => setWindowKey(v === 'last7Days' ? 'last7Days' : 'today')}>
+            <TabsList aria-label="AI usage window" className="rounded-full">
+              {(['today', 'last7Days'] as const).map((key) => (
+                <TabsTrigger key={key} value={key} className="rounded-full px-3">
+                  {aiWindowLabels[key]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        ) : ai === undefined ? (
+          <Skeleton className="h-8 w-40 rounded-full" />
+        ) : undefined
+      }
+    >
+      {ai === undefined ? (
+        <FactSkeletons count={6} />
+      ) : ai === null ? (
+        <div className="flex flex-col items-center gap-2 rounded-2xl bg-muted px-6 py-10 text-center" data-testid="ai-unavailable">
+          <h3 className="text-sm font-semibold">AI usage unavailable</h3>
+          <p className="max-w-md text-sm text-balance text-muted-foreground">
+            The usage numbers couldn't be read just now. The rest of the system check is unaffected; it tries
+            again on the next refresh.
+          </p>
+        </div>
+      ) : (
+        <AiWindowView window={ai[windowKey]} rate={ai.usdToBdtRate} />
+      )}
+    </Panel>
+  )
+}
+
+function AiWindowView({ window: w, rate }: { window: AiUsageWindow; rate: number }) {
+  const t = w.totals
+  const failures = sortedFailures(t.failuresByKind)
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-xs text-muted-foreground" data-testid="ai-window-range">
+        {formatRangeLabel(w.from, w.to)} · Dhaka time
+      </p>
+      {t.calls === 0 ? (
+        <div className="flex flex-col items-center gap-2 rounded-2xl bg-muted px-6 py-10 text-center">
+          <h3 className="text-sm font-semibold">No AI calls yet</h3>
+          <p className="max-w-md text-sm text-balance text-muted-foreground">
+            Classification calls, tokens, credits and cost show here once moderation runs on connected pages.
+          </p>
+        </div>
+      ) : (
+        <>
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <Fact label="Calls">
+              <span data-testid="ai-calls">{count(t.calls)}</span>
+            </Fact>
+            <Fact label="Failed calls">
+              <span data-testid="ai-failed" className={t.failedCalls > 0 ? 'text-destructive' : undefined}>
+                {count(t.failedCalls)}
+              </span>
+            </Fact>
+            <Fact label="Credits charged">
+              <span data-testid="ai-credits">{count(t.credits)}</span>
+            </Fact>
+            <Fact label="Tokens in / out">
+              <span data-testid="ai-tokens" title={`${count(t.inputTokens)} / ${count(t.outputTokens)}`}>
+                {formatTokens(t.inputTokens)} / {formatTokens(t.outputTokens)}
+              </span>
+            </Fact>
+            <Fact label="Estimated cost">
+              <span data-testid="ai-cost">
+                {formatUsd(t.estimatedCostUsd)}
+                {t.estimatedCostBdt !== null && (
+                  <span className="text-muted-foreground"> · {formatBdtAmount(t.estimatedCostBdt)}</span>
+                )}
+              </span>
+            </Fact>
+            <Fact label="Latency avg / max">
+              <span data-testid="ai-latency">
+                {formatCallLatency(t.avgLatencyMs)} / {formatCallLatency(t.maxLatencyMs)}
+              </span>
+            </Fact>
+          </dl>
+
+          {t.unpricedModels > 0 && (
+            <p
+              role="note"
+              data-testid="ai-unpriced"
+              className="rounded-2xl bg-chart-4/15 px-4 py-2.5 text-xs text-foreground"
+            >
+              The cost total leaves out {t.unpricedModels} {t.unpricedModels === 1 ? 'model' : 'models'} without a
+              list price (shown as n/a below).
+            </p>
+          )}
+
+          <div className="flex flex-col gap-2">
+            <h3 className="text-xs font-medium text-muted-foreground">Failures by kind</h3>
+            {failures.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No failed calls.</p>
+            ) : (
+              <ul className="flex flex-wrap gap-2" aria-label="Failures by kind">
+                {failures.map(([kind, n]) => (
+                  <li key={kind} data-testid="ai-failure">
+                    <Pill tone="bad">
+                      {formatFailureKind(kind)} · {count(n)}
+                    </Pill>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="-mx-4 overflow-x-auto md:-mx-5">
+            <table className="w-full text-sm" aria-label="AI usage per provider and model">
+              <thead>
+                <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th scope="col" className="px-4 py-2 font-medium md:px-5">
+                    Provider · model
+                  </th>
+                  <th scope="col" className="px-2 py-2 text-right font-medium">
+                    Calls
+                  </th>
+                  <th scope="col" className="px-2 py-2 text-right font-medium">
+                    Failed
+                  </th>
+                  <th scope="col" className="px-2 py-2 text-right font-medium whitespace-nowrap">
+                    Tokens in / out
+                  </th>
+                  <th scope="col" className="px-2 py-2 text-right font-medium">
+                    Credits
+                  </th>
+                  <th scope="col" className="px-2 py-2 text-right font-medium whitespace-nowrap">
+                    Avg / max
+                  </th>
+                  <th scope="col" className="px-2 py-2 text-right font-medium">
+                    Cost
+                  </th>
+                  <th scope="col" className="px-4 py-2 text-right font-medium whitespace-nowrap md:px-5">
+                    Price / 1M in · out
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {w.models.map((m) => (
+                  <tr key={`${m.provider}:${m.model}`} data-testid="ai-model-row" className="border-b last:border-b-0">
+                    <th scope="row" className="px-4 py-2.5 text-left font-normal md:px-5">
+                      <span className="block text-xs text-muted-foreground">
+                        {aiProviderLabels[m.provider] ?? m.provider}
+                      </span>
+                      <span className="block font-mono text-xs font-medium">{m.model}</span>
+                    </th>
+                    <td className="px-2 py-2.5 text-right tabular-nums">{count(m.calls)}</td>
+                    <td
+                      className={`px-2 py-2.5 text-right tabular-nums ${m.failedCalls > 0 ? 'font-semibold text-destructive' : ''}`}
+                    >
+                      {count(m.failedCalls)}
+                    </td>
+                    <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums">
+                      {formatTokens(m.inputTokens)} / {formatTokens(m.outputTokens)}
+                    </td>
+                    <td className="px-2 py-2.5 text-right tabular-nums">{count(m.credits)}</td>
+                    <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums">
+                      {formatCallLatency(m.avgLatencyMs)} / {formatCallLatency(m.maxLatencyMs)}
+                    </td>
+                    <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums">
+                      {formatUsd(m.estimatedCostUsd)}
+                      {m.estimatedCostBdt !== null && (
+                        <span className="block text-xs text-muted-foreground">{formatBdtAmount(m.estimatedCostBdt)}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-right whitespace-nowrap text-muted-foreground tabular-nums md:px-5">
+                      {formatModelPrice(m.priceUsdPer1M)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Costs are estimates at list prices per 1M tokens; taka at ৳{rate.toLocaleString('en-US')} per US$.
+          </p>
+        </>
+      )}
+    </div>
   )
 }
 

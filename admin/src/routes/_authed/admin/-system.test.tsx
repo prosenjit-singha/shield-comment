@@ -2,7 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SystemHealthResponse } from '@/lib/admin-system'
+import type { AiUsageReport, AiUsageStats, AiUsageWindow, SystemHealthResponse } from '@/lib/admin-system'
 import { createQueryClient } from '@/lib/query-client'
 import { createAppRouter } from '@/router'
 
@@ -21,6 +21,118 @@ const superAdmin = {
 }
 
 const HEALTH = '/api/admin/system/health'
+
+const zeroStats: AiUsageStats = {
+  calls: 0,
+  failedCalls: 0,
+  failuresByKind: {},
+  inputTokens: 0,
+  outputTokens: 0,
+  credits: 0,
+  avgLatencyMs: null,
+  maxLatencyMs: null,
+  estimatedCostUsd: null,
+  estimatedCostBdt: null,
+}
+
+function emptyWindow(from: string, to: string): AiUsageWindow {
+  return { from, to, totals: { ...zeroStats, unpricedModels: 0 }, models: [] }
+}
+
+const noAiCalls: AiUsageReport = {
+  timezone: 'Asia/Dhaka',
+  usdToBdtRate: 122,
+  today: emptyWindow('2026-11-18', '2026-11-18'),
+  last7Days: emptyWindow('2026-11-12', '2026-11-18'),
+}
+
+/** Today: one priced OpenAI model + one unpriced Neon model; the week adds more. */
+const aiUsage: AiUsageReport = {
+  ...noAiCalls,
+  today: {
+    from: '2026-11-18',
+    to: '2026-11-18',
+    totals: {
+      calls: 1250,
+      failedCalls: 5,
+      failuresByKind: { rate_limited: 3, timeout: 2 },
+      inputTokens: 412_000,
+      outputTokens: 18_450,
+      credits: 1300,
+      avgLatencyMs: 842,
+      maxLatencyMs: 4210,
+      estimatedCostUsd: 0.072861,
+      estimatedCostBdt: 8.89,
+      unpricedModels: 1,
+    },
+    models: [
+      {
+        provider: 'neon',
+        model: 'gpt-oss-20b',
+        calls: 50,
+        failedCalls: 2,
+        failuresByKind: { timeout: 2 },
+        inputTokens: 12_000,
+        outputTokens: 450,
+        credits: 50,
+        avgLatencyMs: 1200,
+        maxLatencyMs: 4210,
+        estimatedCostUsd: null,
+        estimatedCostBdt: null,
+        priceUsdPer1M: null,
+      },
+      {
+        provider: 'openai',
+        model: 'gpt-4.1-mini',
+        calls: 1200,
+        failedCalls: 3,
+        failuresByKind: { rate_limited: 3 },
+        inputTokens: 400_000,
+        outputTokens: 18_000,
+        credits: 1250,
+        avgLatencyMs: 827,
+        maxLatencyMs: 3900,
+        estimatedCostUsd: 0.072861,
+        estimatedCostBdt: 8.89,
+        priceUsdPer1M: { input: 0.4, output: 1.6 },
+      },
+    ],
+  },
+  last7Days: {
+    from: '2026-11-12',
+    to: '2026-11-18',
+    totals: {
+      calls: 9800,
+      failedCalls: 0,
+      failuresByKind: {},
+      inputTokens: 3_250_000,
+      outputTokens: 140_000,
+      credits: 10_100,
+      avgLatencyMs: 790,
+      maxLatencyMs: 5120,
+      estimatedCostUsd: 1.524,
+      estimatedCostBdt: 185.93,
+      unpricedModels: 0,
+    },
+    models: [
+      {
+        provider: 'openai',
+        model: 'gpt-4.1-mini',
+        calls: 9800,
+        failedCalls: 0,
+        failuresByKind: {},
+        inputTokens: 3_250_000,
+        outputTokens: 140_000,
+        credits: 10_100,
+        avgLatencyMs: 790,
+        maxLatencyMs: 5120,
+        estimatedCostUsd: 1.524,
+        estimatedCostBdt: 185.93,
+        priceUsdPer1M: { input: 0.4, output: 1.6 },
+      },
+    ],
+  },
+}
 
 const healthy: SystemHealthResponse = {
   status: 'ok',
@@ -43,6 +155,7 @@ const healthy: SystemHealthResponse = {
     pending: 0,
     latest: { tag: '0005_support_tickets', hash: '006488c46d5007d366790a7fa67206a5f6e27df81e086fa096856a2e5e6fef1b', createdAt: '2026-11-18T00:00:00.000Z' },
   },
+  ai: aiUsage,
 }
 
 const degraded: SystemHealthResponse = {
@@ -234,5 +347,85 @@ describe('/admin/system', () => {
     expect(healthCalls()).toHaveLength(4)
     await act(() => vi.advanceTimersByTimeAsync(21_000))
     await waitFor(() => expect(healthCalls()).toHaveLength(5))
+  })
+})
+
+describe('/admin/system AI moderation card', () => {
+  const selectWindow = (name: string) =>
+    fireEvent.mouseDown(within(panel('AI moderation')).getByRole('tab', { name }), { button: 0 })
+
+  it('shows today\'s totals, failures by kind, BDT and per-model rows with n/a for unknown prices', async () => {
+    renderSystem()
+    const card = await screen.findByRole('region', { name: 'AI moderation' })
+    const ai = within(card)
+    await ai.findByTestId('ai-calls')
+    expect(ai.getByRole('tab', { name: 'Today' }).getAttribute('aria-selected')).toBe('true')
+    expect(ai.getByTestId('ai-window-range').textContent).toBe('18 Nov 2026 · Dhaka time')
+    expect(ai.getByTestId('ai-calls').textContent).toBe('1,250')
+    expect(ai.getByTestId('ai-failed').textContent).toBe('5')
+    expect(ai.getByTestId('ai-failed').className).toContain('text-destructive')
+    expect(ai.getByTestId('ai-credits').textContent).toBe('1,300')
+    expect(ai.getByTestId('ai-tokens').textContent).toBe('412K / 18,450')
+    expect(ai.getByTestId('ai-tokens').getAttribute('title')).toBe('412,000 / 18,450')
+    expect(ai.getByTestId('ai-cost').textContent).toBe('$0.0729 · ৳8.89')
+    expect(ai.getByTestId('ai-latency').textContent).toBe('842 ms / 4.2 s')
+
+    // Most frequent first, as rounded pills.
+    expect(ai.getAllByTestId('ai-failure').map((li) => li.textContent)).toEqual(['Rate limited · 3', 'Timeout · 2'])
+    expect(ai.getAllByTestId('ai-failure')[0]!.firstElementChild!.className).toContain('rounded-full')
+
+    expect(ai.getByTestId('ai-unpriced').textContent).toContain('leaves out 1 model without a list price')
+
+    const rows = ai.getAllByTestId('ai-model-row')
+    expect(rows.map((r) => [...r.children].map((c) => c.textContent))).toEqual([
+      ['Neon AI gatewaygpt-oss-20b', '50', '2', '12,000 / 450', '50', '1.2 s / 4.2 s', 'n/a', 'n/a'],
+      ['OpenAIgpt-4.1-mini', '1,200', '3', '400K / 18,000', '1,250', '827 ms / 3.9 s', '$0.0729৳8.89', '$0.40 / $1.60'],
+    ])
+    expect(ai.getByText(/taka at ৳122 per US\$/)).toBeTruthy()
+  })
+
+  it('switches to the last 7 days', async () => {
+    renderSystem()
+    await screen.findByTestId('ai-calls')
+    selectWindow('Last 7 days')
+    const ai = within(panel('AI moderation'))
+    await waitFor(() => expect(ai.getByTestId('ai-calls').textContent).toBe('9,800'))
+    expect(ai.getByTestId('ai-window-range').textContent).toBe('12 Nov – 18 Nov 2026 · Dhaka time')
+    expect(ai.getByTestId('ai-tokens').textContent).toBe('3.3M / 140K')
+    expect(ai.getByTestId('ai-cost').textContent).toBe('$1.52 · ৳185.93')
+    expect(ai.getByTestId('ai-failed').className).not.toContain('text-destructive')
+    expect(ai.getByText('No failed calls.')).toBeTruthy()
+    expect(ai.queryByTestId('ai-unpriced')).toBeNull()
+    expect(ai.getAllByTestId('ai-model-row')).toHaveLength(1)
+  })
+
+  it('shows "No AI calls yet" for an empty window', async () => {
+    handler = () => json({ ...healthy, ai: noAiCalls })
+    renderSystem()
+    const card = await screen.findByRole('region', { name: 'AI moderation' })
+    expect(await within(card).findByRole('heading', { name: 'No AI calls yet' })).toBeTruthy()
+    expect(within(card).queryByRole('table')).toBeNull()
+    selectWindow('Last 7 days')
+    expect(within(card).getByTestId('ai-window-range').textContent).toBe('12 Nov – 18 Nov 2026 · Dhaka time')
+    expect(within(card).getByRole('heading', { name: 'No AI calls yet' })).toBeTruthy()
+  })
+
+  it('shows "AI usage unavailable" when ai is null and leaves the rest of the page alone', async () => {
+    handler = () => json({ ...healthy, ai: null })
+    renderSystem()
+    const card = await screen.findByRole('region', { name: 'AI moderation' })
+    expect(await within(card).findByRole('heading', { name: 'AI usage unavailable' })).toBeTruthy()
+    expect(within(card).queryByRole('tab')).toBeNull()
+    expect(screen.getByTestId('database-latency').textContent).toBe('3.21 ms')
+    expect(screen.getByTestId('migration-latest').textContent).toBe('0005_support_tickets')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('treats a response without ai (older backend) as unavailable', async () => {
+    const { ai: _ai, ...withoutAi } = healthy
+    handler = () => json(withoutAi)
+    renderSystem()
+    const card = await screen.findByRole('region', { name: 'AI moderation' })
+    expect(await within(card).findByRole('heading', { name: 'AI usage unavailable' })).toBeTruthy()
   })
 })

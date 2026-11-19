@@ -3,9 +3,9 @@ import { apiFetch } from '@/lib/api'
 
 /*
  * `GET /api/admin/dashboard/stats` (M2-T5). Mirrors `DashboardStatsResponse` in
- * `backend/src/admin/dto/dashboard-stats.dto.ts`. Placeholders are `0` / `[]`, never `null`:
- * plan tiers + gateways until M2-T11 / Module 8, MRR + comments until those exist, open tickets
- * until M2-T7.
+ * `backend/src/admin/dto/dashboard-stats.dto.ts`. Values are `0` / `[]`, never `null`. Comments
+ * are real since M5-T13 (`scanned` = AI classifications, `blocked` = AI hides + deletes, from
+ * `daily_comment_stats`); gateways + MRR stay `[]` / `0` until Module 8.
  */
 
 export const DASHBOARD_PRESETS = ['7d', '30d', '90d', '12m'] as const
