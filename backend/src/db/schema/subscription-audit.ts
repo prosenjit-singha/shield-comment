@@ -1,5 +1,5 @@
 import { relations, sql } from 'drizzle-orm';
-import { check, index, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { check, index, jsonb, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { users } from './auth.js';
 import {
   type SubscriptionInterval,
@@ -18,6 +18,33 @@ import { workspaces } from './workspaces.js';
 export const SUBSCRIPTION_AUDIT_REASON_MAX = 500;
 /** Longest user agent kept (longer ones are truncated before the insert, like `plan_audit_logs`). */
 export const SUBSCRIPTION_AUDIT_USER_AGENT_MAX = 512;
+
+/** A promotion on a manual activation's bill (PR-D12; PR-T3b). */
+export interface AppliedPromotion {
+  promotionId: string;
+  redemptionId: string;
+  name: string;
+  /** COUPON only. */
+  code: string | null;
+  /** "৳500 off" / "10% off for 3 months" (+ Bangla). */
+  label: string;
+  labelBn: string;
+  /** Whole ৳ it takes off this term's bill. */
+  amountBdt: number;
+  /** "k of N" months this term covers (N-month PER_MONTH discounts only). */
+  months: { from: number; to: number; of: number } | null;
+}
+
+/** The price of a manual activation's term (PR-T3b): list, charged, and what came off. */
+export interface ActivationPrice {
+  listChargedBdt: number;
+  chargedBdt: number;
+  perMonthBdt: number;
+  /** The automatic discount (claimed or newly claimed, PR-D6 / reading 9). */
+  discount: AppliedPromotion | null;
+  /** The admin's coupon, on top (PR-D16). */
+  coupon: AppliedPromotion | null;
+}
 
 /**
  * One row per manual plan activation by a super admin (`POST
@@ -60,6 +87,8 @@ export const subscriptionAuditLogs = pgTable(
     afterStatus: text().$type<SubscriptionStatus>().notNull(),
     /** Required, trimmed, 1–500 characters. */
     reason: text().notNull(),
+    /** The term's price and promotions (PR-T3b); `null` on rows written before 0028. */
+    price: jsonb().$type<ActivationPrice>(),
     /** Admin's IP (first `X-Forwarded-For` entry, like `plan_audit_logs`). */
     ipAddress: text(),
     userAgent: text(),
@@ -98,6 +127,10 @@ export const subscriptionAuditLogs = pgTable(
       sql.raw(
         `${inListSql('after_status', SUBSCRIPTION_STATUSES)} and (${inListSql('before_status', SUBSCRIPTION_STATUSES, true)})`,
       ),
+    ),
+    check(
+      'subscription_audit_logs_price_check',
+      sql`price is null or jsonb_typeof(price) = 'object'`,
     ),
     check(
       'subscription_audit_logs_reason_length',

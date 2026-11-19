@@ -19,9 +19,11 @@ import {
 } from '../db/schema/index.js';
 import {
   type PlanPrice,
+  type PlanPriceSource,
   type PriceDiscount,
   planPrice,
 } from '../plans/plan-price.js';
+import { type DiscountMonths, monthsLeft } from './discount-months.js';
 
 /** Runs inside the caller's transaction (or on the pool). */
 export type PromotionExecutor = Pick<Database, 'select' | 'insert'>;
@@ -54,8 +56,28 @@ export const COUPON_ERROR_CODES = [
 export type CouponErrorCode = (typeof COUPON_ERROR_CODES)[number];
 
 export type CouponCheck =
-  | { ok: true; promotionId: string; code: string; price: PlanPrice }
+  | {
+      ok: true;
+      promotionId: string;
+      code: string;
+      /** The coupon's terms (what `price.coupon` was worked out from). */
+      discount: PriceDiscount;
+      price: PlanPrice;
+    }
   | { ok: false; error: CouponErrorCode };
+
+/**
+ * The automatic discount an account gets on a plan + interval (`accountDiscount`): `discount` as
+ * priced now (a claimed one: its snapshot with only the months left), its month terms as claimed
+ * (`terms` + `monthsUsed`, for "k of N") and the redemption to advance, or `null` = a live
+ * DISCOUNT still to `redeem()`.
+ */
+export interface AccountDiscount {
+  discount: PriceDiscount;
+  terms: DiscountMonths;
+  monthsUsed: number;
+  redemptionId: string | null;
+}
 
 export interface RedeemInput {
   promotionId: string;
@@ -65,6 +87,8 @@ export interface RedeemInput {
   subscriptionId?: string | null;
   /** Saving on the first term (PR-D12); 0 for a trial. */
   discountBdtFirstTerm?: number;
+  /** Months the first term already uses (reading 9); default 0. */
+  monthsUsed?: number;
 }
 
 const COUPON_CODE = new RegExp(COUPON_CODE_PATTERN);
@@ -300,6 +324,7 @@ export class PromotionService {
           discountScope: promo.discountScope,
           durationMonths: promo.durationMonths,
           discountBdtFirstTerm: input.discountBdtFirstTerm ?? 0,
+          monthsUsed: input.monthsUsed ?? 0,
         })
         .returning();
       this.logger.log(
@@ -322,8 +347,86 @@ export class PromotionService {
   }
 
   /**
+   * The automatic discount of `accountId` on a plan + interval (readings 9, 10; PR-D6, PR-D15):
+   * the account's **claimed** DISCOUNT redemptions that target the plan and have months left
+   * (snapshot terms, only the months left; a Stop / end date doesn't matter), against the plan's
+   * best **live** DISCOUNT the account hasn't claimed. The bigger first-bill saving wins; a tie
+   * keeps the claimed one (no new claim). `null` = no saving (or no price for the interval).
+   * Read-only: the caller redeems a live winner / advances `months_used` in its transaction.
+   */
+  async accountDiscount(
+    accountId: string,
+    planId: string,
+    plan: PlanPriceSource,
+    interval: SubscriptionInterval,
+    now = new Date(),
+    db: PromotionExecutor = this.db,
+  ): Promise<AccountDiscount | null> {
+    const rows = await db
+      .select({
+        redemptionId: promotionRedemptions.id,
+        promotionId: promotionRedemptions.promotionId,
+        kind: promotionRedemptions.kind,
+        discountType: promotionRedemptions.discountType,
+        discountValue: promotionRedemptions.discountValue,
+        discountScope: promotionRedemptions.discountScope,
+        durationMonths: promotionRedemptions.durationMonths,
+        monthsUsed: promotionRedemptions.monthsUsed,
+        targeted: targets(planId),
+      })
+      .from(promotionRedemptions)
+      .innerJoin(
+        promotions,
+        eq(promotions.id, promotionRedemptions.promotionId),
+      )
+      .where(eq(promotionRedemptions.billingAccountId, accountId));
+    const claimed = rows.flatMap((row) => {
+      if (row.kind !== 'DISCOUNT' || !row.targeted) return [];
+      const d = toDiscount({ ...row, endsAt: null });
+      const left = monthsLeft(d, row.monthsUsed);
+      if (left === 0) return [];
+      return [
+        {
+          row,
+          d,
+          priced:
+            d.discountScope === 'PER_MONTH'
+              ? { ...d, durationMonths: left }
+              : d,
+        },
+      ];
+    });
+    const used = new Set(rows.map((r) => r.promotionId));
+    const live = (await this.liveDiscountsFor([planId], now))
+      .get(planId)!
+      .filter((d) => !used.has(d.promotionId));
+
+    const mine = planPrice(
+      plan,
+      interval,
+      claimed.map((c) => c.priced),
+    );
+    const best = planPrice(plan, interval, live);
+    if (!mine?.saving && !best?.saving) return null;
+    if ((best?.saving?.amountBdt ?? 0) > (mine?.saving?.amountBdt ?? 0)) {
+      const d = live.find((l) => l.promotionId === best!.saving!.promotionId)!;
+      return { discount: d, terms: d, monthsUsed: 0, redemptionId: null };
+    }
+    const c = claimed.find(
+      (x) => x.d.promotionId === mine!.saving!.promotionId,
+    )!;
+    return {
+      discount: c.priced,
+      terms: c.d,
+      monthsUsed: c.row.monthsUsed,
+      redemptionId: c.row.redemptionId,
+    };
+  }
+
+  /**
    * Checks a coupon code typed at checkout (PR-D11; plan doc §5.5) and previews the price: the
-   * plan's best live discount, then the coupon on top (PR-D16). The code matches
+   * account's automatic discount (`accountDiscount`: its claimed one or the best live one,
+   * reading 9), then the coupon on top (PR-D16). The code matches
    * case-insensitively. Errors in this order: `COUPON_NOT_FOUND`, `COUPON_EXPIRED` (stopped or
    * ended), `COUPON_NOT_FOR_PLAN` (also: inactive plan, no price for the interval),
    * `COUPON_ALREADY_USED` (this account, PR-D3), `COUPON_USED_UP` (cap). Read-only: the claim is
@@ -366,14 +469,27 @@ export class PromotionService {
       })
       .from(plans)
       .where(and(eq(plans.id, planId), eq(plans.isActive, true)));
-    const discounts = (await this.liveDiscountsFor([planId], now)).get(planId)!;
-    const price =
-      plan && planPrice(plan, interval, discounts, toDiscount(coupon));
+    if (!plan) return { ok: false, error: 'COUPON_NOT_FOR_PLAN' };
+    const auto = await this.accountDiscount(
+      accountId,
+      planId,
+      plan,
+      interval,
+      now,
+    );
+    const discount = toDiscount(coupon);
+    const price = planPrice(
+      plan,
+      interval,
+      auto ? [auto.discount] : [],
+      discount,
+    );
     if (!price) return { ok: false, error: 'COUPON_NOT_FOR_PLAN' };
     return {
       ok: true,
       promotionId: coupon.promotionId,
       code: normalized,
+      discount,
       price,
     };
   }

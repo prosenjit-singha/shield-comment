@@ -436,6 +436,14 @@ describe('Promotions service + public plans (e2e)', () => {
         ok: true,
         promotionId: id,
         code: `SAVE10-${tag}`,
+        discount: {
+          promotionId: id,
+          discountType: 'PERCENT',
+          discountValue: 10,
+          discountScope: 'TOTAL',
+          durationMonths: null,
+          endsAt: null,
+        },
         price: {
           listPerMonthBdt: 2499,
           listChargedBdt: 2499,

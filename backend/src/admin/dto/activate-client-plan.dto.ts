@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import {
   IsIn,
+  IsOptional,
   IsString,
   IsUUID,
   MaxLength,
@@ -9,6 +10,7 @@ import {
   type ValidationOptions,
 } from 'class-validator';
 import {
+  type ActivationPrice,
   SUBSCRIPTION_AUDIT_REASON_MAX,
   SUBSCRIPTION_INTERVALS,
   type SubscriptionInterval,
@@ -55,9 +57,21 @@ export class ActivateClientPlanDto {
   @MinLength(1)
   @MaxLength(SUBSCRIPTION_AUDIT_REASON_MAX)
   reason!: string;
+
+  /**
+   * Optional coupon (PR-T3b, PR-D11): trimmed, any case (empty = none). Checked by
+   * `validateCoupon`; an error is a 400 `{ code: COUPON_* }`.
+   */
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || undefined : value,
+  )
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  couponCode?: string;
 }
 
-/** `200` answer: the new subscription + this period's fresh comment balance. */
+/** `201` answer: the new subscription + this period's fresh comment balance + the price. */
 export interface ActivateClientPlanResponse {
   subscription: {
     status: SubscriptionStatus;
@@ -67,4 +81,6 @@ export interface ActivateClientPlanResponse {
     plan: { id: string; slug: string; name: string };
   };
   comments: ClientComments;
+  /** The term's price and the promotions on it (PR-D12). */
+  price: ActivationPrice;
 }

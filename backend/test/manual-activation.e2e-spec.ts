@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
 import {
   dhakaDate,
@@ -7,13 +7,19 @@ import {
   manualTerm,
 } from '../src/admin/manual-activation.js';
 import {
+  PLAN_FEATURE_KEYS,
+  type PlanFeatureKey,
   plans,
+  promotionPlans,
+  promotionRedemptions,
+  promotions,
   subscriptionAuditLogs,
   subscriptions,
   walletBalances,
   walletEntries,
   wallets,
 } from '../src/db/schema/index.js';
+import { PromotionService } from '../src/promotions/promotion.service.js';
 import { nextReset } from '../src/wallet/wallet-period.js';
 import { WalletService } from '../src/wallet/wallet.service.js';
 import { type Actor, createAuthActors } from './utils/auth-actors.js';
@@ -137,8 +143,13 @@ describe('Admin manual plan activation (e2e)', () => {
     }
   });
 
+  /** PR-T3b's throwaway plan: deleted after `cleanup()` (its subscriptions + audit rows). */
+  const extraPlanIds: string[] = [];
+
   afterAll(async () => {
     await actors?.cleanup();
+    if (extraPlanIds.length)
+      await db().delete(plans).where(inArray(plans.id, extraPlanIds));
     await app?.close();
   });
 
@@ -173,6 +184,20 @@ describe('Admin manual plan activation (e2e)', () => {
           used: 0,
           limit: 15000,
           resetsAt: term.end.toISOString(),
+        },
+        // PR-T3b: the seeded Growth "Launch offer" (৳1,000 off each month, forever) is claimed.
+        price: {
+          listChargedBdt: 2499,
+          chargedBdt: 1499,
+          perMonthBdt: 1499,
+          discount: expect.objectContaining({
+            name: 'Launch offer',
+            code: null,
+            label: '৳1,000 off',
+            amountBdt: 1000,
+            months: null,
+          }) as unknown,
+          coupon: null,
         },
       });
 
@@ -554,5 +579,308 @@ describe('Admin manual plan activation (e2e)', () => {
   ])('404 for an %s', async (_label, id) => {
     const res = await activate(id, body());
     expect(res.status).toBe(404);
+  });
+
+  /**
+   * PR-T3b (PR-D6, D11, D12, D15, D16; readings 7, 9, 10): the account's claimed discount or the
+   * best live one + an optional coupon on top, recorded as redemptions linked on the subscription.
+   * A throwaway active plan (৳1,000 / yearly ৳900 per month) keeps the seeded Launch offers out.
+   */
+  describe('promotions (PR-T3b)', () => {
+    let planId: string;
+    const tag = `${Date.now()}`.slice(-8);
+
+    const promo = async (
+      row: Partial<typeof promotions.$inferInsert>,
+      targets = [planId],
+    ) => {
+      const [p] = await db()
+        .insert(promotions)
+        .values({
+          kind: 'DISCOUNT',
+          name: `PR-T3b ${row.kind ?? 'DISCOUNT'}`,
+          discountType: 'FLAT',
+          discountValue: 100,
+          discountScope: 'PER_MONTH',
+          createdBy: superAdmin.id,
+          ...row,
+        })
+        .returning({ id: promotions.id });
+      await db()
+        .insert(promotionPlans)
+        .values(targets.map((id) => ({ promotionId: p!.id, planId: id })));
+      return p!.id;
+    };
+    const couponPromo = (code: string, targets?: string[]) =>
+      promo(
+        {
+          kind: 'COUPON',
+          code: `${code}-${tag}`,
+          discountType: 'PERCENT',
+          discountValue: 10,
+          discountScope: 'TOTAL',
+        },
+        targets,
+      );
+    const stop = (id: string) =>
+      db()
+        .update(promotions)
+        .set({ stoppedAt: new Date(), stoppedBy: superAdmin.id })
+        .where(eq(promotions.id, id));
+    const redemptionsOf = async (owner: Actor) =>
+      db()
+        .select()
+        .from(promotionRedemptions)
+        .where(
+          eq(
+            promotionRedemptions.billingAccountId,
+            await actors.accountIdOf(owner),
+          ),
+        )
+        .orderBy(asc(promotionRedemptions.redeemedAt));
+    const priceOf = (res: { body: unknown }) =>
+      (res.body as { price: Record<string, unknown> }).price;
+    const on = (overrides: Record<string, unknown> = {}) =>
+      body({ planId, ...overrides });
+
+    beforeAll(async () => {
+      const [row] = await db()
+        .insert(plans)
+        .values({
+          slug: `prt3b-${tag}`,
+          name: 'PRT3B',
+          sortOrder: 97,
+          isActive: true,
+          monthlyPriceBdt: 1000,
+          yearlyMonthlyPriceBdt: 900,
+          featureConfig: {
+            limits: {
+              connectedPages: 1,
+              monthlyComments: 100,
+              teamSeats: 1,
+              workspaces: 1,
+            },
+            features: Object.fromEntries(
+              PLAN_FEATURE_KEYS.map((key) => [key, false]),
+            ) as Record<PlanFeatureKey, boolean>,
+          },
+        })
+        .returning({ id: plans.id });
+      planId = row!.id;
+      extraPlanIds.push(planId);
+    });
+
+    it('no promotion → list price, no redemption, no links', async () => {
+      const owner = await actors.signUp('prt3b-none');
+      const res = await activate(owner.workspaceId, on());
+      expect(res.status).toBe(201);
+      expect(priceOf(res)).toEqual({
+        listChargedBdt: 1000,
+        chargedBdt: 1000,
+        perMonthBdt: 1000,
+        discount: null,
+        coupon: null,
+      });
+      expect(await subsOf(owner)).toEqual([
+        expect.objectContaining({
+          chargedBdt: 1000,
+          promotionRedemptionId: null,
+          couponRedemptionId: null,
+        }),
+      ]);
+      expect(await redemptionsOf(owner)).toEqual([]);
+    });
+
+    it('a live 3-month discount: claimed, carried across terms (even after Stop), then spent', async () => {
+      const owner = await actors.signUp('prt3b-carry');
+      const id = await promo({ durationMonths: 3, name: 'Spring sale' });
+
+      // Term 1 (monthly): redeemed, months_used 1, "1 of 3".
+      const first = await activate(owner.workspaceId, on());
+      expect(first.status).toBe(201);
+      const [sub1] = await subsOf(owner);
+      const [claim] = await redemptionsOf(owner);
+      expect(claim).toMatchObject({
+        promotionId: id,
+        kind: 'DISCOUNT',
+        subscriptionId: sub1!.id,
+        durationMonths: 3,
+        monthsUsed: 1,
+        discountBdtFirstTerm: 100,
+      });
+      expect(sub1).toMatchObject({
+        pricePerMonthBdt: 900,
+        chargedBdt: 900,
+        promotionRedemptionId: claim!.id,
+        couponRedemptionId: null,
+      });
+      expect(priceOf(first)).toEqual({
+        listChargedBdt: 1000,
+        chargedBdt: 900,
+        perMonthBdt: 900,
+        discount: {
+          promotionId: id,
+          redemptionId: claim!.id,
+          name: 'Spring sale',
+          code: null,
+          label: '৳100 off for 3 months',
+          labelBn: 'প্রথম ৩ মাস ৳১০০ ছাড়',
+          amountBdt: 100,
+          months: { from: 1, to: 1, of: 3 },
+        },
+        coupon: null,
+      });
+      // The audit row carries the same price (PR-D12).
+      expect((await auditOf(owner)).map((a) => a.price)).toEqual([
+        priceOf(first),
+      ]);
+
+      // Stopped (PR-D15): the claim keeps running. Term 2: no second redemption, "2 of 3".
+      await stop(id);
+      // The coupon preview sees the claimed discount too (reading 9).
+      const coupon = await couponPromo('PRT3B-PREVIEW');
+      const preview = await app
+        .get(PromotionService)
+        .validateCoupon(
+          `prt3b-preview-${tag}`,
+          await actors.accountIdOf(owner),
+          planId,
+          'month',
+        );
+      expect(preview).toMatchObject({
+        ok: true,
+        promotionId: coupon,
+        price: {
+          chargedBdt: 810,
+          saving: { promotionId: id, amountBdt: 100 },
+          coupon: { promotionId: coupon, amountBdt: 90 },
+        },
+      });
+      const second = await activate(owner.workspaceId, on());
+      expect(second.status).toBe(201);
+      expect(priceOf(second)).toMatchObject({
+        chargedBdt: 900,
+        discount: {
+          redemptionId: claim!.id,
+          label: '৳100 off for 2 months',
+          months: { from: 2, to: 2, of: 3 },
+        },
+      });
+      expect(await redemptionsOf(owner)).toEqual([
+        expect.objectContaining({ id: claim!.id, monthsUsed: 2 }),
+      ]);
+      expect((await subsOf(owner))[1]).toMatchObject({
+        status: 'ACTIVE',
+        promotionRedemptionId: claim!.id,
+      });
+
+      // Term 3 (yearly): the last month comes off one of the 12 months (reading 2), "3 of 3".
+      const third = await activate(owner.workspaceId, on({ interval: 'year' }));
+      expect(third.status).toBe(201);
+      expect(priceOf(third)).toMatchObject({
+        listChargedBdt: 10_800,
+        chargedBdt: 10_700,
+        discount: { amountBdt: 100, months: { from: 3, to: 3, of: 3 } },
+      });
+      expect((await redemptionsOf(owner))[0]!.monthsUsed).toBe(3);
+
+      // Months run out → list price, no new claim.
+      const fourth = await activate(owner.workspaceId, on());
+      expect(fourth.status).toBe(201);
+      expect(priceOf(fourth)).toMatchObject({
+        chargedBdt: 1000,
+        discount: null,
+      });
+      expect((await subsOf(owner))[3]).toMatchObject({
+        chargedBdt: 1000,
+        promotionRedemptionId: null,
+      });
+      expect(await redemptionsOf(owner)).toHaveLength(1);
+      await stop(coupon);
+    });
+
+    it('coupon on top of the live discount (any case, trimmed); reused → 400 COUPON_ALREADY_USED, nothing written', async () => {
+      const owner = await actors.signUp('prt3b-coupon');
+      const auto = await promo({ name: 'Forever ৳100' });
+      const coupon = await couponPromo('PRT3B-TEN');
+      const res = await activate(
+        owner.workspaceId,
+        on({ couponCode: `  prt3b-ten-${tag} ` }),
+      );
+      expect(res.status).toBe(201);
+      const [sub] = await subsOf(owner);
+      const claims = await redemptionsOf(owner);
+      const byPromotion = new Map(claims.map((c) => [c.promotionId, c]));
+      expect(byPromotion.get(auto)).toMatchObject({
+        monthsUsed: 1,
+        discountBdtFirstTerm: 100,
+        subscriptionId: sub!.id,
+      });
+      expect(byPromotion.get(coupon)).toMatchObject({
+        kind: 'COUPON',
+        monthsUsed: 1,
+        discountBdtFirstTerm: 90,
+        subscriptionId: sub!.id,
+      });
+      expect(sub).toMatchObject({
+        chargedBdt: 810,
+        pricePerMonthBdt: 810,
+        promotionRedemptionId: byPromotion.get(auto)!.id,
+        couponRedemptionId: byPromotion.get(coupon)!.id,
+      });
+      expect(priceOf(res)).toMatchObject({
+        listChargedBdt: 1000,
+        chargedBdt: 810,
+        discount: { promotionId: auto, amountBdt: 100, months: null },
+        coupon: {
+          promotionId: coupon,
+          redemptionId: byPromotion.get(coupon)!.id,
+          code: `PRT3B-TEN-${tag}`,
+          label: '10% off',
+          amountBdt: 90,
+          months: null,
+        },
+      });
+
+      const again = await activate(
+        owner.workspaceId,
+        on({ couponCode: `PRT3B-TEN-${tag}` }),
+      );
+      expect(again.status).toBe(400);
+      expect(again.body).toMatchObject({ code: 'COUPON_ALREADY_USED' });
+      expect(await subsOf(owner)).toHaveLength(1);
+      expect(await auditOf(owner)).toHaveLength(1);
+      expect(await redemptionsOf(owner)).toHaveLength(2);
+
+      // A bigger live discount beats the claimed one (first bill, reading 10): a new claim; the
+      // old claim keeps its row and months.
+      const big = await promo({ discountValue: 300, name: 'Big' });
+      const third = await activate(owner.workspaceId, on());
+      expect(priceOf(third)).toMatchObject({
+        chargedBdt: 700,
+        discount: { promotionId: big, amountBdt: 300 },
+      });
+      const after = await redemptionsOf(owner);
+      expect(after).toHaveLength(3);
+      expect(after.find((c) => c.promotionId === auto)!.monthsUsed).toBe(1);
+      await Promise.all([auto, coupon, big].map(stop));
+    });
+
+    it('400 COUPON_NOT_FOR_PLAN / COUPON_NOT_FOUND; nothing written', async () => {
+      const owner = await actors.signUp('prt3b-wrong');
+      await couponPromo('PRT3B-STARTER', [planIds.starter!]);
+      for (const [code, error] of [
+        [`PRT3B-STARTER-${tag}`, 'COUPON_NOT_FOR_PLAN'],
+        ['NOPE-NOPE', 'COUPON_NOT_FOUND'],
+        ['not a code!', 'COUPON_NOT_FOUND'],
+      ] as const) {
+        const res = await activate(owner.workspaceId, on({ couponCode: code }));
+        expect(res.status).toBe(400);
+        expect(res.body).toMatchObject({ code: error });
+      }
+      expect(await subsOf(owner)).toEqual([]);
+      expect(await auditOf(owner)).toEqual([]);
+      expect(await redemptionsOf(owner)).toEqual([]);
+    });
   });
 });

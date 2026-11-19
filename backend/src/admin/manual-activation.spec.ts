@@ -133,6 +133,13 @@ describe('manual activation rules (PW-T9)', () => {
         status: 'ACTIVE' as const,
       },
       reason: 'Paid by bKash',
+      price: {
+        listChargedBdt: 2499,
+        chargedBdt: 2499,
+        perMonthBdt: 2499,
+        discount: null,
+        coupon: null,
+      },
       ipAddress: '203.0.113.9',
       userAgent: 'vitest',
     };
@@ -162,6 +169,7 @@ describe('manual activation rules (PW-T9)', () => {
         afterInterval: 'year',
         afterStatus: 'ACTIVE',
         reason: 'Paid by bKash',
+        price: base.price,
         ipAddress: '203.0.113.9',
         userAgent: 'vitest',
       });

@@ -1,0 +1,2 @@
+ALTER TABLE "subscription_audit_logs" ADD COLUMN "price" jsonb;--> statement-breakpoint
+ALTER TABLE "subscription_audit_logs" ADD CONSTRAINT "subscription_audit_logs_price_check" CHECK (price is null or jsonb_typeof(price) = 'object');

@@ -9,15 +9,31 @@ import { InjectDrizzle } from '@nestjs/drizzle';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import {
+  type ActivationPrice,
+  type AppliedPromotion,
   billingAccounts,
   LIVE_SUBSCRIPTION_STATUSES,
   plans,
+  promotionRedemptions,
+  promotions,
   subscriptionAuditLogs,
   subscriptions,
   workspaces,
 } from '../db/schema/index.js';
-import { planPrice } from '../plans/plan-price.js';
-import { PromotionService } from '../promotions/promotion.service.js';
+import {
+  type PlanPrice,
+  planPrice,
+  type PriceSaving,
+} from '../plans/plan-price.js';
+import {
+  type DiscountMonths,
+  monthsOf,
+  monthsThisTerm,
+} from '../promotions/discount-months.js';
+import {
+  type AccountDiscount,
+  PromotionService,
+} from '../promotions/promotion.service.js';
 import type { AccountLiveSubscription } from '../wallet/live-subscription.queries.js';
 import { WalletService } from '../wallet/wallet.service.js';
 import { normalizeFeatureConfig } from './plan-rules.js';
@@ -32,6 +48,14 @@ import {
   startDateError,
   toActivationAudit,
 } from './manual-activation.js';
+
+/** One promotion applied to this term (before its name is looked up). */
+interface Claim {
+  saving: PriceSaving;
+  redemptionId: string;
+  terms: DiscountMonths;
+  monthsUsed: number;
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -65,8 +89,16 @@ export class AdminSubscriptionService {
    * date 00:00 Dhaka + 1 month / 1 year, month-end clamp; `planPrice` snapshots) → fresh wallet
    * period (`used` 0, `PLAN_GRANT` by the admin) → one `subscription_audit_logs` row.
    *
+   * Promotions (PR-T3b; PR-D6, D12, D15, D16, readings 7, 9, 10): the account's automatic
+   * discount (`PromotionService.accountDiscount`: its claimed DISCOUNT with months left, or the
+   * best live one, redeemed now) and the optional `couponCode` on top (redeemed). The snapshot is
+   * the discounted price; the subscription links both redemptions; each redemption's
+   * `months_used` advances by the months this term uses (`monthsThisTerm`). The price breakdown
+   * goes into the response and the audit row (`price`).
+   *
    * 404 unknown workspace · 409 `NO_BILLING_ACCOUNT` · 400 `START_DATE_OUT_OF_RANGE`,
-   * `TERM_ALREADY_ENDED`, `PLAN_NOT_AVAILABLE` (unknown / inactive), `YEARLY_PRICE_MISSING`.
+   * `TERM_ALREADY_ENDED`, `PLAN_NOT_AVAILABLE` (unknown / inactive), `YEARLY_PRICE_MISSING`,
+   * `COUPON_*` (`validateCoupon`) · 409 `redeem()` codes (a claim lost under the promotion lock).
    */
   async activate(
     workspaceId: string,
@@ -129,18 +161,41 @@ export class AdminSubscriptionService {
           code: CODES.planNotAvailable,
         });
       }
-      // The plan's best live discount, so the snapshot = the shown price (PR-T2). Not claimed
-      // (no redemption) until PR-T3b.
-      const discounts = (
-        await this.promotions.liveDiscountsFor([plan.id], now)
-      ).get(plan.id)!;
-      const price = planPrice(plan, input.interval, discounts);
-      if (!price) {
+      if (!planPrice(plan, input.interval)) {
         throw new BadRequestException({
           message: 'This plan has no yearly price',
           code: CODES.yearlyPriceMissing,
         });
       }
+      const auto = await this.promotions.accountDiscount(
+        accountId,
+        plan.id,
+        plan,
+        input.interval,
+        now,
+        tx,
+      );
+      const coupon = input.couponCode
+        ? await this.promotions.validateCoupon(
+            input.couponCode,
+            accountId,
+            plan.id,
+            input.interval,
+            now,
+          )
+        : null;
+      if (coupon && !coupon.ok) {
+        throw new BadRequestException({
+          message: 'This coupon cannot be used',
+          code: coupon.error,
+        });
+      }
+      const price = planPrice(
+        plan,
+        input.interval,
+        auto ? [auto.discount] : [],
+        coupon?.discount,
+      )!;
 
       // The live row by status (also a stale one past its term: the partial unique index
       // `subscriptions_one_live_per_account` counts it until the expiry job runs).
@@ -186,6 +241,16 @@ export class AdminSubscriptionService {
           chargedBdt: price.chargedBdt,
         })
         .returning({ id: subscriptions.id });
+      const priced = await this.claimPromotions(tx, {
+        accountId,
+        planId: plan.id,
+        subscriptionId: created!.id,
+        termMonths: input.interval === 'year' ? 12 : 1,
+        auto,
+        coupon,
+        price,
+        now,
+      });
       const live: AccountLiveSubscription = {
         billingAccountId: accountId,
         subscriptionId: created!.id,
@@ -222,6 +287,7 @@ export class AdminSubscriptionService {
             status: 'ACTIVE',
           },
           reason: input.reason,
+          price: priced,
           ipAddress: actor.ipAddress,
           userAgent: actor.userAgent,
         }),
@@ -243,8 +309,140 @@ export class AdminSubscriptionService {
           limit: comments.included + comments.added,
           resetsAt: comments.resetsAt,
         },
+        price: priced,
       };
     });
     return result;
+  }
+
+  /**
+   * Records this term's promotions (PR-D12, reading 9): a live automatic discount is redeemed
+   * (`discount_bdt_first_term` = its saving, `months_used` = the months this term uses), a claimed
+   * one gets `months_used` advanced; the coupon is redeemed. `redeem()` re-checks each claim under
+   * the promotion lock (its 409s pass through). Links both on the subscription.
+   */
+  private async claimPromotions(
+    tx: Pick<Database, 'select' | 'insert' | 'update'>,
+    input: {
+      accountId: string;
+      planId: string;
+      subscriptionId: string;
+      termMonths: number;
+      auto: AccountDiscount | null;
+      coupon: {
+        promotionId: string;
+        code: string;
+        discount: DiscountMonths;
+      } | null;
+      price: PlanPrice;
+      now: Date;
+    },
+  ): Promise<ActivationPrice> {
+    const { accountId, planId, subscriptionId, termMonths, auto, price, now } =
+      input;
+    const redeem = (promotionId: string, amountBdt: number, months: number) =>
+      this.promotions
+        .redeem(
+          tx,
+          {
+            promotionId,
+            accountId,
+            planId,
+            subscriptionId,
+            discountBdtFirstTerm: amountBdt,
+            monthsUsed: months,
+          },
+          now,
+        )
+        .then((row) => row.id);
+
+    let discount: Claim | null = null;
+    if (auto) {
+      const saving = price.saving!;
+      const months = monthsThisTerm(auto.terms, auto.monthsUsed, termMonths);
+      let redemptionId = auto.redemptionId;
+      if (redemptionId) {
+        await tx
+          .update(promotionRedemptions)
+          .set({ monthsUsed: auto.monthsUsed + months })
+          .where(
+            and(
+              eq(promotionRedemptions.id, redemptionId),
+              eq(promotionRedemptions.billingAccountId, accountId),
+            ),
+          );
+      } else {
+        redemptionId = await redeem(
+          saving.promotionId,
+          saving.amountBdt,
+          months,
+        );
+      }
+      discount = {
+        saving,
+        redemptionId,
+        terms: auto.terms,
+        monthsUsed: auto.monthsUsed,
+      };
+    }
+    let coupon: Claim | null = null;
+    if (input.coupon) {
+      const saving = price.coupon!;
+      const months = monthsThisTerm(input.coupon.discount, 0, termMonths);
+      coupon = {
+        saving,
+        redemptionId: await redeem(
+          saving.promotionId,
+          saving.amountBdt,
+          months,
+        ),
+        terms: input.coupon.discount,
+        monthsUsed: 0,
+      };
+    }
+    if (discount || coupon) {
+      await tx
+        .update(subscriptions)
+        .set({
+          promotionRedemptionId: discount?.redemptionId ?? null,
+          couponRedemptionId: coupon?.redemptionId ?? null,
+        })
+        .where(eq(subscriptions.id, subscriptionId));
+    }
+
+    const ids = [discount, coupon].flatMap((c) =>
+      c ? [c.saving.promotionId] : [],
+    );
+    const names = new Map(
+      (ids.length
+        ? await tx
+            .select({
+              id: promotions.id,
+              name: promotions.name,
+              code: promotions.code,
+            })
+            .from(promotions)
+            .where(inArray(promotions.id, ids))
+        : []
+      ).map((p) => [p.id, p]),
+    );
+    const applied = (c: Claim | null): AppliedPromotion | null =>
+      c && {
+        promotionId: c.saving.promotionId,
+        redemptionId: c.redemptionId,
+        name: names.get(c.saving.promotionId)!.name,
+        code: names.get(c.saving.promotionId)!.code,
+        label: c.saving.label,
+        labelBn: c.saving.labelBn,
+        amountBdt: c.saving.amountBdt,
+        months: monthsOf(c.terms, c.monthsUsed, termMonths),
+      };
+    return {
+      listChargedBdt: price.listChargedBdt,
+      chargedBdt: price.chargedBdt,
+      perMonthBdt: price.perMonthBdt,
+      discount: applied(discount),
+      coupon: applied(coupon),
+    };
   }
 }

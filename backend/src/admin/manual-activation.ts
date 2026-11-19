@@ -1,4 +1,5 @@
 import type {
+  ActivationPrice,
   SubscriptionInterval,
   SubscriptionStatus,
 } from '../db/schema/index.js';
@@ -130,6 +131,8 @@ export interface ActivationAuditInput {
     status: SubscriptionStatus;
   };
   reason: string;
+  /** The term's price + promotions (PR-T3b). */
+  price: ActivationPrice;
   ipAddress: string | null;
   userAgent: string | null;
 }
@@ -150,6 +153,7 @@ export function toActivationAudit(input: ActivationAuditInput) {
     afterInterval: after.interval,
     afterStatus: after.status,
     reason: input.reason,
+    price: input.price,
     ipAddress: input.ipAddress,
     userAgent: input.userAgent,
   };
