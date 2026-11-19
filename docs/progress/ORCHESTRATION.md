@@ -8,10 +8,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)").
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #10 (2026-11-20) · rows this session: 0 · estimate: 40k
+- Session: #10 (2026-11-20) · rows this session: 1 · estimate: 52k
 
 ## State
-dispatched PW-T8 (2026-11-20) · commit: "feat(client): show trial and plan status banner (PW-T8)"
+verified PW-T8 (2026-11-20)
 
 ## Resume
 `/orchestration --continue` → dispatches PW-T8 (client plan status banner), then PW-T9 (admin manual activation) and PW-GATE; then M5-T16 (needs Neon AI credits or a provider key: asked at its pre-check) → M5-GATE.
@@ -249,4 +249,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-19 PW-T6 ✅ 6d7d4eb · backend 1830 unit (+1 skipped; was 1819) + e2e 833 (was 823) · public `GET /api/plans` (active plans, `planPrice` monthly + yearly, limits, flags, Starter trial fields; `public, max-age=60`) + any-member `GET /api/workspaces/:workspaceId/billing/summary` (plan/interval/status incl. EXPIRED/CANCELED/NONE, trial/term ends, comments from the wallet, pooled workspaces + Pages); no migration
 - 2026-11-20 PW-T6b ✅ 71ca5de · backend 1824 unit (+1 skipped; was 1830: −17 credit specs, +11) + e2e 825 (was 833: credits.e2e deleted) · admin clients list/PATCH read plan + subscription status from the live subscription and pooled comments from the wallet (`credits` gone), `plan=` filter + dashboard `planTiers` on live subscriptions, AI card without credits; migration 0025 drops `monthly_credit_usage`, `workspaces.plan_id`, `daily_ai_usage.credits`; `src/credits/` deleted
 - 2026-11-20 PW-T7 ✅ 3ba60b4 · admin 346 (was 323) · build ✅ · lint ✅ · plan editor yearly per-month + Starter trial (length presets, comment limit), audit labels; clients plan · interval · status badge + monthly comments bar; AI card without credits
-- 2026-11-20 PW-T8 ✅ · client 464 (was 426) · build ✅ · lint ✅ · `_app` plan status banner from the billing summary (trial countdown in Dhaka days / moderation paused / comment limit reached, en + bn), AI card without credits, `mockApi` fails on unexpected requests
+- 2026-11-20 PW-T8 ✅ · `3e7b6e2` · client 464 (was 426) · build ✅ · lint ✅ · `_app` plan status banner from the billing summary (trial countdown in Dhaka days / moderation paused / comment limit reached, en + bn), AI card without credits, `mockApi` fails on unexpected requests
