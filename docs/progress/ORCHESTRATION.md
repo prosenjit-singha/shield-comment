@@ -7,13 +7,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.)
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #6 (2026-11-19) · rows this session: 9 · estimate: 186k
+- Session: #6 (2026-11-19) · rows this session: 10 · estimate: 200k
 
 ## State
-dispatched M5-T9 (2026-11-19) · commit: "feat(backend): add meta moderation action executor (M5-T9)"
+paused: row cap (10 rows this session) after verified M5-T9 (2026-11-19)
 
 ## Resume
-`/orchestration --continue`
+`/orchestration --continue` (next: M5-T10 post context + caption cache; no decision pending)
 
 ## Next prompt (M5-T10)
 
@@ -149,4 +149,4 @@ You are implementing exactly ONE task row, **M5-T10**, in the ShieldComment BD r
 - 2026-11-19 M5-T6 label fix ✅ 774a434 · backend 1348 unit (+1 skipped; was 1347) + e2e 532 · user golden review applied: spam-07 → safe-11, + 3 negative emoji-only ABUSIVE items (48), prompt moderation-v2 (emoji-only rule + few-shots), hand-made replay regenerated (45/48)
 - 2026-11-19 M5-T7 ✅ f62df78 · backend 1375 + e2e 586 · e2e 2/2 · moderation schema (0016): comment statuses + classification columns, moderation_actions/policies, daily counters, daily_ai_usage, query helpers, delete order
 - 2026-11-19 M5-T8 ✅ a313208 + fix 4f3a590 · backend 1459 unit (+1 skipped; was 1375) + e2e 617 (was 586) · moderation policy: pure `decideAction` (threshold, REVIEW, delete opt-in, D11 unhide, human stamp, D6 reply language), `ModerationPolicyService` + `GET/PATCH …/moderation/policy` (owner/admin, impersonated ok, 400/409 rules)
-- 2026-11-19 M5-T9 ✅ · backend 1528 unit (+1 skipped; was 1459) + e2e 643 (was 617) · Meta action executor: Graph hide/unhide (FB `is_hidden` / IG `hide`), delete, reply (`/comments` / `/replies`), `not_found` kind; `ModerationActionExecutor` (typed skips, PENDING → Graph outside tx → SUCCEEDED/FAILED + status, USER stamp, one AUTO reply, NEEDS_REAUTH); gate check (2) via real client + stubbed fetch
+- 2026-11-19 M5-T9 ✅ 7f84b1c · backend 1528 unit (+1 skipped; was 1459) + e2e 643 (was 617) · Meta action executor: Graph hide/unhide (FB `is_hidden` / IG `hide`), delete, reply (`/comments` / `/replies`), `not_found` kind; `ModerationActionExecutor` (typed skips, PENDING → Graph outside tx → SUCCEEDED/FAILED + status, USER stamp, one AUTO reply, NEEDS_REAUTH); gate check (2) via real client + stubbed fetch
