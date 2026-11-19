@@ -48,6 +48,11 @@ describe('golden fixture (test/fixtures/golden-comments.ts)', () => {
       ).toBe(true);
     }
     expect(items.some((i) => i.platform === 'INSTAGRAM')).toBe(true);
+    // Emoji-only rule (D12 review): positive → SAFE, negative → ABUSIVE.
+    const emoji = items.filter((i) => i.tags.includes('emoji-only'));
+    expect(new Set(emoji.map((i) => i.expected))).toEqual(
+      new Set(['SAFE_INQUIRY', 'ABUSIVE_TOXIC']),
+    );
     expect(items.some((i) => i.isReply)).toBe(true);
     expect(items.some((i) => i.postCaption !== undefined)).toBe(true);
   });

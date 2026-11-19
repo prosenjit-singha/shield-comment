@@ -201,12 +201,12 @@ describe('golden suite through CommentClassifier (CI replay, no network)', () =>
     expect(run.aborted).toBeUndefined();
     const report = scoreGolden(run.outcomes);
     expect(report).toMatchObject({
-      total: 45,
-      correct: 42,
+      total: 48,
+      correct: 45,
       failed: 1,
       passed: true,
     });
-    expect(report.accuracy).toBeCloseTo(42 / 45, 10);
+    expect(report.accuracy).toBeCloseTo(45 / 48, 10);
     expect(report.failuresByKind).toEqual({ invalid_output: 1 });
     expect(report.mistakes.map((m) => [m.id, m.got])).toEqual([
       ['comp-07', 'SAFE_INQUIRY'],
@@ -221,14 +221,14 @@ describe('golden suite through CommentClassifier (CI replay, no network)', () =>
     });
     expect(report.perCategory.SCAM_PHISHING.precision).toBeCloseTo(10 / 11, 10);
     expect(report.perCategory.ABUSIVE_TOXIC).toMatchObject({
-      support: 8,
-      predicted: 7,
+      support: 11,
+      predicted: 10,
       precision: 1,
     });
-    expect(report.perCategory.ABUSIVE_TOXIC.recall).toBeCloseTo(7 / 8, 10);
-    expect(report.attempts).toEqual({ total: 48, max: 2 });
-    expect(chat).toHaveBeenCalledTimes(48);
-    expect(report.tokens.itemsWithUsage).toBe(45);
+    expect(report.perCategory.ABUSIVE_TOXIC.recall).toBeCloseTo(10 / 11, 10);
+    expect(report.attempts).toEqual({ total: 51, max: 2 });
+    expect(chat).toHaveBeenCalledTimes(51);
+    expect(report.tokens.itemsWithUsage).toBe(48);
     expect(report.latency?.maxMs).toBeGreaterThan(0);
 
     // The classifier got the fixture comment as data, and fell back after the response_format refusal.

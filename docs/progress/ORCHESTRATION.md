@@ -10,14 +10,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Session: #6 (2026-11-19) · rows this session: 7 · estimate: 140k
 
 ## State
-verified M5-T6 · next: M5-T7 waits for the user label review (D12)
+dispatched M5-T6 label fix (2026-11-19) · commit: "test(backend): apply golden label review (M5-T6)"
 
 ## Resume
 `/orchestration --continue`
 
 ## Next prompt (M5-T7)
 
-PRE-CHECK: user label review of the golden fixture (D12) before dispatch. The user reviews `backend/test/fixtures/golden-comments.ts` (45 items; least-sure labels listed in the M5-T6 report). Relabels are applied as a small `test(backend): …` commit before M5-T7; the hand-made replay `golden-responses.neon.handmade-replay.json` must then be regenerated or its planted answers adjusted so `golden-replay.spec.ts` (42/45) still holds.
 
 You are implementing exactly ONE task row, **M5-T7**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
 
@@ -51,7 +50,7 @@ You are implementing exactly ONE task row, **M5-T7**, in the ShieldComment BD re
 - backend touched: `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test`, `npm run test:e2e`, `npm run lint`, `npx prettier --check "src/**/*.ts" "test/**/*.ts"`. The test DB must end empty except the 4 `plans` rows.
 - `e2e/src/stack.ts` touched: `cd e2e && npm run typecheck && npm test` (+ `npm run test:docker` if the backend image/migrations matter); the DB must return to its baseline.
 - admin/client not expected.
-- Current test counts: backend 1347 unit (+1 skipped) / 532 e2e · admin 281 · client 399 · Playwright 2/2 (so drops are visible).
+- Current test counts: backend 1348 unit (+1 skipped) / 532 e2e · admin 281 · client 399 · Playwright 2/2 (so drops are visible).
 
 **If a decision is missing:** if THIS row needs a product decision that is not recorded in TASKS.md/MEMORY.md/this prompt, STOP without coding that part. Report `STATUS: needs-decision` with the question and 2–4 options (recommended first). If your row finishes but the NEXT row needs decisions, report `STATUS: done`, list them under DECISION NEEDED and start the next prompt with `PRE-CHECK: needs user decisions <ids> before dispatch`.
 
@@ -63,6 +62,9 @@ You are implementing exactly ONE task row, **M5-T7**, in the ShieldComment BD re
    - **replace** the `## Next prompt` section with the M5-T8 prompt in this same format (contract: `.claude/skills/orchestration/subagent-prompt.md`).
 3. Commit everything, journal included, with `feat(backend): add moderation schema and migration (M5-T7)` (or a similar Conventional Commits subject containing `(M5-T7)`) and an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
+
+### Decisions added by orchestrator
+- 2026-11-19 golden label review (D12) done by the user and applied in a follow-up `(M5-T6)` commit before this row: labels approved except spam-07 → SAFE_INQUIRY (positive emojis shown) and new negative-emoji items → ABUSIVE_TOXIC; the per-category client Show/Hide/Delete page with examples stays in Module 6 (/rules). Nothing in this row changes because of it.
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -113,6 +115,12 @@ You are implementing exactly ONE task row, **M5-T7**, in the ShieldComment BD re
 - 2026-11-19 Module 5 run (round 3): D3 → "Auto, hide only (Recommended)" · D4 → "One per workspace, 0.80 (Recommended)" · D5 → "Table + API, rules UI in M6 (Recommended)" (Module 5's only client UI = the D8 "AI analysis" card; full /rules in Module 6) · D6 → "Off by default, Growth/Pro (Recommended)"
 - 2026-11-19 Module 5 run (round 4): D7 → "Every AI call, edits too (Recommended)" (credits reserved atomically before each AI call, first check + each re-checked edit; out of credits → SKIPPED, visible) · D10 → "Executor + log, endpoint in M6 (Recommended)" · D11 → "Re-check + auto-unhide" (NOT the recommended option: re-classify every edit and un-hide automatically when the edit is safe; orchestrator note: a human-stamped comment (D10) is still never changed by the AI) · D13 → "All with text (Recommended)"
 - 2026-11-19 Module 5 run (round 5): D12 → "Agent fixture, you review (Recommended)" · D14 → "AI card + charts + credits bar (Recommended)" (credits bar instead of the quota bar) · Apps → "Both, rest of run (Recommended)" · Live runs → "Pause when a live run is due (Recommended)" (build with fakes/replays; pause and ask for credits/key when a row needs the live AI run; M5-T11 stays pending, no Meta test app)
+- 2026-11-19 M5-T7 pre-check, golden label review (D12), round 1 (verbatim):
+  - comp-07 → "COMPETITOR_POACH (current)"
+  - spam-07 (emoji-only "🔥🔥🔥❤️❤️❤️👍👍👍") → "Emoji might be positive or negative. Like angry face or thumbs up. If ai can analyse the emoje then then can hide the comment which has negative emoji and show the positive emoji. If ai is not capable to do that, hide the emoji only comment."
+  - abuse-01 → "I think we should give this option to the client setting. like what they want to do this type of comment see. Actually give client a setting page for comment tone and the response of that image like wants to hide it, delete it, or show it. Show them the type with an example. then they will chose what will happen to those type or category of comment"
+  - safe-09 → "SAFE_INQUIRY (current)"
+- 2026-11-19 M5-T7 pre-check, golden label review (D12), round 2: emojis → "Positive=SAFE, negative=ABUSIVE (Recommended)" (spam-07 → SAFE_INQUIRY; add negative-emoji items (😡👎🤮) labelled ABUSIVE_TOXIC; the prompt teaches it; if M5-T16 shows the model can't do it reliably, fall back to hiding all emoji-only comments) · client category settings page (abuse-01 follow-up) → "Keep it in Module 6" (abuse-01 stays ABUSIVE_TOXIC; the per-category Show/Hide/Delete page with examples is Module 6 /rules; record the user's wish in TASKS.md Module 6 notes) · spam-05 → "SPAM_IRRELEVANT (current)" · scam-05, scam-06 + all other labels → "Approve as labelled (Recommended)"
 
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
@@ -144,3 +152,4 @@ You are implementing exactly ONE task row, **M5-T7**, in the ShieldComment BD re
 - 2026-11-19 M5-T4 ✅ a837851 · admin 281 (was 246) · admin AI provider section on /admin/settings: provider/model/write-only keys, clear confirm, Test connection, AI settings history, one blocker for plans + AI
 - 2026-11-19 M5-T5 ✅ 01a1db3 · backend 1296 unit (was 1227) + e2e 532 · pure comment classifier: versioned prompt (moderation-v1, 13 bn/banglish/en few-shots, JSON data blocks), D8 levels + credit cost, output parser, json_schema → json_object → prompt fallback, one output retry, typed failures
 - 2026-11-19 M5-T6 ✅ 52a8cdf · backend 1347 unit (+1 skipped; was 1296) + e2e 532 · golden suite: 45-item fixture (labels await user review, D12), pure scorer, replay files keyed by prompt version + item id, hand-made replay through the real classifier (42/45), `npm run ai:golden` script (no live run)
+- 2026-11-19 M5-T6 label fix ✅ · backend 1348 unit (+1 skipped; was 1347) + e2e 532 · user golden review applied: spam-07 → safe-11, + 3 negative emoji-only ABUSIVE items (48), prompt moderation-v2 (emoji-only rule + few-shots), hand-made replay regenerated (45/48)

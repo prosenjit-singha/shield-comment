@@ -158,6 +158,13 @@ describe('moderation prompt', () => {
     expect(messages[0]?.content).not.toContain('XL ase?');
   });
 
+  it('teaches the emoji-only rule (moderation-v2)', () => {
+    expect(SYSTEM_PROMPT).toMatch(
+      /Emoji-only comments \(no words or links\): positive or neutral reactions → SAFE_INQUIRY; angry, disgusted, mocking-hostile or insulting reactions → ABUSIVE_TOXIC; never SPAM_IRRELEVANT\./,
+    );
+    expect(SYSTEM_PROMPT).not.toMatch(/repeated emojis/);
+  });
+
   it('few-shots cover every category, language and an injection attempt, and parse', () => {
     const categories = new Set(FEW_SHOTS.map((s) => s.output.category));
     const languages = new Set(FEW_SHOTS.map((s) => s.output.language));
@@ -178,6 +185,14 @@ describe('moderation prompt', () => {
     expect(
       FEW_SHOTS.some((s) => s.input.postCaption?.includes('SYSTEM NOTE')),
     ).toBe(true);
+    // Emoji-only rule (D12 label review): positive → SAFE, negative → ABUSIVE, never SPAM.
+    const emojiOnly = FEW_SHOTS.filter(
+      (s) => !/[\p{L}\p{N}]/u.test(s.input.text),
+    );
+    expect(emojiOnly.map((s) => s.output.category).sort()).toEqual([
+      'ABUSIVE_TOXIC',
+      'SAFE_INQUIRY',
+    ]);
     for (const shot of FEW_SHOTS) {
       expect(shot.input.text.length).toBeGreaterThan(0);
       expect(

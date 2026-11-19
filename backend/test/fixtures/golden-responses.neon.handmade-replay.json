@@ -4,7 +4,7 @@
   "note": "HAND-MADE replay (M5-T6), NOT model output: checks pipeline + scorer in CI until M5-T16 records real answers. Planted: comp-07 and spam-05 wrong, scam-02 bad JSON then ok, safe-03 response_format refusal then ok, abuse-04 invalid twice. Bump promptVersion by hand when PROMPT_VERSION changes.",
   "provider": "neon",
   "model": "handmade-replay",
-  "promptVersion": "moderation-v1",
+  "promptVersion": "moderation-v2",
   "contextLevel": "comment_only",
   "recordedAt": "2026-11-19T00:00:00.000Z",
   "items": {
@@ -177,11 +177,11 @@
         }
       ]
     },
-    "comp-01": {
-      "textSha256": "545857bb51bbbbd6",
+    "safe-11": {
+      "textSha256": "68812cc5ffa799ff",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.9,\"language\":\"en\"}",
           "model": "handmade-replay",
           "latencyMs": 870,
           "usage": {
@@ -193,11 +193,11 @@
         }
       ]
     },
-    "comp-02": {
-      "textSha256": "7492b92f009d7d76",
+    "comp-01": {
+      "textSha256": "545857bb51bbbbd6",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
           "model": "handmade-replay",
           "latencyMs": 907,
           "usage": {
@@ -209,11 +209,11 @@
         }
       ]
     },
-    "comp-03": {
-      "textSha256": "84883f63877db41e",
+    "comp-02": {
+      "textSha256": "7492b92f009d7d76",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"bn\"}",
           "model": "handmade-replay",
           "latencyMs": 944,
           "usage": {
@@ -225,11 +225,11 @@
         }
       ]
     },
-    "comp-04": {
-      "textSha256": "69193845faeee33c",
+    "comp-03": {
+      "textSha256": "84883f63877db41e",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"en\"}",
           "model": "handmade-replay",
           "latencyMs": 981,
           "usage": {
@@ -241,8 +241,8 @@
         }
       ]
     },
-    "comp-05": {
-      "textSha256": "cfe24a2f08372c2e",
+    "comp-04": {
+      "textSha256": "69193845faeee33c",
       "calls": [
         {
           "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
@@ -257,11 +257,11 @@
         }
       ]
     },
-    "comp-06": {
-      "textSha256": "eef9410652403c9a",
+    "comp-05": {
+      "textSha256": "cfe24a2f08372c2e",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
           "model": "handmade-replay",
           "latencyMs": 1055,
           "usage": {
@@ -273,11 +273,11 @@
         }
       ]
     },
-    "comp-07": {
-      "textSha256": "369792bc65bc17d5",
+    "comp-06": {
+      "textSha256": "eef9410652403c9a",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.55,\"language\":\"en\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"bn\"}",
           "model": "handmade-replay",
           "latencyMs": 1092,
           "usage": {
@@ -289,11 +289,11 @@
         }
       ]
     },
-    "comp-08": {
-      "textSha256": "28a4a26c0473fc96",
+    "comp-07": {
+      "textSha256": "369792bc65bc17d5",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SAFE_INQUIRY\",\"confidence_score\":0.55,\"language\":\"en\"}",
           "model": "handmade-replay",
           "latencyMs": 529,
           "usage": {
@@ -305,11 +305,11 @@
         }
       ]
     },
-    "comp-09": {
-      "textSha256": "97f554c551052e6e",
+    "comp-08": {
+      "textSha256": "28a4a26c0473fc96",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
           "model": "handmade-replay",
           "latencyMs": 566,
           "usage": {
@@ -321,11 +321,11 @@
         }
       ]
     },
-    "scam-01": {
-      "textSha256": "98a27bc3020d6485",
+    "comp-09": {
+      "textSha256": "97f554c551052e6e",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"COMPETITOR_POACH\",\"confidence_score\":0.9,\"language\":\"en\"}",
           "model": "handmade-replay",
           "latencyMs": 603,
           "usage": {
@@ -337,22 +337,11 @@
         }
       ]
     },
-    "scam-02": {
-      "textSha256": "7d822b398373e7b3",
+    "scam-01": {
+      "textSha256": "98a27bc3020d6485",
       "calls": [
         {
-          "content": "Sorry, I can only answer in prose.",
-          "model": "handmade-replay",
-          "latencyMs": 640,
-          "usage": {
-            "promptTokens": 2540,
-            "completionTokens": 60,
-            "totalTokens": 2600
-          },
-          "finishReason": "stop"
-        },
-        {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"bn\"}",
           "model": "handmade-replay",
           "latencyMs": 640,
           "usage": {
@@ -364,11 +353,22 @@
         }
       ]
     },
-    "scam-03": {
-      "textSha256": "982f39e58a581a5c",
+    "scam-02": {
+      "textSha256": "7d822b398373e7b3",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "content": "Sorry, I can only answer in prose.",
+          "model": "handmade-replay",
+          "latencyMs": 677,
+          "usage": {
+            "promptTokens": 2547,
+            "completionTokens": 64,
+            "totalTokens": 2611
+          },
+          "finishReason": "stop"
+        },
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
           "model": "handmade-replay",
           "latencyMs": 677,
           "usage": {
@@ -380,8 +380,8 @@
         }
       ]
     },
-    "scam-04": {
-      "textSha256": "f8aa45e7eda9af11",
+    "scam-03": {
+      "textSha256": "982f39e58a581a5c",
       "calls": [
         {
           "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"en\"}",
@@ -396,11 +396,11 @@
         }
       ]
     },
-    "scam-05": {
-      "textSha256": "7c300fd7e3b5a48b",
+    "scam-04": {
+      "textSha256": "f8aa45e7eda9af11",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"en\"}",
           "model": "handmade-replay",
           "latencyMs": 751,
           "usage": {
@@ -412,11 +412,11 @@
         }
       ]
     },
-    "scam-06": {
-      "textSha256": "b35e139a1bd985df",
+    "scam-05": {
+      "textSha256": "7c300fd7e3b5a48b",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"bn\"}",
           "model": "handmade-replay",
           "latencyMs": 788,
           "usage": {
@@ -428,8 +428,8 @@
         }
       ]
     },
-    "scam-07": {
-      "textSha256": "7e4d5ec344c91cde",
+    "scam-06": {
+      "textSha256": "b35e139a1bd985df",
       "calls": [
         {
           "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
@@ -444,11 +444,11 @@
         }
       ]
     },
-    "scam-08": {
-      "textSha256": "f221c880e1115476",
+    "scam-07": {
+      "textSha256": "7e4d5ec344c91cde",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
           "model": "handmade-replay",
           "latencyMs": 862,
           "usage": {
@@ -460,11 +460,11 @@
         }
       ]
     },
-    "scam-09": {
-      "textSha256": "6319c77de5b263e4",
+    "scam-08": {
+      "textSha256": "f221c880e1115476",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"en\"}",
           "model": "handmade-replay",
           "latencyMs": 899,
           "usage": {
@@ -476,11 +476,11 @@
         }
       ]
     },
-    "scam-10": {
-      "textSha256": "fc8e831ca6fa6f0f",
+    "scam-09": {
+      "textSha256": "6319c77de5b263e4",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
           "model": "handmade-replay",
           "latencyMs": 936,
           "usage": {
@@ -492,11 +492,11 @@
         }
       ]
     },
-    "spam-01": {
-      "textSha256": "3a82d88a8f1d48df",
+    "scam-10": {
+      "textSha256": "fc8e831ca6fa6f0f",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.9,\"language\":\"bn\"}",
           "model": "handmade-replay",
           "latencyMs": 973,
           "usage": {
@@ -508,11 +508,11 @@
         }
       ]
     },
-    "spam-02": {
-      "textSha256": "86701690f5f4dd1d",
+    "spam-01": {
+      "textSha256": "3a82d88a8f1d48df",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"en\"}",
           "model": "handmade-replay",
           "latencyMs": 1010,
           "usage": {
@@ -524,11 +524,11 @@
         }
       ]
     },
-    "spam-03": {
-      "textSha256": "f71b250d5ccd3cb3",
+    "spam-02": {
+      "textSha256": "86701690f5f4dd1d",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"banglish\"}",
           "model": "handmade-replay",
           "latencyMs": 1047,
           "usage": {
@@ -540,11 +540,11 @@
         }
       ]
     },
-    "spam-04": {
-      "textSha256": "17f90132102a4e0b",
+    "spam-03": {
+      "textSha256": "f71b250d5ccd3cb3",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"bn\"}",
           "model": "handmade-replay",
           "latencyMs": 1084,
           "usage": {
@@ -556,11 +556,11 @@
         }
       ]
     },
-    "spam-05": {
-      "textSha256": "80b8c65a943f5651",
+    "spam-04": {
+      "textSha256": "17f90132102a4e0b",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.6,\"language\":\"en\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"en\"}",
           "model": "handmade-replay",
           "latencyMs": 521,
           "usage": {
@@ -572,11 +572,11 @@
         }
       ]
     },
-    "spam-06": {
-      "textSha256": "03b2131246ed46b1",
+    "spam-05": {
+      "textSha256": "80b8c65a943f5651",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"bn\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SCAM_PHISHING\",\"confidence_score\":0.6,\"language\":\"en\"}",
           "model": "handmade-replay",
           "latencyMs": 558,
           "usage": {
@@ -588,11 +588,11 @@
         }
       ]
     },
-    "spam-07": {
-      "textSha256": "68812cc5ffa799ff",
+    "spam-06": {
+      "textSha256": "03b2131246ed46b1",
       "calls": [
         {
-          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"SPAM_IRRELEVANT\",\"confidence_score\":0.9,\"language\":\"bn\"}",
           "model": "handmade-replay",
           "latencyMs": 595,
           "usage": {
@@ -754,6 +754,54 @@
             "promptTokens": 2708,
             "completionTokens": 76,
             "totalTokens": 2784
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "abuse-09": {
+      "textSha256": "3bb976a678ee0a4f",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"ABUSIVE_TOXIC\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 965,
+          "usage": {
+            "promptTokens": 2715,
+            "completionTokens": 60,
+            "totalTokens": 2775
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "abuse-10": {
+      "textSha256": "0a94d42068fe7d41",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"ABUSIVE_TOXIC\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 1002,
+          "usage": {
+            "promptTokens": 2722,
+            "completionTokens": 64,
+            "totalTokens": 2786
+          },
+          "finishReason": "stop"
+        }
+      ]
+    },
+    "abuse-11": {
+      "textSha256": "410be0e5ce79ed0c",
+      "calls": [
+        {
+          "content": "{\"reasoning\":\"Hand-made replay answer (not a model output).\",\"category\":\"ABUSIVE_TOXIC\",\"confidence_score\":0.9,\"language\":\"en\"}",
+          "model": "handmade-replay",
+          "latencyMs": 1039,
+          "usage": {
+            "promptTokens": 2729,
+            "completionTokens": 68,
+            "totalTokens": 2797
           },
           "finishReason": "stop"
         }
