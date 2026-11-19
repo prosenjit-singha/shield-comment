@@ -10,10 +10,11 @@ import { apiFetch } from '@/lib/api'
  *   400 = invalid / unknown field / nothing to update / offer > original; 404 = unknown plan.
  */
 /**
- * `monthlyAiCredits` (M5-T11, D15) = AI credits per Asia/Dhaka month, the only moderation limit; it
- * replaced `monthlyComments` (old audit rows still carry that name, see `admin-plan-audit.ts`).
+ * `monthlyComments` (PW-D1) = comments per month, each comment counts 1; it replaced the M5-T11
+ * `monthlyAiCredits` (old audit rows still carry that name, see `admin-plan-audit.ts`).
+ * `workspaces` (PW-D10) = workspaces a client account may own.
  */
-export const PLAN_LIMIT_KEYS = ['connectedPages', 'monthlyAiCredits', 'teamSeats'] as const
+export const PLAN_LIMIT_KEYS = ['connectedPages', 'monthlyComments', 'teamSeats', 'workspaces'] as const
 export type PlanLimitKey = (typeof PLAN_LIMIT_KEYS)[number]
 
 export const PLAN_FEATURE_KEYS = [
@@ -73,26 +74,17 @@ export const PLAN_PRICE_MAX_BDT = 1_000_000
 export const PLAN_OFFER_BADGE_MAX = 40
 export const PLAN_LIMIT_MAX: Record<PlanLimitKey, number> = {
   connectedPages: 1_000,
-  monthlyAiCredits: 10_000_000,
+  monthlyComments: 10_000_000,
   teamSeats: 1_000,
+  workspaces: 1_000,
 }
 
-/** Row labels of the `docs/design/client.md` §7 pricing matrix (rows 1–3 and 4–10). */
+/** Row labels of the `docs/design/client.md` §7 pricing matrix (rows 1–3 and 4–10) + workspaces. */
 export const planLimitLabels: Record<PlanLimitKey, string> = {
   connectedPages: 'Connected FB & IG Pages',
-  monthlyAiCredits: 'Monthly AI credits',
+  monthlyComments: 'Monthly comments',
   teamSeats: 'Team / Moderator Seats',
-}
-
-/**
- * Hint under a limit input. Monthly AI credits: the comment estimate at 1 credit per comment (the
- * "Comment only" level, D8). It is display text only: credits are the limit (D15).
- */
-export function planLimitHint(key: PlanLimitKey, value: string): string | undefined {
-  if (key !== 'monthlyAiCredits') return undefined
-  const credits = parseWholeNumber(value)
-  if (credits === null) return undefined
-  return `≈ ${formatCount(credits)} comments (estimate at 1 credit per comment, not a limit)`
+  workspaces: 'Workspaces',
 }
 
 export const planFeatureLabels: Record<PlanFeatureKey, string> = {
@@ -150,11 +142,10 @@ export function draftFromPlan(plan: AdminPlan): PlanDraft {
     originalPriceBdt: String(plan.originalPriceBdt),
     offerPriceBdt: plan.offerPriceBdt === null ? '' : String(plan.offerPriceBdt),
     offerBadge: plan.offerBadge ?? '',
-    limits: {
-      connectedPages: String(limits.connectedPages),
-      monthlyAiCredits: String(limits.monthlyAiCredits),
-      teamSeats: String(limits.teamSeats),
-    },
+    limits: Object.fromEntries(PLAN_LIMIT_KEYS.map((key) => [key, String(limits[key])])) as Record<
+      PlanLimitKey,
+      string
+    >,
     features: { ...features },
   }
 }

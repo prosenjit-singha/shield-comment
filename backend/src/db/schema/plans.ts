@@ -21,38 +21,43 @@ import { id, timestamps } from './columns.js';
  * ৳3,999) only to plans still at their seed values. Every admin edit is logged in `plan_audit_logs`.
  */
 
-/** Numeric limits per plan (`feature_config.limits`). Rows 1–3 of the landing pricing matrix. */
+/** Numeric limits per plan (`feature_config.limits`). Rows 1–3 of the landing pricing matrix + workspaces. */
 export const PLAN_LIMIT_KEYS = [
   /** Connected Facebook + Instagram pages. */
   'connectedPages',
   /**
-   * AI credits per Asia/Dhaka calendar month (Module 5 D15, M5-T11): the only moderation limit.
-   * One AI call costs 1–2 credits by the D8 context level; no rollover. Replaced
-   * `monthlyComments` (migration 0018 copied the numbers).
+   * Comments per month (PW-D1): each comment counts 1, at any D8 context level. Replaced the
+   * M5-T11 AI credits (`monthlyAiCredits`); migration 0022 copied the numbers back.
    */
-  'monthlyAiCredits',
+  'monthlyComments',
   /** Team / moderator seats (workspace members). */
   'teamSeats',
+  /** Workspaces a client (billing) account may own (PW-D10; seed 1 / 3 / 10). */
+  'workspaces',
 ] as const;
 export type PlanLimitKey = (typeof PLAN_LIMIT_KEYS)[number];
 
 /** Upper bound per limit (validation; 0 = feature unavailable). */
 export const PLAN_LIMIT_MAX: Record<PlanLimitKey, number> = {
   connectedPages: 1_000,
-  monthlyAiCredits: 10_000_000,
+  monthlyComments: 10_000_000,
   teamSeats: 1_000,
+  workspaces: 1_000,
 };
 
 /**
  * Old limit key names, read as a fallback by `normalizeFeatureConfig` when the new key is missing
- * (M5-T11: `monthlyComments` → `monthlyAiCredits`). Old `plan_audit_logs` rows keep the old
- * dotted field name (`LEGACY_PLAN_AUDIT_FIELDS`).
+ * (PW-T1b: `monthlyAiCredits` → `monthlyComments`; M5-T11 had renamed it the other way). Old
+ * `plan_audit_logs` rows keep the old dotted field name (`LEGACY_PLAN_AUDIT_FIELDS`).
  */
 export const LEGACY_PLAN_LIMIT_KEYS: Readonly<
   Partial<Record<PlanLimitKey, string>>
 > = {
-  monthlyAiCredits: 'monthlyComments',
+  monthlyComments: 'monthlyAiCredits',
 };
+
+/** The only plan with a sign-up trial (PW-D8); the trial columns are accepted on it alone. */
+export const TRIAL_PLAN_SLUG = 'starter';
 
 /** Boolean feature flags (`feature_config.features`). Rows 4–10 of the landing pricing matrix. */
 export const PLAN_FEATURE_KEYS = [
@@ -88,7 +93,7 @@ export const PLAN_NAME_MAX = 40;
 export const PLAN_TRIAL_DAYS_MIN = 1;
 export const PLAN_TRIAL_DAYS_MAX = 90;
 /** Upper bound of `trial_comment_limit` (PW-D12) = the monthly comment limit max. */
-export const PLAN_TRIAL_COMMENT_LIMIT_MAX = PLAN_LIMIT_MAX.monthlyAiCredits;
+export const PLAN_TRIAL_COMMENT_LIMIT_MAX = PLAN_LIMIT_MAX.monthlyComments;
 
 export const plans = pgTable(
   'plans',
@@ -112,11 +117,11 @@ export const plans = pgTable(
      * (`offer_price_bdt ?? original_price_bdt`). `null` = no yearly option.
      */
     yearlyMonthlyPriceBdt: integer(),
-    /** Trial length in days (PW-D8; Starter only, enforced by the API). `null` = no trial. */
+    /** Trial length in days (PW-D8; Starter only, enforced by the API; seed 7). `null` = no trial. */
     trialDays: integer(),
     /**
-     * Comment grant of a trial (PW-D12; Starter only, beside `trial_days`). `null` = the plan's
-     * monthly comment limit.
+     * Comment grant of a trial (PW-D12; Starter only, beside `trial_days`; seed 300). `null` = the
+     * plan's monthly comment limit.
      */
     trialCommentLimit: integer(),
     featureConfig: jsonb().$type<PlanFeatureConfig>().notNull(),

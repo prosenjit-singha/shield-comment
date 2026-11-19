@@ -382,7 +382,7 @@ describe('Admin clients: list filters + status (e2e)', () => {
           .from(plans)
           .where(eq(plans.slug, slug));
         return normalizeFeatureConfig(row!.featureConfig).limits
-          .monthlyAiCredits;
+          .monthlyComments;
       };
 
       beforeAll(async () => {

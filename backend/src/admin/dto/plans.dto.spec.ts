@@ -40,14 +40,28 @@ describe('UpdatePlanDto', () => {
       originalPriceBdt: 999,
       offerPriceBdt: 499,
       offerBadge: '  50% Launch Offer ',
+      yearlyMonthlyPriceBdt: 449,
+      trialDays: 7,
+      trialCommentLimit: 300,
       featureConfig: {
-        limits: { connectedPages: 3, monthlyAiCredits: 0, teamSeats: 2 },
+        limits: {
+          connectedPages: 3,
+          monthlyComments: 0,
+          teamSeats: 2,
+          workspaces: 1,
+        },
         features: { customBlocklist: true, prioritySupportApi: false },
       },
     });
     expect(fields).toEqual([]);
     expect(dto.offerBadge).toBe('50% Launch Offer');
-    expect(dto.featureConfig?.limits?.monthlyAiCredits).toBe(0);
+    expect(dto).toMatchObject({
+      yearlyMonthlyPriceBdt: 449,
+      trialDays: 7,
+      trialCommentLimit: 300,
+    });
+    expect(dto.featureConfig?.limits?.monthlyComments).toBe(0);
+    expect(dto.featureConfig?.limits?.workspaces).toBe(1);
   });
 
   it('accepts an empty body at DTO level (the service answers "Nothing to update")', async () => {
@@ -69,20 +83,45 @@ describe('UpdatePlanDto', () => {
     expect(blank.dto.offerBadge).toBeNull();
   });
 
+  it('accepts null to clear the yearly price and the trial fields (PW-T1b)', async () => {
+    const cleared = await check(UpdatePlanDto, {
+      yearlyMonthlyPriceBdt: null,
+      trialDays: null,
+      trialCommentLimit: null,
+    });
+    expect(cleared.fields).toEqual([]);
+    expect(cleared.dto).toMatchObject({
+      yearlyMonthlyPriceBdt: null,
+      trialDays: null,
+      trialCommentLimit: null,
+    });
+  });
+
   it('accepts the price and limit bounds', async () => {
     const { fields } = await check(UpdatePlanDto, {
       originalPriceBdt: 1_000_000,
       offerPriceBdt: 0,
       offerBadge: 'x'.repeat(40),
+      yearlyMonthlyPriceBdt: 1_000_000,
+      trialDays: 90,
+      trialCommentLimit: 10_000_000,
       featureConfig: {
         limits: {
           connectedPages: 1000,
-          monthlyAiCredits: 10_000_000,
+          monthlyComments: 10_000_000,
           teamSeats: 1000,
+          workspaces: 1000,
         },
       },
     });
     expect(fields).toEqual([]);
+    const low = await check(UpdatePlanDto, {
+      yearlyMonthlyPriceBdt: 0,
+      trialDays: 1,
+      trialCommentLimit: 0,
+      featureConfig: { limits: { workspaces: 0 } },
+    });
+    expect(low.fields).toEqual([]);
   });
 
   it.each([
@@ -111,14 +150,49 @@ describe('UpdatePlanDto', () => {
       'featureConfig.limits.storageGb',
     ],
     [
-      'old limit name monthlyComments (M5-T11)',
-      { featureConfig: { limits: { monthlyComments: 500 } } },
+      'old limit name monthlyAiCredits (PW-T1b)',
+      { featureConfig: { limits: { monthlyAiCredits: 500 } } },
+      'featureConfig.limits.monthlyAiCredits',
+    ],
+    [
+      'string monthlyComments',
+      { featureConfig: { limits: { monthlyComments: '500' } } },
       'featureConfig.limits.monthlyComments',
     ],
     [
-      'string monthlyAiCredits',
-      { featureConfig: { limits: { monthlyAiCredits: '500' } } },
-      'featureConfig.limits.monthlyAiCredits',
+      'workspaces above max',
+      { featureConfig: { limits: { workspaces: 1001 } } },
+      'featureConfig.limits.workspaces',
+    ],
+    ['negative yearly', { yearlyMonthlyPriceBdt: -1 }, 'yearlyMonthlyPriceBdt'],
+    [
+      'fractional yearly',
+      { yearlyMonthlyPriceBdt: 449.5 },
+      'yearlyMonthlyPriceBdt',
+    ],
+    [
+      'string yearly',
+      { yearlyMonthlyPriceBdt: '449' },
+      'yearlyMonthlyPriceBdt',
+    ],
+    [
+      'yearly above max',
+      { yearlyMonthlyPriceBdt: 1_000_001 },
+      'yearlyMonthlyPriceBdt',
+    ],
+    ['trialDays 0', { trialDays: 0 }, 'trialDays'],
+    ['trialDays 91', { trialDays: 91 }, 'trialDays'],
+    ['fractional trialDays', { trialDays: 7.5 }, 'trialDays'],
+    ['string trialDays', { trialDays: '7' }, 'trialDays'],
+    [
+      'negative trialCommentLimit',
+      { trialCommentLimit: -1 },
+      'trialCommentLimit',
+    ],
+    [
+      'trialCommentLimit above max',
+      { trialCommentLimit: 10_000_001 },
+      'trialCommentLimit',
     ],
     [
       'unknown feature key',
@@ -137,8 +211,8 @@ describe('UpdatePlanDto', () => {
     ],
     [
       'limit above max',
-      { featureConfig: { limits: { monthlyAiCredits: 10_000_001 } } },
-      'featureConfig.limits.monthlyAiCredits',
+      { featureConfig: { limits: { monthlyComments: 10_000_001 } } },
+      'featureConfig.limits.monthlyComments',
     ],
     [
       'null limit',

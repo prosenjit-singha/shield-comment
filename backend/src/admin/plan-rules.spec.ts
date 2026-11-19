@@ -7,11 +7,19 @@ import {
   normalizeFeatureConfig,
   offerPriceError,
   type PlanEditableValues,
+  planValuesError,
   toAdminPlan,
+  trialFieldsError,
+  yearlyPriceError,
 } from './plan-rules.js';
 
 const config = (): PlanFeatureConfig => ({
-  limits: { connectedPages: 5, monthlyAiCredits: 15000, teamSeats: 3 },
+  limits: {
+    connectedPages: 5,
+    monthlyComments: 15000,
+    teamSeats: 3,
+    workspaces: 3,
+  },
   features: {
     banglaAiFilter: true,
     autoHideScams: true,
@@ -27,6 +35,9 @@ const growth = (): PlanEditableValues => ({
   originalPriceBdt: 1499,
   offerPriceBdt: null,
   offerBadge: null,
+  yearlyMonthlyPriceBdt: null,
+  trialDays: null,
+  trialCommentLimit: null,
   featureConfig: config(),
 });
 
@@ -40,14 +51,19 @@ describe('normalizeFeatureConfig', () => {
       limits: {
         connectedPages: 2,
         teamSeats: -4,
-        monthlyAiCredits: '10',
+        monthlyComments: '10',
         x: 1,
       },
       features: { customBlocklist: true, banglaAiFilter: 'yes', y: true },
       extra: {},
     });
     expect(result).toEqual({
-      limits: { connectedPages: 2, monthlyAiCredits: 0, teamSeats: 0 },
+      limits: {
+        connectedPages: 2,
+        monthlyComments: 0,
+        teamSeats: 0,
+        workspaces: 0,
+      },
       features: {
         banglaAiFilter: false,
         autoHideScams: false,
@@ -60,38 +76,50 @@ describe('normalizeFeatureConfig', () => {
     });
   });
 
-  it('reads the old monthlyComments key when monthlyAiCredits is missing (M5-T11)', () => {
+  it('reads the old monthlyAiCredits key when monthlyComments is missing (PW-T1b)', () => {
     expect(
       normalizeFeatureConfig({
-        limits: { connectedPages: 1, monthlyComments: 2500, teamSeats: 1 },
+        limits: { connectedPages: 1, monthlyAiCredits: 2500, teamSeats: 1 },
       }).limits,
-    ).toEqual({ connectedPages: 1, monthlyAiCredits: 2500, teamSeats: 1 });
+    ).toEqual({
+      connectedPages: 1,
+      monthlyComments: 2500,
+      teamSeats: 1,
+      workspaces: 0,
+    });
     // The new key wins when both are present (also when it is invalid → 0).
     expect(
       normalizeFeatureConfig({
-        limits: { monthlyComments: 2500, monthlyAiCredits: 900 },
-      }).limits.monthlyAiCredits,
+        limits: { monthlyAiCredits: 2500, monthlyComments: 900 },
+      }).limits.monthlyComments,
     ).toBe(900);
     expect(
       normalizeFeatureConfig({
-        limits: { monthlyComments: 2500, monthlyAiCredits: -1 },
-      }).limits.monthlyAiCredits,
+        limits: { monthlyAiCredits: 2500, monthlyComments: -1 },
+      }).limits.monthlyComments,
     ).toBe(0);
     // An invalid old value → 0; the old key never appears in the output.
     const result = normalizeFeatureConfig({
-      limits: { monthlyComments: 1.5 },
+      limits: { monthlyAiCredits: 1.5 },
     });
     expect(result.limits).toEqual({
       connectedPages: 0,
-      monthlyAiCredits: 0,
+      monthlyComments: 0,
       teamSeats: 0,
+      workspaces: 0,
     });
-    expect('monthlyComments' in result.limits).toBe(false);
+    expect('monthlyAiCredits' in result.limits).toBe(false);
+  });
+
+  it('reads the new workspaces limit (PW-D10)', () => {
+    expect(
+      normalizeFeatureConfig({ limits: { workspaces: 10 } }).limits.workspaces,
+    ).toBe(10);
   });
 
   it.each([null, undefined, 'x', 5, []])('handles %j as empty', (raw) => {
     const result = normalizeFeatureConfig(raw);
-    expect(Object.values(result.limits)).toEqual([0, 0, 0]);
+    expect(Object.values(result.limits)).toEqual([0, 0, 0, 0]);
     expect(Object.values(result.features).every((v) => v === false)).toBe(true);
   });
 });
@@ -104,6 +132,10 @@ describe('isEmptyPlanPatch', () => {
     [{ originalPriceBdt: 0 }, false],
     [{ offerPriceBdt: null }, false],
     [{ offerBadge: null }, false],
+    [{ yearlyMonthlyPriceBdt: null }, false],
+    [{ trialDays: 7 }, false],
+    [{ trialCommentLimit: null }, false],
+    [{ featureConfig: { limits: { workspaces: 1 } } }, false],
     [{ featureConfig: { limits: { teamSeats: 0 } } }, false],
     [{ featureConfig: { features: { customBlocklist: false } } }, false],
   ])('%j → %s', (patch, empty) => {
@@ -124,8 +156,16 @@ describe('mergePlanPatch', () => {
       originalPriceBdt: 1499,
       offerPriceBdt: 999,
       offerBadge: null,
+      yearlyMonthlyPriceBdt: null,
+      trialDays: null,
+      trialCommentLimit: null,
       featureConfig: {
-        limits: { connectedPages: 5, monthlyAiCredits: 15000, teamSeats: 4 },
+        limits: {
+          connectedPages: 5,
+          monthlyComments: 15000,
+          teamSeats: 4,
+          workspaces: 3,
+        },
         features: { ...config().features, whiteLabelReports: true },
       },
     });
@@ -141,6 +181,31 @@ describe('mergePlanPatch', () => {
     expect(
       mergePlanPatch(current, { offerPriceBdt: null, offerBadge: null }),
     ).toMatchObject({ offerPriceBdt: null, offerBadge: null });
+  });
+
+  it('sets and clears the yearly price and the trial fields (null clears, absent keeps)', () => {
+    const current = {
+      ...growth(),
+      yearlyMonthlyPriceBdt: 1349,
+      trialDays: 7,
+      trialCommentLimit: 300,
+    };
+    expect(mergePlanPatch(current, { offerBadge: 'x' })).toMatchObject({
+      yearlyMonthlyPriceBdt: 1349,
+      trialDays: 7,
+      trialCommentLimit: 300,
+    });
+    expect(
+      mergePlanPatch(current, {
+        yearlyMonthlyPriceBdt: null,
+        trialDays: 14,
+        trialCommentLimit: null,
+      }),
+    ).toMatchObject({
+      yearlyMonthlyPriceBdt: null,
+      trialDays: 14,
+      trialCommentLimit: null,
+    });
   });
 
   it('does not mutate the stored config', () => {
@@ -168,6 +233,76 @@ describe('offerPriceError', () => {
   });
 });
 
+describe('yearlyPriceError (PW-D5)', () => {
+  it.each([
+    [1499, null, null, false],
+    [1499, null, 1499, false],
+    [1499, null, 1349, false],
+    [1499, null, 1500, true],
+    // The monthly price is the offer when there is one.
+    [2499, 1499, 1499, false],
+    [2499, 1499, 1500, true],
+    [2499, 0, 0, false],
+    [2499, 0, 1, true],
+  ])(
+    'original %d, offer %s, yearly %s → error %s',
+    (original, offer, yearly, hasError) => {
+      const values = {
+        ...growth(),
+        originalPriceBdt: original,
+        offerPriceBdt: offer,
+        yearlyMonthlyPriceBdt: yearly,
+      };
+      expect(yearlyPriceError(values) !== null).toBe(hasError);
+    },
+  );
+
+  it('names both prices', () => {
+    expect(yearlyPriceError({ ...growth(), yearlyMonthlyPriceBdt: 1500 })).toBe(
+      'yearlyMonthlyPriceBdt (1500) must not be greater than the monthly price (1499)',
+    );
+  });
+});
+
+describe('trialFieldsError (PW-D8, PW-D12)', () => {
+  it('allows the trial fields on starter only', () => {
+    const withTrial = { ...growth(), trialDays: 7, trialCommentLimit: 300 };
+    expect(trialFieldsError('starter', withTrial)).toBeNull();
+    expect(trialFieldsError('growth', growth())).toBeNull();
+    expect(trialFieldsError('growth', withTrial)).toMatch(/starter plan/);
+    expect(
+      trialFieldsError('pro', { ...growth(), trialCommentLimit: 0 }),
+    ).not.toBeNull();
+    expect(
+      trialFieldsError('free', { ...growth(), trialDays: 3 }),
+    ).not.toBeNull();
+  });
+});
+
+describe('planValuesError', () => {
+  it('returns the first broken rule (offer, then yearly, then trial)', () => {
+    expect(planValuesError('starter', growth())).toBeNull();
+    expect(
+      planValuesError('growth', {
+        ...growth(),
+        offerPriceBdt: 2000,
+        yearlyMonthlyPriceBdt: 3000,
+        trialDays: 7,
+      }),
+    ).toMatch(/^offerPriceBdt/);
+    expect(
+      planValuesError('growth', {
+        ...growth(),
+        yearlyMonthlyPriceBdt: 3000,
+        trialDays: 7,
+      }),
+    ).toMatch(/^yearlyMonthlyPriceBdt/);
+    expect(planValuesError('growth', { ...growth(), trialDays: 7 })).toMatch(
+      /^trialDays/,
+    );
+  });
+});
+
 describe('toAdminPlan', () => {
   it('serialises dates and normalises the config', () => {
     const at = new Date('2026-11-18T10:00:00.000Z');
@@ -187,8 +322,9 @@ describe('toAdminPlan', () => {
     expect(plan.createdAt).toBe('2026-11-18T10:00:00.000Z');
     expect(plan.featureConfig.limits).toEqual({
       connectedPages: 0,
-      monthlyAiCredits: 0,
+      monthlyComments: 0,
       teamSeats: 3,
+      workspaces: 0,
     });
     expect(Object.keys(plan).sort()).toEqual(
       [
@@ -202,7 +338,10 @@ describe('toAdminPlan', () => {
         'originalPriceBdt',
         'slug',
         'sortOrder',
+        'trialCommentLimit',
+        'trialDays',
         'updatedAt',
+        'yearlyMonthlyPriceBdt',
       ].sort(),
     );
   });
@@ -243,6 +382,22 @@ describe('diffPlanValues', () => {
         before: false,
         after: true,
       },
+    ]);
+  });
+
+  it('covers the yearly price and the trial fields (after the badge, before the config)', () => {
+    const before = { ...growth(), trialDays: 7, trialCommentLimit: 300 };
+    const after = mergePlanPatch(before, {
+      featureConfig: { limits: { workspaces: 5 } },
+      trialCommentLimit: null,
+      trialDays: 14,
+      yearlyMonthlyPriceBdt: 1349,
+    });
+    expect(diffPlanValues(before, after)).toEqual([
+      { field: 'yearlyMonthlyPriceBdt', before: null, after: 1349 },
+      { field: 'trialDays', before: 7, after: 14 },
+      { field: 'trialCommentLimit', before: 300, after: null },
+      { field: 'featureConfig.limits.workspaces', before: 3, after: 5 },
     ]);
   });
 

@@ -25,21 +25,28 @@ export const PLAN_AUDIT_FIELDS = [
   'originalPriceBdt',
   'offerPriceBdt',
   'offerBadge',
+  'yearlyMonthlyPriceBdt',
+  'trialDays',
+  'trialCommentLimit',
   ...PLAN_LIMIT_KEYS.map((key) => `featureConfig.limits.${key}` as const),
   ...PLAN_FEATURE_KEYS.map((key) => `featureConfig.features.${key}` as const),
 ] as const;
 /**
- * Field names that only old audit rows carry (renamed keys, M5-T11). Never written again; kept
- * so `PlanAuditChange` types the stored history and the admin app can label it.
+ * Field names that only old audit rows carry (renamed keys). Never written again; kept so
+ * `PlanAuditChange` types the stored history and the admin app can label it. PW-T1b:
+ * `monthlyAiCredits` (M5-T11) → `monthlyComments`, so rows from before M5-T11 read as current again.
  */
 export const LEGACY_PLAN_AUDIT_FIELDS = [
-  'featureConfig.limits.monthlyComments',
+  'featureConfig.limits.monthlyAiCredits',
 ] as const;
 export type PlanAuditField =
   | (typeof LEGACY_PLAN_AUDIT_FIELDS)[number]
   | 'originalPriceBdt'
   | 'offerPriceBdt'
   | 'offerBadge'
+  | 'yearlyMonthlyPriceBdt'
+  | 'trialDays'
+  | 'trialCommentLimit'
   | `featureConfig.limits.${PlanLimitKey}`
   | `featureConfig.features.${PlanFeatureKey}`;
 

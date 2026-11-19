@@ -18,15 +18,16 @@ const OFFERS_MIGRATION = join(
   import.meta.dirname,
   '../drizzle/0008_plan_launch_offers.sql',
 );
-const CREDITS_MIGRATION = join(
+const PLAN_DATA_MIGRATION = join(
   import.meta.dirname,
-  '../drizzle/0018_plan_ai_credits.sql',
+  '../drizzle/0022_plan_trial_yearly_workspaces.sql',
 );
 const UNKNOWN_ID = '01a1ecf3-0000-7000-8000-000000000000';
 
 /**
- * M2-T11: plans table (seeded by migration `0007_seed_plans`, launch offers `0008_plan_launch_offers`)
- * + A7 plan settings API; M2-T15: plan audit log. Every plan this spec edits is restored in
+ * M2-T11: plans table (seeded by migration `0007_seed_plans`, launch offers `0008_plan_launch_offers`,
+ * PW data `0022_plan_trial_yearly_workspaces`) + A7 plan settings API; M2-T15: plan audit log;
+ * PW-T1b: yearly price, trial fields, `monthlyComments` + `workspaces` limits, inactive `free`. Every plan this spec edits is restored in
  * `afterAll` and its audit rows are removed by `cleanup()`, so the test DB keeps exactly the
  * seeded rows and no audit rows.
  */
@@ -84,12 +85,16 @@ describe('Admin plan settings (e2e)', () => {
         p.originalPriceBdt,
         p.offerPriceBdt,
         p.offerBadge,
+        p.yearlyMonthlyPriceBdt,
+        p.trialDays,
+        p.trialCommentLimit,
+        p.isActive,
       ]),
     ).toEqual([
-      ['free', 'Free', 0, null, null],
-      ['starter', 'Starter', 999, 499, '50% Launch Offer'],
-      ['growth', 'Growth', 2499, 1499, '40% Off'],
-      ['pro', 'Pro', 5999, 3999, '33% Off'],
+      ['free', 'Free', 0, null, null, null, null, null, false],
+      ['starter', 'Starter', 999, 499, '50% Launch Offer', 449, 7, 300, true],
+      ['growth', 'Growth', 2499, 1499, '40% Off', 1349, null, null, true],
+      ['pro', 'Pro', 5999, 3999, '33% Off', 3599, null, null, true],
     ]);
     // Data migrations write no audit rows.
     expect(await auditCount()).toBe(0);
@@ -146,64 +151,154 @@ describe('Admin plan settings (e2e)', () => {
     expect(await readPlans()).toEqual(seeded);
   });
 
-  it('M5-T11: migration 0018 renamed monthlyComments → monthlyAiCredits (seeds kept, idempotent, admin edits kept)', async () => {
-    // Applied: every plan carries the new key with the seed number, the old key is gone.
-    expect(
-      seeded.map((p) => [
-        p.slug,
-        (p.featureConfig.limits as Record<string, unknown>).monthlyAiCredits,
-        'monthlyComments' in p.featureConfig.limits,
-      ]),
-    ).toEqual([
-      ['free', 500, false],
-      ['starter', 2500, false],
-      ['growth', 15000, false],
-      ['pro', 75000, false],
+  it('PW-T1b: migration 0022 (monthlyComments + workspaces, Starter trial, yearly prices, free inactive; idempotent, admin edits kept)', async () => {
+    // Applied: the renamed key with the seed numbers, the workspace limits, no old key.
+    expect(seeded.map((p) => [p.slug, p.featureConfig.limits])).toEqual([
+      [
+        'free',
+        {
+          connectedPages: 1,
+          monthlyComments: 500,
+          teamSeats: 1,
+          workspaces: 1,
+        },
+      ],
+      [
+        'starter',
+        {
+          connectedPages: 1,
+          monthlyComments: 2500,
+          teamSeats: 1,
+          workspaces: 1,
+        },
+      ],
+      [
+        'growth',
+        {
+          connectedPages: 5,
+          monthlyComments: 15000,
+          teamSeats: 3,
+          workspaces: 3,
+        },
+      ],
+      [
+        'pro',
+        {
+          connectedPages: 25,
+          monthlyComments: 75000,
+          teamSeats: 10,
+          workspaces: 10,
+        },
+      ],
     ]);
-    const creditsSql = readFileSync(CREDITS_MIGRATION, 'utf8');
+    const dataSql = readFileSync(PLAN_DATA_MIGRATION, 'utf8');
     const rollback = new Error('rollback');
+    const pick = (rows: (typeof plans.$inferSelect)[]) =>
+      rows.map((p) => [
+        p.slug,
+        p.featureConfig.limits,
+        p.yearlyMonthlyPriceBdt,
+        p.trialDays,
+        p.trialCommentLimit,
+        p.isActive,
+      ]);
     await expect(
       actors.db.transaction(async (tx) => {
+        const read = () =>
+          tx.select().from(plans).orderBy(asc(plans.sortOrder));
         // Already applied: running it again changes nothing.
-        await tx.execute(sql.raw(creditsSql));
-        expect(
-          await tx.select().from(plans).orderBy(asc(plans.sortOrder)),
-        ).toEqual(seeded);
-        // Pre-0018 shapes: starter = admin-edited old key, growth = both keys (new wins).
+        await tx.execute(sql.raw(dataSql));
+        expect(await read()).toEqual(seeded);
+        // Back to the pre-0022 shape (raw SQL: `updated_at` untouched): old key, no workspaces,
+        // no yearly/trial values, free active. Admin edits made before the migration:
+        // starter = edited old key 3333 + trial days 14 · growth = both keys (new wins) + offer
+        // lowered to ৳1,000 (below the ৳1,349 yearly seed) · pro = workspaces 7 + yearly ৳3,000.
         await tx.execute(sql`
-          update plans set feature_config = jsonb_set(
-            feature_config, '{limits}',
-            ((feature_config->'limits') - 'monthlyAiCredits') || '{"monthlyComments": 3333}'::jsonb)
+          update plans set
+            feature_config = jsonb_set(feature_config, '{limits}',
+              ((feature_config->'limits') - 'monthlyComments' - 'workspaces')
+                || jsonb_build_object('monthlyAiCredits', feature_config->'limits'->'monthlyComments')),
+            yearly_monthly_price_bdt = null, trial_days = null, trial_comment_limit = null,
+            is_active = true`);
+        await tx.execute(sql`
+          update plans set trial_days = 14,
+            feature_config = jsonb_set(feature_config, '{limits,monthlyAiCredits}', '3333')
           where slug = 'starter'`);
         await tx.execute(sql`
-          update plans set feature_config = jsonb_set(
-            feature_config, '{limits}',
-            (feature_config->'limits') || '{"monthlyComments": 1}'::jsonb)
+          update plans set offer_price_bdt = 1000,
+            feature_config = jsonb_set(feature_config, '{limits,monthlyComments}', '1')
           where slug = 'growth'`);
-        await tx.execute(sql.raw(creditsSql));
-        const rows = await tx
-          .select()
-          .from(plans)
-          .orderBy(asc(plans.sortOrder));
-        expect(rows.map((p) => [p.slug, p.featureConfig.limits])).toEqual([
-          ['free', { connectedPages: 1, monthlyAiCredits: 500, teamSeats: 1 }],
+        await tx.execute(sql`
+          update plans set yearly_monthly_price_bdt = 3000,
+            feature_config = jsonb_set(feature_config, '{limits,workspaces}', '7')
+          where slug = 'pro'`);
+        await tx.execute(sql.raw(dataSql));
+        const once = await read();
+        expect(pick(once)).toEqual([
+          [
+            'free',
+            {
+              connectedPages: 1,
+              monthlyComments: 500,
+              teamSeats: 1,
+              workspaces: 1,
+            },
+            null,
+            null,
+            null,
+            false,
+          ],
           [
             'starter',
-            { connectedPages: 1, monthlyAiCredits: 3333, teamSeats: 1 },
+            {
+              connectedPages: 1,
+              monthlyComments: 3333,
+              teamSeats: 1,
+              workspaces: 1,
+            },
+            449,
+            14,
+            300,
+            true,
           ],
           [
             'growth',
-            { connectedPages: 5, monthlyAiCredits: 15000, teamSeats: 3 },
+            {
+              connectedPages: 5,
+              monthlyComments: 1,
+              teamSeats: 3,
+              workspaces: 3,
+            },
+            // ৳1,349 > the ৳1,000 monthly price: skipped (the admin sets one in A7).
+            null,
+            null,
+            null,
+            true,
           ],
           [
             'pro',
-            { connectedPages: 25, monthlyAiCredits: 75000, teamSeats: 10 },
+            {
+              connectedPages: 25,
+              monthlyComments: 75000,
+              teamSeats: 10,
+              workspaces: 7,
+            },
+            3000,
+            null,
+            null,
+            true,
           ],
         ]);
-        // `updated_at` untouched (data migration, same value).
-        expect(rows.map((p) => p.updatedAt)).toEqual(
+        expect(
+          once.some((p) => 'monthlyAiCredits' in p.featureConfig.limits),
+        ).toBe(false);
+        // `updated_at` untouched (data migration, not an admin edit).
+        expect(once.map((p) => p.updatedAt)).toEqual(
           seeded.map((p) => p.updatedAt),
         );
+        // A second run changes nothing.
+        await tx.execute(sql.raw(dataSql));
+        expect(await read()).toEqual(once);
         throw rollback;
       }),
     ).rejects.toBe(rollback);
@@ -256,7 +351,7 @@ describe('Admin plan settings (e2e)', () => {
   });
 
   describe('GET', () => {
-    it('lists every plan ordered by sortOrder with a complete featureConfig', async () => {
+    it('lists the active plans ordered by sortOrder with a complete featureConfig (inactive free left out)', async () => {
       const res = await http()
         .get(PLANS)
         .set('Cookie', superAdmin.cookie)
@@ -264,13 +359,17 @@ describe('Admin plan settings (e2e)', () => {
       const body = res.body as AdminPlansResponse;
       expect(Object.keys(body)).toEqual(['items']);
       expect(body.items.map((p) => p.slug)).toEqual([
-        'free',
         'starter',
         'growth',
         'pro',
       ]);
-      expect(body.items.map((p) => p.sortOrder)).toEqual([0, 1, 2, 3]);
-      const growth = body.items[2]!;
+      expect(body.items.map((p) => p.sortOrder)).toEqual([1, 2, 3]);
+      expect(body.items[0]).toMatchObject({
+        yearlyMonthlyPriceBdt: 449,
+        trialDays: 7,
+        trialCommentLimit: 300,
+      });
+      const growth = body.items[1]!;
       expect(growth).toEqual({
         id: planBySlug('growth').id,
         slug: 'growth',
@@ -280,8 +379,16 @@ describe('Admin plan settings (e2e)', () => {
         originalPriceBdt: 2499,
         offerPriceBdt: 1499,
         offerBadge: '40% Off',
+        yearlyMonthlyPriceBdt: 1349,
+        trialDays: null,
+        trialCommentLimit: null,
         featureConfig: {
-          limits: { connectedPages: 5, monthlyAiCredits: 15000, teamSeats: 3 },
+          limits: {
+            connectedPages: 5,
+            monthlyComments: 15000,
+            teamSeats: 3,
+            workspaces: 3,
+          },
           features: {
             banglaAiFilter: true,
             autoHideScams: true,
@@ -295,13 +402,14 @@ describe('Admin plan settings (e2e)', () => {
         createdAt: expect.any(String) as string,
         updatedAt: expect.any(String) as string,
       });
-      expect(body.items[3]!.featureConfig.limits).toEqual({
+      expect(body.items[2]!.featureConfig.limits).toEqual({
         connectedPages: 25,
-        monthlyAiCredits: 75000,
+        monthlyComments: 75000,
         teamSeats: 10,
+        workspaces: 10,
       });
       expect(
-        Object.values(body.items[3]!.featureConfig.features).every(Boolean),
+        Object.values(body.items[2]!.featureConfig.features).every(Boolean),
       ).toBe(true);
     });
 
@@ -333,7 +441,12 @@ describe('Admin plan settings (e2e)', () => {
         offerPriceBdt: 1999,
         offerBadge: '33% Off',
         featureConfig: {
-          limits: { connectedPages: 5, monthlyAiCredits: 15000, teamSeats: 4 },
+          limits: {
+            connectedPages: 5,
+            monthlyComments: 15000,
+            teamSeats: 4,
+            workspaces: 3,
+          },
           features: { customBlocklist: true, whiteLabelReports: true },
         },
       });
@@ -391,14 +504,22 @@ describe('Admin plan settings (e2e)', () => {
       expect(inBody.body).toMatchObject({
         message: expect.stringContaining('offerPriceBdt') as string,
       });
-      await patch(starter.id, { offerPriceBdt: 299 }).expect(200);
+      // The stored ৳449 yearly price must stay ≤ the monthly price: lower it in the same body.
+      await patch(starter.id, {
+        offerPriceBdt: 299,
+        yearlyMonthlyPriceBdt: 249,
+      }).expect(200);
       // Lowering the original below the stored offer is refused too.
       await patch(starter.id, { originalPriceBdt: 199 }).expect(400);
       const [row] = await actors.db
         .select()
         .from(plans)
         .where(eq(plans.id, starter.id));
-      expect(row).toMatchObject({ originalPriceBdt: 999, offerPriceBdt: 299 });
+      expect(row).toMatchObject({
+        originalPriceBdt: 999,
+        offerPriceBdt: 299,
+        yearlyMonthlyPriceBdt: 249,
+      });
     });
 
     it.each([
@@ -424,6 +545,29 @@ describe('Admin plan settings (e2e)', () => {
         'string flag',
         { featureConfig: { features: { customBlocklist: 'yes' } } },
       ],
+      // PW-T1b
+      [
+        'old limit name monthlyAiCredits',
+        { featureConfig: { limits: { monthlyAiCredits: 600 } } },
+      ],
+      [
+        'workspaces above max',
+        { featureConfig: { limits: { workspaces: 1001 } } },
+      ],
+      ['negative yearly price', { yearlyMonthlyPriceBdt: -1 }],
+      ['string yearly price', { yearlyMonthlyPriceBdt: '3000' }],
+      ['yearly above the monthly offer', { yearlyMonthlyPriceBdt: 4000 }],
+      ['offer lowered below the stored yearly price', { offerPriceBdt: 3000 }],
+      [
+        'offer cleared + original lowered below the stored yearly price',
+        { offerPriceBdt: null, originalPriceBdt: 3000 },
+      ],
+      ['trialDays on a non-Starter plan', { trialDays: 7 }],
+      ['trialCommentLimit on a non-Starter plan', { trialCommentLimit: 0 }],
+      ['trialDays 0', { trialDays: 0 }],
+      ['trialDays 91', { trialDays: 91 }],
+      ['trialCommentLimit above max', { trialCommentLimit: 10_000_001 }],
+      ['negative trialCommentLimit', { trialCommentLimit: -1 }],
     ])('400 for %s (plan unchanged, no audit row)', async (_label, body) => {
       const pro = planBySlug('pro');
       const res = await patch(pro.id, body);
@@ -457,7 +601,7 @@ describe('Admin plan settings (e2e)', () => {
         // Same values as stored: not part of the diff.
         originalPriceBdt: 0,
         featureConfig: {
-          limits: { monthlyAiCredits: 750, teamSeats: 1 },
+          limits: { monthlyComments: 750, teamSeats: 1 },
           features: { customBlocklist: true, banglaAiFilter: true },
         },
       })
@@ -477,7 +621,7 @@ describe('Admin plan settings (e2e)', () => {
         changes: [
           { field: 'offerBadge', before: null, after: 'Always free' },
           {
-            field: 'featureConfig.limits.monthlyAiCredits',
+            field: 'featureConfig.limits.monthlyComments',
             before: 500,
             after: 750,
           },
@@ -502,11 +646,11 @@ describe('Admin plan settings (e2e)', () => {
       const res = await patch(stored!.id, {
         offerBadge: '  Always free ',
         offerPriceBdt: null,
-        featureConfig: { limits: { monthlyAiCredits: 750 } },
+        featureConfig: { limits: { monthlyComments: 750 } },
       }).expect(200);
       const { plan } = res.body as AdminPlanUpdateResponse;
       expect(plan.updatedAt).toBe(stored!.updatedAt.toISOString());
-      expect(plan.featureConfig.limits.monthlyAiCredits).toBe(750);
+      expect(plan.featureConfig.limits.monthlyComments).toBe(750);
       expect(await auditCount()).toBe(before);
       const [row] = await actors.db
         .select()
@@ -519,9 +663,9 @@ describe('Admin plan settings (e2e)', () => {
       const free = planBySlug('free');
       const before = await auditCount();
       await patch(free.id, { originalPriceBdt: 'x' }).expect(400);
-      // The old limit name is an unknown key now (M5-T11).
+      // The M5-T11 limit name is an unknown key now (PW-T1b).
       await patch(free.id, {
-        featureConfig: { limits: { monthlyComments: 600 } },
+        featureConfig: { limits: { monthlyAiCredits: 600 } },
       }).expect(400);
       await patch(free.id, { offerPriceBdt: 1 }).expect(400);
       const cookie = await actors.signIn(superAdmin.email);
@@ -535,13 +679,13 @@ describe('Admin plan settings (e2e)', () => {
     it('records clearing values as → null and keeps rows per plan', async () => {
       const growth = planBySlug('growth');
       await patch(growth.id, {
-        offerPriceBdt: 1299,
+        offerPriceBdt: 1399,
         offerBadge: 'Flash sale',
       }).expect(200);
       await patch(growth.id, { offerPriceBdt: null }).expect(200);
       const [latest] = await auditRows(growth.id);
       expect(latest!.changes).toEqual([
-        { field: 'offerPriceBdt', before: 1299, after: null },
+        { field: 'offerPriceBdt', before: 1399, after: null },
       ]);
       expect(latest!.ipAddress).toEqual(expect.any(String));
     });
@@ -586,11 +730,12 @@ describe('Admin plan settings (e2e)', () => {
             email: superAdmin.email,
           },
           action: 'UPDATE',
-          changes: [{ field: 'offerPriceBdt', before: 1299, after: null }],
+          changes: [{ field: 'offerPriceBdt', before: 1399, after: null }],
           ip: rows[0]!.ipAddress,
           userAgent: rows[0]!.userAgent,
           createdAt: rows[0]!.createdAt.toISOString(),
         });
+        // The inactive free plan (PW-D7) is left out of the editor list, but its rows still show.
         const freeEntry = body.items.find(
           (i) => i.plan.slug === 'free' && i.userAgent === UA,
         );
@@ -656,7 +801,7 @@ describe('Admin plan settings (e2e)', () => {
     });
   });
 
-  it('M5-T11: an old audit row keeps its old field name (featureConfig.limits.monthlyComments)', async () => {
+  it('old audit rows keep their field names (pre-M5-T11 monthlyComments, M5-T11 monthlyAiCredits)', async () => {
     const pro = planBySlug('pro');
     const [old] = await actors.db
       .insert(planAuditLogs)
@@ -670,6 +815,11 @@ describe('Admin plan settings (e2e)', () => {
             before: 75000,
             after: 80000,
           },
+          {
+            field: 'featureConfig.limits.monthlyAiCredits',
+            before: 80000,
+            after: 75000,
+          },
         ],
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
       })
@@ -681,13 +831,119 @@ describe('Admin plan settings (e2e)', () => {
     const entry = (res.body as PlanAuditList).items.find(
       (i) => i.id === old!.id,
     );
-    expect(entry?.changes).toEqual([
-      {
-        field: 'featureConfig.limits.monthlyComments',
-        before: 75000,
-        after: 80000,
-      },
-    ]);
+    expect(entry?.changes).toEqual(old!.changes);
+  });
+
+  describe('PW-T1b: yearly price, trial fields, new limit keys', () => {
+    it('round-trips the yearly price and the new limits; null clears; one audit row per edit', async () => {
+      const pro = planBySlug('pro');
+      const res = await patch(pro.id, {
+        yearlyMonthlyPriceBdt: 3499,
+        featureConfig: { limits: { monthlyComments: 80000, workspaces: 12 } },
+      }).expect(200);
+      expect((res.body as AdminPlanUpdateResponse).plan).toMatchObject({
+        yearlyMonthlyPriceBdt: 3499,
+        trialDays: null,
+        trialCommentLimit: null,
+        featureConfig: {
+          limits: {
+            connectedPages: 25,
+            monthlyComments: 80000,
+            teamSeats: 10,
+            workspaces: 12,
+          },
+        },
+      });
+      let [latest] = await auditRows(pro.id);
+      expect(latest!.changes).toEqual([
+        { field: 'yearlyMonthlyPriceBdt', before: 3599, after: 3499 },
+        {
+          field: 'featureConfig.limits.monthlyComments',
+          before: 75000,
+          after: 80000,
+        },
+        { field: 'featureConfig.limits.workspaces', before: 10, after: 12 },
+      ]);
+
+      // Equal to the monthly offer is allowed; with no yearly price the offer may go lower.
+      await patch(pro.id, { yearlyMonthlyPriceBdt: 3999 }).expect(200);
+      const cleared = await patch(pro.id, {
+        yearlyMonthlyPriceBdt: null,
+      }).expect(200);
+      expect(
+        (cleared.body as AdminPlanUpdateResponse).plan.yearlyMonthlyPriceBdt,
+      ).toBeNull();
+      [latest] = await auditRows(pro.id);
+      expect(latest!.changes).toEqual([
+        { field: 'yearlyMonthlyPriceBdt', before: 3999, after: null },
+      ]);
+      await patch(pro.id, { offerPriceBdt: 2999 }).expect(200);
+
+      const list = await http()
+        .get(PLANS)
+        .set('Cookie', superAdmin.cookie)
+        .expect(200);
+      expect(
+        (list.body as AdminPlansResponse).items.find((p) => p.id === pro.id),
+      ).toMatchObject({
+        offerPriceBdt: 2999,
+        yearlyMonthlyPriceBdt: null,
+        featureConfig: { limits: { monthlyComments: 80000, workspaces: 12 } },
+      });
+    });
+
+    it('edits and clears the Starter trial fields (audited under plain field names)', async () => {
+      const starter = planBySlug('starter');
+      const set = await patch(starter.id, {
+        trialDays: 14,
+        trialCommentLimit: 500,
+      }).expect(200);
+      expect((set.body as AdminPlanUpdateResponse).plan).toMatchObject({
+        trialDays: 14,
+        trialCommentLimit: 500,
+      });
+      let [latest] = await auditRows(starter.id);
+      expect(latest!.changes).toEqual([
+        { field: 'trialDays', before: 7, after: 14 },
+        { field: 'trialCommentLimit', before: 300, after: 500 },
+      ]);
+      // Bounds are accepted.
+      await patch(starter.id, {
+        trialDays: 90,
+        trialCommentLimit: 10_000_000,
+      }).expect(200);
+      await patch(starter.id, { trialDays: 1, trialCommentLimit: 0 }).expect(
+        200,
+      );
+      const cleared = await patch(starter.id, {
+        trialDays: null,
+        trialCommentLimit: null,
+      }).expect(200);
+      expect((cleared.body as AdminPlanUpdateResponse).plan).toMatchObject({
+        trialDays: null,
+        trialCommentLimit: null,
+      });
+      [latest] = await auditRows(starter.id);
+      expect(latest!.changes).toEqual([
+        { field: 'trialDays', before: 1, after: null },
+        { field: 'trialCommentLimit', before: 0, after: null },
+      ]);
+      // Out of range on Starter → 400, nothing written.
+      const before = await auditCount();
+      await patch(starter.id, { trialDays: 91 }).expect(400);
+      await patch(starter.id, { trialCommentLimit: -1 }).expect(400);
+      expect(await auditCount()).toBe(before);
+    });
+
+    it('a trial field on the inactive free plan → 400; free stays editable otherwise', async () => {
+      const free = planBySlug('free');
+      const res = await patch(free.id, { trialDays: 7 }).expect(400);
+      expect(res.body).toMatchObject({
+        message: expect.stringContaining('starter') as string,
+      });
+      // Clearing (already null) is a no-op, not an error.
+      await patch(free.id, { trialDays: null }).expect(200);
+    });
   });
 
   describe('workspaces.plan_id', () => {

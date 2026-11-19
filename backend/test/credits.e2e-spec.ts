@@ -34,8 +34,8 @@ const NOV = new Date('2026-11-15T06:00:00.000Z');
 const NOV_LAST = new Date('2026-11-30T17:59:59.999Z');
 const DEC_FIRST = new Date('2026-11-30T18:00:00.000Z');
 
-const limits = (monthlyAiCredits: number) => ({
-  limits: { connectedPages: 1, monthlyAiCredits, teamSeats: 1 },
+const limits = (monthlyComments: number) => ({
+  limits: { connectedPages: 1, monthlyComments, teamSeats: 1 },
   features: {},
 });
 
@@ -94,7 +94,7 @@ describe('Monthly AI credits (e2e)', () => {
     await insertPlan('five', limits(5));
     await insertPlan('ten', limits(10));
     await insertPlan('legacy', {
-      limits: { connectedPages: 1, monthlyComments: 7, teamSeats: 1 },
+      limits: { connectedPages: 1, monthlyAiCredits: 7, teamSeats: 1 },
     });
     await insertPlan('nokey', { limits: { connectedPages: 1 } });
   });
@@ -207,7 +207,7 @@ describe('Monthly AI credits (e2e)', () => {
       .select({ featureConfig: plans.featureConfig })
       .from(plans)
       .where(eq(plans.slug, 'free'));
-    const freeLimit = free!.featureConfig.limits.monthlyAiCredits;
+    const freeLimit = free!.featureConfig.limits.monthlyComments;
     expect(freeLimit).toBe(500);
     await setPlan(a.workspaceId, null);
     await expect(credits.usage(a.workspaceId, NOV)).resolves.toEqual({

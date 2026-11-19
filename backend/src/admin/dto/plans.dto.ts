@@ -15,22 +15,28 @@ import {
   PLAN_LIMIT_MAX,
   PLAN_OFFER_BADGE_MAX,
   PLAN_PRICE_MAX_BDT,
+  PLAN_TRIAL_COMMENT_LIMIT_MAX,
+  PLAN_TRIAL_DAYS_MAX,
+  PLAN_TRIAL_DAYS_MIN,
   type PlanFeatureConfig,
 } from '../../db/schema/index.js';
 
 /**
  * A7 plan settings API (M2-T11). The admin app mirrors these types in `admin/src/lib/`.
  *
- * - `GET /api/admin/settings/plans` → `AdminPlansResponse` (`items` ordered by `sortOrder`, then name).
+ * - `GET /api/admin/settings/plans` → `AdminPlansResponse` (**active** plans only, ordered by
+ *   `sortOrder`, then name; the deactivated `free` row is left out, PW-D7).
  * - `PATCH /api/admin/settings/plans/:planId` (one plan per request; partial body, see
  *   `UpdatePlanDto`) → `AdminPlanUpdateResponse`. 400 invalid body / nothing to update /
- *   offer > original (checked against the stored values too); 404 unknown or malformed id.
+ *   offer > original / yearly per-month > monthly price / trial field on a non-Starter plan (all
+ *   checked on the merged stored + sent values); 404 unknown or malformed id.
  *
- * `featureConfig` keys (seed defaults Free | Starter | Growth | Pro):
+ * `featureConfig` keys (seed defaults Free (inactive) | Starter | Growth | Pro):
  * - `limits.connectedPages` (0–1,000): 1 | 1 | 5 | 25
- * - `limits.monthlyAiCredits` (0–10,000,000): 500 | 2,500 | 15,000 | 75,000 (AI credits per Asia/Dhaka
- *   month, D15; the only moderation limit. Old name `monthlyComments` → 400 as an unknown key)
+ * - `limits.monthlyComments` (0–10,000,000): 500 | 2,500 | 15,000 | 75,000 (comments per month,
+ *   PW-D1. The M5-T11 name `monthlyAiCredits` → 400 as an unknown key)
  * - `limits.teamSeats` (0–1,000): 1 | 1 | 3 | 10
+ * - `limits.workspaces` (0–1,000): 1 | 1 | 3 | 10 (PW-D10)
  * - `features.banglaAiFilter`, `features.autoHideScams`: all plans
  * - `features.customBlocklist`, `features.autoReplyTemplates`, `features.messengerAlerts`: Growth, Pro
  * - `features.whiteLabelReports`, `features.prioritySupportApi`: Pro only
@@ -51,6 +57,12 @@ export interface AdminPlan {
   offerPriceBdt: number | null;
   /** e.g. "50% Launch Offer" (trimmed, 1–40 chars); `null` = none. */
   offerBadge: string | null;
+  /** Per-month price when billed yearly (charged × 12), ≤ the monthly price; `null` = no yearly option. Seed 449 / 1,349 / 3,599. */
+  yearlyMonthlyPriceBdt: number | null;
+  /** Trial length in days, 1–90 (Starter only; seed 7). `null` = no trial. */
+  trialDays: number | null;
+  /** Comments granted to a trial, 0–10,000,000 (Starter only; seed 300). `null` = Starter's `monthlyComments`. */
+  trialCommentLimit: number | null;
   /** Always complete: every limit and feature key is present. */
   featureConfig: PlanFeatureConfig;
   createdAt: string;
@@ -76,17 +88,23 @@ export class PlanLimitsPatchDto {
   @Max(PLAN_LIMIT_MAX.connectedPages)
   connectedPages?: number;
 
-  @unlessAbsent<PlanLimitsPatchDto>('monthlyAiCredits')
+  @unlessAbsent<PlanLimitsPatchDto>('monthlyComments')
   @IsInt()
   @Min(0)
-  @Max(PLAN_LIMIT_MAX.monthlyAiCredits)
-  monthlyAiCredits?: number;
+  @Max(PLAN_LIMIT_MAX.monthlyComments)
+  monthlyComments?: number;
 
   @unlessAbsent<PlanLimitsPatchDto>('teamSeats')
   @IsInt()
   @Min(0)
   @Max(PLAN_LIMIT_MAX.teamSeats)
   teamSeats?: number;
+
+  @unlessAbsent<PlanLimitsPatchDto>('workspaces')
+  @IsInt()
+  @Min(0)
+  @Max(PLAN_LIMIT_MAX.workspaces)
+  workspaces?: number;
 }
 
 export class PlanFeaturesPatchDto {
@@ -164,6 +182,27 @@ export class UpdatePlanDto {
   @IsString()
   @MaxLength(PLAN_OFFER_BADGE_MAX)
   offerBadge?: string | null;
+
+  /** Whole BDT, 0–1,000,000 and ≤ the (new or stored) monthly price. `null` removes the yearly option. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(PLAN_PRICE_MAX_BDT)
+  yearlyMonthlyPriceBdt?: number | null;
+
+  /** Whole days, 1–90; Starter only. `null` = no trial. */
+  @IsOptional()
+  @IsInt()
+  @Min(PLAN_TRIAL_DAYS_MIN)
+  @Max(PLAN_TRIAL_DAYS_MAX)
+  trialDays?: number | null;
+
+  /** 0–10,000,000; Starter only. `null` = the plan's `monthlyComments`. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(PLAN_TRIAL_COMMENT_LIMIT_MAX)
+  trialCommentLimit?: number | null;
 
   @unlessAbsent<UpdatePlanDto>('featureConfig')
   @IsObject()

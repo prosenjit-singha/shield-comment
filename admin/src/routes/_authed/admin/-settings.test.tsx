@@ -54,7 +54,7 @@ function plan(
     offerPriceBdt: offer?.[0] ?? null,
     offerBadge: offer?.[1] ?? null,
     featureConfig: {
-      limits: { connectedPages: limits[0], monthlyAiCredits: limits[1], teamSeats: limits[2] },
+      limits: { connectedPages: limits[0], monthlyComments: limits[1], teamSeats: limits[2], workspaces: limits[2] },
       features: {
         banglaAiFilter: true,
         autoHideScams: true,
@@ -244,21 +244,15 @@ describe('/admin/settings', () => {
     expect(input(pro, 'Offer price').value).toBe('3999')
     expect(input(pro, 'Offer badge').value).toBe('33% Off')
     expect(input(pro, 'Connected FB & IG Pages').value).toBe('25')
-    expect(input(pro, 'Monthly AI credits').value).toBe('75000')
-    // M5-T11: the comment estimate is a hint (1 credit per comment), not a limit.
-    const credits = input(pro, 'Monthly AI credits')
-    const hint = document.getElementById(credits.getAttribute('aria-describedby') as string) as HTMLElement
-    expect(hint.textContent).toBe(
-      `≈ ${new Intl.NumberFormat('en-BD').format(75000)} comments (estimate at 1 credit per comment, not a limit)`,
-    )
-    expect(hint.querySelector('.text-muted-foreground')).toBeTruthy()
-    type(credits, '1200')
-    expect(hint.textContent).toBe(
-      `≈ ${new Intl.NumberFormat('en-BD').format(1200)} comments (estimate at 1 credit per comment, not a limit)`,
-    )
-    type(credits, 'many')
+    expect(input(pro, 'Monthly comments').value).toBe('75000')
+    expect(input(pro, 'Workspaces').value).toBe('10')
+    // PW-T1b: comments are the limit again (no AI-credit estimate hint).
+    const comments = input(pro, 'Monthly comments')
+    const hint = document.getElementById(comments.getAttribute('aria-describedby') as string) as HTMLElement
+    expect(hint.textContent).toBe('')
+    type(comments, 'many')
     expect(hint.textContent).toBe('Use a whole number (digits only).')
-    type(credits, '75000')
+    type(comments, '75000')
     expect(input(pro, 'Connected FB & IG Pages').getAttribute('aria-describedby')).toBeTruthy()
     expect(input(pro, 'Team / Moderator Seats').value).toBe('10')
     expect(within(pro).getAllByRole('switch')).toHaveLength(7)
@@ -372,7 +366,7 @@ describe('/admin/settings', () => {
     type(input(region, 'Offer price'), '399')
     expect(saveButton(region).disabled).toBe(false)
 
-    type(input(region, 'Monthly AI credits'), '10000001')
+    type(input(region, 'Monthly comments'), '10000001')
     expect(within(region).getByText(`Must be ${new Intl.NumberFormat('en-BD').format(10_000_000)} or less.`)).toBeTruthy()
     expect(saveButton(region).disabled).toBe(true)
     fireEvent.submit(saveButton(region).closest('form') as HTMLFormElement)
@@ -515,9 +509,9 @@ describe('/admin/settings change history', () => {
                 { field: 'originalPriceBdt', before: 999, after: 1199 },
                 { field: 'offerPriceBdt', before: 499, after: null },
                 { field: 'offerBadge', before: '50% Launch Offer', after: null },
-                // Old row (before M5-T11) keeps its old field name.
-                { field: 'featureConfig.limits.monthlyComments', before: 2500, after: 5000 },
-                { field: 'featureConfig.limits.monthlyAiCredits', before: 5000, after: 6000 },
+                // Rows from M5-T11 keep the AI-credit field name (PW-T1b renamed it back).
+                { field: 'featureConfig.limits.monthlyAiCredits', before: 2500, after: 5000 },
+                { field: 'featureConfig.limits.monthlyComments', before: 5000, after: 6000 },
                 { field: 'featureConfig.features.customBlocklist', before: false, after: true },
               ],
             }),
@@ -559,8 +553,8 @@ describe('/admin/settings change history', () => {
       ['Original price', '৳999', '৳1,199'],
       ['Offer price', '৳499', 'None'],
       ['Offer badge', '“50% Launch Offer”', 'None'],
-      ['Monthly Comments Scanned', new Intl.NumberFormat('en-BD').format(2500), new Intl.NumberFormat('en-BD').format(5000)],
-      ['Monthly AI credits', new Intl.NumberFormat('en-BD').format(5000), new Intl.NumberFormat('en-BD').format(6000)],
+      ['Monthly AI credits', new Intl.NumberFormat('en-BD').format(2500), new Intl.NumberFormat('en-BD').format(5000)],
+      ['Monthly comments', new Intl.NumberFormat('en-BD').format(5000), new Intl.NumberFormat('en-BD').format(6000)],
       ['Custom Keyword & BD Phone Blocklist', 'Off', 'On'],
     ])
     const clientInfo = within(first).getByTestId('audit-client')

@@ -21,7 +21,7 @@ import {
   diffPlanValues,
   isEmptyPlanPatch,
   mergePlanPatch,
-  offerPriceError,
+  planValuesError,
   toAdminPlan,
 } from './plan-rules.js';
 
@@ -36,6 +36,9 @@ const planColumns = {
   originalPriceBdt: plans.originalPriceBdt,
   offerPriceBdt: plans.offerPriceBdt,
   offerBadge: plans.offerBadge,
+  yearlyMonthlyPriceBdt: plans.yearlyMonthlyPriceBdt,
+  trialDays: plans.trialDays,
+  trialCommentLimit: plans.trialCommentLimit,
   featureConfig: plans.featureConfig,
   createdAt: plans.createdAt,
   updatedAt: plans.updatedAt,
@@ -53,18 +56,22 @@ export interface PlanEditActor {
 export class AdminPlansService {
   constructor(@InjectDrizzle() private readonly db: Database) {}
 
-  /** Every plan (active or not), `sort_order` then name. */
+  /**
+   * Active plans, `sort_order` then name. Inactive plans (the deactivated `free` row, PW-D7) are
+   * left out of the editor; their audit rows still show in `listAudit`.
+   */
   async list(): Promise<AdminPlansResponse> {
     const rows = await this.db
       .select(planColumns)
       .from(plans)
+      .where(eq(plans.isActive, true))
       .orderBy(asc(plans.sortOrder), asc(plans.name));
     return { items: rows.map(toAdminPlan) };
   }
 
   /**
-   * Partial update of one plan. The row is locked (`FOR UPDATE`) so the offer ≤ original rule,
-   * the `featureConfig` merge and the audit diff see the latest values even with concurrent saves.
+   * Partial update of one plan. The row is locked (`FOR UPDATE`) so the price rules (offer ≤
+   * original, yearly ≤ monthly) and the trial rule (Starter only) see the merged latest values, the `featureConfig` merge and the audit diff see the latest values even with concurrent saves.
    * A real change writes one `plan_audit_logs` row (only the changed fields) in the same
    * transaction; a body that changes nothing is a no-op: no update (`updatedAt` kept), no audit row.
    */
@@ -85,7 +92,7 @@ export class AdminPlansService {
         .for('update');
       if (!current) throw new NotFoundException('Plan not found');
       const next = mergePlanPatch(current, patch);
-      const error = offerPriceError(next);
+      const error = planValuesError(current.slug, next);
       if (error) throw new BadRequestException(error);
       const changes = diffPlanValues(current, next);
       if (changes.length === 0) return toAdminPlan(current);

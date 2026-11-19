@@ -99,10 +99,11 @@ const FEATURE_PREFIX = 'featureConfig.features.'
 
 /**
  * Renamed limits that only old audit rows carry (backend `LEGACY_PLAN_AUDIT_FIELDS`), shown under
- * their old label. M5-T11: `monthlyComments` → `monthlyAiCredits`.
+ * their old label. PW-T1b: `monthlyAiCredits` (M5-T11) → `monthlyComments` (rows from before
+ * M5-T11 read under the current "Monthly comments" label again).
  */
 export const legacyPlanAuditFieldLabels: Readonly<Record<string, string>> = {
-  'featureConfig.limits.monthlyComments': 'Monthly Comments Scanned',
+  'featureConfig.limits.monthlyAiCredits': 'Monthly AI credits',
 }
 
 function fieldKind(field: string): FieldKind {

@@ -5,6 +5,7 @@ import {
   PLAN_LIMIT_KEYS,
   type PlanAuditChange,
   type PlanFeatureConfig,
+  TRIAL_PLAN_SLUG,
 } from '../db/schema/index.js';
 import type { AdminPlan, UpdatePlanDto } from './dto/plans.dto.js';
 
@@ -13,8 +14,24 @@ export interface PlanEditableValues {
   originalPriceBdt: number;
   offerPriceBdt: number | null;
   offerBadge: string | null;
+  /** Per-month price when billed yearly (PW-D5); `null` = no yearly option. */
+  yearlyMonthlyPriceBdt: number | null;
+  /** Starter only (PW-D8); `null` = no trial. */
+  trialDays: number | null;
+  /** Starter only (PW-D12); `null` = the plan's `monthlyComments`. */
+  trialCommentLimit: number | null;
   featureConfig: PlanFeatureConfig;
 }
+
+/** The top-level scalar columns a PATCH may change, in audit order. */
+const SCALAR_FIELDS = [
+  'originalPriceBdt',
+  'offerPriceBdt',
+  'offerBadge',
+  'yearlyMonthlyPriceBdt',
+  'trialDays',
+  'trialCommentLimit',
+] as const;
 
 export interface PlanRow extends PlanEditableValues {
   id: string;
@@ -36,8 +53,8 @@ const isLimitValue = (value: unknown): value is number =>
  * Complete, typed `feature_config` from whatever the jsonb holds: every known key present
  * (missing or mistyped limit → 0, flag → false), unknown keys dropped. Keeps the API shape
  * stable if a key is added later or a row was edited by hand. A limit whose key is missing is
- * read from its old name (`LEGACY_PLAN_LIMIT_KEYS`, e.g. `monthlyComments` → `monthlyAiCredits`,
- * M5-T11); the new key wins when both are present.
+ * read from its old name (`LEGACY_PLAN_LIMIT_KEYS`, e.g. `monthlyAiCredits` → `monthlyComments`,
+ * PW-T1b); the new key wins when both are present.
  */
 export function normalizeFeatureConfig(raw: unknown): PlanFeatureConfig {
   const source = isRecord(raw) ? raw : {};
@@ -64,15 +81,16 @@ export function isEmptyPlanPatch(patch: UpdatePlanDto): boolean {
   const definedKeys = (o: object | undefined) =>
     o ? Object.values(o).some((v) => v !== undefined) : false;
   return (
-    patch.originalPriceBdt === undefined &&
-    patch.offerPriceBdt === undefined &&
-    patch.offerBadge === undefined &&
+    SCALAR_FIELDS.every((field) => patch[field] === undefined) &&
     !definedKeys(config?.limits) &&
     !definedKeys(config?.features)
   );
 }
 
-/** Applies a validated partial body to the stored values (absent keys keep their value). */
+/**
+ * Applies a validated partial body to the stored values (absent keys keep their value; `null`
+ * clears a nullable field).
+ */
 export function mergePlanPatch(
   current: PlanEditableValues,
   patch: UpdatePlanDto,
@@ -88,14 +106,19 @@ export function mergePlanPatch(
     const value = patch.featureConfig?.features?.[key];
     if (value !== undefined) features[key] = value;
   }
+  const pick = <K extends (typeof SCALAR_FIELDS)[number]>(
+    field: K,
+  ): PlanEditableValues[K] =>
+    patch[field] === undefined
+      ? current[field]
+      : (patch[field] as PlanEditableValues[K]);
   return {
-    originalPriceBdt: patch.originalPriceBdt ?? current.originalPriceBdt,
-    offerPriceBdt:
-      patch.offerPriceBdt === undefined
-        ? current.offerPriceBdt
-        : patch.offerPriceBdt,
-    offerBadge:
-      patch.offerBadge === undefined ? current.offerBadge : patch.offerBadge,
+    originalPriceBdt: pick('originalPriceBdt'),
+    offerPriceBdt: pick('offerPriceBdt'),
+    offerBadge: pick('offerBadge'),
+    yearlyMonthlyPriceBdt: pick('yearlyMonthlyPriceBdt'),
+    trialDays: pick('trialDays'),
+    trialCommentLimit: pick('trialCommentLimit'),
     featureConfig: { limits, features },
   };
 }
@@ -112,6 +135,49 @@ export function offerPriceError(values: PlanEditableValues): string | null {
 }
 
 /**
+ * Yearly rule on the merged values (PW-D5): the yearly per-month price must not be above the
+ * monthly price (`offer ?? original`). Checked after every merge, so lowering the offer/original
+ * below a stored yearly price is refused too (DB check `plans_yearly_monthly_price_check` is the
+ * backstop, never reached).
+ */
+export function yearlyPriceError(values: PlanEditableValues): string | null {
+  const monthly = values.offerPriceBdt ?? values.originalPriceBdt;
+  if (
+    values.yearlyMonthlyPriceBdt !== null &&
+    values.yearlyMonthlyPriceBdt > monthly
+  ) {
+    return `yearlyMonthlyPriceBdt (${values.yearlyMonthlyPriceBdt}) must not be greater than the monthly price (${monthly})`;
+  }
+  return null;
+}
+
+/** Trial rule (PW-D8, PW-D12): `trialDays` / `trialCommentLimit` only on the Starter plan. */
+export function trialFieldsError(
+  slug: string,
+  values: PlanEditableValues,
+): string | null {
+  if (
+    slug !== TRIAL_PLAN_SLUG &&
+    (values.trialDays !== null || values.trialCommentLimit !== null)
+  ) {
+    return `trialDays and trialCommentLimit are only allowed on the ${TRIAL_PLAN_SLUG} plan`;
+  }
+  return null;
+}
+
+/** First broken rule on the merged values of plan `slug`, or `null`. */
+export function planValuesError(
+  slug: string,
+  values: PlanEditableValues,
+): string | null {
+  return (
+    offerPriceError(values) ??
+    yearlyPriceError(values) ??
+    trialFieldsError(slug, values)
+  );
+}
+
+/**
  * Fields that differ between the stored and the merged values (M2-T15 audit log), in
  * `PLAN_AUDIT_FIELDS` order. Feature config is compared leaf by leaf on normalized configs, so a
  * PATCH that re-sends the stored values yields `[]` (no-op: no update, no audit row).
@@ -121,11 +187,7 @@ export function diffPlanValues(
   after: PlanEditableValues,
 ): PlanAuditChange[] {
   const changes: PlanAuditChange[] = [];
-  for (const field of [
-    'originalPriceBdt',
-    'offerPriceBdt',
-    'offerBadge',
-  ] as const) {
+  for (const field of SCALAR_FIELDS) {
     if (before[field] !== after[field]) {
       changes.push({ field, before: before[field], after: after[field] });
     }
@@ -174,6 +236,9 @@ export function toAdminPlan(row: PlanRow): AdminPlan {
     originalPriceBdt: row.originalPriceBdt,
     offerPriceBdt: row.offerPriceBdt,
     offerBadge: row.offerBadge,
+    yearlyMonthlyPriceBdt: row.yearlyMonthlyPriceBdt,
+    trialDays: row.trialDays,
+    trialCommentLimit: row.trialCommentLimit,
     featureConfig: normalizeFeatureConfig(row.featureConfig),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

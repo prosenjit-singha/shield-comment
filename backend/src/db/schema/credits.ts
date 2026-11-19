@@ -16,7 +16,7 @@ export const CREDIT_MONTH_PATTERN = '^[0-9]{4}-(0[1-9]|1[0-2])$';
 /**
  * AI credits used per workspace per Asia/Dhaka calendar month (Module 5, M5-T11; user decisions
  * 2026-11-19 D15 + D7, see docs/progress/TASKS.md). The monthly allowance is the workspace plan's
- * `feature_config.limits.monthlyAiCredits` (no plan = the Free plan); a new month starts a new
+ * `feature_config.limits.monthlyComments` (PW-T1b; no plan = the Free plan); a new month starts a new
  * row at 0 (no rollover). `CreditService.reserve()` raises `used` with one guarded upsert, so it
  * never passes the plan limit, and `release()` gives credits back (never below 0).
  *

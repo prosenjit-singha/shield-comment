@@ -131,7 +131,12 @@ describe('Billing + wallet schema (e2e)', () => {
         originalPriceBdt: 999,
         offerPriceBdt: 499,
         featureConfig: {
-          limits: { connectedPages: 1, monthlyAiCredits: 100, teamSeats: 1 },
+          limits: {
+            connectedPages: 1,
+            monthlyComments: 100,
+            teamSeats: 1,
+            workspaces: 1,
+          },
           features: {
             banglaAiFilter: true,
             autoHideScams: true,
@@ -564,7 +569,7 @@ describe('Billing + wallet schema (e2e)', () => {
       }),
     );
 
-    it('new columns are null on the seeded plans (no data in PW-T1)', async () => {
+    it('the seeded plans carry the PW-T1b data (migration 0022)', async () => {
       const rows = await db()
         .select({
           slug: plans.slug,
@@ -573,15 +578,24 @@ describe('Billing + wallet schema (e2e)', () => {
           trialCommentLimit: plans.trialCommentLimit,
         })
         .from(plans)
-        .where(inArray(plans.slug, ['free', 'starter', 'growth', 'pro']));
-      expect(rows).toHaveLength(4);
-      for (const row of rows) {
-        expect(row).toMatchObject({
+        .where(inArray(plans.slug, ['free', 'starter', 'growth', 'pro']))
+        .orderBy(plans.sortOrder);
+      expect(rows).toEqual([
+        {
+          slug: 'free',
           yearly: null,
           trialDays: null,
           trialCommentLimit: null,
-        });
-      }
+        },
+        { slug: 'starter', yearly: 449, trialDays: 7, trialCommentLimit: 300 },
+        {
+          slug: 'growth',
+          yearly: 1349,
+          trialDays: null,
+          trialCommentLimit: null,
+        },
+        { slug: 'pro', yearly: 3599, trialDays: null, trialCommentLimit: null },
+      ]);
     });
 
     it('accepts the edge values', async () => {
