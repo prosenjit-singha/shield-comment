@@ -125,6 +125,39 @@ export async function getOrCreateModerationPolicy(
   return row;
 }
 
+/** The workspace's policy row under `FOR UPDATE` (M5-T8 PATCH; call inside a transaction). */
+export async function lockModerationPolicy(
+  executor: ModerationExecutor,
+  workspaceId: string,
+): Promise<ModerationPolicyRow | undefined> {
+  const [row] = await executor
+    .select()
+    .from(moderationPolicies)
+    .where(eq(moderationPolicies.workspaceId, workspaceId))
+    .for('update');
+  return row;
+}
+
+/** Writes the given policy columns (`updated_at` bumped by `$onUpdate`); `undefined` = no row. */
+export async function updateModerationPolicy(
+  executor: ModerationExecutor,
+  workspaceId: string,
+  values: Partial<ModerationPolicyRow>,
+): Promise<ModerationPolicyRow | undefined> {
+  const {
+    workspaceId: _key,
+    createdAt: _c,
+    updatedAt: _u,
+    ...columns
+  } = values;
+  const [row] = await executor
+    .update(moderationPolicies)
+    .set(columns)
+    .where(eq(moderationPolicies.workspaceId, workspaceId))
+    .returning();
+  return row;
+}
+
 export type NewModerationAction = {
   workspaceId: string;
   /** The `comments` row id. */
