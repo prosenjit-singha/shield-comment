@@ -84,6 +84,12 @@ export const PLAN_PRICE_MAX_BDT = 1_000_000;
 export const PLAN_OFFER_BADGE_MAX = 40;
 export const PLAN_NAME_MAX = 40;
 
+/** Trial length bounds in days (PW-D8; the admin UI offers 3 / 7 / 14 / 30). */
+export const PLAN_TRIAL_DAYS_MIN = 1;
+export const PLAN_TRIAL_DAYS_MAX = 90;
+/** Upper bound of `trial_comment_limit` (PW-D12) = the monthly comment limit max. */
+export const PLAN_TRIAL_COMMENT_LIMIT_MAX = PLAN_LIMIT_MAX.monthlyAiCredits;
+
 export const plans = pgTable(
   'plans',
   {
@@ -101,6 +107,18 @@ export const plans = pgTable(
     offerPriceBdt: integer(),
     /** Short promo label shown on the pricing card, e.g. "50% Launch Offer". */
     offerBadge: text(),
+    /**
+     * Per-month price in whole BDT when billed yearly (PW-D5; charged × 12), ≤ the monthly price
+     * (`offer_price_bdt ?? original_price_bdt`). `null` = no yearly option.
+     */
+    yearlyMonthlyPriceBdt: integer(),
+    /** Trial length in days (PW-D8; Starter only, enforced by the API). `null` = no trial. */
+    trialDays: integer(),
+    /**
+     * Comment grant of a trial (PW-D12; Starter only, beside `trial_days`). `null` = the plan's
+     * monthly comment limit.
+     */
+    trialCommentLimit: integer(),
     featureConfig: jsonb().$type<PlanFeatureConfig>().notNull(),
     ...timestamps,
   },
@@ -119,6 +137,22 @@ export const plans = pgTable(
       'plans_offer_badge_length',
       sql.raw(
         `offer_badge is null or char_length(offer_badge) between 1 and ${PLAN_OFFER_BADGE_MAX}`,
+      ),
+    ),
+    check(
+      'plans_yearly_monthly_price_check',
+      sql`yearly_monthly_price_bdt is null or (yearly_monthly_price_bdt >= 0 and yearly_monthly_price_bdt <= coalesce(offer_price_bdt, original_price_bdt))`,
+    ),
+    check(
+      'plans_trial_days_check',
+      sql.raw(
+        `trial_days is null or trial_days between ${PLAN_TRIAL_DAYS_MIN} and ${PLAN_TRIAL_DAYS_MAX}`,
+      ),
+    ),
+    check(
+      'plans_trial_comment_limit_check',
+      sql.raw(
+        `trial_comment_limit is null or trial_comment_limit between 0 and ${PLAN_TRIAL_COMMENT_LIMIT_MAX}`,
       ),
     ),
     check(

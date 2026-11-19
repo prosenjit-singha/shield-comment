@@ -4,6 +4,7 @@
  */
 export * from './auth.js';
 export * from './plans.js';
+export * from './billing.js';
 export * from './workspaces.js';
 export * from './impersonation.js';
 export * from './workspace-status-audit.js';
@@ -16,3 +17,4 @@ export * from './ai-settings.js';
 export * from './moderation.js';
 export * from './post-contexts.js';
 export * from './credits.js';
+export * from './wallet.js';

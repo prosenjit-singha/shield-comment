@@ -9,6 +9,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { users } from './auth.js';
+import { billingAccounts } from './billing.js';
 import { id, timestamps, timestamptz } from './columns.js';
 import { plans } from './plans.js';
 
@@ -47,9 +48,17 @@ export const workspaces = pgTable(
      * Not a Better Auth field: the organization plugin never reads or writes it.
      */
     planId: uuid().references(() => plans.id, { onDelete: 'restrict' }),
+    /**
+     * The billing account (PW-T1) whose plan and pooled limits this workspace uses: the creator's,
+     * set at creation and kept for life (PW-T3). Nullable: a member-less workspace has no account
+     * (= no live plan). Not a Better Auth field.
+     */
+    billingAccountId: uuid().references(() => billingAccounts.id, {
+      onDelete: 'restrict',
+    }),
     ...timestamps,
   },
-  (t) => [index().on(t.planId)],
+  (t) => [index().on(t.planId), index().on(t.billingAccountId)],
 );
 
 export const workspaceMembers = pgTable(
@@ -102,6 +111,10 @@ export const workspaceInvitations = pgTable(
 
 export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
   plan: one(plans, { fields: [workspaces.planId], references: [plans.id] }),
+  billingAccount: one(billingAccounts, {
+    fields: [workspaces.billingAccountId],
+    references: [billingAccounts.id],
+  }),
   members: many(workspaceMembers),
   invitations: many(workspaceInvitations),
 }));
@@ -137,3 +150,11 @@ export const workspaceInvitationsRelations = relations(
 export const plansRelations = relations(plans, ({ many }) => ({
   workspaces: many(workspaces),
 }));
+
+/** Reverse side of `workspaces.billingAccount` (merged with `billingAccountsRelations` in billing.ts). */
+export const billingAccountWorkspacesRelations = relations(
+  billingAccounts,
+  ({ many }) => ({
+    workspaces: many(workspaces),
+  }),
+);

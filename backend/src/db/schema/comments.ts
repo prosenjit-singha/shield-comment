@@ -191,6 +191,11 @@ export const comments = pgTable(
      * with a stage whose text is younger than 24 h.
      */
     moderationStage: text().$type<ModerationStage>(),
+    /**
+     * When this comment was counted against the account's `monthlyComments` wallet meter (PW-T4;
+     * PW-D1/D2: counted once, edits are free). `null` = not counted (yet).
+     */
+    usageCountedAt: timestamptz(),
     ...timestamps,
   },
   (t) => [

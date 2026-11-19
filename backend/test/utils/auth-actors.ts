@@ -9,6 +9,7 @@ import { ensureSuperAdmin } from '../../src/auth/super-admin.js';
 import type { Database } from '../../src/db/database.js';
 import {
   aiSettingsAuditLogs,
+  billingAccounts,
   comments,
   dailyCommentStats,
   impersonationAuditLogs,
@@ -20,9 +21,13 @@ import {
   planAuditLogs,
   postContexts,
   socialPages,
+  subscriptions,
   ticketMessages,
   tickets,
   users,
+  walletBalances,
+  walletEntries,
+  wallets,
   workspaceMembers,
   workspaces,
   workspaceStatusAuditLogs,
@@ -141,10 +146,56 @@ export function createAuthActors(app: INestApplication<App>) {
 
   /**
    * Deletes every tracked workspace and user (members, sessions and accounts cascade). Their
-   * impersonation, status and plan audit rows, ticket messages and tickets go first: those FKs are
-   * `restrict`.
+   * billing children (wallet entries, balances, wallets, subscriptions), impersonation, status and
+   * plan audit rows, ticket messages and tickets go first: those FKs are `restrict`. Billing
+   * accounts go after the workspaces and before the users.
    */
   async function cleanup() {
+    // Billing (PW-T1): the accounts owned by the tracked users or used by the tracked workspaces.
+    // Their wallet ledger → balances → wallets → subscriptions go first (FKs restrict); the
+    // accounts themselves after the workspaces (which point at them) and before the users.
+    const accountRefs = [
+      ...(userIds.length
+        ? [inArray(billingAccounts.ownerUserId, userIds)]
+        : []),
+      ...(workspaceIds.length
+        ? [
+            inArray(
+              billingAccounts.id,
+              db
+                .select({ id: workspaces.billingAccountId })
+                .from(workspaces)
+                .where(inArray(workspaces.id, workspaceIds)),
+            ),
+          ]
+        : []),
+    ];
+    const accountIds = accountRefs.length
+      ? (
+          await db
+            .select({ id: billingAccounts.id })
+            .from(billingAccounts)
+            .where(or(...accountRefs))
+        ).map((row) => row.id)
+      : [];
+    if (accountIds.length) {
+      const walletIds = db
+        .select({ id: wallets.id })
+        .from(wallets)
+        .where(inArray(wallets.billingAccountId, accountIds));
+      await db
+        .delete(walletEntries)
+        .where(inArray(walletEntries.walletId, walletIds));
+      await db
+        .delete(walletBalances)
+        .where(inArray(walletBalances.walletId, walletIds));
+      await db
+        .delete(wallets)
+        .where(inArray(wallets.billingAccountId, accountIds));
+      await db
+        .delete(subscriptions)
+        .where(inArray(subscriptions.billingAccountId, accountIds));
+    }
     const ticketRefs = [
       ...(userIds.length ? [inArray(tickets.userId, userIds)] : []),
       ...(workspaceIds.length
@@ -240,6 +291,10 @@ export function createAuthActors(app: INestApplication<App>) {
         .where(inArray(metaConnections.workspaceId, workspaceIds));
       await db.delete(workspaces).where(inArray(workspaces.id, workspaceIds));
     }
+    if (accountIds.length)
+      await db
+        .delete(billingAccounts)
+        .where(inArray(billingAccounts.id, accountIds));
     if (facebookUserIds.length)
       await db
         .delete(metaDataDeletionRequests)
