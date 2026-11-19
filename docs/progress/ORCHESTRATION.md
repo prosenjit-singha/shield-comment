@@ -7,13 +7,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.)
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #7 (2026-11-19) · rows this session: 3 · estimate: 85k
+- Session: #7 (2026-11-19) · rows this session: 4 · estimate: 100k
 
 ## State
-dispatched M5-T13 (2026-11-19) · commit: "feat(backend): add ai usage and credits to admin apis (M5-T13)"
+verified M5-T13 (2026-11-19)
 
 ## Resume
-`/orchestration --continue` (next: M5-T13; no decision pending)
+`/orchestration --continue` (next: M5-T14; no decision pending)
 
 ## Next prompt (M5-T14)
 
@@ -154,4 +154,4 @@ You are implementing exactly ONE task row, **M5-T14**, in the ShieldComment BD r
 - 2026-11-19 M5-T10 ✅ c808a79 · backend 1581 unit (+1 skipped; was 1528) + e2e 660 (was 643) · post context (D8): `getPostCaption` (FB `message` / IG `caption`), `post_contexts` cache (0017, 24 h TTL, Page FK cascade), `PostContextService.forComment` → `{ pageName, postCaption }` (failures → null, token_invalid → NEEDS_REAUTH)
 - 2026-11-19 M5-T11 ✅ ced9bc8 · backend 1600 unit (+1 skipped; was 1581) + e2e 671 (was 660) · admin 282 (was 281) · monthlyAiCredits plan limit (data migration 0018), monthly_credit_usage (0019), CreditService reserve/release/usage, admin field + hint
 - 2026-11-19 M5-T12 ✅ b394ec6 · backend 1649 unit (+1 skipped; was 1600) + e2e 694 (was 671) · moderation worker: hand-off job per comment version, CommentModerationProcessor (reserve → classify → decide → act, stage marker migration 0020, release on no-token failures, D2 retry/FAILED), D2 sweeper every 15 min
-- 2026-11-19 M5-T13 ✅ · backend 1699 unit (+1 skipped; was 1649) + e2e 705 (was 694) · admin AI data: `/admin/system/health` `ai` (today + 7 d per provider/model, cost USD/BDT from price table + env), dashboard comments from `daily_comment_stats`, client items `credits` (batched `usageMany`)
+- 2026-11-19 M5-T13 ✅ 4d0a77d · backend 1699 unit (+1 skipped; was 1649) + e2e 705 (was 694) · admin AI data: `/admin/system/health` `ai` (today + 7 d per provider/model, cost USD/BDT from price table + env), dashboard comments from `daily_comment_stats`, client items `credits` (batched `usageMany`) (orchestrator note: commit subject is 75 chars, over the 72 rule; left as is, since commits are never amended)
