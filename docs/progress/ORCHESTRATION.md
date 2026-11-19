@@ -7,17 +7,16 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.)
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #7 (2026-11-19) · rows this session: 6 · estimate: 130k
+- Session: #8 (2026-11-19) · rows this session: 0 · estimate: 55k
 
 ## State
-paused: user input needed: M5-T16 live golden bake-off waits for AI credentials (Neon credits and/or provider keys); user chose "Not yet: pause the run" (2026-11-19)
+paused: needs decision M5-T16 · Neon AI Gateway answers 403 payment_required for gpt-oss-20b/120b (credentials valid, billing not enabled); no direct provider keys (2026-11-19)
 
 ## Resume
-`/orchestration --continue` once the AI credentials are in place (Neon credits in `backend/.env.neon`/`.env` and/or provider keys in `/admin/settings` or `backend/.env`). Then the orchestrator confirms which credentials exist and dispatches M5-T16. Task note: `docs/todos/m5-t16-live-ai-golden-bake-off.md`.
+`/orchestration --continue` after ONE of: (a) upgrade the Neon project to a paid plan and/or buy AI Gateway credits (check the token in `backend/.env.neon` belongs to that project; re-run `neon env pull` if rotated), then M5-T16 reruns unchanged; (b) add a direct provider key (OpenAI / Google / Anthropic) in `/admin/settings` or `backend/.env`, then the bake-off runs on those models; (c) say "skip M5-T16" to go to M5-GATE with gate (1) pending. Task note: `docs/todos/m5-t16-live-ai-golden-bake-off.md`.
 
 ## Next prompt (M5-T16)
 
-PRE-CHECK: only (1) is still open: **credentials** (Neon AI Gateway credits and/or direct provider keys; user answered "Not yet: pause the run" on 2026-11-19). Ask which credentials are ready before dispatch. (2)–(5) are answered below under "Decisions added by orchestrator"; (6) the script runs from the host after `npm run build`, with no compose rebuild. Without credentials the row stops with `STATUS: needs-decision`.
 
 You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
 
@@ -37,7 +36,7 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - If no model passes 90 %: no prompt change in this row; report the per-category misses and ask (`STATUS: needs-decision`: e.g. bump the prompt to `moderation-v3` with few-shots for the missed cases, a bigger model, or the emoji fallback).
 - Results table (model, level, accuracy, cost per 1,000 comments USD + ৳, avg latency, failures) in the TASKS.md verification log and the row notes.
 
-**Rules:** TS strict, ESM, no `any`. Vitest. Live calls only in the opt-in script, never in unit/e2e (they replay the recorded file; tests must fail on unexpected requests). Every tenant query is scoped by `workspace_id`. Never print, log or commit an API key or `.env*` (except `.env.example`); comment texts never go to logs. Never commit build/test output. **Never stop or kill the user's own processes** (local Postgres 5432, Redis 6379, dev servers); on a port clash use env overrides or stop and report. The user's running compose stack has older backend code: do not stop, rebuild or restart it.
+**Rules:** TS strict, ESM, no `any`. Vitest. Live calls only in the opt-in script, never in unit/e2e (they replay the recorded file; tests must fail on unexpected requests). Every tenant query is scoped by `workspace_id`. Never print, log or commit an API key or `.env*` (except `.env.example`); comment texts never go to logs. Never commit build/test output. **Never stop or kill the user's own processes** (local Postgres 5432, Redis 6379, dev servers); on a port clash use env overrides or stop and report. The user's compose stack was rebuilt with the latest code on 2026-11-19 and is running: do not stop, rebuild or restart it.
 
 **Verify** (run what applies; report real numbers):
 - backend: `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test` (the new replay file is replayed), `npm run test:e2e`, `npm run lint`, `npx prettier --check "src/**/*.ts" "test/**/*.ts"`. The test DB must end empty except the 4 `plans` rows.
@@ -56,7 +55,8 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
 
 ### Decisions added by orchestrator
-- 2026-11-19 (user, M5-T16 pre-check): **models** = Neon `gpt-oss-20b` + `gpt-oss-120b`, OpenAI `gpt-4.1-nano` + `gpt-4.1-mini`, Google `gemini-2.5-flash-lite` + `gemini-2.5-flash`, Anthropic `claude-haiku-5-5` (only those with working credentials run). **Spend cap** = up to US$2 total. **Winner** = set it active locally: the agent saves it as the active provider/model in the local dev DB's AI settings (D16, audit row written) and records its replay. Context level: `comment_only` only (prompt default; not asked). Credentials: still pending (see PRE-CHECK).
+- 2026-11-19 (user, M5-T16 pre-check): **models** = Neon `gpt-oss-20b` + `gpt-oss-120b`, OpenAI `gpt-4.1-nano` + `gpt-4.1-mini`, Google `gemini-2.5-flash-lite` + `gemini-2.5-flash`, Anthropic `claude-haiku-5-5` (only those with working credentials run). **Spend cap** = up to US$2 total. **Winner** = set it active locally: the agent saves it as the active provider/model in the local dev DB's AI settings (D16, audit row written) and records its replay. Context level: `comment_only` only (prompt default; not asked). Credentials: resolved below.
+- 2026-11-19 (orchestrator, `/orchestration --continue`): **credentials found** = Neon AI Gateway only (`NEON_AI_GATEWAY_BASE_URL` + `NEON_AI_GATEWAY_TOKEN` set in `backend/.env.neon`; never print them). No direct provider keys in `backend/.env` and none saved in `ai_provider_keys`. So only Neon `gpt-oss-20b` + `gpt-oss-120b` run; skip OpenAI/Google/Anthropic and list them as "skipped: no key" in the results table (the Anthropic version-header check stays unconfirmed). If the gateway answers payment_required/auth errors, stop and report `STATUS: needs-decision` (the user may need to buy Neon credits). The winner is set active in the compose dev DB (postgres on host 5433).
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -168,3 +168,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-19 M5-T13 ✅ 4d0a77d · backend 1699 unit (+1 skipped; was 1649) + e2e 705 (was 694) · admin AI data: `/admin/system/health` `ai` (today + 7 d per provider/model, cost USD/BDT from price table + env), dashboard comments from `daily_comment_stats`, client items `credits` (batched `usageMany`) (orchestrator note: commit subject is 75 chars, over the 72 rule; left as is, since commits are never amended)
 - 2026-11-19 M5-T14 ✅ 4fc788d · admin 323 (was 282) · admin UI: `/admin/system` AI moderation card (today / 7 d, cost USD + ৳, failures, per model, unavailable + empty states), dashboard comments real-data tests, clients credits bar (`used / limit`, capped, `null` placeholder)
 - 2026-11-19 M5-T15 ✅ d5299b4 · client 426 (was 399) · client "AI analysis" card on /pages (D8 level via the D5 policy API, en + bn, save only when changed, 403/load-error/retry, impersonated ok)
+- 2026-11-19 M5-T16 🟡 blocked: Neon AI Gateway still refuses for billing (403 → `payment_required`) on `gpt-oss-20b` (`--limit 5` smoke, stopped at item 1) and `gpt-oss-120b` (`--limit 1`); no model ran, nothing recorded or set active, $0 spent; no direct provider keys exist
