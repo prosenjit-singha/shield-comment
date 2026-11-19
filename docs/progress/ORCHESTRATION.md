@@ -7,13 +7,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.)
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #7 (2026-11-19) · rows this session: 2 · estimate: 70k
+- Session: #7 (2026-11-19) · rows this session: 3 · estimate: 85k
 
 ## State
-dispatched M5-T12 (2026-11-19) · commit: "feat(backend): add comment moderation worker (M5-T12)"
+verified M5-T12 (2026-11-19)
 
 ## Resume
-`/orchestration --continue` (next: M5-T12 moderation worker; no decision pending)
+`/orchestration --continue` (next: M5-T13; no decision pending)
 
 ## Next prompt (M5-T13)
 
@@ -149,4 +149,4 @@ You are implementing exactly ONE task row, **M5-T13**, in the ShieldComment BD r
 - 2026-11-19 M5-T9 ✅ 7f84b1c · backend 1528 unit (+1 skipped; was 1459) + e2e 643 (was 617) · Meta action executor: Graph hide/unhide (FB `is_hidden` / IG `hide`), delete, reply (`/comments` / `/replies`), `not_found` kind; `ModerationActionExecutor` (typed skips, PENDING → Graph outside tx → SUCCEEDED/FAILED + status, USER stamp, one AUTO reply, NEEDS_REAUTH); gate check (2) via real client + stubbed fetch
 - 2026-11-19 M5-T10 ✅ c808a79 · backend 1581 unit (+1 skipped; was 1528) + e2e 660 (was 643) · post context (D8): `getPostCaption` (FB `message` / IG `caption`), `post_contexts` cache (0017, 24 h TTL, Page FK cascade), `PostContextService.forComment` → `{ pageName, postCaption }` (failures → null, token_invalid → NEEDS_REAUTH)
 - 2026-11-19 M5-T11 ✅ ced9bc8 · backend 1600 unit (+1 skipped; was 1581) + e2e 671 (was 660) · admin 282 (was 281) · monthlyAiCredits plan limit (data migration 0018), monthly_credit_usage (0019), CreditService reserve/release/usage, admin field + hint
-- 2026-11-19 M5-T12 ✅ · backend 1649 unit (+1 skipped; was 1600) + e2e 694 (was 671) · moderation worker: hand-off job per comment version, CommentModerationProcessor (reserve → classify → decide → act, stage marker migration 0020, release on no-token failures, D2 retry/FAILED), D2 sweeper every 15 min
+- 2026-11-19 M5-T12 ✅ b394ec6 · backend 1649 unit (+1 skipped; was 1600) + e2e 694 (was 671) · moderation worker: hand-off job per comment version, CommentModerationProcessor (reserve → classify → decide → act, stage marker migration 0020, release on no-token failures, D2 retry/FAILED), D2 sweeper every 15 min
