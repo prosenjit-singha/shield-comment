@@ -1,6 +1,16 @@
-import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
+import {
+  InjectQueue,
+  OnWorkerEvent,
+  Processor,
+  WorkerHost,
+} from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { type Job, UnrecoverableError } from 'bullmq';
+import { type Job, type Queue, UnrecoverableError } from 'bullmq';
+import { withTimeout } from '../common/async/with-timeout.js';
+import {
+  MODERATION_ENQUEUE_TIMEOUT_MS,
+  moderateCommentJob,
+} from '../moderation/comment-moderation.job.js';
 import { QUEUE_NAMES } from '../queue/queue.constants.js';
 import {
   CommentIngestService,
@@ -32,7 +42,11 @@ export class CommentIngestProcessor extends WorkerHost {
   private readonly logger = new Logger('CommentIngest');
   private lastWorkerError: { message: string; at: number } | undefined;
 
-  constructor(private readonly ingest: CommentIngestService) {
+  constructor(
+    private readonly ingest: CommentIngestService,
+    @InjectQueue(QUEUE_NAMES.commentModeration)
+    private readonly moderationQueue: Pick<Queue, 'add'>,
+  ) {
     super();
   }
 
@@ -76,24 +90,41 @@ export class CommentIngestProcessor extends WorkerHost {
         break;
       case 'stored':
         this.logger.debug(`Stored ${data.eventId}: ${outcome.action}`);
-        this.handOffToModeration(outcome);
+        await this.handOffToModeration(outcome);
         break;
     }
     return outcome;
   }
 
   /**
-   * Module 5 hand-off point (D3 `comment-moderation` queue). Runs after the ingest transaction
+   * Module 5 hand-off (M5-T12, D3 `comment-moderation` queue). Runs after the ingest transaction
    * committed, for comments with new text (`moderate`: a created comment or an applied edit of a
-   * comment that isn't deleted). Module 5 enqueues the moderation job here (job id from the
-   * comment row id + edit, so retries of this job don't moderate twice). Nothing is enqueued yet;
-   * `comments.status` stays `PENDING`.
+   * comment that isn't deleted). Job id = comment row id + version (`moderationJobId`), so a retry
+   * of this ingest job never enqueues twice. A failed or slow enqueue (Redis down) is logged and
+   * swallowed: the comment row already owes moderation (`moderation_stage`), and the D2 sweeper
+   * re-queues it.
    */
-  private handOffToModeration(
+  private async handOffToModeration(
     outcome: Extract<IngestOutcome, { kind: 'stored' }>,
-  ): void {
-    if (!outcome.moderate) return;
-    // Module 5: enqueue `comment-moderation` for `outcome.commentRowId` here.
+  ): Promise<void> {
+    if (!outcome.moderate || !outcome.commentRowId) return;
+    try {
+      const job = moderateCommentJob({
+        workspaceId: outcome.workspaceId,
+        commentRowId: outcome.commentRowId,
+        editedAt: outcome.editedAt ?? null,
+      });
+      await withTimeout(
+        this.moderationQueue.add(job.name, job.data, job.opts),
+        MODERATION_ENQUEUE_TIMEOUT_MS,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Comment ${outcome.commentRowId} (workspace ${outcome.workspaceId}): moderation not enqueued (${
+          error instanceof Error ? error.message : 'unknown error'
+        }); the sweeper retries`,
+      );
+    }
   }
 
   /** Last attempt failed (or an `UnrecoverableError`): the job lands in the failed set (7 d). */

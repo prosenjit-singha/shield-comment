@@ -36,6 +36,7 @@ export class FakeQueue {
   private countsError: Error | null = null;
   private addFailure: Error | 'hang' | null = null;
   private nextId = 1;
+  private readonly jobStates = new Map<string, string>();
 
   constructor(readonly name: QueueName) {}
 
@@ -82,6 +83,33 @@ export class FakeQueue {
     return Promise.resolve([...this.schedulers.values()]);
   }
 
+  /**
+   * Like BullMQ: a recorded job is `waiting` unless `setJobState` says otherwise; an unknown id is
+   * `unknown` (M5-T12 sweeper).
+   */
+  getJobState(jobId: string): Promise<string> {
+    const state = this.jobStates.get(jobId);
+    if (state) return Promise.resolve(state);
+    return Promise.resolve(
+      this.jobs.some((job) => job.id === jobId) ? 'waiting' : 'unknown',
+    );
+  }
+
+  /** Pretends a recorded job moved on (e.g. `failed` after its last attempt, `active`). */
+  setJobState(jobId: string, state: string): void {
+    this.jobStates.set(jobId, state);
+  }
+
+  /** Like BullMQ: 1 = removed, 0 = locked (`active`) or not there. */
+  remove(jobId: string): Promise<number> {
+    if (this.jobStates.get(jobId) === 'active') return Promise.resolve(0);
+    const index = this.jobs.findIndex((job) => job.id === jobId);
+    this.jobStates.delete(jobId);
+    if (index < 0) return Promise.resolve(0);
+    this.jobs.splice(index, 1);
+    return Promise.resolve(1);
+  }
+
   /** Makes `add`/`addBulk` reject with `error`, or never settle (`'hang'`, Redis down); `null` restores. */
   failAdds(failure: Error | 'hang' | null): void {
     this.addFailure = failure;
@@ -110,6 +138,7 @@ export class FakeQueue {
 
   reset(): void {
     this.jobs.length = 0;
+    this.jobStates.clear();
     this.extraCounts = {};
     this.countsError = null;
     this.addFailure = null;

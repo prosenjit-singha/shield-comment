@@ -25,10 +25,13 @@ export type NewComment = typeof comments.$inferInsert;
 export type CommentRow = typeof comments.$inferSelect;
 export type DailyCommentStatsRow = typeof dailyCommentStats.$inferSelect;
 
-/** A comment as lists show it (no `raw_payload`, no disconnect stamp `facebook_user_id`). */
+/**
+ * A comment as lists show it (no `raw_payload`, no disconnect stamp `facebook_user_id`, no
+ * worker bookkeeping `moderation_stage`).
+ */
 export type WorkspaceComment = Omit<
   CommentRow,
-  'rawPayload' | 'facebookUserId'
+  'rawPayload' | 'facebookUserId' | 'moderationStage'
 >;
 
 /** Asia/Dhaka calendar day (`YYYY-MM-DD`) of an instant: the `daily_comment_stats.day` key. */

@@ -48,12 +48,18 @@ export type IngestOutcome =
       commentRowId?: string;
       /** The comment has new text to moderate (Module 5 hand-off). */
       moderate: boolean;
+      /**
+       * `comments.edited_at` of the version to moderate (`null` = the original text); set when
+       * `moderate` is true. Part of the moderation job id (M5-T12).
+       */
+      editedAt?: Date | null;
     };
 
 type StoreResult = {
   action: IngestAction;
   commentRowId?: string;
   moderate: boolean;
+  editedAt?: Date | null;
   counts: Pick<DailyCommentStatsDelta, 'received' | 'edited' | 'removed'>;
 };
 
@@ -111,6 +117,7 @@ export class CommentIngestService {
         action: result.action,
         ...(result.commentRowId ? { commentRowId: result.commentRowId } : {}),
         moderate: result.moderate,
+        ...(result.moderate ? { editedAt: result.editedAt ?? null } : {}),
       };
     });
   }
@@ -138,6 +145,8 @@ export class CommentIngestService {
         message: extra.deletedAt ? null : data.message,
         rawPayload: data.rawPayload,
         status: 'PENDING',
+        // M5-T12: a live comment owes a classification (a remove placeholder owes nothing).
+        moderationStage: extra.deletedAt ? null : 'classify',
         ...extra,
       });
 
@@ -171,6 +180,7 @@ export class CommentIngestService {
               action: 'created',
               commentRowId: row.id,
               moderate: true,
+              editedAt: at,
               counts: { received: 1, edited: 1 },
             };
           }
@@ -188,6 +198,7 @@ export class CommentIngestService {
           action: 'updated',
           commentRowId: updated.id,
           moderate: updated.applied && updated.deletedAt === null,
+          editedAt: at,
           counts: { edited: 1 },
         };
       }

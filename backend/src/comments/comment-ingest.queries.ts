@@ -66,6 +66,8 @@ export async function applyCommentEdit(
       message: sql`case when ${stale} then ${comments.message} else ${edit.message} end`,
       rawPayload: sql`case when ${stale} then ${comments.rawPayload} else ${JSON.stringify(edit.rawPayload)}::jsonb end`,
       editedAt: sql`case when ${stale} then ${comments.editedAt} else ${edit.at} end`,
+      // M5-T12 (D11): an applied edit of a live comment owes a new classification.
+      moderationStage: sql`case when ${stale} or ${comments.deletedAt} is not null then ${comments.moderationStage} else 'classify' end`,
     })
     .where(
       and(

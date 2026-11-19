@@ -11,6 +11,9 @@ import type { Type } from '@nestjs/common';
 export class FakeWorker {
   static readonly instances: FakeWorker[] = [];
   closed = false;
+  /** Set by processors that start themselves (`autorun: false`, M5-T12). */
+  concurrency = 1;
+  running = false;
   readonly listeners = new Map<string, unknown[]>();
 
   constructor(
@@ -24,6 +27,16 @@ export class FakeWorker {
   on(event: string, listener: unknown): this {
     this.listeners.set(event, [...(this.listeners.get(event) ?? []), listener]);
     return this;
+  }
+
+  isRunning(): boolean {
+    return this.running;
+  }
+
+  /** Never pulls jobs: only records that the processor started it. */
+  run(): Promise<void> {
+    this.running = true;
+    return Promise.resolve();
   }
 
   close(): Promise<void> {

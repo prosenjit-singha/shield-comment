@@ -35,13 +35,19 @@ const pgError = (code: string) =>
 
 describe('CommentIngestProcessor', () => {
   const ingest = vi.fn<Ingest>();
-  const processor = new CommentIngestProcessor({
-    ingest,
-  } as unknown as CommentIngestService);
+  const add =
+    vi.fn<(name: string, data: unknown, opts: unknown) => Promise<unknown>>();
+  const processor = new CommentIngestProcessor(
+    { ingest } as unknown as CommentIngestService,
+    { add } as unknown as ConstructorParameters<
+      typeof CommentIngestProcessor
+    >[1],
+  );
   let logs: string[];
 
   beforeEach(() => {
     ingest.mockReset();
+    add.mockReset().mockResolvedValue({});
     logs = [];
     for (const level of ['log', 'warn', 'error', 'debug'] as const) {
       vi.spyOn(Logger.prototype, level).mockImplementation((message) => {
@@ -59,17 +65,94 @@ describe('CommentIngestProcessor', () => {
     ).toMatchObject({ name: QUEUE_NAMES.commentIngest });
   });
 
+  const WS = '0190f000-0000-7000-8000-000000000001';
+  const ROW = '0190f000-0000-7000-8000-0000000000c1';
+
   it('passes validated data to the service and returns its outcome', async () => {
     const outcome: IngestOutcome = {
       kind: 'stored',
-      workspaceId: 'ws',
+      workspaceId: WS,
       action: 'created',
-      commentRowId: 'c1',
+      commentRowId: ROW,
       moderate: true,
+      editedAt: null,
     };
     ingest.mockResolvedValue(outcome);
     await expect(processor.process(job())).resolves.toBe(outcome);
     expect(ingest).toHaveBeenCalledWith(data());
+  });
+
+  describe('moderation hand-off (M5-T12)', () => {
+    it('created comment → one moderate-comment job, id by row + original version', async () => {
+      ingest.mockResolvedValue({
+        kind: 'stored',
+        workspaceId: WS,
+        action: 'created',
+        commentRowId: ROW,
+        moderate: true,
+        editedAt: null,
+      });
+      await processor.process(job());
+      expect(add).toHaveBeenCalledTimes(1);
+      expect(add).toHaveBeenCalledWith(
+        'moderate-comment',
+        { workspaceId: WS, commentRowId: ROW, editedAt: null },
+        expect.objectContaining({ jobId: `moderate:${ROW}:add`, attempts: 5 }),
+      );
+    });
+
+    it('applied edit → job id carries the edit time', async () => {
+      const at = new Date('2026-11-19T10:00:00.123Z');
+      ingest.mockResolvedValue({
+        kind: 'stored',
+        workspaceId: WS,
+        action: 'updated',
+        commentRowId: ROW,
+        moderate: true,
+        editedAt: at,
+      });
+      await processor.process(job());
+      expect(add.mock.calls[0]?.[1]).toEqual({
+        workspaceId: WS,
+        commentRowId: ROW,
+        editedAt: at.toISOString(),
+      });
+      expect(add.mock.calls[0]?.[2]).toMatchObject({
+        jobId: `moderate:${ROW}:edit-${at.getTime()}`,
+      });
+    });
+
+    it('nothing to moderate (remove, stale edit, unchanged) → no job', async () => {
+      ingest.mockResolvedValue({
+        kind: 'stored',
+        workspaceId: WS,
+        action: 'deleted',
+        commentRowId: ROW,
+        moderate: false,
+      });
+      await processor.process(job());
+      ingest.mockResolvedValue({ kind: 'duplicate', workspaceId: WS });
+      await processor.process(job());
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    it('enqueue failure is logged (ids only) and the ingest job still completes', async () => {
+      add.mockRejectedValue(new Error('Connection is closed.'));
+      const outcome: IngestOutcome = {
+        kind: 'stored',
+        workspaceId: WS,
+        action: 'created',
+        commentRowId: ROW,
+        moderate: true,
+        editedAt: null,
+      };
+      ingest.mockResolvedValue(outcome);
+      await expect(processor.process(job())).resolves.toBe(outcome);
+      expect(allLogs()).toContain(
+        `warn: Comment ${ROW} (workspace ${WS}): moderation not enqueued (Connection is closed.); the sweeper retries`,
+      );
+      expect(allLogs()).not.toMatch(/bKash|Rahim/);
+    });
   });
 
   it('logs a drop with ids and the reason only, and completes', async () => {

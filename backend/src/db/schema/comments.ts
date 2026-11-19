@@ -23,7 +23,9 @@ import {
   MAX_REASONING_CHARS,
   MODERATION_CATEGORIES,
   MODERATION_CATEGORY_KEYS,
+  MODERATION_STAGES,
   type ModerationCategory,
+  type ModerationStage,
   PROMPT_VERSION_PATTERN,
 } from '../../moderation/moderation.constants.js';
 import { AI_MODEL_MAX_LENGTH } from './ai-settings.js';
@@ -182,6 +184,13 @@ export const comments = pgTable(
     statusReason: text(),
     /** First human moderation action (D10): from then on the AI never changes the comment. */
     overriddenAt: timestamptz(),
+    /**
+     * Moderation work still owed for the current text (M5-T12; D2/D11): `classify` = set by ingest
+     * for a new comment or an applied edit; `act` = classified, the Meta action/reply is not done
+     * yet (a retry skips the AI call and only acts); `null` = done. The sweeper re-queues rows
+     * with a stage whose text is younger than 24 h.
+     */
+    moderationStage: text().$type<ModerationStage>(),
     ...timestamps,
   },
   (t) => [
@@ -199,6 +208,9 @@ export const comments = pgTable(
       .on(t.createdAt)
       .where(sql`${t.rawPayload} is not null`),
     // D2 sweeper (M5-T12): re-queue PENDING / FAILED comments younger than 24 h.
+    index('comments_moderation_stage_index')
+      .on(sql`coalesce(${t.editedAt}, ${t.createdAt})`)
+      .where(sql`${t.moderationStage} is not null`),
     index('comments_moderation_retry_index')
       .on(t.createdAt)
       .where(sql.raw(`status in (${quoted(['PENDING', 'FAILED'])})`)),
@@ -256,6 +268,10 @@ export const comments = pgTable(
       sql.raw(allOrNoneSql(CLASSIFICATION_COLUMNS)),
     ),
     check('comments_credits_charged_check', sql`${t.creditsCharged} >= 0`),
+    check(
+      'comments_moderation_stage_check',
+      sql.raw(inListSql('moderation_stage', MODERATION_STAGES, true)),
+    ),
     check(
       'comments_status_reason_format',
       sql.raw(patternSql('status_reason', MACHINE_CODE_PATTERN, true)),

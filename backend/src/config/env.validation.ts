@@ -144,6 +144,27 @@ export class EnvironmentVariables {
   @IsString()
   AI_GATEWAY_MODEL?: string;
 
+  // --- Moderation worker (M5-T12): `comment-moderation` concurrency + BullMQ limiter (≈ LLM calls).
+  /** Jobs one API process works on at the same time. */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  MODERATION_WORKER_CONCURRENCY = 4;
+
+  /** At most this many moderation jobs start per `MODERATION_LLM_RATE_DURATION_MS` (all processes). */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  MODERATION_LLM_RATE_MAX = 10;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(100)
+  @Max(3_600_000)
+  MODERATION_LLM_RATE_DURATION_MS = 1000;
+
   // --- Token cipher (AES-256-GCM for Meta access tokens at rest, M3-T1, decision D2).
   // Optional: TokenCipherService is disabled when all three are unset. KEY + KEY_ID go together.
   /** Base64 of exactly 32 bytes: `openssl rand -base64 32`. Encrypts new tokens. */

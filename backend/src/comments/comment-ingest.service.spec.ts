@@ -126,6 +126,7 @@ describe('CommentIngestService', () => {
       action: 'created',
       commentRowId: 'c1',
       moderate: true,
+      editedAt: null,
     });
     expect(c.insertWebhookEvent).toHaveBeenCalledWith(tx, {
       eventId: data.eventId,
@@ -143,6 +144,7 @@ describe('CommentIngestService', () => {
       message: data.message,
       rawPayload: data.rawPayload,
       status: 'PENDING',
+      moderationStage: 'classify',
     });
     expect(stats()).toEqual([
       {
@@ -193,6 +195,8 @@ describe('CommentIngestService', () => {
       action: 'updated',
       commentRowId: 'c1',
       moderate: true,
+      // The moderation job's version (M5-T12).
+      editedAt: AT,
     });
     expect(q.applyCommentEdit).toHaveBeenCalledWith(
       tx,
@@ -238,9 +242,11 @@ describe('CommentIngestService', () => {
       action: 'created',
       commentRowId: 'c2',
       moderate: true,
+      editedAt: AT,
     });
     expect(c.insertComment.mock.calls[0]![1]).toMatchObject({
       message: 'bKash 017',
+      moderationStage: 'classify',
       editedAt: AT,
       status: 'PENDING',
     });

@@ -86,6 +86,14 @@ export const COMMENT_STATUSES = [
 export type CommentStatus = (typeof COMMENT_STATUSES)[number];
 
 /**
+ * `comments.moderation_stage` (M5-T12): what the worker still owes the current text. `classify` =
+ * not classified yet (new comment or applied edit); `act` = classified, the Meta action / reply is
+ * not finished. `null` = done.
+ */
+export const MODERATION_STAGES = ['classify', 'act'] as const;
+export type ModerationStage = (typeof MODERATION_STAGES)[number];
+
+/**
  * `comments.status_reason`, `moderation_actions.error_kind` and AI failure kinds are short machine
  * codes (never free text: no comment text or provider message can end up there).
  */
