@@ -7,6 +7,7 @@ import {
   metaDataDeletionRequests,
   type MetaDataDeletionStatus,
   moderationActions,
+  postContexts,
   socialPages,
   webhookEvents,
   workspaces,
@@ -210,7 +211,7 @@ export interface WorkspaceDeletionTarget {
  * the `moderation_actions` of the deleted comments (M5-T7) → the `webhook_events` of the deleted
  * comments → the comments (the Pages' comments, before the
  * Pages, else `on delete set null` would keep them, **plus** comments a disconnect stamped with
- * the user's Facebook id, M4-T9) → the Pages → the connection. Every statement is scoped by
+ * the user's Facebook id, M4-T9) → the Pages' `post_contexts` (M5-T10) → the Pages → the connection. Every statement is scoped by
  * `workspace_id`. `daily_comment_stats`, `daily_ai_usage` and `moderation_policies` stay (no
  * personal data, D4). The classification (incl. `reasoning`, D9) goes with the comment row.
  */
@@ -266,6 +267,15 @@ export async function deleteWorkspaceMetaData(
   ).length;
   let deletedPages = 0;
   if (pageIds.length > 0) {
+    // The Pages' caption cache (M5-T10; the FK also cascades).
+    await tx
+      .delete(postContexts)
+      .where(
+        and(
+          eq(postContexts.workspaceId, workspaceId),
+          inArray(postContexts.socialPageId, pageIds),
+        ),
+      );
     deletedPages = (
       await tx
         .delete(socialPages)

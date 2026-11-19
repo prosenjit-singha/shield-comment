@@ -59,6 +59,11 @@ export function creditCostForLevel(level: ContextLevel): number {
   return CONTEXT_LEVEL_CREDITS[level];
 }
 
+/** Longest cached post caption (`post_contexts.caption`, M5-T10), in code points. */
+export const MAX_STORED_CAPTION_CHARS = 2_000;
+/** A cached caption older than this is fetched again from Graph (M5-T10, D8). */
+export const POST_CONTEXT_TTL_MS = 24 * 60 * 60 * 1000;
+
 /** Longest stored `reasoning` (D9), in code points (Postgres `char_length`). */
 export const MAX_REASONING_CHARS = 280;
 

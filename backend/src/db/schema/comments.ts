@@ -82,7 +82,7 @@ const numericId = (column: string, nullable = false) =>
  * Meta object id of a post/comment: numeric, or numeric parts joined by `_` (FB `feed` ids look
  * like `<pageId>_<postId>` / `<postId>_<commentId>`; IG ids are plain numbers).
  */
-const META_OBJECT_ID = '^[0-9]{1,32}(_[0-9]{1,32}){0,2}$';
+export const META_OBJECT_ID = '^[0-9]{1,32}(_[0-9]{1,32}){0,2}$';
 const objectId = (column: string) => sql.raw(`${column} ~ '${META_OBJECT_ID}'`);
 
 export const webhookEvents = pgTable(

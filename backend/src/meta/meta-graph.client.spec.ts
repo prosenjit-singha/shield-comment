@@ -872,6 +872,125 @@ describe('MetaGraphClient', () => {
     });
   });
 
+  describe('getPostCaption (M5-T10)', () => {
+    const FB_POST = '1010000000000001_2020000000000002';
+    const IG_MEDIA = '17890000000000003';
+    const proof = createHmac('sha256', CONFIG.appSecret)
+      .update(PAGE_TOKEN)
+      .digest('hex');
+    const init = (n = 0) => fetchMock.mock.calls[n]![1]!;
+
+    it.each([
+      ['FACEBOOK', FB_POST, 'message'],
+      ['INSTAGRAM', IG_MEDIA, 'caption'],
+    ] as const)(
+      '%s = GET /{id}?fields=%s with the Page token + proof in the query',
+      async (platform, id, field) => {
+        const text = 'ঈদ অফার! Panjabi 1,250 taka';
+        fetchMock.mockResolvedValue(jsonResponse(200, { [field]: text, id }));
+        await expect(
+          client.getPostCaption(platform, id, PAGE_TOKEN),
+        ).resolves.toBe(text);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        const url = calledUrl();
+        expect(url.origin + url.pathname).toBe(
+          `https://graph.facebook.com/v26.0/${id}`,
+        );
+        expect(init().method).toBe('GET');
+        expect(init().body).toBeUndefined();
+        expect(Object.fromEntries(url.searchParams)).toEqual({
+          fields: field,
+          access_token: PAGE_TOKEN,
+          appsecret_proof: proof,
+        });
+        expect(debugSpy).toHaveBeenCalledWith(
+          expect.stringMatching(new RegExp(`^GET /${id} 200 \\d+ms$`)),
+        );
+        // The caption never reaches the logs.
+        for (const args of debugSpy.mock.calls) {
+          expect(args.map(String).join(' ')).not.toContain('Panjabi');
+        }
+      },
+    );
+
+    it.each([
+      [{ id: FB_POST }],
+      [{ message: null }],
+      [{ message: '' }],
+      [{ message: '  \n ' }],
+    ])('no text (%j) → null', async (body) => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, body));
+      await expect(
+        client.getPostCaption('FACEBOOK', FB_POST, PAGE_TOKEN),
+      ).resolves.toBeNull();
+    });
+
+    it('reads only the platform field (an IG body with `message` has no caption)', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { message: 'x' }));
+      await expect(
+        client.getPostCaption('INSTAGRAM', IG_MEDIA, PAGE_TOKEN),
+      ).resolves.toBeNull();
+    });
+
+    it.each([
+      [[]],
+      ['caption'],
+      [42],
+      [{ message: 42 }],
+      [{ message: { text: 'x' } }],
+      [{ message: ['x'] }],
+    ])('a bad body (%j) is unexpected_response', async (body) => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, body));
+      expect(
+        await caught(client.getPostCaption('FACEBOOK', FB_POST, PAGE_TOKEN)),
+      ).toMatchObject({ kind: 'unexpected_response', retryable: false });
+    });
+
+    it.each([
+      [100, 33, 'not_found', false],
+      [190, undefined, 'token_invalid', false],
+      [4, undefined, 'rate_limited', true],
+      [10, undefined, 'permission', false],
+      [2, undefined, 'transient', true],
+    ] as const)(
+      'Graph error #%i/%s → %s (retryable %s), token scrubbed',
+      async (code, subcode, kind, retryable) => {
+        fetchMock.mockResolvedValueOnce(
+          graphError(400, {
+            message: `Unsupported get request ${PAGE_TOKEN}`,
+            type: 'GraphMethodException',
+            code,
+            ...(subcode ? { error_subcode: subcode } : {}),
+          }),
+        );
+        const error = await caught(
+          client.getPostCaption('INSTAGRAM', IG_MEDIA, PAGE_TOKEN),
+        );
+        expect(error).toMatchObject({ kind, code, retryable });
+        expect(error.message).not.toContain(PAGE_TOKEN);
+      },
+    );
+
+    it('rejects a bad post id, an empty token or a disabled client without calling fetch', async () => {
+      for (const bad of ['../me', 'me', '1_2_3_4', '', '12?fields=x']) {
+        await expect(
+          client.getPostCaption('FACEBOOK', bad, PAGE_TOKEN),
+        ).rejects.toThrow('Post id');
+      }
+      await expect(
+        client.getPostCaption('FACEBOOK', FB_POST, ''),
+      ).rejects.toThrow('Token');
+      await expect(
+        new MetaGraphClient(null).getPostCaption(
+          'FACEBOOK',
+          FB_POST,
+          PAGE_TOKEN,
+        ),
+      ).rejects.toBeInstanceOf(MetaNotConfiguredError);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe('errors', () => {
     it.each([
       [190, 463, 'token_invalid', false],

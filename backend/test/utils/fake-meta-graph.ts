@@ -13,8 +13,8 @@ const unexpected = (name: string) => () => {
 /**
  * Stand-in for `MetaGraphClient` in specs that only toggle Pages (M4-T8): `subscribePageApp` /
  * `unsubscribePageApp` (and `revokePermissions`, M4-T9 disconnect) answer like Meta's
- * `{ success: true }` by default; every other Graph method (incl. the M5-T9 comment actions)
- * throws, so a spec fails on any call it did not expect. Flip `enabled` to test "Meta unset".
+ * `{ success: true }` by default; every other Graph method (incl. the M5-T9 comment actions and
+ * the M5-T10 `getPostCaption`) throws, so a spec fails on any call it did not expect. Flip `enabled` to test "Meta unset".
  */
 export function fakePageSubscriptionGraph() {
   return {
@@ -36,6 +36,7 @@ export function fakePageSubscriptionGraph() {
     unhideComment: vi.fn<Fn<'unhideComment'>>(unexpected('unhideComment')),
     deleteComment: vi.fn<Fn<'deleteComment'>>(unexpected('deleteComment')),
     replyToComment: vi.fn<Fn<'replyToComment'>>(unexpected('replyToComment')),
+    getPostCaption: vi.fn<Fn<'getPostCaption'>>(unexpected('getPostCaption')),
   };
 }
 
@@ -66,3 +67,23 @@ export function fakeCommentActionGraph() {
 }
 
 export type FakeCommentActionGraph = ReturnType<typeof fakeCommentActionGraph>;
+
+/** Caption the post-context fake answers by default. */
+export const FAKE_POST_CAPTION =
+  'ঈদ অফার! Premium cotton panjabi, 1,250 taka. Inbox korun.';
+
+/**
+ * Stand-in for `MetaGraphClient` in specs of `PostContextService` (M5-T10): only `getPostCaption`
+ * answers (`FAKE_POST_CAPTION` by default); every other Graph method throws, so a spec fails on
+ * any call it did not expect. Assert the exact arguments (platform, post id, Page token).
+ */
+export function fakePostContextGraph() {
+  const graph = fakePageSubscriptionGraph();
+  graph.subscribePageApp.mockImplementation(unexpected('subscribePageApp'));
+  graph.unsubscribePageApp.mockImplementation(unexpected('unsubscribePageApp'));
+  graph.revokePermissions.mockImplementation(unexpected('revokePermissions'));
+  graph.getPostCaption.mockImplementation(async () => FAKE_POST_CAPTION);
+  return graph;
+}
+
+export type FakePostContextGraph = ReturnType<typeof fakePostContextGraph>;

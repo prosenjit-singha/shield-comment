@@ -117,7 +117,9 @@ describe('Moderation schema (e2e)', () => {
         'utf8',
       ),
     ) as { entries: { tag: string }[] };
-    expect(journal.entries.at(-1)?.tag).toBe('0016_moderation_schema');
+    expect(journal.entries.map((e) => e.tag)).toContain(
+      '0016_moderation_schema',
+    );
     const result = await db().execute<{ applied: number }>(
       sql`select count(*)::int as applied from drizzle.__drizzle_migrations`,
     );

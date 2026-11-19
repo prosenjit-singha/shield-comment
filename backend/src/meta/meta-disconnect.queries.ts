@@ -1,6 +1,11 @@
 import { and, asc, count, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
-import { comments, metaConnections, socialPages } from '../db/schema/index.js';
+import {
+  comments,
+  metaConnections,
+  postContexts,
+  socialPages,
+} from '../db/schema/index.js';
 
 /**
  * Queries behind Meta disconnect (M4-T9, Module 4 D7 + decision 2026-11-19 "Keep FB user id on
@@ -109,13 +114,24 @@ export async function keepPageComments(
   return rows.length;
 }
 
-/** Hard-deletes the given Pages of the workspace (frees `page_id` + `ig_business_id`). */
+/**
+ * Hard-deletes the given Pages of the workspace (frees `page_id` + `ig_business_id`), their
+ * `post_contexts` caption cache first (M5-T10; the FK also cascades).
+ */
 export async function deleteWorkspacePages(
   tx: DisconnectExecutor,
   workspaceId: string,
   pageRowIds: string[],
 ): Promise<number> {
   if (pageRowIds.length === 0) return 0;
+  await tx
+    .delete(postContexts)
+    .where(
+      and(
+        eq(postContexts.workspaceId, workspaceId),
+        inArray(postContexts.socialPageId, pageRowIds),
+      ),
+    );
   const rows = await tx
     .delete(socialPages)
     .where(

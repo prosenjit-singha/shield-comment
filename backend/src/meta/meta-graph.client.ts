@@ -86,6 +86,12 @@ const isGraphId = (value: unknown): value is string =>
 const isCommentId = (value: unknown): value is string =>
   typeof value === 'string' && /^[0-9]{1,32}(_[0-9]{1,32}){0,2}$/.test(value);
 
+/**
+ * FB post id (`<pageId>_<postId>`) or IG media id (numeric): the same rule as `comments.post_id`
+ * (`comments_post_id_format`), so every stored post id passes.
+ */
+const isPostId = isCommentId;
+
 function unexpected(what: string): MetaGraphError {
   return new MetaGraphError('unexpected_response', `Meta Graph: ${what}`, {
     status: 200,
@@ -382,6 +388,36 @@ export class MetaGraphClient {
       throw unexpected(`${edge} did not answer an id`);
     }
     return { id: body.id };
+  }
+
+  /**
+   * The post's text for the D8 `post_caption` context level (M5-T10): FB `GET /{post-id}`
+   * `fields=message`, IG `GET /{media-id}` `fields=caption`, with the **Page** token + proof in the
+   * query. Returns the text, or `null` when the post has none (field missing, `null` or blank).
+   * Any other body (no object, non-string field) is `unexpected_response`. Never logged.
+   */
+  async getPostCaption(
+    platform: CommentPlatform,
+    postId: string,
+    pageToken: string,
+  ): Promise<string | null> {
+    if (!isPostId(postId)) throw new Error('Post id must be a Graph post id');
+    const field = platform === 'INSTAGRAM' ? 'caption' : 'message';
+    const body = await this.requestWithToken(
+      'GET',
+      postId,
+      { fields: field },
+      pageToken,
+    );
+    if (!isRecord(body) || Array.isArray(body)) {
+      throw unexpected(`bad post body (${field})`);
+    }
+    const value = body[field];
+    if (value === undefined || value === null) return null;
+    if (typeof value !== 'string') {
+      throw unexpected(`post ${field} is not text`);
+    }
+    return value.trim().length > 0 ? value : null;
   }
 
   private async setCommentHidden(

@@ -17,6 +17,7 @@ import {
   moderationActions,
   moderationPolicies,
   planAuditLogs,
+  postContexts,
   socialPages,
   ticketMessages,
   tickets,
@@ -221,6 +222,10 @@ export function createAuthActors(app: INestApplication<App>) {
         .from(metaConnections)
         .where(inArray(metaConnections.workspaceId, workspaceIds));
       facebookUserIds.push(...connectionUsers.map((row) => row.id));
+      // Post caption cache (M5-T10): workspace FK restrict, Page FK cascade.
+      await db
+        .delete(postContexts)
+        .where(inArray(postContexts.workspaceId, workspaceIds));
       // Meta rows (M3-T2) reference workspaces with FK restrict.
       await db
         .delete(socialPages)
