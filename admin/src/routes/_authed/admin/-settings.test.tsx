@@ -43,6 +43,7 @@ function plan(
   offer: [number, string] | null,
   limits: [number, number, number],
   tier: 0 | 1 | 2,
+  yearly: number | null = null,
 ): AdminPlan {
   return {
     id: `019a0000-0000-7000-8000-00000000000${sortOrder + 1}`,
@@ -53,6 +54,10 @@ function plan(
     originalPriceBdt: price,
     offerPriceBdt: offer?.[0] ?? null,
     offerBadge: offer?.[1] ?? null,
+    yearlyMonthlyPriceBdt: yearly,
+    // PW-T1b seed: the sign-up trial lives on Starter only.
+    trialDays: slug === 'starter' ? 7 : null,
+    trialCommentLimit: slug === 'starter' ? 300 : null,
     featureConfig: {
       limits: { connectedPages: limits[0], monthlyComments: limits[1], teamSeats: limits[2], workspaces: limits[2] },
       features: {
@@ -70,14 +75,14 @@ function plan(
   }
 }
 
-// As seeded by 0007 + the 0008 launch offers.
+// As seeded by 0007 + the 0008 launch offers + PW-T1b (yearly prices, Starter trial). The GET lists
+// active plans only, so the deactivated Free row (PW-D7) never reaches the screen.
 const seeded = [
-  plan(0, 'free', 'Free', 0, null, [1, 500, 1], 0),
-  plan(1, 'starter', 'Starter', 999, [499, '50% Launch Offer'], [1, 2500, 1], 0),
-  plan(2, 'growth', 'Growth', 2499, [1499, '40% Off'], [5, 15000, 3], 1),
-  plan(3, 'pro', 'Pro', 5999, [3999, '33% Off'], [25, 75000, 10], 2),
+  plan(1, 'starter', 'Starter', 999, [499, '50% Launch Offer'], [1, 2500, 1], 0, 449),
+  plan(2, 'growth', 'Growth', 2499, [1499, '40% Off'], [5, 15000, 3], 1, 1349),
+  plan(3, 'pro', 'Pro', 5999, [3999, '33% Off'], [25, 75000, 10], 2, 3599),
 ] as const satisfies AdminPlan[]
-const starter: AdminPlan = seeded[1]
+const starter: AdminPlan = seeded[0]
 
 const rootAdmin = { id: 'u1', name: 'Root Admin', email: 'root@shield.bd' }
 
@@ -224,16 +229,16 @@ describe('/admin/settings', () => {
   it('renders one card per plan in sortOrder with name, slug, prices, limits and features', async () => {
     // The API orders by sortOrder; the screen keeps that order.
     renderSettings()
-    await card('Free')
+    await card('Starter')
     const cards = screen.getAllByTestId('plan-card')
+    // Free is retired (PW-D7): not in the API list, no card.
     expect(cards.map((c) => within(c).getByRole('heading', { level: 2 }).textContent)).toEqual([
-      'Free',
       'Starter',
       'Growth',
       'Pro',
     ])
+    expect(screen.queryByRole('region', { name: 'Free' })).toBeNull()
     expect(cards.map((c) => within(c).getByText(/^(free|starter|growth|pro)$/).textContent)).toEqual([
-      'free',
       'starter',
       'growth',
       'pro',
@@ -260,10 +265,10 @@ describe('/admin/settings', () => {
     expect(within(pro).getByTestId('preview-price').textContent).toBe('৳3,999')
     expect(input(pro, 'Original price').className).toContain('rounded-full')
 
-    const free = await card('Free')
-    expect(within(free).getByRole('switch', { name: 'White-Label CSV/PDF Agency Reports' }).getAttribute('aria-checked')).toBe('false')
-    expect(saveButton(free).disabled).toBe(true)
-    expect(within(free).getByRole('button', { name: 'Reset' })).toHaveProperty('disabled', true)
+    const growth = await card('Growth')
+    expect(within(growth).getByRole('switch', { name: 'White-Label CSV/PDF Agency Reports' }).getAttribute('aria-checked')).toBe('false')
+    expect(saveButton(growth).disabled).toBe(true)
+    expect(within(growth).getByRole('button', { name: 'Reset' })).toHaveProperty('disabled', true)
     expect(calls('GET', PLANS)).toHaveLength(1)
   })
 
@@ -363,7 +368,12 @@ describe('/admin/settings', () => {
     expect(within(region).getByText('Use a whole number (digits only).')).toBeTruthy()
     expect(saveButton(region).disabled).toBe(true)
 
+    // Below the stored yearly per-month price (৳449): the yearly field is flagged (backend rule).
     type(input(region, 'Offer price'), '399')
+    expect(within(region).getByText("Can't be more than the monthly price (৳399).")).toBeTruthy()
+    expect(input(region, 'Yearly price per month').getAttribute('aria-invalid')).toBe('true')
+    expect(saveButton(region).disabled).toBe(true)
+    type(input(region, 'Yearly price per month'), '399')
     expect(saveButton(region).disabled).toBe(false)
 
     type(input(region, 'Monthly comments'), '10000001')
@@ -394,10 +404,10 @@ describe('/admin/settings', () => {
   it('a 404 toasts and refreshes the list', async () => {
     patchHandler = () => json({ statusCode: 404, message: 'Plan not found' }, 404)
     renderSettings()
-    const region = await card('Free')
-    type(input(region, 'Team / Moderator Seats'), '3')
+    const region = await card('Growth')
+    type(input(region, 'Team / Moderator Seats'), '4')
     fireEvent.click(saveButton(region))
-    expect(await screen.findByText('Free no longer exists.')).toBeTruthy()
+    expect(await screen.findByText('Growth no longer exists.')).toBeTruthy()
     await waitFor(() => expect(calls('GET', PLANS)).toHaveLength(2))
   })
 
@@ -405,10 +415,10 @@ describe('/admin/settings', () => {
     let release: (res: Response) => void = () => {}
     listHandler = () => new Promise<Response>((resolve) => (release = resolve))
     renderSettings()
-    expect((await screen.findAllByTestId('plan-skeleton')).length).toBe(4)
+    expect((await screen.findAllByTestId('plan-skeleton')).length).toBe(3)
     expect(screen.queryAllByTestId('plan-card')).toHaveLength(0)
     await act(async () => release(json({ items: seeded })))
-    expect(await card('Free')).toBeTruthy()
+    expect(await card('Starter')).toBeTruthy()
     expect(screen.queryAllByTestId('plan-skeleton')).toHaveLength(0)
   })
 
@@ -463,11 +473,137 @@ describe('/admin/settings', () => {
   })
 })
 
+describe('/admin/settings yearly price + trial (PW-T7)', () => {
+  const trialGroup = (region: HTMLElement) => within(region).getByRole('radiogroup', { name: 'Trial length' })
+  const hintOf = (el: HTMLElement) =>
+    (document.getElementById(el.getAttribute('aria-describedby') as string) as HTMLElement).textContent
+
+  it('shows the yearly per-month price on every plan and the trial fields on Starter only', async () => {
+    renderSettings()
+    const starterCard = await card('Starter')
+    const yearly = input(starterCard, 'Yearly price per month')
+    expect(yearly.value).toBe('449')
+    expect(hintOf(yearly)).toBe('Billed ৳5,388 yearly.')
+    expect(input(await card('Pro'), 'Yearly price per month').value).toBe('3599')
+    expect(hintOf(input(await card('Pro'), 'Yearly price per month'))).toBe(
+      `Billed ৳${new Intl.NumberFormat('en-BD').format(43_188)} yearly.`,
+    )
+
+    const radios = within(trialGroup(starterCard)).getAllByRole('radio')
+    expect(radios.map((r) => r.textContent)).toEqual(['No trial', '3 days', '7 days', '14 days', '30 days'])
+    expect(radios.map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'false', 'true', 'false', 'false'])
+    expect(radios[2]?.className).toContain('rounded-full')
+    expect(within(starterCard).getByText('Changes apply to new trials only.')).toBeTruthy()
+    const trialLimit = input(starterCard, 'Trial comment limit')
+    expect(trialLimit.value).toBe('300')
+    expect(hintOf(trialLimit)).toBe(`Empty = Starter's monthly comments (${new Intl.NumberFormat('en-BD').format(2500)}).`)
+
+    for (const name of ['Growth', 'Pro']) {
+      const region = await card(name)
+      expect(within(region).queryByRole('radiogroup')).toBeNull()
+      expect(within(region).queryByLabelText('Trial comment limit')).toBeNull()
+      expect(within(region).queryByTestId('trial-section')).toBeNull()
+    }
+  })
+
+  it('clearing yearly, picking No trial and emptying the trial limit PATCHes null for each', async () => {
+    let saved: AdminPlan | undefined
+    patchHandler = (_id, body) => {
+      saved = { ...starter, ...(body as Partial<AdminPlan>), updatedAt: '2026-11-20T09:00:00.000Z' }
+      return json({ plan: saved })
+    }
+    listHandler = () => json({ items: seeded.map((p): AdminPlan => (saved && p.id === saved.id ? saved : p)) })
+    renderSettings()
+    const region = await card('Starter')
+    type(input(region, 'Yearly price per month'), '')
+    expect(hintOf(input(region, 'Yearly price per month'))).toBe('Empty = no yearly option.')
+    fireEvent.click(within(trialGroup(region)).getByRole('radio', { name: 'No trial' }))
+    type(input(region, 'Trial comment limit'), '  ')
+    expect(region.dataset.dirty).toBe('true')
+    fireEvent.click(saveButton(region))
+    await waitFor(() => expect(calls('PATCH')).toHaveLength(1))
+    expect(JSON.parse(String(calls('PATCH')[0]?.[1]?.body))).toEqual({
+      yearlyMonthlyPriceBdt: null,
+      trialDays: null,
+      trialCommentLimit: null,
+    })
+    await waitFor(() => expect(region.dataset.dirty).toBeUndefined())
+    expect(within(trialGroup(region)).getByRole('radio', { name: 'No trial' }).getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('arrow keys move the trial preset; Save sends only the changed trial + yearly values', async () => {
+    patchHandler = (_id, body) => json({ plan: { ...starter, ...(body as Partial<AdminPlan>) } })
+    renderSettings()
+    const region = await card('Starter')
+    const group = trialGroup(region)
+    fireEvent.keyDown(within(group).getByRole('radio', { name: '7 days' }), { key: 'ArrowRight' })
+    expect(within(group).getByRole('radio', { name: '14 days' }).getAttribute('aria-checked')).toBe('true')
+    expect(document.activeElement?.textContent).toBe('14 days')
+    type(input(region, 'Trial comment limit'), '500')
+    type(input(region, 'Yearly price per month'), '450')
+    expect(hintOf(input(region, 'Yearly price per month'))).toBe('Billed ৳5,400 yearly.')
+    fireEvent.click(saveButton(region))
+    await waitFor(() => expect(calls('PATCH')).toHaveLength(1))
+    expect(JSON.parse(String(calls('PATCH')[0]?.[1]?.body))).toEqual({
+      yearlyMonthlyPriceBdt: 450,
+      trialDays: 14,
+      trialCommentLimit: 500,
+    })
+  })
+
+  it('a stored non-preset trial length still shows as the selected option', async () => {
+    listHandler = () => json({ items: seeded.map((p) => (p.id === starter.id ? { ...p, trialDays: 10 } : p)) })
+    renderSettings()
+    const group = trialGroup(await card('Starter'))
+    expect(within(group).getAllByRole('radio').map((r) => r.textContent)).toEqual([
+      'No trial',
+      '3 days',
+      '7 days',
+      '10 days',
+      '14 days',
+      '30 days',
+    ])
+    expect(within(group).getByRole('radio', { name: '10 days' }).getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('validates the yearly price and trial limit inline; Growth sends no trial fields', async () => {
+    patchHandler = (_id, body) => json({ plan: { ...seeded[1], ...(body as Partial<AdminPlan>) } })
+    renderSettings()
+    const starterCard = await card('Starter')
+    type(input(starterCard, 'Yearly price per month'), '500')
+    expect(within(starterCard).getByText("Can't be more than the monthly price (৳499).")).toBeTruthy()
+    type(input(starterCard, 'Trial comment limit'), '10000001')
+    expect(
+      within(starterCard).getByText(`Must be ${new Intl.NumberFormat('en-BD').format(10_000_000)} or less.`),
+    ).toBeTruthy()
+    expect(saveButton(starterCard).disabled).toBe(true)
+
+    const growth = await card('Growth')
+    type(input(growth, 'Yearly price per month'), '1299')
+    fireEvent.click(saveButton(growth))
+    await waitFor(() => expect(calls('PATCH')).toHaveLength(1))
+    expect(calls('PATCH')[0]?.[0]).toBe(`${PLANS}/${seeded[1].id}`)
+    expect(JSON.parse(String(calls('PATCH')[0]?.[1]?.body))).toEqual({ yearlyMonthlyPriceBdt: 1299 })
+  })
+
+  it('shows a 400 from the yearly rule as today', async () => {
+    patchHandler = () =>
+      json({ statusCode: 400, message: 'yearlyMonthlyPriceBdt (1500) must not be greater than the monthly price (1499)' }, 400)
+    renderSettings()
+    const region = await card('Growth')
+    type(input(region, 'Yearly price per month'), '1400')
+    fireEvent.click(saveButton(region))
+    expect((await within(region).findByRole('alert')).textContent).toBe(
+      'yearlyMonthlyPriceBdt (1500) must not be greater than the monthly price (1499)',
+    )
+    expect(input(region, 'Yearly price per month').value).toBe('1400')
+  })
+})
+
 describe('/admin/settings price preview', () => {
   it('shows the seeded launch offers struck through with badge and saving', async () => {
     renderSettings()
     const expected = [
-      ['Free', null, '৳0', null, null],
       ['Starter', '৳999', '৳499', '50% Launch Offer', 'Saves 50%'],
       ['Growth', '৳2,499', '৳1,499', '40% Off', 'Saves 40%'],
       ['Pro', '৳5,999', '৳3,999', '33% Off', 'Saves 33%'],
@@ -516,7 +652,7 @@ describe('/admin/settings change history', () => {
               ],
             }),
             auditEntry(1, {
-              plan: { id: seeded[3].id, slug: 'pro', name: 'Pro' },
+              plan: { id: seeded[2].id, slug: 'pro', name: 'Pro' },
               admin: { id: 'u2', name: 'Ops Admin', email: 'ops@shield.bd' },
               ip: null,
               userAgent: null,
@@ -603,7 +739,7 @@ describe('/admin/settings change history', () => {
   it('filters by plan and goes back to the first page', async () => {
     auditHandler = (url) => {
       const planId = url.searchParams.get('planId')
-      if (planId === seeded[2].id) return json(auditPage([], url))
+      if (planId === seeded[1].id) return json(auditPage([], url))
       if (planId === starter.id) return json(auditPage([auditEntry(7)], url))
       const skip = Number(url.searchParams.get('skip'))
       return json(auditPage(Array.from({ length: Math.min(20, 30 - skip) }, (_, i) => auditEntry(skip + i + 100)), url, 30))
@@ -614,7 +750,6 @@ describe('/admin/settings change history', () => {
     const filter = within(panel).getByRole('group', { name: 'Filter by plan' })
     expect(within(filter).getAllByRole('button').map((b) => b.textContent)).toEqual([
       'All plans',
-      'Free',
       'Starter',
       'Growth',
       'Pro',
@@ -633,7 +768,7 @@ describe('/admin/settings change history', () => {
     fireEvent.click(within(filter).getByRole('button', { name: 'Growth' }))
     expect(await within(panel).findByRole('heading', { name: 'No changes to Growth yet' })).toBeTruthy()
     expect(within(panel).queryByRole('navigation')).toBeNull()
-    expect(auditCalls().at(-1)).toEqual({ skip: '0', take: '20', planId: seeded[2].id })
+    expect(auditCalls().at(-1)).toEqual({ skip: '0', take: '20', planId: seeded[1].id })
   })
 
   it('shows skeletons, then the empty state', async () => {
@@ -668,14 +803,14 @@ describe('/admin/settings change history', () => {
     let saved = false
     patchHandler = () => {
       saved = true
-      const growth = seeded[2]
+      const growth = seeded[1]
       return json({ plan: { ...growth, featureConfig: { ...growth.featureConfig, limits: { ...growth.featureConfig.limits, teamSeats: 4 } } } })
     }
     auditHandler = (url) =>
       json(
         auditPage(
           saved
-            ? [auditEntry(9, { id: 'new-entry', plan: { id: seeded[2].id, slug: 'growth', name: 'Growth' }, changes: [{ field: 'featureConfig.limits.teamSeats', before: 3, after: 4 }] })]
+            ? [auditEntry(9, { id: 'new-entry', plan: { id: seeded[1].id, slug: 'growth', name: 'Growth' }, changes: [{ field: 'featureConfig.limits.teamSeats', before: 3, after: 4 }] })]
             : [],
           url,
         ),

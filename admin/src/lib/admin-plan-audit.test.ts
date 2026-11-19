@@ -30,6 +30,12 @@ describe('planAuditFieldLabel', () => {
     )
   })
 
+  it('labels the PW-T7 yearly and trial fields', () => {
+    expect(planAuditFieldLabel('yearlyMonthlyPriceBdt')).toBe('Yearly price per month')
+    expect(planAuditFieldLabel('trialDays')).toBe('Trial length')
+    expect(planAuditFieldLabel('trialCommentLimit')).toBe('Trial comment limit')
+  })
+
   it('falls back to the raw field for anything unknown', () => {
     expect(planAuditFieldLabel('featureConfig.limits.storageGb')).toBe('featureConfig.limits.storageGb')
     expect(planAuditFieldLabel('featureConfig.features.toString')).toBe('featureConfig.features.toString')
@@ -48,6 +54,15 @@ describe('formatPlanAuditValue', () => {
     expect(formatPlanAuditValue('offerPriceBdt', null)).toBe('None')
     expect(formatPlanAuditValue('offerBadge', null)).toBe('None')
     expect(formatPlanAuditValue('offerBadge', undefined)).toBe('None')
+  })
+
+  it('formats the yearly price, trial length and trial limit, with their own null wording', () => {
+    expect(formatPlanAuditValue('yearlyMonthlyPriceBdt', 449)).toBe('৳449')
+    expect(formatPlanAuditValue('yearlyMonthlyPriceBdt', null)).toBe('No yearly option')
+    expect(formatPlanAuditValue('trialDays', 7)).toBe('7 days')
+    expect(formatPlanAuditValue('trialDays', null)).toBe('No trial')
+    expect(formatPlanAuditValue('trialCommentLimit', 1500)).toBe(group(1500))
+    expect(formatPlanAuditValue('trialCommentLimit', null)).toBe('Monthly comments')
   })
 
   it('quotes badges, groups limits and maps flags to On/Off', () => {

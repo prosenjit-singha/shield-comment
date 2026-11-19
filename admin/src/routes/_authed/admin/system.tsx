@@ -394,9 +394,9 @@ const aiWindowLabels: Record<AiWindowKey, string> = { today: 'Today', last7Days:
 const count = (n: number) => n.toLocaleString('en-US')
 
 /**
- * A6 "AI moderation" (M5-T14, D14): platform-wide classification calls, tokens, credits, cost
- * estimate (USD + ৳), latency and failures for today or the last 7 Dhaka days, per provider +
- * model. `ai` undefined = loading, `null` = the backend couldn't read the usage.
+ * A6 "AI moderation" (M5-T14, D14): platform-wide classification calls, tokens, cost estimate
+ * (USD + ৳), latency and failures for today or the last 7 Dhaka days, per provider + model (no
+ * credits since PW-T6b/PW-T7: the limit is monthly comments, shown per client on A3). `ai` undefined = loading, `null` = the backend couldn't read the usage.
  */
 function AiUsageCard({ ai }: { ai: AiUsageReport | null | undefined }) {
   const [windowKey, setWindowKey] = useState<AiWindowKey>('today')
@@ -449,7 +449,7 @@ function AiWindowView({ window: w, rate }: { window: AiUsageWindow; rate: number
         <div className="flex flex-col items-center gap-2 rounded-2xl bg-muted px-6 py-10 text-center">
           <h3 className="text-sm font-semibold">No AI calls yet</h3>
           <p className="max-w-md text-sm text-balance text-muted-foreground">
-            Classification calls, tokens, credits and cost show here once moderation runs on connected pages.
+            Classification calls, tokens and cost show here once moderation runs on connected pages.
           </p>
         </div>
       ) : (
@@ -462,9 +462,6 @@ function AiWindowView({ window: w, rate }: { window: AiUsageWindow; rate: number
               <span data-testid="ai-failed" className={t.failedCalls > 0 ? 'text-destructive' : undefined}>
                 {count(t.failedCalls)}
               </span>
-            </Fact>
-            <Fact label="Credits charged">
-              <span data-testid="ai-credits">{count(t.credits)}</span>
             </Fact>
             <Fact label="Tokens in / out">
               <span data-testid="ai-tokens" title={`${count(t.inputTokens)} / ${count(t.outputTokens)}`}>
@@ -530,9 +527,6 @@ function AiWindowView({ window: w, rate }: { window: AiUsageWindow; rate: number
                   <th scope="col" className="px-2 py-2 text-right font-medium whitespace-nowrap">
                     Tokens in / out
                   </th>
-                  <th scope="col" className="px-2 py-2 text-right font-medium">
-                    Credits
-                  </th>
                   <th scope="col" className="px-2 py-2 text-right font-medium whitespace-nowrap">
                     Avg / max
                   </th>
@@ -562,7 +556,6 @@ function AiWindowView({ window: w, rate }: { window: AiUsageWindow; rate: number
                     <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums">
                       {formatTokens(m.inputTokens)} / {formatTokens(m.outputTokens)}
                     </td>
-                    <td className="px-2 py-2.5 text-right tabular-nums">{count(m.credits)}</td>
                     <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums">
                       {formatCallLatency(m.avgLatencyMs)} / {formatCallLatency(m.maxLatencyMs)}
                     </td>

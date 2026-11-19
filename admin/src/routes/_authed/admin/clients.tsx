@@ -41,17 +41,18 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   type AdminClient,
-  type ClientCredits,
-  type ClientPlan,
+  type ClientComments,
   type ClientSort,
   type ClientStatus,
   CLIENTS_PAGE_SIZE,
   type ClientsSearch,
   clientsQueryOptions,
-  creditPercent,
-  formatCreditPeriod,
+  commentUsage,
   formatDhakaDate,
   NO_PLAN,
+  type SubscriptionTone,
+  subscriptionBadge,
+  subscriptionIntervalLabels,
   validateClientsSearch,
 } from '@/lib/admin-clients'
 import { plansQueryOptions } from '@/lib/admin-plans'
@@ -109,7 +110,7 @@ function ClientsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Clients"
-        description="Every F-commerce workspace on ShieldComment, with plan, AI credits this month and status."
+        description="Every F-commerce workspace on ShieldComment, with plan, subscription status, monthly comments and status."
       />
 
       <section
@@ -136,7 +137,7 @@ function ClientsPage() {
                   <TableHead className="pl-4">Client</TableHead>
                   <TableHead>Owner</TableHead>
                   <TableHead>Plan</TableHead>
-                  <TableHead>Credits</TableHead>
+                  <TableHead>Comments</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className={`${stickyActions} pr-4 text-right`}>
@@ -198,7 +199,7 @@ function Toolbar({
     planValue === ANY_PLAN
       ? 'All plans'
       : planValue === NO_PLAN
-        ? 'No plan'
+        ? 'No active plan'
         : (plans.data?.find((p) => p.slug === planValue)?.name ?? planValue)
 
   return (
@@ -243,7 +244,7 @@ function Toolbar({
                 onValueChange={(value) => setFilters({ plan: value === ANY_PLAN ? undefined : value })}
               >
                 <DropdownMenuRadioItem value={ANY_PLAN}>All plans</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value={NO_PLAN}>No plan</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value={NO_PLAN}>No active plan</DropdownMenuRadioItem>
                 {plans.data && plans.data.length > 0 && <DropdownMenuSeparator />}
                 {plans.data?.map((plan) => (
                   <DropdownMenuRadioItem key={plan.id} value={plan.slug}>
@@ -367,10 +368,10 @@ function ClientRow({
         )}
       </TableCell>
       <TableCell>
-        <PlanBadge plan={client.plan} />
+        <PlanCell client={client} />
       </TableCell>
       <TableCell>
-        <CreditsBar credits={client.credits} />
+        <CommentsBar comments={client.comments} />
       </TableCell>
       <TableCell>
         <StatusPill status={client.status} />
@@ -404,54 +405,79 @@ function ClientRow({
   )
 }
 
-/** The client's plan name (M2-T12b); a muted dash until Module 8 assigns plans. */
-function PlanBadge({ plan }: { plan: ClientPlan | null }) {
-  if (!plan) {
-    return (
-      <Badge variant="outline" className="text-muted-foreground" aria-label="Plan: none yet">
-        —
-      </Badge>
-    )
-  }
+const subscriptionToneClass: Record<SubscriptionTone, string> = {
+  trial: 'bg-chart-4/15 text-foreground',
+  active: 'bg-primary/10 text-primary',
+  ended: 'bg-destructive/10 text-destructive',
+  none: 'bg-muted text-muted-foreground',
+}
+
+/**
+ * Plan · interval · subscription badge (PW-T7, plan §3.7). `plan` is the live plan only (a trial
+ * = Starter), so an ended subscription shows a muted dash + Expired / Canceled. The interval
+ * shows for a paid live plan (a trial has no billing interval yet).
+ */
+function PlanCell({ client }: { client: AdminClient }) {
+  const { plan, subscription } = client
+  const badge = subscriptionBadge(subscription)
+  const interval =
+    plan && subscription?.status === 'ACTIVE' ? subscriptionIntervalLabels[subscription.interval] : null
   return (
-    <Badge variant="outline" className="max-w-28" title={plan.name} aria-label={`Plan: ${plan.name}`}>
-      <span className="truncate">{plan.name}</span>
-    </Badge>
+    <div className="flex flex-col items-start gap-1.5">
+      <div className="flex items-center gap-1.5 whitespace-nowrap">
+        {plan ? (
+          <Badge variant="outline" className="max-w-28" title={plan.name} aria-label={`Plan: ${plan.name}`}>
+            <span className="truncate">{plan.name}</span>
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="text-muted-foreground" aria-label="Plan: no active plan">
+            —
+          </Badge>
+        )}
+        {interval && (
+          <span data-testid="plan-interval" className="text-xs text-muted-foreground">
+            {interval}
+          </span>
+        )}
+      </div>
+      <span
+        data-testid="subscription-badge"
+        data-tone={badge.tone}
+        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${subscriptionToneClass[badge.tone]}`}
+      >
+        {badge.label}
+      </span>
+    </div>
   )
 }
 
 /**
- * AI credits this Dhaka month (M5-T14, D15): `used / limit`, bar capped at 100 %. `null` (the
- * backend couldn't read the usage) keeps the empty placeholder bar.
+ * Monthly comments this wallet period (PW-T7, plan §3.7): `used / limit · resets 15 Dec` (Dhaka
+ * day), bar capped at 100 %. No live plan → "No active plan" instead of a bar; `null` (the backend
+ * couldn't read the wallet) → "Usage unavailable".
  */
-function CreditsBar({ credits }: { credits: ClientCredits | null }) {
-  if (!credits) {
+function CommentsBar({ comments }: { comments: ClientComments | null }) {
+  const usage = commentUsage(comments)
+  if (usage.kind !== 'bar') {
     return (
-      <div className="flex w-28 flex-col gap-1.5" data-testid="credits-bar">
-        <Progress value={0} aria-label="AI credits used" aria-valuetext="Not available" className="h-1.5" />
-        <span className="text-xs text-muted-foreground">No data yet</span>
-      </div>
+      <span data-testid="comments-bar" className="text-xs whitespace-nowrap text-muted-foreground">
+        {usage.label}
+      </span>
     )
   }
-  const percent = creditPercent(credits)
-  const label = `${credits.used.toLocaleString('en-US')} / ${credits.limit.toLocaleString('en-US')}`
-  const period = formatCreditPeriod(credits.period)
-  const over = credits.limit > 0 ? credits.used >= credits.limit : credits.used > 0
+  const text = usage.resets ? `${usage.label} · ${usage.resets}` : usage.label
   return (
-    <div
-      className="flex w-28 flex-col gap-1.5"
-      data-testid="credits-bar"
-      title={`${label} AI credits used in ${period} (Dhaka time)`}
-    >
+    <div className="flex w-32 flex-col gap-1.5" data-testid="comments-bar" title={`${text} (Dhaka time)`}>
       <Progress
-        value={percent}
-        aria-label="AI credits used"
-        aria-valuenow={Math.round(percent)}
-        aria-valuetext={`${label} credits in ${period}`}
-        className={`h-1.5 ${over ? '[&>[data-slot=progress-indicator]]:bg-destructive' : ''}`}
+        value={usage.percent}
+        aria-label="Monthly comments used"
+        aria-valuenow={Math.round(usage.percent)}
+        aria-valuetext={`${usage.label} comments${usage.resets ? `, ${usage.resets}` : ''}`}
+        className={`h-1.5 ${usage.over ? '[&>[data-slot=progress-indicator]]:bg-destructive' : ''}`}
       />
-      <span className={`text-xs tabular-nums ${over ? 'text-destructive' : 'text-muted-foreground'}`}>
-        {label}
+      <span data-testid="comments-text" className="text-xs whitespace-nowrap">
+        <span className={`tabular-nums ${usage.over ? 'text-destructive' : ''}`}>{usage.label}</span>
+        {usage.resets && <span className="text-muted-foreground"> · {usage.resets}</span>}
       </span>
     </div>
   )

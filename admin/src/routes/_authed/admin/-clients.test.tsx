@@ -27,9 +27,10 @@ const acme: AdminClient = {
   status: 'ACTIVE',
   createdAt: '2026-11-17T20:30:00.000Z', // 18 Nov in Dhaka
   plan: { id: '0199a000-0000-7000-8000-0000000000b3', slug: 'growth', name: 'Growth' },
+  subscription: { status: 'ACTIVE', interval: 'year', trialEndsAt: null, termEndsAt: '2027-11-14T18:00:00.000Z' },
+  comments: { used: 4200, limit: 15_000, resetsAt: '2026-12-14T18:00:00.000Z' }, // 15 Dec in Dhaka
   owner: { id: 'o1', email: 'rahim@acme.bd', name: 'Rahim Uddin' },
   memberCount: 3,
-  credits: { used: 4200, limit: 15_000, period: '2026-11' },
 }
 const bazaar: AdminClient = {
   id: '0199a000-0000-7000-8000-000000000002',
@@ -38,9 +39,10 @@ const bazaar: AdminClient = {
   status: 'SUSPENDED',
   createdAt: '2026-10-01T06:00:00.000Z',
   plan: null,
+  subscription: null,
+  comments: null,
   owner: { id: 'o2', email: 'karim@bazaar.bd', name: 'Karim' },
   memberCount: 1,
-  credits: null,
 }
 const list: ClientList = { items: [acme, bazaar], total: 2, skip: 0, take: 20 }
 /** `GET /api/admin/settings/plans` (only the fields the plan filter reads). */
@@ -129,67 +131,133 @@ describe('/admin/clients list', () => {
     expect(params?.has('q')).toBe(false)
 
     expect(row('Acme Fashion').getByText('rahim@acme.bd')).toBeTruthy()
-    expect(row('Acme Fashion').getByText('Active')).toBeTruthy()
+    // Workspace status pill + the (ACTIVE) subscription badge.
+    expect(row('Acme Fashion').getAllByText('Active')).toHaveLength(2)
     expect(row('Acme Fashion').getByText('18 Nov 2026')).toBeTruthy() // Dhaka date
     expect(row('Bazaar BD').getByText('Suspended')).toBeTruthy()
     expect(screen.getByText('1–2 of 2 clients')).toBeTruthy()
   })
 
-  it('shows the plan name, a muted dash for no plan, and the credits bar column', async () => {
+  it('shows plan · interval · status badge and the comments column (no credits)', async () => {
     await renderList()
     expect(row('Acme Fashion').getByLabelText('Plan: Growth').textContent).toBe('Growth')
-    expect(row('Bazaar BD').getByLabelText('Plan: none yet').textContent).toBe('—')
-    expect(screen.getAllByLabelText('Plan: none yet')).toHaveLength(1)
-    expect(screen.getAllByTestId('credits-bar')).toHaveLength(2)
-    expect(screen.getAllByRole('columnheader').map((th) => th.textContent)).toContain('Credits')
+    expect(row('Acme Fashion').getByTestId('plan-interval').textContent).toBe('Yearly')
+    expect(row('Acme Fashion').getByTestId('subscription-badge').textContent).toBe('Active')
+    expect(row('Bazaar BD').getByLabelText('Plan: no active plan').textContent).toBe('—')
+    expect(row('Bazaar BD').queryByTestId('plan-interval')).toBeNull()
+    expect(row('Bazaar BD').getByTestId('subscription-badge').textContent).toBe('No plan')
+    expect(screen.getAllByRole('columnheader').map((th) => th.textContent)).toContain('Comments')
+    expect(screen.queryByRole('columnheader', { name: 'Credits' })).toBeNull()
     expect(screen.queryByRole('columnheader', { name: 'Quota' })).toBeNull()
-    expect(screen.getByText(/with plan, AI credits this month and status/)).toBeTruthy()
+    expect(screen.getByText(/subscription status, monthly comments and status/)).toBeTruthy()
+    expect(screen.queryByText(/credit/i)).toBeNull()
   })
 
-  it('shows used / limit credits this month with the period in the bar label', async () => {
+  it('shows "used / limit · resets <Dhaka day>" in the comments bar', async () => {
     await renderList()
-    const bar = row('Acme Fashion').getByRole('progressbar', { name: 'AI credits used' })
+    const bar = row('Acme Fashion').getByRole('progressbar', { name: 'Monthly comments used' })
     expect(bar.getAttribute('aria-valuenow')).toBe('28')
-    expect(bar.getAttribute('aria-valuetext')).toBe('4,200 / 15,000 credits in November 2026')
-    expect(row('Acme Fashion').getByText('4,200 / 15,000')).toBeTruthy()
-    const wrapper = row('Acme Fashion').getByTestId('credits-bar')
-    expect(wrapper.getAttribute('title')).toBe('4,200 / 15,000 AI credits used in November 2026 (Dhaka time)')
-    expect(row('Acme Fashion').getByText('4,200 / 15,000').className).toContain('text-muted-foreground')
+    expect(bar.getAttribute('aria-valuetext')).toBe('4,200 / 15,000 comments, resets 15 Dec')
+    expect(row('Acme Fashion').getByTestId('comments-text').textContent).toBe('4,200 / 15,000 · resets 15 Dec')
+    expect(row('Acme Fashion').getByText('4,200 / 15,000').className).not.toContain('text-destructive')
+    expect(row('Acme Fashion').getByTestId('comments-bar').getAttribute('title')).toBe(
+      '4,200 / 15,000 · resets 15 Dec (Dhaka time)',
+    )
   })
 
-  it('keeps the empty placeholder bar when credits are null', async () => {
-    await renderList()
-    const bar = row('Bazaar BD').getByRole('progressbar', { name: 'AI credits used' })
-    expect(bar.getAttribute('aria-valuetext')).toBe('Not available')
-    expect(row('Bazaar BD').getByText('No data yet')).toBeTruthy()
-    expect(row('Bazaar BD').queryByText(/ \/ /)).toBeNull()
-  })
-
-  it('caps the bar at 100 % when usage passes the limit and handles a 0 limit', async () => {
+  it('shows trial / active / expired / canceled / no account rows', async () => {
+    const at = (n: number) => `0199a000-0000-7000-8000-00000000001${n}`
     handlers['GET /api/admin/clients'] = () =>
       json({
         ...list,
+        total: 5,
         items: [
-          { ...acme, credits: { used: 16_500, limit: 15_000, period: '2026-11' } },
-          { ...bazaar, credits: { used: 0, limit: 0, period: '2026-11' } },
+          {
+            ...acme,
+            id: at(1),
+            name: 'Trial Shop',
+            plan: { id: 'p-starter', slug: 'starter', name: 'Starter' },
+            // 25 Nov 19:30 UTC = 26 Nov 01:30 in Dhaka.
+            subscription: {
+              status: 'TRIALING',
+              interval: 'month',
+              trialEndsAt: '2026-11-25T19:30:00.000Z',
+              termEndsAt: '2026-11-25T19:30:00.000Z',
+            },
+            comments: { used: 120, limit: 300, resetsAt: '2026-11-25T19:30:00.000Z' },
+          },
+          {
+            ...acme,
+            id: at(2),
+            name: 'Paid Shop',
+            plan: { id: 'p-pro', slug: 'pro', name: 'Pro' },
+            subscription: { status: 'ACTIVE', interval: 'month', trialEndsAt: null, termEndsAt: '2026-12-14T18:00:00.000Z' },
+            comments: { used: 1234, limit: 2500, resetsAt: '2026-12-14T18:00:00.000Z' },
+          },
+          {
+            ...acme,
+            id: at(3),
+            name: 'Expired Shop',
+            plan: null,
+            subscription: {
+              status: 'EXPIRED',
+              interval: 'month',
+              trialEndsAt: '2026-11-10T06:00:00.000Z',
+              termEndsAt: '2026-11-10T06:00:00.000Z',
+            },
+            comments: { used: 0, limit: 0, resetsAt: null },
+          },
+          {
+            ...acme,
+            id: at(4),
+            name: 'Canceled Shop',
+            plan: null,
+            subscription: { status: 'CANCELED', interval: 'year', trialEndsAt: null, termEndsAt: '2026-11-10T06:00:00.000Z' },
+            comments: { used: 0, limit: 0, resetsAt: null },
+          },
+          { ...bazaar, id: at(5), name: 'No Account Shop', comments: { used: 0, limit: 0, resetsAt: null } },
         ],
       })
-    await renderList()
-    const over = row('Acme Fashion').getByRole('progressbar', { name: 'AI credits used' })
-    expect(over.getAttribute('aria-valuenow')).toBe('100')
-    expect(row('Acme Fashion').getByText('16,500 / 15,000').className).toContain('text-destructive')
+    renderAt('/admin/clients')
+    await screen.findByText('Trial Shop')
 
-    const zero = row('Bazaar BD').getByRole('progressbar', { name: 'AI credits used' })
-    expect(zero.getAttribute('aria-valuenow')).toBe('0')
-    expect(zero.getAttribute('aria-valuetext')).toBe('0 / 0 credits in November 2026')
-    expect(row('Bazaar BD').getByText('0 / 0')).toBeTruthy()
+    expect(row('Trial Shop').getByLabelText('Plan: Starter')).toBeTruthy()
+    expect(row('Trial Shop').queryByTestId('plan-interval')).toBeNull() // a trial has no billing interval
+    expect(row('Trial Shop').getByTestId('subscription-badge').textContent).toBe('Trial ends 26 Nov')
+    expect(row('Trial Shop').getByTestId('comments-text').textContent).toBe('120 / 300 · resets 26 Nov')
+
+    expect(row('Paid Shop').getByTestId('plan-interval').textContent).toBe('Monthly')
+    expect(row('Paid Shop').getByTestId('subscription-badge').textContent).toBe('Active')
+    expect(row('Paid Shop').getByTestId('comments-text').textContent).toBe('1,234 / 2,500 · resets 15 Dec')
+
+    for (const [name, badge] of [
+      ['Expired Shop', 'Expired'],
+      ['Canceled Shop', 'Canceled'],
+      ['No Account Shop', 'No plan'],
+    ] as const) {
+      expect(row(name).getByLabelText('Plan: no active plan').textContent).toBe('—')
+      expect(row(name).getByTestId('subscription-badge').textContent).toBe(badge)
+      // No live plan: text instead of a bar.
+      expect(row(name).queryByRole('progressbar')).toBeNull()
+      expect(row(name).getByTestId('comments-bar').textContent).toBe('No active plan')
+    }
   })
 
-  it('shows the muted dash on every row while no client has a plan', async () => {
-    handlers['GET /api/admin/clients'] = () =>
-      json({ ...list, items: list.items.map((c) => ({ ...c, plan: null })) })
+  it('shows "Usage unavailable" when comments are null', async () => {
     await renderList()
-    expect(screen.getAllByLabelText('Plan: none yet').map((b) => b.textContent)).toEqual(['—', '—'])
+    expect(row('Bazaar BD').queryByRole('progressbar')).toBeNull()
+    expect(row('Bazaar BD').getByTestId('comments-bar').textContent).toBe('Usage unavailable')
+  })
+
+  it('caps the bar at 100 % when usage passes the limit', async () => {
+    handlers['GET /api/admin/clients'] = () =>
+      json({ ...list, items: [{ ...acme, comments: { used: 16_500, limit: 15_000, resetsAt: null } }, bazaar] })
+    await renderList()
+    const over = row('Acme Fashion').getByRole('progressbar', { name: 'Monthly comments used' })
+    expect(over.getAttribute('aria-valuenow')).toBe('100')
+    expect(over.getAttribute('aria-valuetext')).toBe('16,500 / 15,000 comments')
+    expect(row('Acme Fashion').getByText('16,500 / 15,000').className).toContain('text-destructive')
+    expect(row('Acme Fashion').getByTestId('comments-text').textContent).toBe('16,500 / 15,000')
   })
 
   it('filters by plan (slug or none) through ?plan= and the API query', async () => {
@@ -204,10 +272,10 @@ describe('/admin/clients list', () => {
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
 
     fireEvent.keyDown(screen.getByRole('button', { name: 'Plan: Growth' }), { key: 'Enter' })
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'No plan' }))
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'No active plan' }))
     await waitFor(() => expect(lastListCall()?.get('plan')).toBe('none'))
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
-    expect(screen.getByRole('button', { name: 'Plan: No plan' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Plan: No active plan' })).toBeTruthy()
 
     fireEvent.click(screen.getAllByRole('button', { name: /Clear filters/ })[0]!)
     await waitFor(() => expect(router.state.location.search).toEqual({}))

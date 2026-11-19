@@ -68,8 +68,6 @@ export interface AiUsageStats {
   failuresByKind: Record<string, number>
   inputTokens: number
   outputTokens: number
-  /** Workspace credits charged for these calls. */
-  credits: number
   /** `null` without calls. */
   avgLatencyMs: number | null
   maxLatencyMs: number | null

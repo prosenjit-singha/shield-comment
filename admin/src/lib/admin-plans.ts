@@ -7,7 +7,10 @@ import { apiFetch } from '@/lib/api'
  *
  * - `GET /api/admin/settings/plans` → `{ items }` ordered by `sortOrder` (any query param → 400).
  * - `PATCH /api/admin/settings/plans/:planId` (one plan per request, partial body) → `{ plan }`.
- *   400 = invalid / unknown field / nothing to update / offer > original; 404 = unknown plan.
+ *   400 = invalid / unknown field / nothing to update / offer > original / yearly per-month >
+ *   monthly price / trial field on a non-Starter plan; 404 = unknown plan.
+ *
+ * The GET lists **active** plans only: the deactivated `free` row (PW-D7) never shows up.
  */
 /**
  * `monthlyComments` (PW-D1) = comments per month, each comment counts 1; it replaced the M5-T11
@@ -45,6 +48,15 @@ export interface AdminPlan {
   offerPriceBdt: number | null
   /** e.g. "50% Launch Offer" (trimmed, 1–40 chars); `null` = none. */
   offerBadge: string | null
+  /**
+   * Per-month price when billed yearly (charged × 12), whole BDT, ≤ the monthly price
+   * (`offer ?? original`); `null` = no yearly option (PW-D5).
+   */
+  yearlyMonthlyPriceBdt: number | null
+  /** Trial length in days, 1–90, Starter only (PW-D8, seed 7); `null` = no trial. */
+  trialDays: number | null
+  /** Comments granted to a trial, 0–10,000,000, Starter only (PW-D12, seed 300); `null` = Starter's `monthlyComments`. */
+  trialCommentLimit: number | null
   /** Always complete: every limit and feature key is present. */
   featureConfig: PlanFeatureConfig
   createdAt: string
@@ -59,11 +71,14 @@ export interface AdminPlanUpdateResponse {
   plan: AdminPlan
 }
 
-/** `PATCH` body: every key optional, at least one sent. `null` clears the offer / badge. */
+/** `PATCH` body: every key optional, at least one sent. `null` clears a nullable field. */
 export interface UpdatePlanBody {
   originalPriceBdt?: number
   offerPriceBdt?: number | null
   offerBadge?: string | null
+  yearlyMonthlyPriceBdt?: number | null
+  trialDays?: number | null
+  trialCommentLimit?: number | null
   featureConfig?: {
     limits?: Partial<Record<PlanLimitKey, number>>
     features?: Partial<Record<PlanFeatureKey, boolean>>
@@ -72,6 +87,11 @@ export interface UpdatePlanBody {
 
 export const PLAN_PRICE_MAX_BDT = 1_000_000
 export const PLAN_OFFER_BADGE_MAX = 40
+export const PLAN_TRIAL_COMMENT_LIMIT_MAX = 10_000_000
+/** The only plan that carries trial fields (backend `TRIAL_PLAN_SLUG`). */
+export const TRIAL_PLAN_SLUG = 'starter'
+/** Trial length presets (PW-D8); the backend accepts any whole 1–90. */
+export const TRIAL_DAYS_PRESETS = [3, 7, 14, 30] as const
 export const PLAN_LIMIT_MAX: Record<PlanLimitKey, number> = {
   connectedPages: 1_000,
   monthlyComments: 10_000_000,
@@ -132,6 +152,12 @@ export interface PlanDraft {
   offerPriceBdt: string
   /** Empty (after trimming) = no badge. */
   offerBadge: string
+  /** Empty = no yearly option. */
+  yearlyMonthlyPriceBdt: string
+  /** Picked from the presets (or the stored value); `null` = no trial. Starter only. */
+  trialDays: number | null
+  /** Empty = Starter's monthly comments. Starter only. */
+  trialCommentLimit: string
   limits: Record<PlanLimitKey, string>
   features: Record<PlanFeatureKey, boolean>
 }
@@ -142,6 +168,9 @@ export function draftFromPlan(plan: AdminPlan): PlanDraft {
     originalPriceBdt: String(plan.originalPriceBdt),
     offerPriceBdt: plan.offerPriceBdt === null ? '' : String(plan.offerPriceBdt),
     offerBadge: plan.offerBadge ?? '',
+    yearlyMonthlyPriceBdt: plan.yearlyMonthlyPriceBdt === null ? '' : String(plan.yearlyMonthlyPriceBdt),
+    trialDays: plan.trialDays,
+    trialCommentLimit: plan.trialCommentLimit === null ? '' : String(plan.trialCommentLimit),
     limits: Object.fromEntries(PLAN_LIMIT_KEYS.map((key) => [key, String(limits[key])])) as Record<
       PlanLimitKey,
       string
@@ -162,7 +191,14 @@ export interface PlanDraftErrors {
   originalPriceBdt?: string
   offerPriceBdt?: string
   offerBadge?: string
+  yearlyMonthlyPriceBdt?: string
+  trialCommentLimit?: string
   limits: Partial<Record<PlanLimitKey, string>>
+}
+
+/** Trial fields (days preset + comment limit) belong to the Starter plan only. */
+export function isTrialPlan(plan: Pick<AdminPlan, 'slug'>): boolean {
+  return plan.slug === TRIAL_PLAN_SLUG
 }
 
 function wholeNumberError(value: string, max: number, what: string): string | undefined {
@@ -173,7 +209,19 @@ function wholeNumberError(value: string, max: number, what: string): string | un
   return undefined
 }
 
-/** Same rules as the backend's `UpdatePlanDto` + the offer ≤ original check. */
+/**
+ * The monthly price a customer pays (`offer ?? original`, as the backend's yearly rule reads it);
+ * `null` while the original or a typed offer is invalid or the offer is above the original.
+ */
+export function draftMonthlyPrice(draft: PlanDraft): number | null {
+  const original = parseWholeNumber(draft.originalPriceBdt)
+  if (original === null || original > PLAN_PRICE_MAX_BDT) return null
+  if (draft.offerPriceBdt.trim() === '') return original
+  const offer = parseWholeNumber(draft.offerPriceBdt)
+  return offer === null || offer > original ? null : offer
+}
+
+/** Same rules as the backend's `UpdatePlanDto` + `planValuesError` (offer ≤ original, yearly ≤ monthly). */
 export function validatePlanDraft(draft: PlanDraft): PlanDraftErrors {
   const errors: PlanDraftErrors = { limits: {} }
   const original = wholeNumberError(draft.originalPriceBdt, PLAN_PRICE_MAX_BDT, 'a price')
@@ -188,6 +236,21 @@ export function validatePlanDraft(draft: PlanDraft): PlanDraftErrors {
       const originalValue = parseWholeNumber(draft.originalPriceBdt) as number
       if (offerValue > originalValue) errors.offerPriceBdt = "The offer can't be more than the original price."
     }
+  }
+
+  if (draft.yearlyMonthlyPriceBdt.trim() !== '') {
+    const yearly = wholeNumberError(draft.yearlyMonthlyPriceBdt, PLAN_PRICE_MAX_BDT, 'a price')
+    const monthly = draftMonthlyPrice(draft)
+    if (yearly) {
+      errors.yearlyMonthlyPriceBdt = yearly
+    } else if (monthly !== null && (parseWholeNumber(draft.yearlyMonthlyPriceBdt) as number) > monthly) {
+      errors.yearlyMonthlyPriceBdt = `Can't be more than the monthly price (${formatPlanPrice(monthly)}).`
+    }
+  }
+
+  if (draft.trialCommentLimit.trim() !== '') {
+    const trialLimit = wholeNumberError(draft.trialCommentLimit, PLAN_TRIAL_COMMENT_LIMIT_MAX, 'a limit')
+    if (trialLimit) errors.trialCommentLimit = trialLimit
   }
 
   if (draft.offerBadge.trim().length > PLAN_OFFER_BADGE_MAX) {
@@ -206,6 +269,8 @@ export function hasDraftErrors(errors: PlanDraftErrors): boolean {
     errors.originalPriceBdt !== undefined ||
     errors.offerPriceBdt !== undefined ||
     errors.offerBadge !== undefined ||
+    errors.yearlyMonthlyPriceBdt !== undefined ||
+    errors.trialCommentLimit !== undefined ||
     Object.keys(errors.limits).length > 0
   )
 }
@@ -224,6 +289,16 @@ export function planPatch(plan: AdminPlan, draft: PlanDraft): UpdatePlanBody {
 
   const badge = draft.offerBadge.trim() === '' ? null : draft.offerBadge.trim()
   if (badge !== plan.offerBadge) body.offerBadge = badge
+
+  const yearly = draft.yearlyMonthlyPriceBdt.trim() === '' ? null : parseWholeNumber(draft.yearlyMonthlyPriceBdt)
+  if (yearly !== plan.yearlyMonthlyPriceBdt) body.yearlyMonthlyPriceBdt = yearly
+
+  // Trial fields are never sent for another plan (the backend refuses non-null values there).
+  if (isTrialPlan(plan)) {
+    if (draft.trialDays !== plan.trialDays) body.trialDays = draft.trialDays
+    const trialLimit = draft.trialCommentLimit.trim() === '' ? null : parseWholeNumber(draft.trialCommentLimit)
+    if (trialLimit !== plan.trialCommentLimit) body.trialCommentLimit = trialLimit
+  }
 
   const limits: Partial<Record<PlanLimitKey, number>> = {}
   for (const key of PLAN_LIMIT_KEYS) {
@@ -293,4 +368,40 @@ export function pricePreview(draft: PlanDraft): PricePreview {
   if (offer === null || offer > original) return { price: null, struck: null, badge, discountPercent: null }
   const discount = offerDiscountPercent(original, offer)
   return { price: offer, struck: discount === null ? null : original, badge, discountPercent: discount }
+}
+
+/** What a yearly customer is charged: the per-month price × 12. */
+export function yearlyChargeBdt(perMonth: number): number {
+  return perMonth * 12
+}
+
+/** Hint under the yearly input: `Billed ৳5,388 yearly.`; `null` while the draft value is empty or invalid. */
+export function yearlyBilledHint(draft: PlanDraft): string | null {
+  if (draft.yearlyMonthlyPriceBdt.trim() === '') return null
+  const perMonth = parseWholeNumber(draft.yearlyMonthlyPriceBdt)
+  if (perMonth === null || perMonth > PLAN_PRICE_MAX_BDT) return null
+  return `Billed ${formatPlanPrice(yearlyChargeBdt(perMonth))} yearly.`
+}
+
+export interface TrialDaysOption {
+  /** `null` = no trial. */
+  value: number | null
+  label: string
+}
+
+/** `7` → `7 days`, `1` → `1 day`, `null` → `No trial`. */
+export function formatTrialDays(days: number | null): string {
+  if (days === null) return 'No trial'
+  return `${days} ${days === 1 ? 'day' : 'days'}`
+}
+
+/**
+ * Trial length choices (PW-D8): "No trial" + the presets 3 / 7 / 14 / 30, plus a stored value
+ * outside the presets (set through the API, e.g. 10) so it still shows as the selected one.
+ */
+export function trialDaysOptions(stored: number | null): TrialDaysOption[] {
+  const days: number[] = [...TRIAL_DAYS_PRESETS]
+  if (stored !== null && !days.includes(stored)) days.push(stored)
+  days.sort((a, b) => a - b)
+  return [{ value: null, label: formatTrialDays(null) }, ...days.map((d) => ({ value: d, label: formatTrialDays(d) }))]
 }

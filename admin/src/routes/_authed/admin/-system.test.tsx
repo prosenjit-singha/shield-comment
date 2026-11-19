@@ -28,7 +28,6 @@ const zeroStats: AiUsageStats = {
   failuresByKind: {},
   inputTokens: 0,
   outputTokens: 0,
-  credits: 0,
   avgLatencyMs: null,
   maxLatencyMs: null,
   estimatedCostUsd: null,
@@ -58,7 +57,6 @@ const aiUsage: AiUsageReport = {
       failuresByKind: { rate_limited: 3, timeout: 2 },
       inputTokens: 412_000,
       outputTokens: 18_450,
-      credits: 1300,
       avgLatencyMs: 842,
       maxLatencyMs: 4210,
       estimatedCostUsd: 0.072861,
@@ -74,7 +72,6 @@ const aiUsage: AiUsageReport = {
         failuresByKind: { timeout: 2 },
         inputTokens: 12_000,
         outputTokens: 450,
-        credits: 50,
         avgLatencyMs: 1200,
         maxLatencyMs: 4210,
         estimatedCostUsd: null,
@@ -89,7 +86,6 @@ const aiUsage: AiUsageReport = {
         failuresByKind: { rate_limited: 3 },
         inputTokens: 400_000,
         outputTokens: 18_000,
-        credits: 1250,
         avgLatencyMs: 827,
         maxLatencyMs: 3900,
         estimatedCostUsd: 0.072861,
@@ -107,7 +103,6 @@ const aiUsage: AiUsageReport = {
       failuresByKind: {},
       inputTokens: 3_250_000,
       outputTokens: 140_000,
-      credits: 10_100,
       avgLatencyMs: 790,
       maxLatencyMs: 5120,
       estimatedCostUsd: 1.524,
@@ -123,7 +118,6 @@ const aiUsage: AiUsageReport = {
         failuresByKind: {},
         inputTokens: 3_250_000,
         outputTokens: 140_000,
-        credits: 10_100,
         avgLatencyMs: 790,
         maxLatencyMs: 5120,
         estimatedCostUsd: 1.524,
@@ -364,7 +358,9 @@ describe('/admin/system AI moderation card', () => {
     expect(ai.getByTestId('ai-calls').textContent).toBe('1,250')
     expect(ai.getByTestId('ai-failed').textContent).toBe('5')
     expect(ai.getByTestId('ai-failed').className).toContain('text-destructive')
-    expect(ai.getByTestId('ai-credits').textContent).toBe('1,300')
+    // PW-T7: no credits figure or column any more.
+    expect(ai.queryByTestId('ai-credits')).toBeNull()
+    expect(card.textContent).not.toMatch(/credit/i)
     expect(ai.getByTestId('ai-tokens').textContent).toBe('412K / 18,450')
     expect(ai.getByTestId('ai-tokens').getAttribute('title')).toBe('412,000 / 18,450')
     expect(ai.getByTestId('ai-cost').textContent).toBe('$0.0729 · ৳8.89')
@@ -378,8 +374,8 @@ describe('/admin/system AI moderation card', () => {
 
     const rows = ai.getAllByTestId('ai-model-row')
     expect(rows.map((r) => [...r.children].map((c) => c.textContent))).toEqual([
-      ['Neon AI gatewaygpt-oss-20b', '50', '2', '12,000 / 450', '50', '1.2 s / 4.2 s', 'n/a', 'n/a'],
-      ['OpenAIgpt-4.1-mini', '1,200', '3', '400K / 18,000', '1,250', '827 ms / 3.9 s', '$0.0729৳8.89', '$0.40 / $1.60'],
+      ['Neon AI gatewaygpt-oss-20b', '50', '2', '12,000 / 450', '1.2 s / 4.2 s', 'n/a', 'n/a'],
+      ['OpenAIgpt-4.1-mini', '1,200', '3', '400K / 18,000', '827 ms / 3.9 s', '$0.0729৳8.89', '$0.40 / $1.60'],
     ])
     expect(ai.getByText(/taka at ৳122 per US\$/)).toBeTruthy()
   })

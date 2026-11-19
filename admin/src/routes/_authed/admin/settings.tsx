@@ -68,14 +68,14 @@ function SettingsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Settings"
-        description="Plan prices in ৳, offer badges, limits and features, and the AI provider. Each plan saves on its own."
+        description="Plan prices in ৳ (monthly and yearly), offer badges, the Starter trial, limits and features, and the AI provider. Each plan saves on its own."
       />
 
       {query.isError && !query.data ? (
         <ErrorState message={query.error.message} onRetry={() => void query.refetch()} />
       ) : !items ? (
         <div className="grid gap-4 xl:grid-cols-2" aria-busy="true" aria-label="Loading plans">
-          {Array.from({ length: 4 }, (_, i) => (
+          {Array.from({ length: 3 }, (_, i) => (
             <CardSkeleton key={i} />
           ))}
         </div>
@@ -83,7 +83,7 @@ function SettingsPage() {
         <section className="flex flex-col items-center gap-2 rounded-2xl border bg-card px-6 py-16 text-center">
           <h2 className="text-base font-semibold">No plans</h2>
           <p className="max-w-md text-sm text-balance text-muted-foreground">
-            Plans come from the database seed. Run the migrations to create Free, Starter, Growth and Pro.
+            Plans come from the database seed. Run the migrations to create Starter, Growth and Pro.
           </p>
         </section>
       ) : (
@@ -100,8 +100,8 @@ function SettingsPage() {
       )}
 
       <p className="text-xs text-muted-foreground">
-        Prices are monthly, in whole taka. The pricing page shows the original price struck through when an
-        offer is set.
+        Prices are in whole taka. The pricing page shows the original price struck through when an offer is
+        set; a yearly customer pays the yearly per-month price × 12. Free is retired and not listed.
       </p>
 
       <PlanAuditHistory plans={items ?? []} />

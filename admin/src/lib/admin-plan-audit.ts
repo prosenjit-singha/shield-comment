@@ -3,6 +3,7 @@ import {
   adminPlansKey,
   formatCount,
   formatPlanPrice,
+  formatTrialDays,
   PLAN_FEATURE_KEYS,
   PLAN_LIMIT_KEYS,
   type PlanFeatureKey,
@@ -26,7 +27,10 @@ export type PlanAuditAction = (typeof PLAN_AUDIT_ACTIONS)[number]
 export type PlanAuditValue = number | string | boolean | null
 
 export interface PlanAuditChange {
-  /** `originalPriceBdt`, `offerPriceBdt`, `offerBadge`, `featureConfig.limits.<key>` or `featureConfig.features.<key>`. */
+  /**
+   * `originalPriceBdt`, `offerPriceBdt`, `offerBadge`, `yearlyMonthlyPriceBdt`, `trialDays`,
+   * `trialCommentLimit`, `featureConfig.limits.<key>` or `featureConfig.features.<key>`.
+   */
   field: string
   before: PlanAuditValue
   after: PlanAuditValue
@@ -92,7 +96,13 @@ export const planAuditActionLabels: Record<PlanAuditAction, string> = {
   UPDATE: 'Updated',
 }
 
-type FieldKind = 'price' | 'badge' | 'limit' | 'legacy-limit' | 'feature' | 'unknown'
+type FieldKind = 'price' | 'badge' | 'trial-days' | 'trial-limit' | 'limit' | 'legacy-limit' | 'feature' | 'unknown'
+
+const PRICE_LABELS: Readonly<Record<string, string>> = {
+  originalPriceBdt: 'Original price',
+  offerPriceBdt: 'Offer price',
+  yearlyMonthlyPriceBdt: 'Yearly price per month',
+}
 
 const LIMIT_PREFIX = 'featureConfig.limits.'
 const FEATURE_PREFIX = 'featureConfig.features.'
@@ -107,8 +117,10 @@ export const legacyPlanAuditFieldLabels: Readonly<Record<string, string>> = {
 }
 
 function fieldKind(field: string): FieldKind {
-  if (field === 'originalPriceBdt' || field === 'offerPriceBdt') return 'price'
+  if (Object.hasOwn(PRICE_LABELS, field)) return 'price'
   if (field === 'offerBadge') return 'badge'
+  if (field === 'trialDays') return 'trial-days'
+  if (field === 'trialCommentLimit') return 'trial-limit'
   if (Object.hasOwn(legacyPlanAuditFieldLabels, field)) return 'legacy-limit'
   if (field.startsWith(LIMIT_PREFIX) && (PLAN_LIMIT_KEYS as readonly string[]).includes(field.slice(LIMIT_PREFIX.length)))
     return 'limit'
@@ -124,9 +136,13 @@ function fieldKind(field: string): FieldKind {
 export function planAuditFieldLabel(field: string): string {
   switch (fieldKind(field)) {
     case 'price':
-      return field === 'originalPriceBdt' ? 'Original price' : 'Offer price'
+      return PRICE_LABELS[field] ?? field
     case 'badge':
       return 'Offer badge'
+    case 'trial-days':
+      return 'Trial length'
+    case 'trial-limit':
+      return 'Trial comment limit'
     case 'limit':
       return planLimitLabels[field.slice(LIMIT_PREFIX.length) as PlanLimitKey]
     case 'legacy-limit':
@@ -142,10 +158,23 @@ export function planAuditFieldLabel(field: string): string {
 /** Shown for `null` (offer or badge cleared / not set). */
 export const PLAN_AUDIT_NONE = 'None'
 
-/** `৳1,499` for prices, `On`/`Off` for features, grouped numbers for limits, `None` for `null`. */
+/** What `null` means for the PW-T7 fields (everything else reads `None`). */
+const NULL_LABELS: Partial<Record<FieldKind, string>> = {
+  'trial-days': 'No trial',
+  'trial-limit': 'Monthly comments',
+}
+
+/**
+ * `৳1,499` for prices, `On`/`Off` for features, grouped numbers for limits, `7 days` for the trial
+ * length, `None` for `null` (`No trial` / `Monthly comments` for the trial fields).
+ */
 export function formatPlanAuditValue(field: string, value: PlanAuditValue | undefined): string {
-  if (value === null || value === undefined) return PLAN_AUDIT_NONE
   const kind = fieldKind(field)
+  if (value === null || value === undefined) {
+    if (field === 'yearlyMonthlyPriceBdt') return 'No yearly option'
+    return NULL_LABELS[kind] ?? PLAN_AUDIT_NONE
+  }
+  if (kind === 'trial-days' && typeof value === 'number') return formatTrialDays(value)
   if (typeof value === 'boolean') return kind === 'feature' ? (value ? 'On' : 'Off') : String(value)
   if (typeof value === 'number') return kind === 'price' ? formatPlanPrice(value) : formatCount(value)
   return kind === 'badge' ? `“${value}”` : value

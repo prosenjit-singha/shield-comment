@@ -4,8 +4,10 @@ import {
   draftFromPlan,
   formatCount,
   formatPlanPrice,
+  formatTrialDays,
   hasDraftErrors,
   isDraftDirty,
+  isTrialPlan,
   offerDiscountPercent,
   PLAN_LIMIT_KEYS,
   parseWholeNumber,
@@ -14,7 +16,11 @@ import {
   planPatch,
   pricePreview,
   replacePlanInList,
+  TRIAL_DAYS_PRESETS,
+  trialDaysOptions,
   validatePlanDraft,
+  yearlyBilledHint,
+  yearlyChargeBdt,
 } from './admin-plans'
 
 // Starter as 0007 seeded it, before the 0008 launch offer (a plain, offer-free fixture).
@@ -27,6 +33,9 @@ const starter: AdminPlan = {
   originalPriceBdt: 499,
   offerPriceBdt: null,
   offerBadge: null,
+  yearlyMonthlyPriceBdt: null,
+  trialDays: 7,
+  trialCommentLimit: 300,
   featureConfig: {
     limits: { connectedPages: 1, monthlyComments: 2500, teamSeats: 1, workspaces: 1 },
     features: {
@@ -53,6 +62,9 @@ describe('draftFromPlan', () => {
       originalPriceBdt: '499',
       offerPriceBdt: '',
       offerBadge: '',
+      yearlyMonthlyPriceBdt: '',
+      trialDays: 7,
+      trialCommentLimit: '300',
       limits: { connectedPages: '1', monthlyComments: '2500', teamSeats: '1', workspaces: '1' },
       features: starter.featureConfig.features,
     })
@@ -128,6 +140,88 @@ describe('validatePlanDraft', () => {
     expect(validatePlanDraft(draft({ limits: { connectedPages: '', monthlyComments: '1', teamSeats: '1', workspaces: '1' } })).limits)
       .toEqual({ connectedPages: 'Enter a limit.' })
     expect(hasDraftErrors({ limits: { teamSeats: 'x' } })).toBe(true)
+  })
+})
+
+describe('yearly price + trial fields (PW-T7)', () => {
+  const growth: AdminPlan = { ...starter, id: 'g', slug: 'growth', name: 'Growth', trialDays: null, trialCommentLimit: null }
+
+  it('maps stored nulls to empty inputs / no trial and back', () => {
+    const d = draftFromPlan({ ...starter, yearlyMonthlyPriceBdt: 449, trialDays: null, trialCommentLimit: null })
+    expect([d.yearlyMonthlyPriceBdt, d.trialDays, d.trialCommentLimit]).toEqual(['449', null, ''])
+  })
+
+  it('checks the yearly per-month price against offer ?? original', () => {
+    expect(validatePlanDraft(draft({ yearlyMonthlyPriceBdt: '' })).yearlyMonthlyPriceBdt).toBeUndefined()
+    expect(validatePlanDraft(draft({ yearlyMonthlyPriceBdt: '499' })).yearlyMonthlyPriceBdt).toBeUndefined()
+    expect(validatePlanDraft(draft({ yearlyMonthlyPriceBdt: '500' })).yearlyMonthlyPriceBdt).toBe(
+      "Can't be more than the monthly price (৳499).",
+    )
+    // With an offer the offer is the monthly price (backend `yearlyPriceError`).
+    expect(
+      validatePlanDraft(draft({ originalPriceBdt: '999', offerPriceBdt: '499', yearlyMonthlyPriceBdt: '600' }))
+        .yearlyMonthlyPriceBdt,
+    ).toBe("Can't be more than the monthly price (৳499).")
+    expect(validatePlanDraft(draft({ yearlyMonthlyPriceBdt: '4.5' })).yearlyMonthlyPriceBdt).toBe(
+      'Use a whole number (digits only).',
+    )
+    // An invalid monthly price flags only that field.
+    expect(validatePlanDraft(draft({ originalPriceBdt: '', yearlyMonthlyPriceBdt: '100' })).yearlyMonthlyPriceBdt).toBeUndefined()
+    expect(hasDraftErrors(validatePlanDraft(draft({ yearlyMonthlyPriceBdt: '500' })))).toBe(true)
+  })
+
+  it('allows an empty trial comment limit and caps a set one at 10,000,000', () => {
+    expect(validatePlanDraft(draft({ trialCommentLimit: ' ' })).trialCommentLimit).toBeUndefined()
+    expect(validatePlanDraft(draft({ trialCommentLimit: '0' })).trialCommentLimit).toBeUndefined()
+    expect(validatePlanDraft(draft({ trialCommentLimit: '10000000' })).trialCommentLimit).toBeUndefined()
+    expect(validatePlanDraft(draft({ trialCommentLimit: '10000001' })).trialCommentLimit).toBe(
+      `Must be ${formatCount(10_000_000)} or less.`,
+    )
+    expect(validatePlanDraft(draft({ trialCommentLimit: 'lots' })).trialCommentLimit).toBe('Use a whole number (digits only).')
+  })
+
+  it('sends null for cleared fields and only changed trial values', () => {
+    const stored = { ...starter, yearlyMonthlyPriceBdt: 449 }
+    expect(planPatch(stored, draft({}, stored))).toEqual({})
+    expect(planPatch(stored, draft({ yearlyMonthlyPriceBdt: '', trialDays: null, trialCommentLimit: '' }, stored))).toEqual({
+      yearlyMonthlyPriceBdt: null,
+      trialDays: null,
+      trialCommentLimit: null,
+    })
+    expect(planPatch(starter, draft({ yearlyMonthlyPriceBdt: '449', trialDays: 14, trialCommentLimit: '0500' }))).toEqual({
+      yearlyMonthlyPriceBdt: 449,
+      trialDays: 14,
+      trialCommentLimit: 500,
+    })
+  })
+
+  it('never sends trial fields for a non-Starter plan', () => {
+    expect(isTrialPlan(starter)).toBe(true)
+    expect(isTrialPlan(growth)).toBe(false)
+    expect(planPatch(growth, draft({ trialDays: 7, trialCommentLimit: '300' }, growth))).toEqual({})
+  })
+
+  it('hints the yearly charge (per-month × 12)', () => {
+    expect(yearlyChargeBdt(449)).toBe(5388)
+    expect(yearlyBilledHint(draft({ yearlyMonthlyPriceBdt: '449' }))).toBe('Billed ৳5,388 yearly.')
+    expect(yearlyBilledHint(draft({ yearlyMonthlyPriceBdt: '3599' }))).toBe(`Billed ৳${formatCount(43_188)} yearly.`)
+    expect(yearlyBilledHint(draft({ yearlyMonthlyPriceBdt: '' }))).toBeNull()
+    expect(yearlyBilledHint(draft({ yearlyMonthlyPriceBdt: 'x' }))).toBeNull()
+  })
+
+  it('offers No trial + the 3/7/14/30 presets and keeps a stored non-preset value', () => {
+    expect(TRIAL_DAYS_PRESETS).toEqual([3, 7, 14, 30])
+    expect(trialDaysOptions(7)).toEqual([
+      { value: null, label: 'No trial' },
+      { value: 3, label: '3 days' },
+      { value: 7, label: '7 days' },
+      { value: 14, label: '14 days' },
+      { value: 30, label: '30 days' },
+    ])
+    expect(trialDaysOptions(null).map((o) => o.value)).toEqual([null, 3, 7, 14, 30])
+    expect(trialDaysOptions(10).map((o) => o.value)).toEqual([null, 3, 7, 10, 14, 30])
+    expect(trialDaysOptions(90).at(-1)).toEqual({ value: 90, label: '90 days' })
+    expect(formatTrialDays(1)).toBe('1 day')
   })
 })
 

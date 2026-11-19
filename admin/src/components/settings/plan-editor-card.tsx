@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { RotateCcw, Save } from 'lucide-react'
-import { type FormEvent, type ReactNode, useId, useState } from 'react'
+import { type FormEvent, type KeyboardEvent, type ReactNode, useId, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,9 +11,11 @@ import {
   type AdminPlansResponse,
   adminPlansKey,
   draftFromPlan,
+  formatCount,
   formatPlanPrice,
   hasDraftErrors,
   isDraftDirty,
+  isTrialPlan,
   PLAN_FEATURE_KEYS,
   PLAN_LIMIT_KEYS,
   PLAN_OFFER_BADGE_MAX,
@@ -24,15 +26,19 @@ import {
   plansListKey,
   pricePreview,
   replacePlanInList,
+  type TrialDaysOption,
+  trialDaysOptions,
   updatePlan,
   validatePlanDraft,
+  yearlyBilledHint,
 } from '@/lib/admin-plans'
 import { ApiError } from '@/lib/api'
 
 /**
  * One plan's editor. The draft lives in the page (so leaving with unsaved changes can be
  * blocked); `undefined` = pristine, the card then shows the stored plan as it is.
- * Save sends only the changed fields (`planPatch`).
+ * Save sends only the changed fields (`planPatch`). PW-T7: yearly per-month price on every plan;
+ * the trial section (length preset + comment limit) on Starter only.
  */
 export function PlanEditorCard({
   plan,
@@ -98,6 +104,8 @@ export function PlanEditorCard({
   }
 
   const badgeLength = draft.offerBadge.trim().length
+  const trialPlan = isTrialPlan(plan)
+  const trialDaysLabelId = `${id}-trial-days-label`
 
   return (
     <section
@@ -154,6 +162,20 @@ export function PlanEditorCard({
               />
             </Field>
             <Field
+              id={`${id}-yearly`}
+              label="Yearly price per month"
+              error={errors.yearlyMonthlyPriceBdt}
+              hint={yearlyBilledHint(draft) ?? 'Empty = no yearly option.'}
+            >
+              <TakaInput
+                id={`${id}-yearly`}
+                value={draft.yearlyMonthlyPriceBdt}
+                placeholder="No yearly option"
+                onChange={(value) => edit({ ...draft, yearlyMonthlyPriceBdt: value })}
+                invalid={errors.yearlyMonthlyPriceBdt !== undefined}
+              />
+            </Field>
+            <Field
               id={`${id}-badge`}
               label="Offer badge"
               error={errors.offerBadge}
@@ -163,7 +185,6 @@ export function PlanEditorCard({
                   {badgeLength}/{PLAN_OFFER_BADGE_MAX}
                 </span>
               }
-              className="sm:col-span-2"
             >
               <Input
                 id={`${id}-badge`}
@@ -176,6 +197,45 @@ export function PlanEditorCard({
               />
             </Field>
           </div>
+
+          {trialPlan && (
+            <div className="flex flex-col gap-3" data-testid="trial-section">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <h3 className="text-sm font-semibold">Sign-up trial</h3>
+                <span className="text-xs text-muted-foreground">Changes apply to new trials only.</span>
+              </div>
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <span id={trialDaysLabelId} className="text-sm leading-snug font-medium">
+                  Trial length
+                </span>
+                <TrialDaysPicker
+                  labelledBy={trialDaysLabelId}
+                  options={trialDaysOptions(plan.trialDays)}
+                  value={draft.trialDays}
+                  onChange={(trialDays) => edit({ ...draft, trialDays })}
+                />
+              </div>
+              <Field
+                id={`${id}-trial-limit`}
+                label="Trial comment limit"
+                error={errors.trialCommentLimit}
+                hint={`Empty = Starter's monthly comments (${formatCount(plan.featureConfig.limits.monthlyComments)}).`}
+                className="sm:max-w-[calc(50%-0.5rem)]"
+              >
+                <Input
+                  id={`${id}-trial-limit`}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={draft.trialCommentLimit}
+                  placeholder="Monthly comments"
+                  onChange={(e) => edit({ ...draft, trialCommentLimit: e.target.value })}
+                  aria-invalid={errors.trialCommentLimit !== undefined || undefined}
+                  aria-describedby={`${id}-trial-limit-hint`}
+                  className="h-9 tabular-nums"
+                />
+              </Field>
+            </div>
+          )}
 
           <div className="flex flex-col gap-3">
             <h3 className="text-sm font-semibold">Limits</h3>
@@ -276,6 +336,63 @@ function Field({
         )}
         {counter && <span className="shrink-0 text-muted-foreground tabular-nums">{counter}</span>}
       </div>
+    </div>
+  )
+}
+
+/** Trial length pills (radio group: roving focus, arrow keys move and select). */
+function TrialDaysPicker({
+  labelledBy,
+  options,
+  value,
+  onChange,
+}: {
+  labelledBy: string
+  options: TrialDaysOption[]
+  value: number | null
+  onChange: (value: number | null) => void
+}) {
+  const refs = useRef<(HTMLButtonElement | null)[]>([])
+  const selected = Math.max(
+    0,
+    options.findIndex((option) => option.value === value),
+  )
+  const onKeyDown = (event: KeyboardEvent) => {
+    const step =
+      event.key === 'ArrowRight' || event.key === 'ArrowDown'
+        ? 1
+        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+          ? -1
+          : 0
+    if (step === 0) return
+    event.preventDefault()
+    const next = (selected + step + options.length) % options.length
+    onChange((options[next] as TrialDaysOption).value)
+    refs.current[next]?.focus()
+  }
+  return (
+    <div role="radiogroup" aria-labelledby={labelledBy} onKeyDown={onKeyDown} className="flex flex-wrap gap-2">
+      {options.map((option, index) => {
+        const checked = option.value === value
+        return (
+          <button
+            key={option.value ?? 'none'}
+            ref={(el) => {
+              refs.current[index] = el
+            }}
+            type="button"
+            role="radio"
+            aria-checked={checked}
+            tabIndex={index === selected ? 0 : -1}
+            onClick={() => onChange(option.value)}
+            className={`h-8 rounded-full border px-3.5 text-sm tabular-nums transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 ${
+              checked ? 'border-primary bg-primary/10 font-medium text-primary' : 'hover:bg-muted'
+            }`}
+          >
+            {option.label}
+          </button>
+        )
+      })}
     </div>
   )
 }
