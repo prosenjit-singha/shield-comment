@@ -4,15 +4,28 @@
  * Call it only from TanStack Query `queryFn`/`mutationFn`s (AGENTS.md).
  */
 
-/** A non-2xx response. `message` is the backend's `{ message }` (joined if it is a list). */
+/**
+ * A non-2xx response. `message` is the backend's `{ message }` (joined if it is a list); `code` its
+ * machine-readable `{ code }` when present (e.g. 503 `KEY_ENCRYPTION_NOT_CONFIGURED`).
+ */
 export class ApiError extends Error {
   readonly status: number
+  readonly code: string | undefined
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
   }
+}
+
+function errorCode(body: unknown): string | undefined {
+  if (body && typeof body === 'object' && 'code' in body) {
+    const { code } = body as { code: unknown }
+    if (typeof code === 'string' && code) return code
+  }
+  return undefined
 }
 
 function errorMessage(body: unknown, status: number): string {
@@ -39,6 +52,6 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
       body = null
     }
   }
-  if (!res.ok) throw new ApiError(res.status, errorMessage(body, res.status))
+  if (!res.ok) throw new ApiError(res.status, errorMessage(body, res.status), errorCode(body))
   return body as T
 }
