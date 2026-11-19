@@ -12,6 +12,7 @@ Classify incoming comments across Bangla, Banglish, and English using structured
   - `SCAM_PHISHING` (fake bKash/Nagad cashback or lottery links)
   - `SPAM_IRRELEVANT`
   - `ABUSIVE_TOXIC`
+- **Usage limit:** the Module 5 run first built per-plan AI credits (D7/D15, cost by context level). **Replaced 2026-11-19 by monthly comments (PW rows):** each comment counts 1 against the client account's wallet before its first AI call, edits are re-checked for free, and without a live plan or with the limit used up the comment stays visible as `SKIPPED` (`no_active_plan` / `comment_limit_reached`). See TASKS.md section PW.
 - **Meta Action Executor:** Calls Meta Graph API `POST /{comment_id}?is_hidden=true`, `DELETE /{comment_id}`, or `POST /{comment_id}/comments` (auto-reply).
 
 ## Agent Test & Verification Gate

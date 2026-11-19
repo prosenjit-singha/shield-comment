@@ -2,6 +2,8 @@
 
 Status: **waiting on credentials** (paused 2026-11-19). The Module 5 orchestration run is paused at this row, and M5-GATE needs its result.
 
+M5-T16 now runs after PW-GATE (plans, subscriptions & wallet rows, TASKS.md section PW).
+
 ## What it is
 Run the 48-comment golden suite (`backend/test/fixtures/golden-comments.ts`, labels reviewed by you) against real AI models. The cheapest model that scores **≥ 90 %** becomes ShieldComment's moderation model. The run records that model's answers so the automated tests can replay them without live calls.
 
