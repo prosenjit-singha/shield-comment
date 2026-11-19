@@ -7,10 +7,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.)
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #6 (2026-11-19) · rows this session: 5 · estimate: 115k
+- Session: #6 (2026-11-19) · rows this session: 6 · estimate: 125k
 
 ## State
-dispatched M5-T5 (2026-11-19) · commit: "feat(backend): add comment classifier with versioned prompt (M5-T5)"
+verified M5-T5
 
 ## Resume
 `/orchestration --continue`
@@ -132,4 +132,4 @@ You are implementing exactly ONE task row, **M5-T6**, in the ShieldComment BD re
 - 2026-11-19 M5-T2 ✅ ef9e6a7 · backend 1195 unit (was 1115) + e2e 494 · Anthropic Messages adapter (2026-10-21, output_config.format, Anthropic error mapping incl. credit/spend-cap → payment_required) + `testConnection` probe for every provider + strict fake
 - 2026-11-19 M5-T3 ✅ 4055919 · backend 1227 unit (was 1195) + e2e 532 (was 494) · AI provider settings: migration 0015 (settings/keys/audit), DbAiConfigResolver (DB → env per field, 30 s cache, invalidate on PATCH), super-admin GET/PATCH/test/audit under /api/admin/settings/ai
 - 2026-11-19 M5-T4 ✅ a837851 · admin 281 (was 246) · admin AI provider section on /admin/settings: provider/model/write-only keys, clear confirm, Test connection, AI settings history, one blocker for plans + AI
-- 2026-11-19 M5-T5 ✅ · backend 1296 unit (was 1227) + e2e 532 · pure comment classifier: versioned prompt (moderation-v1, 13 bn/banglish/en few-shots, JSON data blocks), D8 levels + credit cost, output parser, json_schema → json_object → prompt fallback, one output retry, typed failures
+- 2026-11-19 M5-T5 ✅ 01a1db3 · backend 1296 unit (was 1227) + e2e 532 · pure comment classifier: versioned prompt (moderation-v1, 13 bn/banglish/en few-shots, JSON data blocks), D8 levels + credit cost, output parser, json_schema → json_object → prompt fallback, one output retry, typed failures
