@@ -7,6 +7,8 @@ import {
   dailyCommentStats,
   metaConnections,
   metaDataDeletionRequests,
+  moderationActions,
+  moderationPolicies,
   socialPages,
   webhookEvents,
 } from '../src/db/schema/index.js';
@@ -102,6 +104,16 @@ describe('Meta Deauthorize + Data Deletion callbacks (e2e)', () => {
       .select()
       .from(webhookEvents)
       .where(eq(webhookEvents.workspaceId, workspaceId));
+  const actionRows = (workspaceId: string) =>
+    db()
+      .select()
+      .from(moderationActions)
+      .where(eq(moderationActions.workspaceId, workspaceId));
+  const policyRows = (workspaceId: string) =>
+    db()
+      .select()
+      .from(moderationPolicies)
+      .where(eq(moderationPolicies.workspaceId, workspaceId));
   const statRows = (workspaceId: string) =>
     db()
       .select()
@@ -144,9 +156,12 @@ describe('Meta Deauthorize + Data Deletion callbacks (e2e)', () => {
       )
       .returning();
     if (!withComments) return;
+    await db().insert(moderationPolicies).values({
+      workspaceId: actor.workspaceId,
+    });
     for (const [i, page] of rows.entries()) {
       const commentId = comment(pageNumbers[i]!);
-      await db()
+      const [commentRow] = await db()
         .insert(comments)
         .values({
           commentId,
@@ -158,7 +173,17 @@ describe('Meta Deauthorize + Data Deletion callbacks (e2e)', () => {
           authorName: 'Rahim',
           message: 'bKash 017',
           rawPayload: { message: 'bKash 017' },
-        });
+        })
+        .returning();
+      // M5-T7: a hide the AI did (FK restrict → Data Deletion removes it first).
+      await db().insert(moderationActions).values({
+        workspaceId: actor.workspaceId,
+        commentId: commentRow!.id,
+        action: 'HIDE',
+        source: 'AUTO',
+        state: 'SUCCEEDED',
+        completedAt: new Date(),
+      });
       await db()
         .insert(webhookEvents)
         .values({
@@ -364,7 +389,7 @@ describe('Meta Deauthorize + Data Deletion callbacks (e2e)', () => {
       expect(queue.jobs).toHaveLength(1);
     });
 
-    it('the job deletes events → comments → Pages → connection, keeps aggregates, completes', async () => {
+    it('the job deletes moderation actions → events → comments → Pages → connection, keeps aggregates + policy, completes', async () => {
       await post('data-deletion', signed(W)).expect(200);
       const [job] = queue.jobs;
       const statsBefore = await statRows(d.workspaceId);
@@ -377,7 +402,10 @@ describe('Meta Deauthorize + Data Deletion callbacks (e2e)', () => {
         pages: 2,
         comments: 2,
         webhookEvents: 2,
+        moderationActions: 2,
       });
+      expect(await actionRows(d.workspaceId)).toHaveLength(0);
+      expect(await policyRows(d.workspaceId)).toHaveLength(1);
       expect(await connection(d.workspaceId)).toBeUndefined();
       expect(await pages(d.workspaceId)).toHaveLength(0);
       expect(await commentRows(d.workspaceId)).toHaveLength(0);
@@ -389,6 +417,7 @@ describe('Meta Deauthorize + Data Deletion callbacks (e2e)', () => {
       expect(await pages(c.workspaceId)).toHaveLength(1);
       expect(await commentRows(c.workspaceId)).toHaveLength(1);
       expect(await eventRows(c.workspaceId)).toHaveLength(1);
+      expect(await actionRows(c.workspaceId)).toHaveLength(1);
 
       const res = await http()
         .get(`/api/meta/data-deletion/${code}`)

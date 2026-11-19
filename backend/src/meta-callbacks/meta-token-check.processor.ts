@@ -99,7 +99,7 @@ export class MetaTokenCheckProcessor extends WorkerHost {
     switch (outcome.kind) {
       case 'completed':
         this.logger.log(
-          `Data deletion ${data.requestId} completed: ${outcome.connections} connection(s), ${outcome.pages} page(s), ${outcome.comments} comment(s), ${outcome.webhookEvents} webhook event(s)`,
+          `Data deletion ${data.requestId} completed: ${outcome.connections} connection(s), ${outcome.pages} page(s), ${outcome.comments} comment(s), ${outcome.webhookEvents} webhook event(s), ${outcome.moderationActions} moderation action(s)`,
         );
         break;
       case 'already_completed':

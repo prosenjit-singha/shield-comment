@@ -6,6 +6,7 @@ import type { NormalizedClassifierInput } from './classifier-input.js';
 import {
   COMMENT_LANGUAGES,
   type CommentLanguage,
+  MAX_REASONING_CHARS,
   MODERATION_CATEGORIES,
   type ModerationCategory,
 } from './moderation.constants.js';
@@ -17,8 +18,8 @@ import {
  */
 export const PROMPT_VERSION = 'moderation-v2';
 
-/** Short English reasoning kept on the comment (D9). */
-export const MAX_REASONING_CHARS = 280;
+/** Short English reasoning kept on the comment (D9); defined with the DB check (M5-T7). */
+export { MAX_REASONING_CHARS };
 
 /** Name of the structured-output schema (OpenAI `json_schema.name`). */
 export const CLASSIFICATION_SCHEMA_NAME = 'comment_classification';

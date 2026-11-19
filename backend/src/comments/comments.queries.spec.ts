@@ -1,5 +1,12 @@
+import { getTableConfig } from 'drizzle-orm/pg-core';
+import {
+  DAILY_COMMENT_COUNTERS,
+  dailyCommentStats,
+} from '../db/schema/index.js';
 import {
   type CommentsExecutor,
+  dailyCounterColumn,
+  dailyCounterIncrements,
   dhakaDayKey,
   incrementDailyCommentStats,
   webhookPayloadHash,
@@ -72,10 +79,62 @@ describe('incrementDailyCommentStats', () => {
     ['negative', { received: -1 }],
     ['fractional', { edited: 0.5 }],
     ['NaN', { removed: Number.NaN }],
+    ['negative moderation', { hidden: -2 }],
+    ['fractional category', { scamPhishing: 1.5 }],
   ])('rejects a %s delta without touching the DB', async (_label, delta) => {
     await expect(
       incrementDailyCommentStats(executor, { ...key, ...delta }),
     ).rejects.toThrow('integers ≥ 0');
     expect(executor.insert).not.toHaveBeenCalled();
+  });
+});
+
+describe('daily counters (M5-T7)', () => {
+  it('every counter has its integer column, default 0', () => {
+    const columns = new Map(
+      getTableConfig(dailyCommentStats).columns.map((c) => [c.name, c]),
+    );
+    expect(DAILY_COMMENT_COUNTERS).toEqual([
+      'received',
+      'edited',
+      'removed',
+      'classified',
+      'safeInquiry',
+      'competitorPoach',
+      'scamPhishing',
+      'spamIrrelevant',
+      'abusiveToxic',
+      'hidden',
+      'unhidden',
+      'deleted',
+      'replied',
+      'skipped',
+      'failed',
+    ]);
+    for (const counter of DAILY_COMMENT_COUNTERS) {
+      const column = dailyCommentStats[dailyCounterColumn(counter)];
+      expect(column.getSQLType()).toBe('integer');
+      expect(column.notNull).toBe(true);
+      expect(column.default).toBe(0);
+      expect(columns.get(column.name)).toBe(column);
+    }
+  });
+
+  it('dailyCounterIncrements keeps only non-zero counters, by column', () => {
+    expect(
+      dailyCounterIncrements({
+        received: 1,
+        classified: 1,
+        scamPhishing: 1,
+        hidden: 1,
+        failed: 0,
+      }),
+    ).toEqual({
+      receivedCount: 1,
+      classifiedCount: 1,
+      scamPhishingCount: 1,
+      hiddenCount: 1,
+    });
+    expect(dailyCounterIncrements({})).toEqual({});
   });
 });

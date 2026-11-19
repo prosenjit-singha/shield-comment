@@ -138,12 +138,13 @@ describe('MetaTokenCheckProcessor', () => {
       pages: 2,
       comments: 5,
       webhookEvents: 6,
+      moderationActions: 3,
     } as const;
     execute.mockResolvedValue(outcome);
     expect(await processor.process(job())).toEqual(outcome);
     expect(execute).toHaveBeenCalledWith(REQUEST_ID);
     expect(logs.join('\n')).toContain(
-      `Data deletion ${REQUEST_ID} completed: 1 connection(s), 2 page(s), 5 comment(s), 6 webhook event(s)`,
+      `Data deletion ${REQUEST_ID} completed: 1 connection(s), 2 page(s), 5 comment(s), 6 webhook event(s), 3 moderation action(s)`,
     );
   });
 

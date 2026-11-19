@@ -11,6 +11,7 @@ import {
   comments,
   dailyCommentStats,
   metaConnections,
+  moderationActions,
   socialPages,
   webhookEvents,
 } from '../src/db/schema/index.js';
@@ -165,6 +166,12 @@ describe('Meta disconnect (e2e)', () => {
       .select()
       .from(webhookEvents)
       .where(eq(webhookEvents.workspaceId, workspaceId));
+  const actionsOf = (workspaceId: string) =>
+    db()
+      .select()
+      .from(moderationActions)
+      .where(eq(moderationActions.workspaceId, workspaceId))
+      .orderBy(asc(moderationActions.id));
   const statsOf = (workspaceId: string) =>
     db()
       .select()
@@ -172,14 +179,17 @@ describe('Meta disconnect (e2e)', () => {
       .where(eq(dailyCommentStats.workspaceId, workspaceId))
       .orderBy(asc(dailyCommentStats.pageId));
 
-  /** One comment on a Page (+ its webhook event + a daily stats row), as the worker stores them. */
+  /**
+   * One comment on a Page (+ its webhook event + a daily stats row, as the worker stores them,
+   * + an AI hide in `moderation_actions`, M5-T7).
+   */
   async function insertComment(
     workspaceId: string,
     page: { id: string; pageId: string },
   ) {
     seq += 1;
     const commentId = `${page.pageId}_${base}${seq}`;
-    await db()
+    const [row] = await db()
       .insert(comments)
       .values({
         commentId,
@@ -191,7 +201,16 @@ describe('Meta disconnect (e2e)', () => {
         authorName: 'Rahim',
         message: 'bKash 017',
         rawPayload: { message: 'bKash 017' },
-      });
+      })
+      .returning();
+    await db().insert(moderationActions).values({
+      workspaceId,
+      commentId: row!.id,
+      action: 'HIDE',
+      source: 'AUTO',
+      state: 'SUCCEEDED',
+      completedAt: new Date(),
+    });
     await db()
       .insert(webhookEvents)
       .values({
@@ -348,7 +367,9 @@ describe('Meta disconnect (e2e)', () => {
     const pagesBefore = await pagesOf(owner.workspaceId);
     const statsBefore = await statsOf(owner.workspaceId);
     const eventsBefore = await eventsOf(owner.workspaceId);
+    const actionsBefore = await actionsOf(owner.workspaceId);
     expect(statsBefore).toHaveLength(2);
+    expect(actionsBefore).toHaveLength(2);
     const expectedTokens = new Map(
       pagesBefore.map((p) => [
         p.pageId,
@@ -385,6 +406,8 @@ describe('Meta disconnect (e2e)', () => {
     }
     expect(await eventsOf(owner.workspaceId)).toHaveLength(eventsBefore.length);
     expect(await statsOf(owner.workspaceId)).toEqual(statsBefore);
+    // M5-T7: the kept comments keep their moderation log (FK to the comment, not the Page).
+    expect(await actionsOf(owner.workspaceId)).toEqual(actionsBefore);
 
     // One unsubscribe per Page with its decrypted Page token, sequential; user token revoked.
     expect(graph.unsubscribePageApp).toHaveBeenCalledTimes(2);
@@ -480,11 +503,14 @@ describe('Meta disconnect (e2e)', () => {
     expect(await connectionOf(owner.workspaceId)).toBeUndefined();
   });
 
-  it('Data Deletion after the disconnect deletes the stamped comments + their events, keeps stats, other workspace untouched', async () => {
+  it('Data Deletion after the disconnect deletes the stamped comments + their events + moderation actions, keeps stats, other workspace untouched', async () => {
     const statsBefore = await statsOf(owner.workspaceId);
     const otherComments = await commentsOf(other.workspaceId);
     const otherEvents = await eventsOf(other.workspaceId);
+    const otherActions = await actionsOf(other.workspaceId);
+    expect(otherActions.length).toBeGreaterThan(0);
     expect(await commentsOf(owner.workspaceId)).toHaveLength(3);
+    expect(await actionsOf(owner.workspaceId)).toHaveLength(3);
 
     const res = await http()
       .post('/api/meta/data-deletion')
@@ -509,8 +535,11 @@ describe('Meta disconnect (e2e)', () => {
       pages: 0,
       comments: 3,
       webhookEvents: 3,
+      moderationActions: 3,
     });
     expect(await commentsOf(owner.workspaceId)).toHaveLength(0);
+    expect(await actionsOf(owner.workspaceId)).toHaveLength(0);
+    expect(await actionsOf(other.workspaceId)).toEqual(otherActions);
     expect(await eventsOf(owner.workspaceId)).toHaveLength(0);
     expect(await statsOf(owner.workspaceId)).toEqual(statsBefore);
 

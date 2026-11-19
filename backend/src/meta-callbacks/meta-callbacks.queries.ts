@@ -6,6 +6,7 @@ import {
   metaConnections,
   metaDataDeletionRequests,
   type MetaDataDeletionStatus,
+  moderationActions,
   socialPages,
   webhookEvents,
   workspaces,
@@ -186,6 +187,8 @@ export async function lockWorkspacePages(
 }
 
 export interface WorkspaceDeletionCounts {
+  /** `moderation_actions` of the deleted comments (M5-T7; FK restrict, so they go first). */
+  moderationActions: number;
   webhookEvents: number;
   comments: number;
   pages: number;
@@ -204,10 +207,12 @@ export interface WorkspaceDeletionTarget {
 
 /**
  * Data Deletion (D6) for one workspace, inside the caller's transaction, in FK-safe order:
- * the `webhook_events` of the deleted comments → the comments (the Pages' comments, before the
+ * the `moderation_actions` of the deleted comments (M5-T7) → the `webhook_events` of the deleted
+ * comments → the comments (the Pages' comments, before the
  * Pages, else `on delete set null` would keep them, **plus** comments a disconnect stamped with
  * the user's Facebook id, M4-T9) → the Pages → the connection. Every statement is scoped by
- * `workspace_id`. `daily_comment_stats` stay (no personal data, D4).
+ * `workspace_id`. `daily_comment_stats`, `daily_ai_usage` and `moderation_policies` stay (no
+ * personal data, D4). The classification (incl. `reasoning`, D9) goes with the comment row.
  */
 export async function deleteWorkspaceMetaData(
   tx: CallbacksExecutor,
@@ -227,6 +232,20 @@ export async function deleteWorkspaceMetaData(
     .select({ commentId: comments.commentId })
     .from(comments)
     .where(commentScope);
+  const deletedActions = (
+    await tx
+      .delete(moderationActions)
+      .where(
+        and(
+          eq(moderationActions.workspaceId, workspaceId),
+          inArray(
+            moderationActions.commentId,
+            tx.select({ id: comments.id }).from(comments).where(commentScope),
+          ),
+        ),
+      )
+      .returning({ id: moderationActions.id })
+  ).length;
   // event_id = `<platform>:<commentId>:<verb>` (D4): the comment id is the 2nd part.
   const deletedEvents = (
     await tx
@@ -274,6 +293,7 @@ export async function deleteWorkspaceMetaData(
     ).length;
   }
   return {
+    moderationActions: deletedActions,
     webhookEvents: deletedEvents,
     comments: deletedComments,
     pages: deletedPages,

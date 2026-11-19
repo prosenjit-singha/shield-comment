@@ -159,6 +159,7 @@ describe('MetaDataDeletionService', () => {
         Promise.resolve([`${ws}-p1`, `${ws}-p2`]),
       );
       q.deleteWorkspaceMetaData.mockResolvedValue({
+        moderationActions: 1,
         webhookEvents: 3,
         comments: 2,
         pages: 2,
@@ -170,6 +171,7 @@ describe('MetaDataDeletionService', () => {
       expect(await service.execute(request().id, NOW)).toEqual({
         kind: 'completed',
         connectionsSeen: 2,
+        moderationActions: 2,
         webhookEvents: 6,
         comments: 4,
         pages: 4,
@@ -219,6 +221,7 @@ describe('MetaDataDeletionService', () => {
       q.findWorkspacesWithFacebookUserData.mockResolvedValue(['ws-a']);
       q.lockConnection.mockResolvedValue(undefined);
       q.deleteWorkspaceMetaData.mockResolvedValue({
+        moderationActions: 0,
         webhookEvents: 2,
         comments: 1,
         pages: 0,
@@ -227,6 +230,7 @@ describe('MetaDataDeletionService', () => {
       expect(await service.execute(request().id, NOW)).toEqual({
         kind: 'completed',
         connectionsSeen: 0,
+        moderationActions: 0,
         webhookEvents: 2,
         comments: 1,
         pages: 0,

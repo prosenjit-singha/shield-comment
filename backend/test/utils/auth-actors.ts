@@ -14,6 +14,8 @@ import {
   impersonationAuditLogs,
   metaConnections,
   metaDataDeletionRequests,
+  moderationActions,
+  moderationPolicies,
   planAuditLogs,
   socialPages,
   ticketMessages,
@@ -194,6 +196,14 @@ export function createAuthActors(app: INestApplication<App>) {
         .where(inArray(aiSettingsAuditLogs.adminId, userIds));
     }
     if (workspaceIds.length) {
+      // Moderation (M5-T7): actions reference comments + workspaces (restrict) → first;
+      // the policy references the workspace.
+      await db
+        .delete(moderationActions)
+        .where(inArray(moderationActions.workspaceId, workspaceIds));
+      await db
+        .delete(moderationPolicies)
+        .where(inArray(moderationPolicies.workspaceId, workspaceIds));
       // Webhook rows (M4-T2) reference workspaces (restrict) and Pages (comments: set null).
       await db
         .delete(webhookEvents)

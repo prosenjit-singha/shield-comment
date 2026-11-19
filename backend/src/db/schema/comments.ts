@@ -5,11 +5,37 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   text,
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { AI_PROVIDERS, type AiProvider } from '../../ai-gateway/ai-provider.js';
+import {
+  COMMENT_LANGUAGES,
+  COMMENT_STATUSES,
+  type CommentLanguage,
+  type CommentStatus,
+  CONTEXT_LEVELS,
+  type ContextLevel,
+  MACHINE_CODE_PATTERN,
+  MAX_REASONING_CHARS,
+  MODERATION_CATEGORIES,
+  MODERATION_CATEGORY_KEYS,
+  type ModerationCategory,
+  PROMPT_VERSION_PATTERN,
+} from '../../moderation/moderation.constants.js';
+import { AI_MODEL_MAX_LENGTH } from './ai-settings.js';
+import {
+  allOrNoneSql,
+  inListSql,
+  lengthSql,
+  nonNegativeSql,
+  patternSql,
+  quoted,
+  snakeCase,
+} from './check-sql.js';
 import { id, timestamps, timestamptz } from './columns.js';
 import { socialPages } from './meta.js';
 import { workspaces } from './workspaces.js';
@@ -22,8 +48,10 @@ import { workspaces } from './workspaces.js';
  *   `<platform>:<commentId>:<verb>` (same format as the BullMQ job id, `commentJobId()`; verb
  *   `edited` is `edited-<16 hex edit hash>`, M4-T4), so duplicate deliveries/retries hit the
  *   unique key (`ON CONFLICT DO NOTHING`) while every different edit gets its own row.
- * - `comments`: one row per Meta comment (`comment_id` unique). `status` is only `PENDING` until
- *   Module 5. Only `raw_payload` is cleared after 30 days (D4); text/author/status stay.
+ * - `comments`: one row per Meta comment (`comment_id` unique). Only `raw_payload` is cleared
+ *   after 30 days (D4); text/author/status stay. Module 5 (M5-T7) adds the moderation outcome:
+ *   `status` (`COMMENT_STATUSES`), the latest classification (all-or-nothing group, D9 reasoning)
+ *   and the human stamp `overridden_at` (D10).
  *   D7: disconnect deletes the `social_pages` row, the comment stays with `social_page_id = null`
  *   (`on delete set null`) and is stamped with the connection's `facebook_user_id` (M4-T9), so
  *   D6 Data Deletion still finds it. D6 must delete the Pages' comments **before** the Pages.
@@ -37,16 +65,12 @@ import { workspaces } from './workspaces.js';
 export const COMMENT_PLATFORMS = ['FACEBOOK', 'INSTAGRAM'] as const;
 export type CommentPlatform = (typeof COMMENT_PLATFORMS)[number];
 
-/** Module 5 adds moderation outcomes. */
-export const COMMENT_STATUSES = ['PENDING'] as const;
-export type CommentStatus = (typeof COMMENT_STATUSES)[number];
+/** Moderation outcome per comment (M5-T7); defined with the other moderation constants. */
+export { COMMENT_STATUSES, type CommentStatus };
 
 /** Webhook verbs we store (D2). */
 export const COMMENT_VERBS = ['add', 'edited', 'remove'] as const;
 export type CommentVerb = (typeof COMMENT_VERBS)[number];
-
-const quoted = (values: readonly string[]) =>
-  values.map((v) => `'${v}'`).join(', ');
 
 /** Numeric Meta id (Page id, user id, IG id). */
 const numericId = (column: string, nullable = false) =>
@@ -92,6 +116,18 @@ export const webhookEvents = pgTable(
   ],
 );
 
+/** Columns set together by a classification (`comments_classification_complete`). */
+export const CLASSIFICATION_COLUMNS = [
+  'category',
+  'confidence',
+  'language',
+  'classified_at',
+  'ai_provider',
+  'model',
+  'prompt_version',
+  'context_level',
+] as const;
+
 export const comments = pgTable(
   'comments',
   {
@@ -126,6 +162,26 @@ export const comments = pgTable(
     editedAt: timestamptz(),
     /** Verb `remove`: the comment was deleted on Meta (never hidden later, D2). */
     deletedAt: timestamptz(),
+    // Latest classification (M5-T7; written by the M5-T12 worker). All-or-nothing except
+    // `reasoning` (may be null even when classified); replaced when an edit is re-classified (D11).
+    category: text().$type<ModerationCategory>(),
+    /** 0–1, 3 decimals (the classifier rounds to 3 dp). */
+    confidence: numeric({ precision: 4, scale: 3, mode: 'number' }),
+    /** Short English reasoning ≤ 280 (D9); deleted with the comment. */
+    reasoning: text(),
+    language: text().$type<CommentLanguage>(),
+    classifiedAt: timestamptz(),
+    aiProvider: text().$type<AiProvider>(),
+    model: text(),
+    promptVersion: text(),
+    /** The level actually sent (D8; a missing caption drops `post_caption` to `page_name`). */
+    contextLevel: text().$type<ContextLevel>(),
+    /** AI credits charged for this comment so far: every classification incl. re-checked edits (D7). */
+    creditsCharged: integer().notNull().default(0),
+    /** Machine code explaining `SKIPPED` / `FAILED` / `NEEDS_REVIEW` (e.g. `credits_exhausted`). */
+    statusReason: text(),
+    /** First human moderation action (D10): from then on the AI never changes the comment. */
+    overriddenAt: timestamptz(),
     ...timestamps,
   },
   (t) => [
@@ -142,6 +198,10 @@ export const comments = pgTable(
     index('comments_raw_payload_purge_index')
       .on(t.createdAt)
       .where(sql`${t.rawPayload} is not null`),
+    // D2 sweeper (M5-T12): re-queue PENDING / FAILED comments younger than 24 h.
+    index('comments_moderation_retry_index')
+      .on(t.createdAt)
+      .where(sql.raw(`status in (${quoted(['PENDING', 'FAILED'])})`)),
     check(
       'comments_platform_check',
       sql.raw(`platform in (${quoted(COMMENT_PLATFORMS)})`),
@@ -157,8 +217,70 @@ export const comments = pgTable(
       'comments_facebook_user_id_format',
       numericId('facebook_user_id', true),
     ),
+    check(
+      'comments_category_check',
+      sql.raw(inListSql('category', MODERATION_CATEGORIES, true)),
+    ),
+    check(
+      'comments_confidence_range',
+      sql.raw('confidence is null or confidence between 0 and 1'),
+    ),
+    check(
+      'comments_reasoning_check',
+      sql.raw(
+        `reasoning is null or (category is not null and ${lengthSql('reasoning', 0, MAX_REASONING_CHARS)})`,
+      ),
+    ),
+    check(
+      'comments_language_check',
+      sql.raw(inListSql('language', COMMENT_LANGUAGES, true)),
+    ),
+    check(
+      'comments_ai_provider_check',
+      sql.raw(inListSql('ai_provider', AI_PROVIDERS, true)),
+    ),
+    check(
+      'comments_model_length',
+      sql.raw(lengthSql('model', 1, AI_MODEL_MAX_LENGTH, true)),
+    ),
+    check(
+      'comments_prompt_version_format',
+      sql.raw(patternSql('prompt_version', PROMPT_VERSION_PATTERN, true)),
+    ),
+    check(
+      'comments_context_level_check',
+      sql.raw(inListSql('context_level', CONTEXT_LEVELS, true)),
+    ),
+    check(
+      'comments_classification_complete',
+      sql.raw(allOrNoneSql(CLASSIFICATION_COLUMNS)),
+    ),
+    check('comments_credits_charged_check', sql`${t.creditsCharged} >= 0`),
+    check(
+      'comments_status_reason_format',
+      sql.raw(patternSql('status_reason', MACHINE_CODE_PATTERN, true)),
+    ),
   ],
 );
+
+/**
+ * `daily_comment_stats` counters: delta key → column `<key>Count` (M4-T2 ingest counters, then the
+ * M5-T7 moderation ones; the category counters use `MODERATION_CATEGORY_KEYS`).
+ */
+export const DAILY_COMMENT_COUNTERS = [
+  'received',
+  'edited',
+  'removed',
+  'classified',
+  ...Object.values(MODERATION_CATEGORY_KEYS),
+  'hidden',
+  'unhidden',
+  'deleted',
+  'replied',
+  'skipped',
+  'failed',
+] as const;
+export type DailyCommentCounter = (typeof DAILY_COMMENT_COUNTERS)[number];
 
 export const dailyCommentStats = pgTable(
   'daily_comment_stats',
@@ -175,6 +297,20 @@ export const dailyCommentStats = pgTable(
     receivedCount: integer().notNull().default(0),
     editedCount: integer().notNull().default(0),
     removedCount: integer().notNull().default(0),
+    // Moderation counters (M5-T7): one per classification (incl. re-checked edits) and per
+    // category of it, then per successful Meta action, then per SKIPPED / FAILED outcome.
+    classifiedCount: integer().notNull().default(0),
+    safeInquiryCount: integer().notNull().default(0),
+    competitorPoachCount: integer().notNull().default(0),
+    scamPhishingCount: integer().notNull().default(0),
+    spamIrrelevantCount: integer().notNull().default(0),
+    abusiveToxicCount: integer().notNull().default(0),
+    hiddenCount: integer().notNull().default(0),
+    unhiddenCount: integer().notNull().default(0),
+    deletedCount: integer().notNull().default(0),
+    repliedCount: integer().notNull().default(0),
+    skippedCount: integer().notNull().default(0),
+    failedCount: integer().notNull().default(0),
     ...timestamps,
   },
   (t) => [
@@ -192,7 +328,11 @@ export const dailyCommentStats = pgTable(
     ),
     check(
       'daily_comment_stats_counts_check',
-      sql`${t.receivedCount} >= 0 and ${t.editedCount} >= 0 and ${t.removedCount} >= 0`,
+      sql.raw(
+        nonNegativeSql(
+          DAILY_COMMENT_COUNTERS.map((key) => snakeCase(`${key}Count`)),
+        ),
+      ),
     ),
   ],
 );

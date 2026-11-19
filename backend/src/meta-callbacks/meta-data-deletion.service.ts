@@ -127,8 +127,8 @@ export class MetaDataDeletionService {
    * The deletion job, in one transaction: lock the request (`FOR UPDATE`; already `COMPLETED` →
    * nothing to do) → for every workspace holding the user's data (routing read: their connections
    * + comments a disconnect stamped with their id (M4-T9), ordered by workspace): lock the
-   * workspace, the connection (re-checked; may be gone) and its Pages, then delete webhook events
-   * → comments (the Pages' + the stamped ones) → Pages → connection, all scoped by `workspace_id`
+   * workspace, the connection (re-checked; may be gone) and its Pages, then delete moderation
+   * actions → webhook events → comments (the Pages' + the stamped ones) → Pages → connection, all scoped by `workspace_id`
    * → mark the request `COMPLETED`. An unknown user completes with nothing deleted. Daily
    * aggregates stay.
    */
@@ -144,6 +144,7 @@ export class MetaDataDeletionService {
       }
       const totals = {
         connectionsSeen: 0,
+        moderationActions: 0,
         webhookEvents: 0,
         comments: 0,
         pages: 0,
@@ -170,6 +171,7 @@ export class MetaDataDeletionService {
           pageIds,
           facebookUserId: request.facebookUserId,
         });
+        totals.moderationActions += counts.moderationActions;
         totals.webhookEvents += counts.webhookEvents;
         totals.comments += counts.comments;
         totals.pages += counts.pages;

@@ -116,10 +116,11 @@ export interface CleanupSummary {
 }
 
 /**
- * Deletes the run's users and their workspaces (FK order: audit rows → Meta rows → members/invitations
- * → workspaces → sessions/accounts → users), then their Better Auth Redis keys (`auth:<token>` +
- * `auth:active-sessions-<userId>`, plus any other `auth:*` value naming the user) and the seed IP's
- * rate-limit keys (`auth:<seedIp>|<path>`). Idempotent.
+ * Deletes the run's users and their workspaces (FK order: audit rows → moderation actions/policies
+ * → webhook events/comments/stats → Meta rows → members/invitations → workspaces → sessions/accounts
+ * → users), then their Better Auth Redis keys (`auth:<token>` + `auth:active-sessions-<userId>`,
+ * plus any other `auth:*` value naming the user) and the seed IP's rate-limit keys
+ * (`auth:<seedIp>|<path>`). Idempotent.
  */
 export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary> {
   const emails = [identity.superAdmin.email, identity.owner.email];
@@ -143,6 +144,9 @@ export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary>
         [ids, wsIds],
       );
       const plan = await db.query('delete from plan_audit_logs where admin_id = any($1::uuid[])', [ids]);
+      // Moderation (M5-T7): actions reference comments (restrict) → first; policies reference workspaces.
+      await db.query('delete from moderation_actions where workspace_id = any($1::uuid[])', [wsIds]);
+      await db.query('delete from moderation_policies where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from webhook_events where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from comments where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from daily_comment_stats where workspace_id = any($1::uuid[])', [wsIds]);

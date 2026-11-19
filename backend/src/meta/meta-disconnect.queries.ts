@@ -80,6 +80,8 @@ export function findDisconnectPages(
  * Comments of the Pages about to be deleted: stamped with the connection's Facebook user id (so a
  * later Data Deletion request still finds them) when there is one, else only counted. Their
  * `social_page_id` becomes `null` through the FK when the Pages are deleted. Returns the count.
+ * Their classification and `moderation_actions` (M5-T7, FK to the comment, not the Page) stay with
+ * them; Data Deletion removes those with the comments.
  */
 export async function keepPageComments(
   tx: DisconnectExecutor,

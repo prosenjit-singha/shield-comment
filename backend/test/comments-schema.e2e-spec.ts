@@ -226,7 +226,8 @@ describe('Comments schema (e2e)', () => {
       const valid = comment(a.workspaceId, `${base}41`);
       const bad: Partial<typeof comments.$inferInsert>[] = [
         { platform: 'TIKTOK' as 'FACEBOOK' },
-        { status: 'HIDDEN' as 'PENDING' },
+        // M5-T7 statuses are valid now; anything outside COMMENT_STATUSES is not.
+        { status: 'ARCHIVED' as 'PENDING' },
         { commentId: 'abc_123' },
         { postId: `${base}_x` },
         { authorId: 'me' },

@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, type SQL, sql } from 'drizzle-orm';
 import { dhakaBucketKey } from '../admin/dashboard-range.js';
 import type { Database } from '../db/database.js';
 import {
   comments,
+  DAILY_COMMENT_COUNTERS,
+  type DailyCommentCounter,
   dailyCommentStats,
   webhookEvents,
   type CommentPlatform,
@@ -97,23 +99,53 @@ export type DailyCommentStatsDelta = {
   platform: CommentPlatform;
   /** Dhaka day (`dhakaDayKey()`). */
   day: string;
-  received?: number;
-  edited?: number;
-  removed?: number;
-};
+} & Partial<Record<DailyCommentCounter, number>>;
 
-/** Adds to the day's counters, creating the row on first use. Returns the new totals. */
+type DailyCounterColumn = `${DailyCommentCounter}Count`;
+
+/** `received` → `receivedCount` (the `daily_comment_stats` column of a counter). */
+export function dailyCounterColumn(
+  counter: DailyCommentCounter,
+): DailyCounterColumn {
+  return `${counter}Count`;
+}
+
+/**
+ * The counters a delta adds (only non-zero ones), validated: every value an integer ≥ 0.
+ * Pure (unit tested); throws on a bad value before any SQL runs.
+ */
+export function dailyCounterIncrements(
+  delta: Partial<Record<DailyCommentCounter, number>>,
+): Partial<Record<DailyCounterColumn, number>> {
+  const out: Partial<Record<DailyCounterColumn, number>> = {};
+  for (const counter of DAILY_COMMENT_COUNTERS) {
+    const value = delta[counter] ?? 0;
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error('Daily comment stats deltas must be integers ≥ 0');
+    }
+    if (value > 0) out[dailyCounterColumn(counter)] = value;
+  }
+  return out;
+}
+
+/**
+ * Adds to the day's counters (ingest: received/edited/removed, M4-T2; moderation: classified,
+ * per category, hidden/unhidden/deleted/replied, skipped/failed, M5-T7), creating the row on
+ * first use. Returns the new totals.
+ */
 export async function incrementDailyCommentStats(
   executor: CommentsExecutor,
   delta: DailyCommentStatsDelta,
 ): Promise<DailyCommentStatsRow> {
-  const received = delta.received ?? 0;
-  const edited = delta.edited ?? 0;
-  const removed = delta.removed ?? 0;
-  for (const value of [received, edited, removed]) {
-    if (!Number.isInteger(value) || value < 0) {
-      throw new Error('Daily comment stats deltas must be integers ≥ 0');
-    }
+  const increments = dailyCounterIncrements(delta);
+  const set: Partial<Record<DailyCounterColumn | 'updatedAt', SQL>> = {
+    updatedAt: sql`now()`,
+  };
+  for (const [column, value] of Object.entries(increments) as [
+    DailyCounterColumn,
+    number,
+  ][]) {
+    set[column] = sql`${dailyCommentStats[column]} + ${value}`;
   }
   const [row] = await executor
     .insert(dailyCommentStats)
@@ -122,9 +154,7 @@ export async function incrementDailyCommentStats(
       pageId: delta.pageId,
       platform: delta.platform,
       day: delta.day,
-      receivedCount: received,
-      editedCount: edited,
-      removedCount: removed,
+      ...increments,
     })
     .onConflictDoUpdate({
       target: [
@@ -133,12 +163,7 @@ export async function incrementDailyCommentStats(
         dailyCommentStats.platform,
         dailyCommentStats.day,
       ],
-      set: {
-        receivedCount: sql`${dailyCommentStats.receivedCount} + ${received}`,
-        editedCount: sql`${dailyCommentStats.editedCount} + ${edited}`,
-        removedCount: sql`${dailyCommentStats.removedCount} + ${removed}`,
-        updatedAt: sql`now()`,
-      },
+      set,
     })
     .returning();
   return row!;
@@ -157,6 +182,18 @@ const workspaceCommentColumns = {
   status: comments.status,
   editedAt: comments.editedAt,
   deletedAt: comments.deletedAt,
+  category: comments.category,
+  confidence: comments.confidence,
+  reasoning: comments.reasoning,
+  language: comments.language,
+  classifiedAt: comments.classifiedAt,
+  aiProvider: comments.aiProvider,
+  model: comments.model,
+  promptVersion: comments.promptVersion,
+  contextLevel: comments.contextLevel,
+  creditsCharged: comments.creditsCharged,
+  statusReason: comments.statusReason,
+  overriddenAt: comments.overriddenAt,
   createdAt: comments.createdAt,
   updatedAt: comments.updatedAt,
 };
