@@ -562,7 +562,7 @@ describe('Activate plan dialog (PW-T9)', () => {
     const dialog = await openFor('Bazaar BD')
     expect(radio(dialog, /Starter/).getAttribute('aria-checked')).toBe('true')
     expect(price(dialog)).toBe('৳499/month')
-    expect(within(dialog).getByText(/Ends no active plan right away/)).toBeTruthy()
+    expect(within(dialog).getByText(/No active plan to end: starts the new term from the start date\./)).toBeTruthy()
   })
 
   it('disables Yearly without a yearly price and previews the yearly charge', async () => {

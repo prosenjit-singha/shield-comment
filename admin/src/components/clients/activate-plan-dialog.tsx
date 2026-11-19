@@ -50,12 +50,15 @@ export function ActivatePlanDialog({ client, onClose }: { client: AdminClient | 
   )
 }
 
-/** What the client is on now, for the dialog description. */
-function currentPlanText(client: AdminClient): string {
+/** Lead sentence: what the activation ends (nothing to end without a live plan). */
+function activationLead(client: AdminClient): string {
   const sub = client.subscription
-  if (client.plan && sub?.status === 'TRIALING') return `the ${client.plan.name} trial`
-  if (client.plan && sub?.status === 'ACTIVE') return `${client.plan.name} (${subscriptionIntervalLabels[sub.interval]})`
-  return 'no active plan'
+  const startsNew = 'starts the new term from the start date.'
+  if (client.plan && sub?.status === 'TRIALING') return `Ends the ${client.plan.name} trial right away and ${startsNew}`
+  if (client.plan && sub?.status === 'ACTIVE') {
+    return `Ends ${client.plan.name} (${subscriptionIntervalLabels[sub.interval]}) right away and ${startsNew}`
+  }
+  return 'No active plan to end: starts the new term from the start date.'
 }
 
 function errorText(err: unknown): string {
@@ -139,8 +142,8 @@ function ActivateForm({ client, onClose }: { client: AdminClient; onClose: () =>
         <DialogHeader>
           <DialogTitle>Activate a plan for {client.name}</DialogTitle>
           <DialogDescription>
-            Ends {currentPlanText(client)} right away and starts the new term from the start date. The plan covers
-            every workspace on this client’s billing account, and this period’s comments start again from 0.
+            {activationLead(client)} The plan covers every workspace on this client’s billing account, and this
+            period’s comments start again from 0.
           </DialogDescription>
         </DialogHeader>
 
