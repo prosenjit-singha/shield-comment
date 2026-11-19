@@ -7,10 +7,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.)
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #6 (2026-11-19) · rows this session: 1 · estimate: 75k
+- Session: #6 (2026-11-19) · rows this session: 2 · estimate: 85k
 
 ## State
-dispatched M5-T1 (2026-11-19) · commit: "feat(backend): add provider-neutral llm client with typed errors (M5-T1)"
+verified M5-T1
 
 ## Resume
 `/orchestration --continue`
@@ -128,4 +128,4 @@ Tests to write (Vitest, stubbed `fetch`, **no live call**): Anthropic URL + trai
 - 2026-11-19 M4-T13 ✅ 14da883 · bash -n ✅ · shellcheck n/a · --check exit 0 · live tunnel: public /api/health/live 200, verify/unsigned POST/deauthorize 503 (no META_* in compose), share stopped · backend/admin/client untouched · `scripts/tunnel.sh` (zrok2 `public:shield-comment-dev` created + reserved) + Meta webhook setup guide with live-smoke checklist + root README; live Meta smoke still skipped (D12)
 - 2026-11-19 M5-PLAN ✅ 7448646 · docs only · Module 5 planned: 11 rows + GATE (M5-T1…T11), decisions D1–D14 open; next prompt = M5-T1 (PRE-CHECK D1, D2)
 - 2026-11-19 M5-PLAN decisions ✅ c4e11b6 · docs only · Module 5 D1–D14 answered + D15 credits + D16 AI provider settings; rows re-planned to M5-T1…T17 + GATE; next prompt = M5-T1
-- 2026-11-19 M5-T1 ✅ · backend 1115 unit (was 1032) + e2e 494 · provider-neutral LLM client: env resolver (AI_PROVIDER + per-provider keys), OpenAI-compatible adapter (Neon/OpenAI/Gemini), response_format, typed error kinds + Retry-After, strict fake; anthropic → not_configured until M5-T2
+- 2026-11-19 M5-T1 ✅ 5329100 · backend 1115 unit (was 1032) + e2e 494 · provider-neutral LLM client: env resolver (AI_PROVIDER + per-provider keys), OpenAI-compatible adapter (Neon/OpenAI/Gemini), response_format, typed error kinds + Retry-After, strict fake; anthropic → not_configured until M5-T2
