@@ -189,6 +189,8 @@ RUN COMPLETE
 - 2026-11-20 M7-T11 pre-check (admin apple-redesign merge 16be7bb landed on master at 21:42, outside the run): "How should the sub-agent handle admin/?" → "Keep admin redesign (Recommended)".
 - 2026-11-20 M7-T11 interrupted mid-row (session ended; uncommitted client files): user → "please continue from that point and start working again" → same sub-agent resumed to finish the partial work.
 - 2026-11-20 M7-T14 pre-check: "What should a signed-out visitor see on /invite/<id>?" → "Generic page (Recommended)".
+- 2026-11-21 after the run: admin Sheet parity (open from M7-T11) → user: "Use our latest admin redesigned ui." → no parity row: admin keeps its redesigned components (`admin/src/components/ui/*`, `docs/design/admin.md`); future rows never re-run `shadcn add`/`animate all` over existing admin components, and a new admin component is restyled to the redesign.
+- 2026-11-21 after the run: `TELEGRAM_*` values in `backend/.env` (seen at M7-T9) → user: "Yes those variables are mine."
 
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
