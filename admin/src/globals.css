@@ -87,6 +87,7 @@
 }
 
 .dark {
+    color-scheme: dark; /* native date pickers, scrollbars */
     /* Pure black canvas, Apple dark surfaces, brand hues lifted for contrast */
     --background: oklch(0 0 0);               /* #000000 */
     --foreground: oklch(0.971 0.003 286);     /* #F5F5F7 */
