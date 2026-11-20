@@ -38,6 +38,7 @@ describe('aiErrorKind', () => {
       err({ type: 'insufficient_quota', code: 'insufficient_quota' }),
       'payment_required',
     ],
+    [429, err({ code: 'credits_required' }), 'payment_required'],
     [
       429,
       err({ type: 'requests', code: 'rate_limit_exceeded' }),

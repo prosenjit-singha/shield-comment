@@ -1,5 +1,6 @@
 import { DEFAULT_AI_MODELS } from './ai-provider.js';
 import {
+  acceptsTemperature,
   DEFAULT_TEXT_IMAGE_MODEL,
   NEON_MODEL_CATALOG,
   NEON_MODEL_INPUTS,
@@ -9,6 +10,15 @@ import {
 import { isSystemOneModel } from './systemone.adapter.js';
 
 describe('NEON_MODEL_CATALOG', () => {
+  it('flags the models that take no temperature (/v1/models, M5-T16)', () => {
+    expect(
+      NEON_MODEL_CATALOG.filter((m) => !m.temperature).map((m) => m.code),
+    ).toEqual(['gemini-4-carbon', 'typesafeai-jev-1-14-0', 'claude-haiku-5-5']);
+    expect(acceptsTemperature('gpt-oss-120b')).toBe(true);
+    expect(acceptsTemperature('some-new-model')).toBe(true);
+    expect(acceptsTemperature('claude-haiku-5-5')).toBe(false);
+  });
+
   it('holds the five D19 models, unique codes', () => {
     expect(NEON_MODEL_CATALOG.map((m) => m.code)).toEqual([
       'gemini-4-carbon',

@@ -92,6 +92,29 @@ describe('chatCompletionsBody', () => {
     }
   });
 
+  it('leaves temperature out for Neon models whose catalog entry has no temperature', () => {
+    for (const model of ['gemini-4-carbon', 'claude-haiku-5-5']) {
+      expect(
+        chatCompletionsBody('neon', { model, messages, temperature: 0 }),
+      ).toEqual({ model, messages });
+    }
+    expect(
+      chatCompletionsBody('neon', {
+        model: 'gpt-oss-20b',
+        messages,
+        temperature: 0,
+      }),
+    ).toEqual({ model: 'gpt-oss-20b', messages, temperature: 0 });
+    // The catalog is Neon's: other providers keep it.
+    expect(
+      chatCompletionsBody('google', {
+        model: 'gemini-4-carbon',
+        messages,
+        temperature: 0,
+      }),
+    ).toEqual({ model: 'gemini-4-carbon', messages, temperature: 0 });
+  });
+
   it('uses max_completion_tokens for OpenAI and maps json_object', () => {
     expect(
       chatCompletionsBody('openai', {

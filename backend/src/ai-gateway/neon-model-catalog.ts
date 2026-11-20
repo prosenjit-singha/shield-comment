@@ -34,6 +34,8 @@ export interface NeonModel {
   outputUsdPer1M: number | null;
   free: boolean;
   dialect: NeonModelDialect;
+  /** `/v1/models` `features.temperature`; `false` = the gateway 400s on `temperature` (M5-T16). */
+  temperature: boolean;
 }
 
 export const NEON_MODEL_CATALOG_SOURCE = {
@@ -52,6 +54,7 @@ export const NEON_MODEL_CATALOG: readonly NeonModel[] = [
     outputUsdPer1M: 0,
     free: true,
     dialect: 'chat',
+    temperature: false,
   },
   {
     code: 'typesafeai-jev-1-14-0',
@@ -64,6 +67,7 @@ export const NEON_MODEL_CATALOG: readonly NeonModel[] = [
     outputUsdPer1M: 0,
     free: false,
     dialect: 'systemone',
+    temperature: false,
   },
   {
     code: 'claude-haiku-5-5',
@@ -75,6 +79,7 @@ export const NEON_MODEL_CATALOG: readonly NeonModel[] = [
     outputUsdPer1M: 0.5,
     free: false,
     dialect: 'chat',
+    temperature: false,
   },
   {
     code: 'gpt-oss-20b',
@@ -86,6 +91,7 @@ export const NEON_MODEL_CATALOG: readonly NeonModel[] = [
     outputUsdPer1M: 0.3,
     free: false,
     dialect: 'chat',
+    temperature: true,
   },
   {
     code: 'gpt-oss-120b',
@@ -97,6 +103,7 @@ export const NEON_MODEL_CATALOG: readonly NeonModel[] = [
     outputUsdPer1M: 0.6,
     free: false,
     dialect: 'chat',
+    temperature: true,
   },
 ];
 
@@ -105,6 +112,11 @@ export const DEFAULT_TEXT_IMAGE_MODEL = 'claude-haiku-5-5';
 
 export function neonModel(code: string): NeonModel | undefined {
   return NEON_MODEL_CATALOG.find((m) => m.code === code);
+}
+
+/** Unknown models keep `temperature` (the gateway decides). */
+export function acceptsTemperature(code: string): boolean {
+  return neonModel(code)?.temperature ?? true;
 }
 
 export function supportsImages(code: string): boolean {

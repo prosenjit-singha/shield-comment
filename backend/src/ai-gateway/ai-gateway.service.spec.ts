@@ -374,6 +374,28 @@ describe('AiGatewayService', () => {
       });
     });
 
+    it("marks Neon's structured-output refusal (no param) as a response_format refusal", async () => {
+      const body = {
+        error_code: 'INVALID_PARAMETER_VALUE',
+        message:
+          'ai gateway upstream model rejected the request: Structured output is not supported for this model because its translation requires forced tool use, which newer Anthropic models reject.',
+      };
+      fetchMock.mockResolvedValue(jsonResponse(400, body));
+      const { svc } = makeService(CONFIGS.neon);
+      const e = await failure(
+        svc.chat(MESSAGES, { responseFormat: { type: 'json_object' } }),
+      );
+      expect(e).toMatchObject({
+        kind: 'invalid_request',
+        param: 'response_format',
+      });
+      // Without a requested format the same 400 is a plain invalid_request.
+      fetchMock.mockResolvedValue(jsonResponse(400, body));
+      const plain = await failure(svc.chat(MESSAGES));
+      expect(plain.kind).toBe('invalid_request');
+      expect(plain.param).toBeUndefined();
+    });
+
     it('maps a non-JSON error body by status', async () => {
       fetchMock.mockResolvedValue(
         new Response('<html>Bad Gateway</html>', {

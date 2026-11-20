@@ -4,8 +4,13 @@ import {
   type AiProviderAdapter,
   postJson,
 } from './ai-adapter.js';
-import { AiGatewayError, EMPTY_CONTENT_REASON } from './ai-gateway.errors.js';
+import {
+  AiGatewayError,
+  EMPTY_CONTENT_REASON,
+  markResponseFormatRefusal,
+} from './ai-gateway.errors.js';
 import type { AiProvider, AiProviderConfig } from './ai-provider.js';
+import { acceptsTemperature } from './neon-model-catalog.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -51,7 +56,13 @@ export function chatCompletionsBody(
     body[provider === 'openai' ? 'max_completion_tokens' : 'max_tokens'] =
       request.maxTokens;
   }
-  if (request.temperature !== undefined) body.temperature = request.temperature;
+  // Neon 400s on `temperature` for some models (Gemini 4 Carbon, Claude Haiku 5.5): leave it out.
+  if (
+    request.temperature !== undefined &&
+    (provider !== 'neon' || acceptsTemperature(request.model))
+  ) {
+    body.temperature = request.temperature;
+  }
   const format = request.responseFormat;
   if (format?.type === 'json_object') {
     body.response_format = { type: 'json_object' };
@@ -114,6 +125,8 @@ export function parseChatCompletion(
   };
 }
 
+const NEON_FORMAT_REFUSAL = /structured output|response_format/i;
+
 /**
  * OpenAI Chat Completions dialect: Neon AI gateway (unified `/v1`), OpenAI, and Google Gemini's
  * OpenAI-compatible endpoint. Bearer key, plain `fetch`, no SDK.
@@ -124,14 +137,21 @@ export class OpenAiCompatibleAdapter implements AiProviderAdapter {
     request: AiChatRequest,
   ): Promise<AiAdapterResult> {
     const { signal, ...rest } = request;
-    const { status, body } = await postJson(
-      config.provider,
-      chatCompletionsUrl(config.provider, config.baseUrl),
-      { Authorization: `Bearer ${config.apiKey}` },
-      chatCompletionsBody(config.provider, rest),
-      signal,
-      [config.apiKey],
-    );
-    return parseChatCompletion(config.provider, request.model, body, status);
+    try {
+      const { status, body } = await postJson(
+        config.provider,
+        chatCompletionsUrl(config.provider, config.baseUrl),
+        { Authorization: `Bearer ${config.apiKey}` },
+        chatCompletionsBody(config.provider, rest),
+        signal,
+        [config.apiKey],
+      );
+      return parseChatCompletion(config.provider, request.model, body, status);
+    } catch (error) {
+      // Neon names no `param` (Claude Haiku 5.5: "Structured output is not supported …").
+      throw request.responseFormat
+        ? markResponseFormatRefusal(error, NEON_FORMAT_REFUSAL)
+        : error;
+    }
   }
 }

@@ -4,7 +4,11 @@ import {
   type AiProviderAdapter,
   postJson,
 } from './ai-adapter.js';
-import { AiGatewayError, EMPTY_CONTENT_REASON } from './ai-gateway.errors.js';
+import {
+  AiGatewayError,
+  EMPTY_CONTENT_REASON,
+  markResponseFormatRefusal,
+} from './ai-gateway.errors.js';
 import type { AiProviderConfig } from './ai-provider.js';
 
 /**
@@ -168,27 +172,8 @@ export class AnthropicAdapter implements AiProviderAdapter {
       return parseAnthropicMessage(request.model, body, status);
     } catch (error) {
       throw request.responseFormat?.type === 'json_schema'
-        ? markSchemaRefusal(error)
+        ? markResponseFormatRefusal(error, SCHEMA_REFUSAL)
         : error;
     }
   }
-}
-
-/** 400 `invalid_request` naming the output schema → same error with `param: 'response_format'`. */
-function markSchemaRefusal(error: unknown): unknown {
-  if (
-    !(error instanceof AiGatewayError) ||
-    error.kind !== 'invalid_request' ||
-    error.param !== undefined ||
-    !SCHEMA_REFUSAL.test(error.message)
-  ) {
-    return error;
-  }
-  return new AiGatewayError(error.kind, error.message, {
-    status: error.status,
-    reason: error.reason,
-    param: 'response_format',
-    retryAfterMs: error.retryAfterMs,
-    provider: error.provider,
-  });
 }

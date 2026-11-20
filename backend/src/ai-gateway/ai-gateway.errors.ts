@@ -160,6 +160,8 @@ const PAYMENT_REASONS = new Set([
   // Anthropic: 402 type, and the 429 monthly spend cap (`error.details.error_code`).
   'billing_error',
   'enforced_spend_limit_reached',
+  // Neon AI Gateway: 429 when the AI credits are used up (D26).
+  'credits_required',
 ]);
 
 /** Anthropic answers an organization without credits with 400 "Your credit balance is too low…". */
@@ -255,4 +257,29 @@ export function aiErrorFromResponse(
     `AI ${provider} ${status}${safeReason ? ` (${safeReason})` : ''}: ${text}`,
     { status, reason: safeReason, param, retryAfterMs, provider },
   );
+}
+
+/**
+ * 400 `invalid_request` whose message matches `pattern` (the provider refused the output format)
+ * → same error with `param: 'response_format'`, so M5-T5 falls back to the next output mode.
+ */
+export function markResponseFormatRefusal(
+  error: unknown,
+  pattern: RegExp,
+): unknown {
+  if (
+    !(error instanceof AiGatewayError) ||
+    error.kind !== 'invalid_request' ||
+    error.param !== undefined ||
+    !pattern.test(error.message)
+  ) {
+    return error;
+  }
+  return new AiGatewayError(error.kind, error.message, {
+    status: error.status,
+    reason: error.reason,
+    param: 'response_format',
+    retryAfterMs: error.retryAfterMs,
+    provider: error.provider,
+  });
 }
