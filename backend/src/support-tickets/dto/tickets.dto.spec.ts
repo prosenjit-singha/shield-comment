@@ -2,8 +2,11 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import {
+  ClientReplyTicketDto,
+  CreateTicketDto,
   ListTicketsQueryDto,
   ReplyTicketDto,
+  TicketsPageQueryDto,
   UpdateTicketStatusDto,
 } from './tickets.dto.js';
 
@@ -124,5 +127,53 @@ describe('UpdateTicketStatusDto', () => {
   ])('rejects %j', async (plain, field) => {
     const { fields } = await check(UpdateTicketStatusDto, plain);
     expect(fields).toEqual([field]);
+  });
+});
+
+describe('TicketsPageQueryDto (client list, M7-T2)', () => {
+  it('takes paging + status, refuses the admin-only filters', async () => {
+    expect(
+      (await check(TicketsPageQueryDto, { status: 'OPEN' })).fields,
+    ).toEqual([]);
+    const { fields } = await check(TicketsPageQueryDto, {
+      workspaceId: WS,
+      priority: 'HIGH',
+    });
+    expect(fields.sort()).toEqual(['priority', 'workspaceId']);
+  });
+});
+
+describe('CreateTicketDto (M7-T2, D3)', () => {
+  const valid = { category: 'BILLING', subject: ' Refund ', body: ' Hi ' };
+
+  it('trims subject and body', async () => {
+    const { dto, fields } = await check(CreateTicketDto, valid);
+    expect(fields).toEqual([]);
+    expect(dto).toEqual({ category: 'BILLING', subject: 'Refund', body: 'Hi' });
+  });
+
+  it('refuses priority, status and bad values', async () => {
+    const { fields } = await check(CreateTicketDto, {
+      ...valid,
+      priority: 'HIGH',
+      status: 'RESOLVED',
+    });
+    expect(fields.sort()).toEqual(['priority', 'status']);
+    const bad = await check(CreateTicketDto, {
+      category: 'URGENT',
+      subject: 'x'.repeat(201),
+      body: '   ',
+    });
+    expect(bad.fields.sort()).toEqual(['body', 'category', 'subject']);
+  });
+});
+
+describe('ClientReplyTicketDto (M7-T2)', () => {
+  it('refuses isInternalNote', async () => {
+    const { fields } = await check(ClientReplyTicketDto, {
+      body: 'x',
+      isInternalNote: true,
+    });
+    expect(fields).toEqual(['isInternalNote']);
   });
 });
