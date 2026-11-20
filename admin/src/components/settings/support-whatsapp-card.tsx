@@ -23,7 +23,7 @@ import { formatDhakaDateTime } from '@/lib/admin-system'
 export function SupportWhatsappCard() {
   const query = useQuery(platformSettingsQueryOptions())
   return (
-    <section aria-labelledby="support-whatsapp-title" className="flex min-w-0 flex-col gap-4 rounded-xl bg-card p-4 md:p-5">
+    <section aria-labelledby="support-whatsapp-title" className="flex min-w-0 flex-col gap-4 rounded-3xl bg-card p-4 md:p-5">
       <div className="flex min-w-0 flex-col gap-1">
         <h2 id="support-whatsapp-title" className="text-lg font-semibold tracking-tight">
           Support WhatsApp number

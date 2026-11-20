@@ -79,7 +79,7 @@ export function AiProviderCard({
         <div data-testid="ai-skeleton" aria-busy="true" aria-label="Loading AI settings" className="flex flex-col gap-4 border-t p-4 md:p-5">
           <Skeleton className="h-9 rounded-xl" />
           <Skeleton className="h-9 rounded-xl" />
-          <Skeleton className="h-32 rounded-xl" />
+          <Skeleton className="h-32 rounded-2xl" />
         </div>
       </Shell>
     )
@@ -89,7 +89,7 @@ export function AiProviderCard({
 
 function Shell({ children }: { children: ReactNode }) {
   return (
-    <section aria-labelledby="ai-provider-title" className="flex min-w-0 flex-col rounded-xl bg-card">
+    <section aria-labelledby="ai-provider-title" className="flex min-w-0 flex-col rounded-3xl bg-card">
       <div className="p-4 md:p-5">
         <CardTitle />
       </div>
@@ -201,7 +201,7 @@ function AiProviderForm({
       aria-labelledby="ai-provider-title"
       data-testid="ai-provider-card"
       data-dirty={dirty || undefined}
-      className="flex min-w-0 flex-col rounded-xl bg-card"
+      className="flex min-w-0 flex-col rounded-3xl bg-card"
     >
       <form onSubmit={submit} noValidate className="flex flex-1 flex-col">
         <fieldset disabled={save.isPending} className="flex min-w-0 flex-1 flex-col gap-5 p-4 md:p-5">
@@ -344,7 +344,7 @@ function AiProviderForm({
       </form>
 
       <Dialog open={confirmClear} onOpenChange={setConfirmClear}>
-        <DialogContent className="rounded-xl sm:max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Clear the {aiProviderLabels.neon} key?</DialogTitle>
             <DialogDescription>
@@ -352,7 +352,7 @@ function AiProviderForm({
               {aiProviderLabels.neon}, that one is used instead.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="rounded-b-xl">
+          <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setConfirmClear(false)}>
               Cancel
             </Button>
@@ -385,7 +385,7 @@ function Notice({ testId, tone, children }: { testId: string; tone: 'warning' | 
   return (
     <p
       data-testid={testId}
-      className={`flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm ${
+      className={`flex items-start gap-2 rounded-2xl px-3 py-2.5 text-sm ${
         tone === 'warning' ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'
       }`}
     >
@@ -456,7 +456,7 @@ function KeyRow({
   const status = settings.providers.neon
   const label = aiProviderLabels.neon
   return (
-    <div data-testid="ai-key-neon" className="flex min-w-0 flex-col gap-2 rounded-xl bg-muted/50 p-3">
+    <div data-testid="ai-key-neon" className="flex min-w-0 flex-col gap-2 rounded-2xl bg-muted/50 p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <Label htmlFor={id}>{label} API key</Label>
         <span data-testid="key-status" className="text-xs text-muted-foreground tabular-nums">

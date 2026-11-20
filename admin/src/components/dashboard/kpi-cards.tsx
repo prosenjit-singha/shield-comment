@@ -49,7 +49,7 @@ export function KpiCards({ kpis, newClients }: { kpis: DashboardKpis | undefined
         <section
           key={key}
           aria-label={label}
-          className="flex min-w-0 flex-col gap-3 rounded-xl bg-card p-5"
+          className="flex min-w-0 flex-col gap-3 rounded-3xl bg-card p-5"
         >
           <div className="flex items-center justify-between gap-2">
             <h2 className="truncate text-sm text-muted-foreground">{label}</h2>

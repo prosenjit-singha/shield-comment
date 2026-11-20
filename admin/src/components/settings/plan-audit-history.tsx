@@ -34,7 +34,7 @@ export function PlanAuditHistory({ plans }: { plans: readonly AdminPlan[] }) {
   }
 
   return (
-    <section aria-labelledby="plan-audit-title" className="flex min-w-0 flex-col overflow-hidden rounded-xl bg-card">
+    <section aria-labelledby="plan-audit-title" className="flex min-w-0 flex-col overflow-hidden rounded-3xl bg-card">
       <div className="flex flex-col gap-3 p-4 md:p-5">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
           <h2 id="plan-audit-title" className="text-base font-semibold">
@@ -120,7 +120,7 @@ function AuditEntry({ entry }: { entry: PlanAuditEntry }) {
         </time>
       </div>
 
-      <ul aria-label="Changed fields" className="flex flex-col gap-2 rounded-xl bg-muted px-3 py-2.5 text-sm">
+      <ul aria-label="Changed fields" className="flex flex-col gap-2 rounded-2xl bg-muted px-3 py-2.5 text-sm">
         {entry.changes.map((change) => (
           <li
             key={change.field}
@@ -160,7 +160,7 @@ function EntrySkeleton() {
         <Skeleton className="h-5 w-64 max-w-full rounded-full" />
         <Skeleton className="h-4 w-28 rounded-full" />
       </div>
-      <Skeleton className="h-14 rounded-xl" />
+      <Skeleton className="h-14 rounded-2xl" />
       <Skeleton className="h-3 w-48 rounded-full" />
     </li>
   )

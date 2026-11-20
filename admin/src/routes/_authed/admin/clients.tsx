@@ -118,7 +118,7 @@ function ClientsPage() {
 
       <section
         aria-label="Clients"
-        className="flex min-w-0 flex-col overflow-hidden rounded-xl bg-card"
+        className="flex min-w-0 flex-col overflow-hidden rounded-3xl bg-card"
       >
         <Toolbar search={search} setFilters={setFilters} hasFilters={hasFilters} />
 

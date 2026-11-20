@@ -113,15 +113,15 @@ function LoginPage() {
 
   return (
     <main className="flex min-h-svh items-center justify-center bg-muted p-4 sm:p-6 dark:bg-background">
-      <Card className="w-full max-w-sm gap-6 rounded-xl bg-card py-8">
-        <CardHeader className="justify-items-center gap-2 px-8 text-center">
+      <Card className="w-full max-w-sm gap-6 [--card-spacing:--spacing(6)]">
+        <CardHeader className="justify-items-center gap-2 text-center">
           <span className="mb-1 flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
             <ShieldCheck className="size-6" aria-hidden />
           </span>
           <CardTitle className="text-xl font-semibold">ShieldComment BD Admin</CardTitle>
           <CardDescription>Super admin sign-in</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4 px-8">
+        <CardContent className="flex flex-col gap-4">
           {sessionQuery.isError && !session && (
             <Notice icon={<WifiOff className="size-4" aria-hidden />} tone="muted">
               Couldn't check your session. The server may be unreachable.{' '}
@@ -248,8 +248,8 @@ function Notice({
       data-kind={kind}
       className={
         tone === 'destructive'
-          ? 'flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-foreground'
-          : 'flex items-start gap-2.5 rounded-xl border bg-muted px-4 py-3 text-sm text-muted-foreground'
+          ? 'flex items-start gap-2.5 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-foreground'
+          : 'flex items-start gap-2.5 rounded-2xl border bg-muted px-4 py-3 text-sm text-muted-foreground'
       }
     >
       <span className={tone === 'destructive' ? 'mt-0.5 text-destructive' : 'mt-0.5'}>{icon}</span>

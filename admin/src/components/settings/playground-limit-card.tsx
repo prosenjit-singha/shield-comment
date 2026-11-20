@@ -22,7 +22,7 @@ import {
 export function PlaygroundLimitCard() {
   const query = useQuery(platformSettingsQueryOptions())
   return (
-    <section aria-labelledby="playground-limit-title" className="flex min-w-0 flex-col gap-4 rounded-xl bg-card p-4 md:p-5">
+    <section aria-labelledby="playground-limit-title" className="flex min-w-0 flex-col gap-4 rounded-3xl bg-card p-4 md:p-5">
       <div className="flex min-w-0 flex-col gap-1">
         <h2 id="playground-limit-title" className="text-lg font-semibold tracking-tight">
           Playground

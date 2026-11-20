@@ -72,7 +72,7 @@ export function TicketQueue({
   return (
     <section
       aria-label="Ticket queue"
-      className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-card', className)}
+      className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl bg-card', className)}
     >
       <QueueFilters search={search} setFilters={setFilters} hasFilters={hasFilters} onClear={clearFilters} />
 

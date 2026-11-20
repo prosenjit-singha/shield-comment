@@ -32,7 +32,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--normal-bg": "var(--popover)",
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "transparent",
-          "--border-radius": "var(--radius-xl)",
+          "--border-radius": "calc(var(--spacing) * 3 + 0.875rem)", // py-3 + h-7 pill radius
         } as React.CSSProperties
       }
       // Sonner's default CSS is unlayered, so it beats Tailwind's utilities layer:

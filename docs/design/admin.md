@@ -6,7 +6,7 @@
 - Vite SPA with TanStack Router file routes (`src/routes/`). The sidebar shell is the `_authed` layout route (`beforeLoad` requires a Better Auth session with `role === 'super_admin'`).
 - Built **FIRST** using [Animate UI](https://animate-ui.com/docs) `Sidebar`, `Button` (`rounded-full`), `Tabs`, `Dialog`, and `DropdownMenu`.
 - Clean light-first minimalist admin shell (`--muted` canvas `#F5F5F7`, borderless white `--card` panels).
-- **Admin follows strict Apple geometry (`DESIGN.md`), overriding `base.md` §2:** `--radius` is 8px; pills (`rounded-full`) only for buttons, badges, switches, avatars, segmented tabs; cards, dialogs, inputs and menus `rounded-xl` (≈11px), never larger. Brand hues stay; neutrals are Apple grays, dark canvas is pure black. One soft shadow on floating layers only.
+- **Admin geometry: concentric corners (overrides `base.md` §2).** Outer radius = inner radius + padding, so a pill inside a container follows its corner. `--radius` is 8px; pills (`rounded-full`) for buttons, badges, switches, avatars, segmented tabs. Containers: card `rounded-3xl` = 38px (p-5 + 18px pill; `<Card>` computes it from `--card-spacing`), dialog `rounded-4xl` = 42px (p-6 + 18), box nested in a card/dialog `rounded-2xl` = 18px (outer − padding), menus 14px (p-1.5 + 8px items), inputs `rounded-xl` ≈ 11px. Cards are borderless; brand hues stay, neutrals are Apple grays, dark canvas is pure black. One soft shadow on floating layers only.
 
 ## 2. Super Admin Dashboard (`/admin/dashboard`) — Required Charts
 Use Recharts paired with shadcn/ui `--chart-*` / `--primary` (`#0668E1`) / `--secondary` (`#FE2C55`) / `--accent` (`#25F4EE`) tokens:

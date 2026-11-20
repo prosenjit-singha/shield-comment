@@ -140,7 +140,7 @@ function PromotionForm({ promotion, onClose }: { promotion: AdminPromotion | nul
   const terms = promotion ? promotionValue(promotion) : null
 
   return (
-    <DialogContent className="max-h-[90dvh] overflow-y-auto rounded-xl sm:max-w-lg">
+    <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
       <form onSubmit={submit} className="grid gap-5" noValidate>
         <DialogHeader>
           <DialogTitle>{promotion ? `Edit ${promotion.name}` : 'New promotion'}</DialogTitle>
@@ -194,7 +194,7 @@ function PromotionForm({ promotion, onClose }: { promotion: AdminPromotion | nul
         )}
 
         {locked && terms ? (
-          <div className="grid gap-1 rounded-xl bg-muted/50 px-4 py-3" data-testid="locked-terms">
+          <div className="grid gap-1 rounded-2xl bg-muted/50 px-4 py-3" data-testid="locked-terms">
             <p className="text-sm">
               <span className="font-medium">{terms.main}</span>
               <span className="text-muted-foreground"> · {terms.detail}</span>
@@ -405,12 +405,12 @@ function PromotionForm({ promotion, onClose }: { promotion: AdminPromotion | nul
         </Field>
 
         {serverError && !serverError.field && (
-          <p role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <p role="alert" className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {serverError.message}
           </p>
         )}
 
-        <DialogFooter className="rounded-b-xl">
+        <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
           </Button>

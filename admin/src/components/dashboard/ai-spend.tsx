@@ -35,7 +35,7 @@ export function BlockError({ title, error, onRetry }: { title: string; error: Er
 
 function SpendCard({ label, value, caption, tone }: { label: string; value: string; caption: string; tone?: string }) {
   return (
-    <section aria-label={label} className="flex min-w-0 flex-col gap-2 rounded-xl bg-card p-5">
+    <section aria-label={label} className="flex min-w-0 flex-col gap-2 rounded-3xl bg-card p-5">
       <h3 className="truncate text-sm text-muted-foreground">{label}</h3>
       <p className={`truncate text-2xl font-semibold tracking-tight tabular-nums ${tone ?? ''}`}>{value}</p>
       <p className="text-xs text-muted-foreground">{caption}</p>
@@ -50,7 +50,7 @@ export function AiSpendCards() {
 
   if (query.isError) {
     return (
-      <div className="rounded-xl bg-card">
+      <div className="rounded-3xl bg-card">
         <BlockError title="Couldn’t load AI spend" error={query.error} onRetry={() => void query.refetch()} />
       </div>
     )
@@ -59,7 +59,7 @@ export function AiSpendCards() {
     return (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Loading AI spend">
         {Array.from({ length: 4 }, (_, i) => (
-          <Skeleton key={i} className="h-28 rounded-xl" />
+          <Skeleton key={i} className="h-28 rounded-3xl" />
         ))}
       </div>
     )
@@ -103,7 +103,7 @@ export function RecentAnalyses() {
   const items = query.data?.items
 
   return (
-    <section aria-label="Recent AI analyses" className="min-w-0 rounded-xl bg-card">
+    <section aria-label="Recent AI analyses" className="min-w-0 rounded-3xl bg-card">
       <div className="px-5 pt-5 pb-3">
         <h2 className="text-base font-semibold">Recent AI analyses</h2>
         <p className="text-sm text-muted-foreground">Last 20 comments the AI judged, all clients. Bangladesh time.</p>

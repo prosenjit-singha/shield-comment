@@ -90,7 +90,7 @@ function SystemPage() {
           {query.isError && (
             <p
               role="status"
-              className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+              className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
             >
               Couldn't refresh: {query.error.message}. Showing the last result.
             </p>
@@ -134,7 +134,7 @@ function Panel({
 }) {
   const id = `panel-${title.toLowerCase().replace(/\W+/g, '-')}`
   return (
-    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-4 rounded-xl bg-card p-4 md:p-5">
+    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-4 rounded-3xl bg-card p-4 md:p-5">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -339,7 +339,7 @@ function QueuesCard({ queues }: { queues: QueueStats[] | undefined }) {
           <Skeleton className="h-4 w-2/3 rounded-full" />
         </div>
       ) : queues.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl bg-muted px-6 py-10 text-center">
+        <div className="flex flex-col items-center gap-2 rounded-2xl bg-muted px-6 py-10 text-center">
           <h3 className="text-sm font-semibold">No queues yet</h3>
           <p className="max-w-md text-sm text-balance text-muted-foreground">
             Waiting, active and failed jobs per queue show here once the comment moderation pipeline is running.
@@ -423,7 +423,7 @@ function AiUsageCard({ ai }: { ai: AiUsageReport | null | undefined }) {
       {ai === undefined ? (
         <FactSkeletons count={6} />
       ) : ai === null ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl bg-muted px-6 py-10 text-center" data-testid="ai-unavailable">
+        <div className="flex flex-col items-center gap-2 rounded-2xl bg-muted px-6 py-10 text-center" data-testid="ai-unavailable">
           <h3 className="text-sm font-semibold">AI usage unavailable</h3>
           <p className="max-w-md text-sm text-balance text-muted-foreground">
             The usage numbers couldn't be read just now. The rest of the system check is unaffected; it tries
@@ -446,7 +446,7 @@ function AiWindowView({ window: w, rate }: { window: AiUsageWindow; rate: number
         {formatRangeLabel(w.from, w.to)} · Dhaka time
       </p>
       {t.calls === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl bg-muted px-6 py-10 text-center">
+        <div className="flex flex-col items-center gap-2 rounded-2xl bg-muted px-6 py-10 text-center">
           <h3 className="text-sm font-semibold">No AI calls yet</h3>
           <p className="max-w-md text-sm text-balance text-muted-foreground">
             Classification calls, tokens and cost show here once moderation runs on connected pages.
@@ -487,7 +487,7 @@ function AiWindowView({ window: w, rate }: { window: AiUsageWindow; rate: number
             <p
               role="note"
               data-testid="ai-unpriced"
-              className="rounded-xl bg-chart-4/15 px-4 py-2.5 text-xs text-foreground"
+              className="rounded-2xl bg-chart-4/15 px-4 py-2.5 text-xs text-foreground"
             >
               The cost total leaves out {t.unpricedModels} {t.unpricedModels === 1 ? 'model' : 'models'} without a
               list price (shown as n/a below).
@@ -587,7 +587,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
   return (
     <div
       role="alert"
-      className="flex flex-col items-center gap-3 rounded-xl bg-card px-6 py-16 text-center"
+      className="flex flex-col items-center gap-3 rounded-3xl bg-card px-6 py-16 text-center"
     >
       <h2 className="text-base font-semibold">Couldn't load system health</h2>
       <p className="max-w-md text-sm text-muted-foreground">{message}</p>

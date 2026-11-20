@@ -45,9 +45,9 @@
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
     --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
+    --radius-2xl: calc(var(--radius) * 2.25); /* 18px: box nested in a card/dialog = outer radius - padding */
+    --radius-3xl: calc(var(--radius) * 4.75); /* 38px: card = p-5 (20) + h-9 pill radius (18) */
+    --radius-4xl: calc(var(--radius) * 5.25); /* 42px: dialog = p-6 (24) + h-9 pill radius (18) */
 }
 
 :root {

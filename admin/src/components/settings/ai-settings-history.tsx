@@ -25,7 +25,7 @@ export function AiSettingsHistory() {
   const empty = data !== undefined && data.items.length === 0
 
   return (
-    <section aria-labelledby="ai-audit-title" className="flex min-w-0 flex-col overflow-hidden rounded-xl bg-card">
+    <section aria-labelledby="ai-audit-title" className="flex min-w-0 flex-col overflow-hidden rounded-3xl bg-card">
       <div className="flex flex-col gap-1 p-4 sm:flex-row sm:items-baseline sm:justify-between md:p-5">
         <h2 id="ai-audit-title" className="text-base font-semibold">
           AI settings history

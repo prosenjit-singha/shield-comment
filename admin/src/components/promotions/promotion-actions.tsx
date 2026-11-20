@@ -44,7 +44,7 @@ export function StopPromotionDialog({ promotion, onClose }: { promotion: AdminPr
   return (
     <Dialog open={promotion !== null} onOpenChange={(open) => !open && onClose()}>
       {promotion && (
-        <DialogContent className="rounded-xl sm:max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Stop {promotion.name}?</DialogTitle>
             <DialogDescription>
@@ -52,7 +52,7 @@ export function StopPromotionDialog({ promotion, onClose }: { promotion: AdminPr
               promotion can't be started again.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="rounded-b-xl">
+          <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
@@ -93,8 +93,8 @@ function RedemptionList({ promotion }: { promotion: AdminPromotion }) {
   if (query.isPending) {
     return (
       <div className="grid gap-3 px-4" aria-label="Loading claims">
-        <Skeleton className="h-16 rounded-xl" />
-        <Skeleton className="h-16 rounded-xl" />
+        <Skeleton className="h-16 rounded-2xl" />
+        <Skeleton className="h-16 rounded-2xl" />
       </div>
     )
   }
@@ -122,7 +122,7 @@ function RedemptionList({ promotion }: { promotion: AdminPromotion }) {
   return (
     <ul className="grid gap-3 px-4 pb-4" aria-label="Claims">
       {query.data.items.map((r) => (
-        <li key={r.id} className="grid gap-1 rounded-xl bg-card px-4 py-3">
+        <li key={r.id} className="grid gap-1 rounded-2xl bg-card px-4 py-3">
           <div className="flex items-baseline justify-between gap-3">
             <span className="truncate font-medium">{r.client.name}</span>
             <time dateTime={r.redeemedAt} className="shrink-0 text-xs text-muted-foreground">
