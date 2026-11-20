@@ -31,13 +31,22 @@ const Toaster = ({ ...props }: ToasterProps) => {
         {
           "--normal-bg": "var(--popover)",
           "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
+          "--normal-border": "transparent",
+          "--border-radius": "var(--radius-xl)",
         } as React.CSSProperties
       }
+      // Sonner's default CSS is unlayered, so it beats Tailwind's utilities layer:
+      // properties Sonner already sets need the `!` modifier.
       toastOptions={{
         classNames: {
-          toast: "cn-toast",
+          toast:
+            "cn-toast gap-2.5! px-4! py-3! bg-popover/90! backdrop-blur-xl backdrop-saturate-150 shadow-[0_4px_24px_rgb(0_0_0/0.08)]! ring-1 ring-foreground/5",
+          title: "text-sm! font-medium! leading-snug! tracking-tight",
+          description: "text-[13px]! leading-snug! text-muted-foreground!",
+          actionButton:
+            "h-7! rounded-full! px-3! bg-primary! text-primary-foreground! text-xs! font-medium! transition-[opacity,box-shadow,transform]! duration-150! ease-out active:scale-[0.97] motion-reduce:transition-none! focus-visible:ring-2! focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover",
+          cancelButton:
+            "h-7! rounded-full! px-3! bg-muted! text-foreground! text-xs! font-medium! transition-[opacity,box-shadow,transform]! duration-150! ease-out active:scale-[0.97] motion-reduce:transition-none! focus-visible:ring-2! focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover",
         },
       }}
       {...props}
