@@ -101,6 +101,28 @@ describe('UpdateAiSettingsDto', () => {
     ]);
   });
 
+  it('textImageModel like model (null resets); textImageEnabled boolean only', async () => {
+    const ok = await check(UpdateAiSettingsDto, {
+      textImageModel: ' claude-haiku-5-5 ',
+      textImageEnabled: true,
+    });
+    expect(ok.fields).toEqual([]);
+    expect(ok.dto.textImageModel).toBe('claude-haiku-5-5');
+    expect(
+      (await check(UpdateAiSettingsDto, { textImageModel: null })).fields,
+    ).toEqual([]);
+    for (const textImageModel of ['', 'has space', 'x'.repeat(101), 7]) {
+      expect(
+        (await check(UpdateAiSettingsDto, { textImageModel })).fields,
+      ).toEqual(['textImageModel']);
+    }
+    for (const textImageEnabled of [null, 'true', 1]) {
+      expect(
+        (await check(UpdateAiSettingsDto, { textImageEnabled })).fields,
+      ).toEqual(['textImageEnabled']);
+    }
+  });
+
   it('rejects unknown fields; the service rejects an empty body', async () => {
     expect((await check(UpdateAiSettingsDto, { apiKey: KEY })).fields).toEqual([
       'apiKey',

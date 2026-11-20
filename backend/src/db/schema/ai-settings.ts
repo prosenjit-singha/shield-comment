@@ -1,5 +1,6 @@
 import { relations, sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   index,
   pgTable,
@@ -20,7 +21,9 @@ const providerList = AI_PROVIDERS.map((p) => `'${p}'`).join(', ');
  * Platform-wide AI provider choice (M5-T3, decision D16). At most one row (`id = 1`), created by
  * the first `PATCH /api/admin/settings/ai` that sets a provider or model; no row = everything
  * from `.env`. `null` columns fall back per field: provider → `AI_PROVIDER` → `neon`;
- * model → `AI_GATEWAY_MODEL` (only for the env provider) → `DEFAULT_AI_MODELS`.
+ * model → `AI_GATEWAY_MODEL` (only for the env provider) → `DEFAULT_AI_MODELS`. `model` is the
+ * **Text model**; `text_image_model` (→ `DEFAULT_TEXT_IMAGE_MODEL`) + `text_image_enabled` are the
+ * Text + Image model and its switch (M5-T15b, D22/D23: stored only, image moderation is later).
  * Not tenant data: super admin only.
  */
 export const aiProviderSettings = pgTable(
@@ -29,6 +32,8 @@ export const aiProviderSettings = pgTable(
     id: smallint().primaryKey().default(1),
     provider: text().$type<AiProvider>(),
     model: text(),
+    textImageModel: text(),
+    textImageEnabled: boolean().notNull().default(false),
     /** Super admin who saved last; `set null` so deleting a user never blocks on settings. */
     updatedById: uuid().references(() => users.id, { onDelete: 'set null' }),
     ...timestamps,
@@ -43,6 +48,12 @@ export const aiProviderSettings = pgTable(
       'ai_provider_settings_model_length',
       sql.raw(
         `model is null or char_length(model) between 1 and ${AI_MODEL_MAX_LENGTH}`,
+      ),
+    ),
+    check(
+      'ai_provider_settings_text_image_model_length',
+      sql.raw(
+        `text_image_model is null or char_length(text_image_model) between 1 and ${AI_MODEL_MAX_LENGTH}`,
       ),
     ),
   ],
@@ -79,6 +90,8 @@ export const aiProviderKeys = pgTable(
 export const AI_SETTINGS_AUDIT_FIELDS = [
   'provider',
   'model',
+  'text_image_model',
+  'text_image_enabled',
   ...AI_PROVIDERS.map((p) => `key.${p}` as const),
 ] as const;
 export type AiSettingsAuditField = (typeof AI_SETTINGS_AUDIT_FIELDS)[number];
@@ -93,7 +106,8 @@ const keyFields = AI_PROVIDERS.map((p) => `'key.${p}'`).join(', ');
 
 /**
  * AI settings change log (M5-T3, D16): who changed which field, before → after, from where.
- * `provider` / `model` store the DB values (`null` = `.env` / default fallback); key fields store
+ * `provider` / `model` / `text_image_model` store the DB values (`null` = `.env` / default
+ * fallback); `text_image_enabled` stores `true` / `false`; key fields store
  * only `set` / `cleared` (never a key, last 4 or ciphertext). Written in the PATCH transaction;
  * rows are never updated. Actor FK `restrict` like the other audit tables (e2e `cleanup()` deletes
  * the actor's rows first).
@@ -129,7 +143,8 @@ export const aiSettingsAuditLogs = pgTable(
       sql.raw(
         `case
           when field = 'provider' then (before is null or before in (${providerList})) and (after is null or after in (${providerList}))
-          when field = 'model' then (before is null or char_length(before) between 1 and ${AI_MODEL_MAX_LENGTH}) and (after is null or char_length(after) between 1 and ${AI_MODEL_MAX_LENGTH})
+          when field in ('model', 'text_image_model') then (before is null or char_length(before) between 1 and ${AI_MODEL_MAX_LENGTH}) and (after is null or char_length(after) between 1 and ${AI_MODEL_MAX_LENGTH})
+          when field = 'text_image_enabled' then before in ('true', 'false') and after in ('true', 'false')
           when field in (${keyFields}) then (before is null or before = 'set') and after in ('set', 'cleared')
           else false
         end`,

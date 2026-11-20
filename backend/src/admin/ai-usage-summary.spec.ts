@@ -131,7 +131,7 @@ describe('summarizeAiUsageWindow', () => {
     const w = summarizeAiUsageWindow(
       [
         row('2026-11-18'),
-        row('2026-11-18', { provider: 'neon', model: 'gpt-oss-20b' }),
+        row('2026-11-18', { provider: 'neon', model: 'unlisted-model' }),
       ],
       window,
       PRICES,
@@ -154,7 +154,7 @@ describe('summarizeAiUsageWindow', () => {
 
   it('only unpriced models with calls → total cost null', () => {
     const w = summarizeAiUsageWindow(
-      [row('2026-11-18', { provider: 'neon', model: 'gpt-oss-20b' })],
+      [row('2026-11-18', { provider: 'neon', model: 'unlisted-model' })],
       window,
       PRICES,
       122,

@@ -17,6 +17,10 @@ export interface FakeAiGateway {
   enabled: boolean;
   isConfigured: Mock<Fn<'isConfigured'>>;
   chat: Mock<Fn<'chat'>>;
+  /** Resolved config; `null` (default) = the chat path with no explicit config. */
+  resolveConfig: Mock<Fn<'resolveConfig'>>;
+  /** System One call: strict, arm with `mockResolvedValueOnce` / `mockRejectedValueOnce`. */
+  decide: Mock<Fn<'decide'>>;
   testConnection: Mock<Fn<'testConnection'>>;
   replyWith(reply: string | Partial<ChatResult>): FakeAiGateway;
   failWith(error: Error): FakeAiGateway;
@@ -47,6 +51,10 @@ export function fakeAiGateway(): FakeAiGateway {
       }
       if ('error' in next) throw next.error;
       return next.reply;
+    }),
+    resolveConfig: vi.fn<Fn<'resolveConfig'>>(async () => null),
+    decide: vi.fn<Fn<'decide'>>(async () => {
+      throw new Error('Unexpected AiGatewayService.decide call in this spec');
     }),
     testConnection: vi.fn<Fn<'testConnection'>>(async () => {
       const next = probes.shift();
@@ -93,6 +101,11 @@ export function fakeAiGateway(): FakeAiGateway {
       fake.enabled = true;
       fake.chat.mockClear();
       fake.isConfigured.mockClear();
+      fake.resolveConfig.mockClear();
+      fake.decide.mockReset();
+      fake.decide.mockImplementation(async () => {
+        throw new Error('Unexpected AiGatewayService.decide call in this spec');
+      });
     },
   };
   return fake;

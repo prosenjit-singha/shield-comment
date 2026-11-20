@@ -21,6 +21,13 @@ import {
   DEFAULT_AI_MODELS,
 } from './ai-provider.js';
 import { OpenAiCompatibleAdapter } from './openai-compatible.adapter.js';
+import {
+  isSystemOneModel,
+  type NoulQuestion,
+  SystemOneAdapter,
+  type SystemOneRequest,
+  type SystemOneResult,
+} from './systemone.adapter.js';
 
 export type { AiResponseFormat, AiUsage, ChatMessage } from './ai-adapter.js';
 export {
@@ -45,6 +52,11 @@ export const CONNECTION_TEST_MAX_TOKENS = 16;
 export const CONNECTION_TEST_MESSAGES: readonly ChatMessage[] = [
   { role: 'user', content: 'Reply with the single word OK.' },
 ];
+/** The same probe for a System One model (no chat): one tiny Noul. */
+export const CONNECTION_TEST_STATE = { message: 'OK' };
+export const CONNECTION_TEST_QUESTIONS: Record<string, NoulQuestion> = {
+  ok: { type: 'noul', instructions: 'Is `message` the word OK?' },
+};
 
 /**
  * Probe outcome. Never contains the key; `message` is the scrubbed provider message (≤ 300 chars).
@@ -93,6 +105,7 @@ export interface ChatResult {
 export class AiGatewayService {
   private readonly logger = new Logger(AiGatewayService.name);
   private readonly adapters: Partial<Record<AiProvider, AiProviderAdapter>>;
+  private readonly systemOne = new SystemOneAdapter();
 
   constructor(
     @Inject(AI_CONFIG_RESOLVER) private readonly resolver: AiConfigResolver,
@@ -110,6 +123,43 @@ export class AiGatewayService {
   async isConfigured(): Promise<boolean> {
     const config = await this.resolver.resolve();
     return config !== null && this.adapters[config.provider] !== undefined;
+  }
+
+  /** The active config (resolver), `null` when not configured. */
+  async resolveConfig(): Promise<AiProviderConfig | null> {
+    return this.resolver.resolve();
+  }
+
+  /**
+   * System One decision call (Neon `systemone` dialect, D24) with an explicit config. Same error
+   * contract and logs as `chat`: `AiGatewayError` only, provider / model / kind / ms / tokens.
+   */
+  async decide(
+    config: AiProviderConfig,
+    request: SystemOneRequest,
+  ): Promise<SystemOneResult> {
+    const started = performance.now();
+    const elapsed = () => Math.max(0, Math.round(performance.now() - started));
+    try {
+      const result = await this.systemOne.decide(config, request);
+      this.logger.debug(
+        `decide ok provider=${config.provider} model=${request.model} ms=${elapsed()} tokens=${result.usage?.promptTokens ?? '?'}/${result.usage?.completionTokens ?? '?'}`,
+      );
+      return result;
+    } catch (error) {
+      const failure =
+        error instanceof AiGatewayError
+          ? error
+          : new AiGatewayError(
+              'unexpected_response',
+              `AI ${config.provider}: unexpected failure`,
+              { provider: config.provider },
+            );
+      this.logger.warn(
+        `decide failed provider=${config.provider} model=${request.model} status=${failure.status ?? '-'} kind=${failure.kind} ms=${elapsed()}`,
+      );
+      throw failure;
+    }
   }
 
   async chat(
@@ -160,6 +210,7 @@ export class AiGatewayService {
 
   /**
    * "Test connection" probe for any provider: the saved config (resolver) or a draft `config`.
+   * A System One model gets one tiny Noul instead of a chat call.
    * Never throws for provider failures: every `AiGatewayError` becomes `{ ok: false, kind }`.
    * Logs kind + ms only.
    */
@@ -186,12 +237,21 @@ export class AiGatewayService {
     const started = performance.now();
     const elapsed = () => Math.max(0, Math.round(performance.now() - started));
     try {
-      await adapter.chat(target, {
-        model,
-        messages: [...CONNECTION_TEST_MESSAGES],
-        maxTokens: CONNECTION_TEST_MAX_TOKENS,
-        signal: AbortSignal.timeout(CONNECTION_TEST_TIMEOUT_MS),
-      });
+      if (isSystemOneModel(model)) {
+        await this.systemOne.decide(target, {
+          model,
+          state: CONNECTION_TEST_STATE,
+          questions: CONNECTION_TEST_QUESTIONS,
+          timeoutMs: CONNECTION_TEST_TIMEOUT_MS,
+        });
+      } else {
+        await adapter.chat(target, {
+          model,
+          messages: [...CONNECTION_TEST_MESSAGES],
+          maxTokens: CONNECTION_TEST_MAX_TOKENS,
+          signal: AbortSignal.timeout(CONNECTION_TEST_TIMEOUT_MS),
+        });
+      }
     } catch (error) {
       const latencyMs = elapsed();
       const failure =

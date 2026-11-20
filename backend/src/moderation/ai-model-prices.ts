@@ -1,4 +1,8 @@
 import { AI_PROVIDERS, type AiProvider } from '../ai-gateway/ai-provider.js';
+import {
+  NEON_MODEL_CATALOG,
+  type NeonModel,
+} from '../ai-gateway/neon-model-catalog.js';
 
 /**
  * LLM list prices for cost **estimates** (golden suite M5-T6, admin AI usage M5-T13). Pure: no
@@ -16,12 +20,27 @@ export type ModelPriceTable = Readonly<
   Partial<Record<AiProvider, Readonly<Record<string, ModelPrice>>>>
 >;
 
+/** Catalog → price entries; a model with an unpublished (`null`) price gets none (cost n/a). */
+export function neonCatalogPrices(
+  models: readonly NeonModel[],
+): Record<string, ModelPrice> {
+  return Object.fromEntries(
+    models.flatMap((m) =>
+      m.inputUsdPer1M === null || m.outputUsdPer1M === null
+        ? []
+        : [[m.code, { input: m.inputUsdPer1M, output: m.outputUsdPer1M }]],
+    ),
+  );
+}
+
 /**
  * Built-in list prices (USD per 1M tokens, provider price pages, Nov 2026). Only an estimate:
- * check the provider before trusting it. Neon AI Gateway models have no entry (n/a) until the
- * operator sets one with `AI_MODEL_PRICES`.
+ * check the provider before trusting it. Neon AI Gateway prices come from the model catalog
+ * (`neon-model-catalog.ts`, M5-T15b): a model with an unpublished price has no entry (n/a), a free
+ * one costs 0. `AI_MODEL_PRICES` adds or replaces entries.
  */
 export const DEFAULT_AI_MODEL_PRICES: ModelPriceTable = {
+  neon: neonCatalogPrices(NEON_MODEL_CATALOG),
   openai: {
     'gpt-4.1-mini': { input: 0.4, output: 1.6 },
     'gpt-4.1-nano': { input: 0.1, output: 0.4 },

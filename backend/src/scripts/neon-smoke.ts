@@ -81,23 +81,16 @@ async function storageSmoke(storage: StorageService): Promise<Step[]> {
 
 async function aiSmoke(ai: AiGatewayService): Promise<Step> {
   if (!(await ai.isConfigured()))
-    return { name: 'ai.chat', ok: false, detail: 'not configured' };
-  try {
-    const res = await ai.chat([
-      { role: 'user', content: 'Reply with exactly one word: pong' },
-    ]);
-    return {
-      name: 'ai.chat',
-      ok: res.content.trim().length > 0,
-      detail: `provider=${res.provider} model=${res.model} ms=${res.latencyMs} reply=${JSON.stringify(res.content.trim().slice(0, 80))} tokens=${res.usage?.totalTokens ?? '?'}`,
-    };
-  } catch (error) {
-    return {
-      name: 'ai.chat',
-      ok: false,
-      detail: error instanceof Error ? error.message : String(error),
-    };
-  }
+    return { name: 'ai.probe', ok: false, detail: 'not configured' };
+  // The connection probe works for chat and System One (Jev) models alike.
+  const res = await ai.testConnection();
+  return {
+    name: 'ai.probe',
+    ok: res.ok,
+    detail: res.ok
+      ? `provider=${res.provider} model=${res.model} ms=${res.latencyMs}`
+      : `kind=${res.kind}${res.message ? ` ${res.message}` : ''}`,
+  };
 }
 
 relaxHappyEyeballsTimeout();

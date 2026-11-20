@@ -54,6 +54,8 @@ class TestResolver extends DbAiConfigResolver {
 const settings = (provider: string | null, model: string | null) => ({
   provider,
   model,
+  textImageModel: null,
+  textImageEnabled: false,
   updatedAt: AT,
   updatedById: null,
 });

@@ -8,6 +8,7 @@ import {
   DEFAULT_AI_MODELS,
 } from './ai-provider.js';
 import { AI_PROVIDER_KEY_ENV } from './env-ai-config.resolver.js';
+import { DEFAULT_TEXT_IMAGE_MODEL } from './neon-model-catalog.js';
 
 /**
  * Pure rules of the DB-backed AI config (M5-T3, D16): per field DB → `.env` → default.
@@ -44,6 +45,8 @@ export type AiKeySource = 'db' | 'env' | 'none';
 export interface StoredAiSettings {
   provider: AiProvider | null;
   model: string | null;
+  textImageModel: string | null;
+  textImageEnabled: boolean;
 }
 
 /** A DB key after decryption: the plaintext, or unreadable (cipher unset, wrong key, tampered). */
@@ -72,6 +75,9 @@ export interface AiSettingsSnapshot {
   providerSource: AiSettingSource;
   model: string;
   modelSource: AiSettingSource;
+  /** Text + Image model (D22/D23: stored only; DB → `DEFAULT_TEXT_IMAGE_MODEL`, no env). */
+  textImageModel: AiModelState;
+  textImageEnabled: boolean;
   /** Model that applies to each provider if it is (or becomes) the active one. */
   models: Record<AiProvider, AiModelState>;
   keys: Record<AiProvider, AiKeyState>;
@@ -111,7 +117,7 @@ export function envAiProvider(env: AiEnvSettings): AiProvider {
  */
 export function aiModelFor(
   provider: AiProvider,
-  stored: StoredAiSettings,
+  stored: Pick<StoredAiSettings, 'provider' | 'model'>,
   env: AiEnvSettings,
 ): AiModelState {
   const envProvider = envAiProvider(env);
@@ -186,6 +192,10 @@ export function buildAiSettingsSnapshot(
     providerSource,
     model: models[provider].model,
     modelSource: models[provider].source,
+    textImageModel: stored.textImageModel
+      ? { model: stored.textImageModel, source: 'db' }
+      : { model: DEFAULT_TEXT_IMAGE_MODEL, source: 'default' },
+    textImageEnabled: stored.textImageEnabled,
     models,
     keys,
     neonBaseUrl: blank(env.NEON_AI_GATEWAY_BASE_URL),

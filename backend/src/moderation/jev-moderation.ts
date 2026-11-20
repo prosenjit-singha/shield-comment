@@ -1,6 +1,9 @@
 import type { NoulQuestion } from '../ai-gateway/systemone.adapter.js';
 import type { NormalizedClassifierInput } from './classifier-input.js';
-import type { ModerationCategory } from './moderation.constants.js';
+import type {
+  CommentLanguage,
+  ModerationCategory,
+} from './moderation.constants.js';
 
 /**
  * Moderation through a System One model (Jev, M5-T15a, D24). Jev answers yes/no judgments with
@@ -104,4 +107,36 @@ export function jevDecision(nouls: Readonly<Record<string, number>>): {
     return { category: 'SAFE_INQUIRY', confidence: round(1 - (top?.p ?? 0)) };
   }
   return { category: HARMFUL_QUESTIONS[top.id], confidence: round(top.p) };
+}
+
+/** Short machine summary for `reasoning`: the two strongest Nouls (ids + p), never comment text. */
+export function jevReasoning(nouls: Readonly<Record<string, number>>): string {
+  const top = Object.entries(nouls)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 2)
+    .map(([id, p]) => `${id} ${p.toFixed(2)}`);
+  return `jev: ${top.join(', ')}`;
+}
+
+const BANGLA_SCRIPT = /[ঀ-৿]/u;
+/** Common Banglish words (Bangla in Latin letters) that are not English words. */
+const BANGLISH_WORDS = new Set(
+  'ami amar amra apni apnar apnader tumi tomar tora apu vai bhai bhaiya vaiya koto dam ache ase achen nai nei ki kivabe kibhabe kemon koro koren korben korte kore korlam korsi hobe hoibo dao den deben din dibo diben niben nibo nile nite chai lagbe valo bhalo kharap ekhane ekhon kothay keno jonno theke sathe kintu gula gulo pathan pathao dilam pelam paben pabo jabe jai ekta duita sob shob onek khub rakhben thakle thaka hoy hoyna hoise hoyeche bolen bolben vabi bhabi kotodin moto mal jinish naki amake ektu diyen thaki aro jinis amader ekbar ghure cholche jon korle diye korun'.split(
+    ' ',
+  ),
+);
+
+/**
+ * Comment language for the System One path (Jev has no language answer; M5-T15b), pure code, no
+ * extra tokens: most words in Bangla script → `bn`; some Bangla script or a common
+ * Banglish word → `banglish`; else `en` (emoji-only too). 46/48 on the golden fixture labels.
+ * ponytail: word list, so rare Banglish wording reads as `en`; an extra Choice question if it matters.
+ */
+export function guessCommentLanguage(text: string): CommentLanguage {
+  const words = text.toLowerCase().match(/[\p{L}\p{M}]+/gu) ?? [];
+  const bangla = words.filter((w) => BANGLA_SCRIPT.test(w)).length;
+  if (bangla > 0 && bangla * 2 > words.length) return 'bn';
+  return bangla > 0 || words.some((w) => BANGLISH_WORDS.has(w))
+    ? 'banglish'
+    : 'en';
 }

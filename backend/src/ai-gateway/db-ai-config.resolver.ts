@@ -32,6 +32,8 @@ export interface AiSettingsRows {
     | {
         provider: string | null;
         model: string | null;
+        textImageModel: string | null;
+        textImageEnabled: boolean;
         updatedAt: Date;
         updatedById: string | null;
       }
@@ -117,6 +119,8 @@ export class DbAiConfigResolver implements AiConfigResolver {
             ? settings.provider
             : null,
         model: settings?.model ?? null,
+        textImageModel: settings?.textImageModel ?? null,
+        textImageEnabled: settings?.textImageEnabled ?? false,
       },
       dbKeys,
       this.env,
@@ -135,6 +139,8 @@ export class DbAiConfigResolver implements AiConfigResolver {
         .select({
           provider: aiProviderSettings.provider,
           model: aiProviderSettings.model,
+          textImageModel: aiProviderSettings.textImageModel,
+          textImageEnabled: aiProviderSettings.textImageEnabled,
           updatedAt: aiProviderSettings.updatedAt,
           updatedById: aiProviderSettings.updatedById,
         })
@@ -182,7 +188,12 @@ export class DbAiConfigResolver implements AiConfigResolver {
   }
 }
 
-const EMPTY = { provider: null, model: null } as const;
+const EMPTY = {
+  provider: null,
+  model: null,
+  textImageModel: null,
+  textImageEnabled: false,
+} as const;
 
 function copy(config: AiProviderConfig | null): AiProviderConfig | null {
   return config ? { ...config } : null;

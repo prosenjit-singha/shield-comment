@@ -64,7 +64,6 @@ import {
   jevDecision,
   jevState,
 } from '../moderation/jev-moderation.js';
-import type { ModelPrice } from '../moderation/ai-model-prices.js';
 import type { ContextLevel } from '../moderation/moderation.constants.js';
 import { PROMPT_VERSION } from '../moderation/moderation-prompt.js';
 
@@ -91,11 +90,6 @@ const FATAL_HINTS: Record<(typeof FATAL_KINDS)[number], string> = {
   payment_required:
     'the provider refused for billing (no credits / paid plan required). Add credits or pick another provider.',
   auth: 'the provider rejected the API key. Check the key in /admin/settings or .env.',
-};
-
-/** Neon docs: decision models are billed on input tokens only; jev input $0.042 / 1M (D19). */
-const SYSTEMONE_PRICES: Record<string, ModelPrice> = {
-  'typesafeai-jev-1-14-0': { input: 0.042, output: 0 },
 };
 
 class CleanExit extends Error {}
@@ -214,7 +208,12 @@ async function loadSnapshot(
     );
     return {
       snapshot: buildAiSettingsSnapshot(
-        { provider: null, model: null },
+        {
+          provider: null,
+          model: null,
+          textImageModel: null,
+          textImageEnabled: false,
+        },
         {},
         envSettings,
       ),
@@ -314,9 +313,7 @@ async function main(): Promise<void> {
 
   const report = scoreGolden(
     run.outcomes,
-    systemOne
-      ? (SYSTEMONE_PRICES[config.model] ?? null)
-      : modelPrice(config.provider, config.model),
+    modelPrice(config.provider, config.model),
   );
   console.log('');
   console.log(

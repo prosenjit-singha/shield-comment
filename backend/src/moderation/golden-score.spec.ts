@@ -197,7 +197,7 @@ describe('scoreGolden', () => {
     // 2000 prompt × 0.4 + 100 completion × 1.6 per 1M tokens.
     expect(report.costUsd?.total).toBeCloseTo(0.00096, 10);
     expect(report.costUsd?.perItem).toBeCloseTo(0.00048, 10);
-    expect(modelPrice('neon', 'gpt-oss-20b')).toBeNull();
+    expect(modelPrice('neon', 'unlisted-model')).toBeNull();
     expect(scoreGolden(outcomes, null).costUsd).toBeNull();
     // A price but no usage reported → n/a, not $0.
     expect(

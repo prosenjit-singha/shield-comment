@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsObject,
@@ -13,6 +14,7 @@ import {
 } from 'class-validator';
 import type { AiConnectionTestResult } from '../../ai-gateway/ai-gateway.service.js';
 import { AI_PROVIDERS, type AiProvider } from '../../ai-gateway/ai-provider.js';
+import type { NeonModel } from '../../ai-gateway/neon-model-catalog.js';
 import type {
   AiKeySource,
   AiSettingSource,
@@ -35,7 +37,7 @@ export const AI_KEY_PATTERN = new RegExp(
   `^[\\x21-\\x7E]{${AI_KEY_MIN_LENGTH},${AI_KEY_MAX_LENGTH}}$`,
 );
 
-const MODEL_MESSAGE = `model must be 1–${AI_MODEL_MAX_LENGTH} printable characters without spaces`;
+const MODEL_MESSAGE = `$property must be 1–${AI_MODEL_MAX_LENGTH} printable characters without spaces`;
 const KEY_MESSAGE = `$property must be ${AI_KEY_MIN_LENGTH}–${AI_KEY_MAX_LENGTH} printable characters without spaces`;
 
 const trim = Transform(({ value }: { value: unknown }) =>
@@ -76,7 +78,10 @@ export class AiKeysPatchDto {
 /**
  * `PATCH /api/admin/settings/ai` (M5-T3). All fields optional, at least one required.
  * `provider` changing without `model` resets the model to that provider's env/default model.
- * `model: null` clears the DB model (env/default applies).
+ * `model: null` clears the DB model (env/default applies). `model` = the Text model;
+ * `textImageModel` (`null` = default) + `textImageEnabled` = the Text + Image model and its switch
+ * (M5-T15b, D22/D23). With provider neon, models must be in the catalog (400 `UNKNOWN_AI_MODEL`)
+ * and the Text + Image model must take images (400 `MODEL_NOT_IMAGE_CAPABLE`).
  */
 export class UpdateAiSettingsDto {
   @unlessAbsent<UpdateAiSettingsDto>('provider')
@@ -88,6 +93,16 @@ export class UpdateAiSettingsDto {
   @IsString()
   @Matches(AI_MODEL_PATTERN, { message: MODEL_MESSAGE })
   model?: string | null;
+
+  @trim
+  @IsOptional()
+  @IsString()
+  @Matches(AI_MODEL_PATTERN, { message: MODEL_MESSAGE })
+  textImageModel?: string | null;
+
+  @unlessAbsent<UpdateAiSettingsDto>('textImageEnabled')
+  @IsBoolean()
+  textImageEnabled?: boolean;
 
   @unlessAbsent<UpdateAiSettingsDto>('keys')
   @IsObject()
@@ -163,6 +178,12 @@ export interface AiSettingsResponse {
   providerSource: AiSettingSource;
   model: string;
   modelSource: AiSettingSource;
+  /** Text + Image model (stored only; the classifier is text-only until image moderation). */
+  textImageModel: string;
+  textImageModelSource: AiSettingSource;
+  textImageEnabled: boolean;
+  /** Neon AI Gateway models for the dropdowns (`neon-model-catalog.ts`). */
+  catalog: readonly NeonModel[];
   /** The active provider has a key (and Neon a base URL): calls can be attempted. */
   configured: boolean;
   /** Keys can be saved (`TOKEN_ENCRYPTION_KEY` set); else a key save answers 503. */
@@ -177,7 +198,8 @@ export interface AiSettingsResponse {
 export type AiConnectionTestResponse = AiConnectionTestResult;
 
 /**
- * One changed field. `provider`/`model`: DB values (`null` = `.env`/default fallback);
+ * One changed field. `provider`/`model`/`text_image_model`: DB values (`null` = `.env`/default
+ * fallback); `text_image_enabled`: `true` | `false`;
  * `key.<provider>`: `before` `set` | `null`, `after` `set` | `cleared`.
  */
 export interface AiSettingsAuditEntry {

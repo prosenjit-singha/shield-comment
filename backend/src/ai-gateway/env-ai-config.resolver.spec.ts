@@ -15,7 +15,7 @@ describe('aiConfigFromEnv', () => {
   it('defaults to the Neon gateway with its default model', () => {
     expect(aiConfigFromEnv(NEON)).toEqual({
       provider: 'neon',
-      model: 'gpt-oss-20b',
+      model: 'typesafeai-jev-1-14-0',
       apiKey: 'nt_live_neon_token',
       baseUrl: 'https://br-x-api.ai.c-1.aws.neon.tech',
     });
@@ -62,7 +62,7 @@ describe('aiConfigFromEnv', () => {
       })?.model,
     ).toBe('gemini-2.5-flash');
     expect(aiConfigFromEnv({ ...NEON, AI_GATEWAY_MODEL: ' ' })?.model).toBe(
-      'gpt-oss-20b',
+      'typesafeai-jev-1-14-0',
     );
   });
 });

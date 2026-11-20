@@ -19,6 +19,11 @@ import {
   type ModerationCategory,
 } from './moderation.constants.js';
 import {
+  JEV_PROMPT_VERSION,
+  JEV_QUESTIONS,
+  jevState,
+} from './jev-moderation.js';
+import {
   CLASSIFICATION_JSON_SCHEMA,
   PROMPT_VERSION,
   SYSTEM_PROMPT,
@@ -488,5 +493,184 @@ describe('CommentClassifier', () => {
     expect(all).toMatch(/classify ok provider=neon model=gpt-oss-20b/);
     expect(all).toMatch(/kind=invalid_output rejection=not_json/);
     expect(all).toMatch(/kind=timeout/);
+  });
+
+  describe('System One model (jev, D24)', () => {
+    const JEV = {
+      provider: 'neon' as const,
+      model: 'typesafeai-jev-1-14-0',
+      apiKey: 'nt_test_token',
+      baseUrl: 'https://neon.example',
+    };
+    const NOULS = {
+      money_offer: 0.97,
+      asks_secret_code: 0.2,
+      abusive: 0.01,
+      other_seller: 0.03,
+      unrelated_spam: 0.4,
+    };
+    const USAGE = { promptTokens: 830, completionTokens: 94, totalTokens: 924 };
+    const decided = { model: 'jev-1.14.0', nouls: NOULS, usage: USAGE };
+    const jevSetup = () => {
+      const ctx = setup();
+      ctx.fake.resolveConfig.mockResolvedValue(JEV);
+      return ctx;
+    };
+
+    it('asks the Jev questions and maps the decision into the success shape', async () => {
+      const { fake, classifier } = jevSetup();
+      fake.decide.mockResolvedValueOnce(decided);
+      const result = await classifier.classify(input);
+      expect(result).toEqual({
+        ok: true,
+        category: 'SCAM_PHISHING',
+        confidence: 0.97,
+        reasoning: 'jev: money_offer 0.97, unrelated_spam 0.40',
+        language: 'banglish',
+        contextLevel: 'comment_only',
+        promptVersion: JEV_PROMPT_VERSION,
+        provider: 'neon',
+        model: 'typesafeai-jev-1-14-0',
+        outputMode: 'systemone',
+        usage: USAGE,
+        latencyMs: expect.any(Number) as number,
+        attempts: 1,
+      });
+      expect(fake.decide).toHaveBeenCalledTimes(1);
+      expect(fake.decide).toHaveBeenCalledWith(JEV, {
+        model: 'typesafeai-jev-1-14-0',
+        state: jevState({
+          text: COMMENT,
+          platform: 'FACEBOOK',
+          isReply: false,
+          contextLevel: 'comment_only',
+        }),
+        questions: JEV_QUESTIONS,
+        timeoutMs: MODERATION_TIMEOUT_MS,
+      });
+      expect(fake.chat).not.toHaveBeenCalled();
+    });
+
+    it('uses an explicit config without the resolver', async () => {
+      const { fake, classifier } = setup();
+      fake.decide.mockResolvedValueOnce(decided);
+      const result = await classifier.classify(input, { config: JEV });
+      expect(result.ok && result.outputMode).toBe('systemone');
+      expect(fake.resolveConfig).not.toHaveBeenCalled();
+    });
+
+    it('a chat model keeps the chat path (config from the resolver passed through)', async () => {
+      const { fake, classifier, call } = setup();
+      const chatConfig = { ...JEV, model: 'gpt-oss-20b' };
+      fake.resolveConfig.mockResolvedValueOnce(chatConfig);
+      fake.replyWith(answer());
+      const result = await classifier.classify(input);
+      expect(result.ok && result.promptVersion).toBe(PROMPT_VERSION);
+      expect(call(0).options.config).toBe(chatConfig);
+      expect(fake.decide).not.toHaveBeenCalled();
+    });
+
+    it('empty text → empty_text with the jev prompt version, no call', async () => {
+      const { fake, classifier } = jevSetup();
+      const result = await classifier.classify({ ...input, text: '  ' });
+      expect(result).toMatchObject({
+        ok: false,
+        kind: 'empty_text',
+        promptVersion: JEV_PROMPT_VERSION,
+        attempts: 0,
+      });
+      expect(fake.decide).not.toHaveBeenCalled();
+    });
+
+    it.each<[AiErrorKind, boolean]>([
+      ['rate_limited', true],
+      ['transient', true],
+      ['timeout', true],
+      ['network', true],
+      ['payment_required', false],
+      ['auth', false],
+      ['invalid_request', false],
+      ['not_configured', false],
+    ])('%s → failure (retryable %s), one call', async (kind, retryable) => {
+      const { fake, classifier } = jevSetup();
+      fake.decide.mockRejectedValueOnce(
+        new AiGatewayError(kind, `AI neon ${kind}`, {
+          status: 429,
+          provider: 'neon',
+          ...(kind === 'rate_limited' && { retryAfterMs: 2_000 }),
+        }),
+      );
+      const result = await classifier.classify(input);
+      expect(result).toEqual({
+        ok: false,
+        kind,
+        retryable,
+        promptVersion: JEV_PROMPT_VERSION,
+        provider: 'neon',
+        model: 'typesafeai-jev-1-14-0',
+        attempts: 1,
+        latencyMs: expect.any(Number) as number,
+        status: 429,
+        ...(kind === 'rate_limited' && { retryAfterMs: 2_000 }),
+      });
+      expect(fake.decide).toHaveBeenCalledTimes(1);
+    });
+
+    it('a malformed answer gets one more call, then unexpected_response', async () => {
+      const bad = () =>
+        new AiGatewayError('unexpected_response', 'no answers', {
+          status: 200,
+          provider: 'neon',
+        });
+      const retried = jevSetup();
+      retried.fake.decide
+        .mockRejectedValueOnce(bad())
+        .mockResolvedValueOnce(decided);
+      await expect(retried.classifier.classify(input)).resolves.toMatchObject({
+        ok: true,
+        attempts: 2,
+      });
+      const failed = jevSetup();
+      failed.fake.decide
+        .mockRejectedValueOnce(bad())
+        .mockRejectedValueOnce(bad());
+      await expect(failed.classifier.classify(input)).resolves.toMatchObject({
+        ok: false,
+        kind: 'unexpected_response',
+        retryable: false,
+        attempts: 2,
+        status: 200,
+      });
+    });
+
+    it('rethrows non-AI errors', async () => {
+      const { fake, classifier } = jevSetup();
+      const boom = new Error('sdk bug');
+      fake.decide.mockRejectedValueOnce(boom);
+      await expect(classifier.classify(input)).rejects.toBe(boom);
+    });
+
+    it('logs and reasoning carry no comment text, Page name or caption', async () => {
+      const { fake, classifier } = jevSetup();
+      fake.decide
+        .mockResolvedValueOnce(decided)
+        .mockRejectedValueOnce(new AiGatewayError('timeout', 'timed out'));
+      const full: ClassifierInput = {
+        ...input,
+        contextLevel: 'post_caption',
+        pageName: PAGE_NAME,
+        postCaption: CAPTION,
+      };
+      const ok = await classifier.classify(full);
+      await classifier.classify(full);
+      const all = `${logs.join('\n')}\n${ok.ok ? ok.reasoning : ''}`;
+      for (const secret of [COMMENT, 'Nagad', 'bit.ly', PAGE_NAME, 'Secret']) {
+        expect(all).not.toContain(secret);
+      }
+      expect(all).toMatch(
+        /classify ok provider=neon model=typesafeai-jev-1-14-0 mode=systemone/,
+      );
+      expect(all).toMatch(/kind=timeout mode=systemone/);
+    });
   });
 });

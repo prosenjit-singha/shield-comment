@@ -1,7 +1,9 @@
+import { NEON_MODEL_CATALOG } from '../ai-gateway/neon-model-catalog.js';
 import {
   DEFAULT_AI_MODEL_PRICES,
   lookupModelPrice,
   mergeModelPrices,
+  neonCatalogPrices,
   parseModelPrices,
 } from './ai-model-prices.js';
 
@@ -67,7 +69,7 @@ describe('mergeModelPrices + lookupModelPrice', () => {
 
   it('unknown provider/model (incl. prototype names) → null', () => {
     expect(
-      lookupModelPrice(DEFAULT_AI_MODEL_PRICES, 'neon', 'gpt-oss-20b'),
+      lookupModelPrice(DEFAULT_AI_MODEL_PRICES, 'neon', 'unlisted-model'),
     ).toBeNull();
     expect(
       lookupModelPrice(DEFAULT_AI_MODEL_PRICES, 'openai', 'gpt-9'),
@@ -78,5 +80,39 @@ describe('mergeModelPrices + lookupModelPrice', () => {
     expect(parseModelPrices('openai:constructor=1/2').openai).toEqual({
       constructor: { input: 1, output: 2 },
     });
+  });
+});
+
+describe('neon prices from the catalog (M5-T15b)', () => {
+  it('every priced catalog model has its list price, no duplicated numbers', () => {
+    for (const m of NEON_MODEL_CATALOG) {
+      expect(lookupModelPrice(DEFAULT_AI_MODEL_PRICES, 'neon', m.code)).toEqual(
+        { input: m.inputUsdPer1M, output: m.outputUsdPer1M },
+      );
+    }
+  });
+
+  it('free → 0, jev output → 0 (input-only billing)', () => {
+    expect(
+      lookupModelPrice(DEFAULT_AI_MODEL_PRICES, 'neon', 'gemini-4-carbon'),
+    ).toEqual({ input: 0, output: 0 });
+    expect(
+      lookupModelPrice(
+        DEFAULT_AI_MODEL_PRICES,
+        'neon',
+        'typesafeai-jev-1-14-0',
+      ),
+    ).toEqual({ input: 0.042, output: 0 });
+  });
+
+  it('an unpublished price → no entry (cost n/a)', () => {
+    const [first] = NEON_MODEL_CATALOG;
+    expect(
+      neonCatalogPrices([
+        { ...first!, code: 'no-output', outputUsdPer1M: null },
+        { ...first!, code: 'no-input', inputUsdPer1M: null },
+        { ...first!, code: 'priced', inputUsdPer1M: 1, outputUsdPer1M: 2 },
+      ]),
+    ).toEqual({ priced: { input: 1, output: 2 } });
   });
 });

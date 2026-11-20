@@ -3,6 +3,8 @@ import {
   AiGatewayService,
   CONNECTION_TEST_MAX_TOKENS,
   CONNECTION_TEST_MESSAGES,
+  CONNECTION_TEST_QUESTIONS,
+  CONNECTION_TEST_STATE,
   CONNECTION_TEST_TIMEOUT_MS,
 } from './ai-gateway.service.js';
 import type { AiConfigResolver, AiProviderConfig } from './ai-provider.js';
@@ -253,6 +255,51 @@ describe('AiGatewayService.testConnection', () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).model).toBe(
       'claude-sonnet-5-5',
     );
+  });
+
+  describe('System One model (jev)', () => {
+    const JEV = { ...CONFIGS.neon, model: 'typesafeai-jev-1-14-0' };
+
+    it('sends one tiny Noul to /typesafe/v1/systemone, no chat call', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, {
+          model: 'jev-1.14.0',
+          answers: { ok: { noul: 0.99 } },
+          usage: { input_tokens: 40, output_tokens: 0 },
+        }),
+      );
+      await expect(makeService(JEV).svc.testConnection()).resolves.toEqual({
+        ok: true,
+        provider: 'neon',
+        model: 'typesafeai-jev-1-14-0',
+        latencyMs: expect.any(Number),
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe(
+        'https://br-x-api.ai.c-1.aws.neon.tech/typesafe/v1/systemone',
+      );
+      expect(JSON.parse(init?.body as string)).toMatchObject({
+        model: 'typesafeai-jev-1-14-0',
+        state: CONNECTION_TEST_STATE,
+        questions: CONNECTION_TEST_QUESTIONS,
+      });
+      expect(Object.keys(CONNECTION_TEST_QUESTIONS)).toHaveLength(1);
+    });
+
+    it('maps a failure to its kind, key scrubbed', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(402, { message: `no credits for ${KEYS.neon}` }),
+      );
+      const result = await makeService(JEV).svc.testConnection();
+      expect(result).toMatchObject({
+        ok: false,
+        kind: 'payment_required',
+        provider: 'neon',
+        model: 'typesafeai-jev-1-14-0',
+      });
+      expect(JSON.stringify(result)).not.toContain(KEYS.neon);
+    });
   });
 
   it('logs kind and ms only', async () => {

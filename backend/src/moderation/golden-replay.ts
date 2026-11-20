@@ -271,6 +271,11 @@ class CapturingChat implements GoldenChat {
 
   constructor(private readonly inner: GoldenChat) {}
 
+  /** No resolver behind a replay: the classifier takes the chat path unless given a config. */
+  async resolveConfig(): Promise<null> {
+    return null;
+  }
+
   take(): ReplayCall[] {
     const calls = this.calls;
     this.calls = [];
@@ -349,7 +354,7 @@ export async function runGoldenSuite(
   options: GoldenRunOptions,
 ): Promise<GoldenRunResult> {
   const capture = new CapturingChat(options.chat);
-  // The classifier only calls `chat`; the capture (and the replay behind it) implement exactly that.
+  // The classifier calls `resolveConfig` + `chat` (a System One model is not replayed).
   const classifier = new CommentClassifier(
     capture as unknown as AiGatewayService,
   );

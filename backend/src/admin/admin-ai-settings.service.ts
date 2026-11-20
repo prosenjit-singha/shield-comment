@@ -14,6 +14,11 @@ import {
   DEFAULT_AI_MODELS,
 } from '../ai-gateway/ai-provider.js';
 import {
+  NEON_MODEL_CATALOG,
+  neonModel,
+  supportsImages,
+} from '../ai-gateway/neon-model-catalog.js';
+import {
   AI_ENV_SETTINGS,
   type AiConfigDraft,
   type AiEnvSettings,
@@ -58,6 +63,26 @@ interface AiSettingsChange {
   after: string | null;
 }
 
+/** Neon models must be catalog models; the Text + Image one must take images (D19/D22). */
+function assertNeonModels(patch: UpdateAiSettingsDto): void {
+  for (const code of [patch.model, patch.textImageModel]) {
+    if (code && !neonModel(code)) {
+      throw new BadRequestException({
+        message: `Unknown Neon AI Gateway model: ${code}`,
+        error: 'Bad Request',
+        code: 'UNKNOWN_AI_MODEL',
+      });
+    }
+  }
+  if (patch.textImageModel && !supportsImages(patch.textImageModel)) {
+    throw new BadRequestException({
+      message: `${patch.textImageModel} does not take images`,
+      error: 'Bad Request',
+      code: 'MODEL_NOT_IMAGE_CAPABLE',
+    });
+  }
+}
+
 /** Transaction-scoped advisory lock: AI settings PATCHes run one at a time. */
 const AI_SETTINGS_LOCK = sql`select pg_advisory_xact_lock(hashtextextended('ai_provider_settings', 0))`;
 
@@ -98,6 +123,8 @@ export class AdminAiSettingsService {
     if (
       patch.provider === undefined &&
       patch.model === undefined &&
+      patch.textImageModel === undefined &&
+      patch.textImageEnabled === undefined &&
       keyPatch.length === 0
     ) {
       throw new BadRequestException('Nothing to update');
@@ -117,6 +144,8 @@ export class AdminAiSettingsService {
         .select({
           provider: aiProviderSettings.provider,
           model: aiProviderSettings.model,
+          textImageModel: aiProviderSettings.textImageModel,
+          textImageEnabled: aiProviderSettings.textImageEnabled,
         })
         .from(aiProviderSettings)
         .where(eq(aiProviderSettings.id, 1));
@@ -130,10 +159,12 @@ export class AdminAiSettingsService {
         : [];
       const found: AiSettingsChange[] = [];
 
-      // Provider + model (one settings row).
+      // Provider + models + switch (one settings row).
       const before = {
         provider: row?.provider ?? null,
         model: row?.model ?? null,
+        textImageModel: row?.textImageModel ?? null,
+        textImageEnabled: row?.textImageEnabled ?? false,
       };
       const next = { ...before };
       if (patch.provider !== undefined) {
@@ -145,6 +176,15 @@ export class AdminAiSettingsService {
         }
       }
       if (patch.model !== undefined) next.model = patch.model;
+      if (patch.textImageModel !== undefined) {
+        next.textImageModel = patch.textImageModel;
+      }
+      if (patch.textImageEnabled !== undefined) {
+        next.textImageEnabled = patch.textImageEnabled;
+      }
+      if ((next.provider ?? envAiProvider(this.env)) === 'neon') {
+        assertNeonModels(patch);
+      }
       if (next.provider !== before.provider) {
         found.push({
           field: 'provider',
@@ -154,6 +194,20 @@ export class AdminAiSettingsService {
       }
       if (next.model !== before.model) {
         found.push({ field: 'model', before: before.model, after: next.model });
+      }
+      if (next.textImageModel !== before.textImageModel) {
+        found.push({
+          field: 'text_image_model',
+          before: before.textImageModel,
+          after: next.textImageModel,
+        });
+      }
+      if (next.textImageEnabled !== before.textImageEnabled) {
+        found.push({
+          field: 'text_image_enabled',
+          before: String(before.textImageEnabled),
+          after: String(next.textImageEnabled),
+        });
       }
       if (found.length > 0) {
         const now = new Date();
@@ -330,6 +384,10 @@ export class AdminAiSettingsService {
       providerSource: state.providerSource,
       model: state.model,
       modelSource: state.modelSource,
+      textImageModel: state.textImageModel.model,
+      textImageModelSource: state.textImageModel.source,
+      textImageEnabled: state.textImageEnabled,
+      catalog: NEON_MODEL_CATALOG,
       configured: snapshotConfig(state) !== null,
       cipherConfigured: this.cipher.isConfigured,
       providers,

@@ -28,8 +28,8 @@ export interface AiProviderConfig {
 
 /** Defaults when `AI_GATEWAY_MODEL` (later: the admin setting) names no model. M5-T16 bake-off may change them. */
 export const DEFAULT_AI_MODELS: Readonly<Record<AiProvider, string>> = {
-  /** Cheapest general chat model in the Neon catalog at wiring time (models.dev, Nov 2026). */
-  neon: 'gpt-oss-20b',
+  /** Text model default (D22): Jev on the `systemone` dialect (M5-T15b). */
+  neon: 'typesafeai-jev-1-14-0',
   openai: 'gpt-4.1-mini',
   anthropic: 'claude-haiku-4-5',
   google: 'gemini-2.5-flash-lite',

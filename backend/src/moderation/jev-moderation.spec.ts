@@ -1,7 +1,10 @@
+import { GOLDEN_COMMENTS } from '../../test/fixtures/golden-comments.js';
 import {
+  guessCommentLanguage,
   JEV_PROMPT_VERSION,
   JEV_QUESTIONS,
   jevDecision,
+  jevReasoning,
   jevState,
 } from './jev-moderation.js';
 import { PROMPT_VERSION } from './moderation-prompt.js';
@@ -92,5 +95,32 @@ describe('jevState / questions', () => {
     }
     expect(JEV_PROMPT_VERSION).toBe('jev-v1');
     expect(JEV_PROMPT_VERSION).not.toBe(PROMPT_VERSION);
+  });
+});
+
+describe('jevReasoning', () => {
+  it('names the two strongest Nouls, ≤ 280 chars', () => {
+    const text = jevReasoning({ ...NO, other_seller: 0.93 });
+    expect(text).toBe('jev: other_seller 0.93, unrelated_spam 0.10');
+    expect(text.length).toBeLessThanOrEqual(280);
+  });
+});
+
+describe('guessCommentLanguage', () => {
+  it.each([
+    ['এই শাড়িটার দাম কত?', 'bn'],
+    ['apu dam koto?', 'banglish'],
+    ['Is this available in size 40?', 'en'],
+    ['😍😍', 'en'],
+    ['Aro chaile আমাদের page e asen', 'banglish'],
+  ] as const)('%s → %s', (text, language) => {
+    expect(guessCommentLanguage(text)).toBe(language);
+  });
+
+  it('matches ≥ 90 % of the golden fixture labels', () => {
+    const hits = GOLDEN_COMMENTS.filter(
+      (c) => guessCommentLanguage(c.text) === c.language,
+    ).length;
+    expect(hits / GOLDEN_COMMENTS.length).toBeGreaterThanOrEqual(0.9);
   });
 });

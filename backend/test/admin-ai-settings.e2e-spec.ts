@@ -16,6 +16,10 @@ import {
   aiProviderKeyContext,
 } from '../src/ai-gateway/ai-settings.rules.js';
 import { DbAiConfigResolver } from '../src/ai-gateway/db-ai-config.resolver.js';
+import {
+  DEFAULT_TEXT_IMAGE_MODEL,
+  NEON_MODEL_CATALOG,
+} from '../src/ai-gateway/neon-model-catalog.js';
 import { TOKEN_KEYRING } from '../src/crypto/token-cipher.config.js';
 import { TokenCipherService } from '../src/crypto/token-cipher.service.js';
 import {
@@ -377,6 +381,99 @@ describe('Admin AI provider settings (e2e)', () => {
     });
   });
 
+  describe('Text + Image model, switch and Neon catalog (M5-T15b)', () => {
+    it('GET: default Text + Image model, switch off, the Neon catalog', async () => {
+      const res = (await get()).body as AiSettingsResponse;
+      expect(res).toMatchObject({
+        textImageModel: DEFAULT_TEXT_IMAGE_MODEL,
+        textImageModelSource: 'default',
+        textImageEnabled: false,
+      });
+      expect(res.catalog).toEqual(NEON_MODEL_CATALOG);
+      expect(res.providers.neon.defaultModel).toBe('typesafeai-jev-1-14-0');
+    });
+
+    it('neon: catalog models + switch saved, one audit row per field', async () => {
+      const { body } = await patch({
+        provider: 'neon',
+        model: 'gpt-oss-20b',
+        textImageModel: 'gemini-4-carbon',
+        textImageEnabled: true,
+      }).expect(200);
+      expect(body as AiSettingsResponse).toMatchObject({
+        provider: 'neon',
+        model: 'gpt-oss-20b',
+        modelSource: 'db',
+        textImageModel: 'gemini-4-carbon',
+        textImageModelSource: 'db',
+        textImageEnabled: true,
+      });
+      expect(fieldsOf(await auditRows())).toEqual([
+        { field: 'model', before: null, after: 'gpt-oss-20b' },
+        { field: 'provider', before: null, after: 'neon' },
+        { field: 'text_image_enabled', before: 'false', after: 'true' },
+        { field: 'text_image_model', before: null, after: 'gemini-4-carbon' },
+      ]);
+      // Same values again = no-op; the switch alone is one row.
+      await patch({ textImageEnabled: true }).expect(200);
+      const { body: off } = await patch({ textImageEnabled: false }).expect(
+        200,
+      );
+      expect((off as AiSettingsResponse).textImageEnabled).toBe(false);
+      const rows = await auditRows();
+      expect(rows).toHaveLength(5);
+      expect(fieldsOf(rows.slice(0, 1))).toEqual([
+        { field: 'text_image_enabled', before: 'true', after: 'false' },
+      ]);
+    });
+
+    it('null resets the Text + Image model to the default (audited)', async () => {
+      await patch({
+        provider: 'neon',
+        textImageModel: 'typesafeai-jev-1-14-0',
+      }).expect(200);
+      const { body } = await patch({ textImageModel: null }).expect(200);
+      expect(body as AiSettingsResponse).toMatchObject({
+        textImageModel: DEFAULT_TEXT_IMAGE_MODEL,
+        textImageModelSource: 'default',
+      });
+      expect(fieldsOf((await auditRows()).slice(0, 1))).toEqual([
+        {
+          field: 'text_image_model',
+          before: 'typesafeai-jev-1-14-0',
+          after: null,
+        },
+      ]);
+    });
+
+    it.each([
+      [{ provider: 'neon', model: 'gpt-unknown' }, 'UNKNOWN_AI_MODEL'],
+      [{ provider: 'neon', textImageModel: 'nope-1' }, 'UNKNOWN_AI_MODEL'],
+      [
+        { provider: 'neon', textImageModel: 'gpt-oss-120b' },
+        'MODEL_NOT_IMAGE_CAPABLE',
+      ],
+    ])('400 for %j (%s), nothing written', async (body, code) => {
+      const res = await patch(body).expect(400);
+      expect(res.body).toMatchObject({ statusCode: 400, code });
+      expect(await actors.db.select().from(aiProviderSettings)).toEqual([]);
+      expect(await auditRows()).toEqual([]);
+    });
+
+    it('a saved neon provider checks later model-only patches too', async () => {
+      await patch({ provider: 'neon' }).expect(200);
+      const res = await patch({ textImageModel: 'gpt-oss-20b' }).expect(400);
+      expect(res.body).toMatchObject({ code: 'MODEL_NOT_IMAGE_CAPABLE' });
+    });
+
+    it('direct providers (env openai) are not checked against the Neon catalog', async () => {
+      const { body } = await patch({ textImageModel: 'gpt-4.1-mini' }).expect(
+        200,
+      );
+      expect((body as AiSettingsResponse).textImageModel).toBe('gpt-4.1-mini');
+    });
+  });
+
   describe('PATCH validation', () => {
     it.each([
       [{}, 'Nothing to update'],
@@ -389,6 +486,9 @@ describe('Admin AI provider settings (e2e)', () => {
       [{ keys: { openai: 'has space 1234' } }, 'openai'],
       [{ keys: { mistral: DB_KEY } }, 'mistral'],
       [{ apiKey: DB_KEY }, 'apiKey'],
+      [{ textImageModel: '' }, 'textImageModel'],
+      [{ textImageEnabled: null }, 'textImageEnabled'],
+      [{ textImageEnabled: 'yes' }, 'textImageEnabled'],
     ])('400 for %j', async (body, hint) => {
       const res = await patch(body).expect(400);
       expect(JSON.stringify(res.body)).toContain(hint);

@@ -14,8 +14,10 @@ import type {
   AiProvider,
   AiProviderConfig,
 } from '../ai-gateway/ai-provider.js';
+import { isSystemOneModel } from '../ai-gateway/systemone.adapter.js';
 import {
   type ClassifierInput,
+  type NormalizedClassifierInput,
   normalizeClassifierInput,
 } from './classifier-input.js';
 import {
@@ -23,6 +25,14 @@ import {
   type OutputRejection,
   parseClassificationOutput,
 } from './classifier-output.js';
+import {
+  guessCommentLanguage,
+  JEV_PROMPT_VERSION,
+  JEV_QUESTIONS,
+  jevDecision,
+  jevReasoning,
+  jevState,
+} from './jev-moderation.js';
 import type { ContextLevel } from './moderation.constants.js';
 import {
   buildClassifierMessages,
@@ -44,8 +54,8 @@ export interface ClassificationSuccess extends ClassificationOutput {
   promptVersion: string;
   provider: AiProvider;
   model: string;
-  /** Output mode that produced the answer (after any `response_format` fallback). */
-  outputMode: ClassifierOutputMode;
+  /** Output mode that produced the answer (after any `response_format` fallback); `systemone` = Jev. */
+  outputMode: ClassifierOutputMode | 'systemone';
   /** Summed over every call of this classification (retries included). */
   usage?: AiUsage;
   /** Wall time of the whole classification, ms. */
@@ -114,6 +124,10 @@ function isResponseFormatRefusal(error: AiGatewayError): boolean {
  * JSON, per call (nothing remembered). An unusable answer (bad JSON / schema / empty reply) gets
  * one more call, then `invalid_output`. Temperature 0. Logs provider / model / kind / ms /
  * tokens / attempts only: never the comment, caption, Page name, prompt or reply.
+ *
+ * A System One model (Jev, D24) takes the `systemone` path instead: `JEV_QUESTIONS` about
+ * `jevState`, category from `jevDecision`, prompt `jev-v1`, language from `guessCommentLanguage`;
+ * a malformed answer gets one more call, other errors fail like the chat path.
  */
 @Injectable()
 export class CommentClassifier {
@@ -127,17 +141,20 @@ export class CommentClassifier {
   ): Promise<ClassificationResult> {
     const started = performance.now();
     const elapsed = () => Math.max(0, Math.round(performance.now() - started));
+    const config = options.config ?? (await this.ai.resolveConfig());
+    const systemOne = config !== null && isSystemOneModel(config.model);
     const normalized = normalizeClassifierInput(input);
     if (!normalized) {
       return {
         ok: false,
         kind: 'empty_text',
         retryable: false,
-        promptVersion: PROMPT_VERSION,
+        promptVersion: systemOne ? JEV_PROMPT_VERSION : PROMPT_VERSION,
         attempts: 0,
         latencyMs: elapsed(),
       };
     }
+    if (systemOne) return this.classifySystemOne(normalized, config, elapsed);
     const messages = buildClassifierMessages(normalized);
     let modeIndex = 0;
     let attempts = 0;
@@ -160,7 +177,7 @@ export class CommentClassifier {
           maxTokens: CLASSIFIER_MAX_TOKENS,
           timeoutMs: MODERATION_TIMEOUT_MS,
           responseFormat: responseFormatFor(mode),
-          ...(options.config && { config: options.config }),
+          ...(config && { config }),
         });
       } catch (error) {
         if (!(error instanceof AiGatewayError)) throw error;
@@ -244,9 +261,81 @@ export class CommentClassifier {
     );
   }
 
+  private async classifySystemOne(
+    input: NormalizedClassifierInput,
+    config: AiProviderConfig,
+    elapsed: () => number,
+  ): Promise<ClassificationResult> {
+    const base = {
+      promptVersion: JEV_PROMPT_VERSION,
+      provider: config.provider,
+      model: config.model,
+    };
+    let attempts = 0;
+    let status: number | null | undefined;
+    while (attempts < CLASSIFIER_MAX_OUTPUT_ATTEMPTS) {
+      attempts += 1;
+      try {
+        const res = await this.ai.decide(config, {
+          model: config.model,
+          state: jevState(input),
+          questions: JEV_QUESTIONS,
+          timeoutMs: MODERATION_TIMEOUT_MS,
+        });
+        const result: ClassificationSuccess = {
+          ok: true,
+          ...jevDecision(res.nouls),
+          reasoning: jevReasoning(res.nouls),
+          language: guessCommentLanguage(input.text),
+          contextLevel: input.contextLevel,
+          ...base,
+          outputMode: 'systemone',
+          ...(res.usage && { usage: res.usage }),
+          latencyMs: elapsed(),
+          attempts,
+        };
+        this.logger.log(
+          `classify ok provider=${result.provider} model=${result.model} mode=systemone attempts=${attempts} ms=${result.latencyMs} tokens=${res.usage?.promptTokens ?? '?'}/${res.usage?.completionTokens ?? '?'}`,
+        );
+        return result;
+      } catch (error) {
+        if (!(error instanceof AiGatewayError)) throw error;
+        status = error.status;
+        if (error.kind === 'unexpected_response') continue;
+        return this.fail(
+          {
+            ok: false,
+            kind: error.kind,
+            retryable: isRetryableAiErrorKind(error.kind),
+            ...base,
+            attempts,
+            latencyMs: elapsed(),
+            status: error.status,
+            ...(error.retryAfterMs !== undefined && {
+              retryAfterMs: error.retryAfterMs,
+            }),
+          },
+          'systemone',
+        );
+      }
+    }
+    return this.fail(
+      {
+        ok: false,
+        kind: 'unexpected_response',
+        retryable: false,
+        ...base,
+        attempts,
+        latencyMs: elapsed(),
+        ...(status !== undefined && { status }),
+      },
+      'systemone',
+    );
+  }
+
   private fail(
     failure: ClassificationFailure,
-    mode: ClassifierOutputMode,
+    mode: ClassifierOutputMode | 'systemone',
   ): ClassificationFailure {
     this.logger.warn(
       `classify failed provider=${failure.provider ?? '-'} model=${failure.model ?? '-'} kind=${failure.kind}${failure.rejection ? ` rejection=${failure.rejection}` : ''} mode=${mode} attempts=${failure.attempts} ms=${failure.latencyMs} tokens=${failure.usage?.promptTokens ?? '?'}/${failure.usage?.completionTokens ?? '?'}`,

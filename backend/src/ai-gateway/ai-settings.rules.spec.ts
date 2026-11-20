@@ -11,7 +11,12 @@ import {
   type StoredAiKey,
 } from './ai-settings.rules.js';
 
-const NONE = { provider: null, model: null } as const;
+const NONE = {
+  provider: null,
+  model: null,
+  textImageModel: null,
+  textImageEnabled: false,
+} as const;
 const AT = new Date('2026-11-19T08:00:00.000Z');
 const dbKey = (apiKey: string): StoredAiKey => ({
   apiKey,
@@ -121,7 +126,7 @@ describe('buildAiSettingsSnapshot', () => {
 
   it('DB wins per field: provider, model, key; env fills the rest', () => {
     const s = buildAiSettingsSnapshot(
-      { provider: 'anthropic', model: null },
+      { ...NONE, provider: 'anthropic' },
       { anthropic: dbKey('sk-ant-db-key-4321') },
       { AI_PROVIDER: 'openai', ANTHROPIC_API_KEY: 'sk-ant-env-0000' },
     );
@@ -203,7 +208,7 @@ describe('buildAiSettingsSnapshot', () => {
 
 describe('draftAiConfig', () => {
   const snapshot = buildAiSettingsSnapshot(
-    { provider: 'openai', model: 'gpt-saved' },
+    { ...NONE, provider: 'openai', model: 'gpt-saved' },
     { openai: dbKey('sk-openai-db-1234') },
     { ...NEON_ENV, GEMINI_API_KEY: 'gemini-env-key-7777' },
   );
