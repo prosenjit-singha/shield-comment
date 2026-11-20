@@ -6,12 +6,14 @@ import { ClientTicketsService } from './client-tickets.service.js';
 import { SupportTicketsService } from './support-tickets.service.js';
 import { TicketAttachmentsService } from './ticket-attachments.js';
 import { TicketEvents } from './ticket-events.js';
+import { TicketReplyNotifier } from './ticket-reply-notifier.js';
 
 /**
  * Support tickets: admin inbox under `/api/admin/tickets` (M2-T7) + client tickets under
  * `/api/workspaces/:workspaceId/support/tickets` (M7-T2, reuses `SupportTicketsService.addMessage()`).
  * `TicketEvents` is exported so notifications can subscribe to `ticket.replied`. Screenshots
- * (M7-T3, D4) go to `StorageService` through `TicketAttachmentsService`.
+ * (M7-T3, D4) go to `StorageService` through `TicketAttachmentsService`. `TicketReplyNotifier`
+ * (M7-T4, D5) emails the requester on each public admin reply.
  */
 @Module({
   imports: [StorageModule],
@@ -21,6 +23,7 @@ import { TicketEvents } from './ticket-events.js';
     ClientTicketsService,
     TicketAttachmentsService,
     TicketEvents,
+    TicketReplyNotifier,
   ],
   exports: [SupportTicketsService, TicketEvents],
 })

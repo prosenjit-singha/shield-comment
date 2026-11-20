@@ -2,6 +2,7 @@ import { type INestApplication, Module, type Type } from '@nestjs/common';
 import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import type { App } from 'supertest/types.js';
 import { AppModule } from '../../src/app.module.js';
+import { EMAIL_SETTINGS } from '../../src/email/email.service.js';
 import { configureApp } from '../../src/app.setup.js';
 import { AUTH_SECONDARY_STORAGE } from '../../src/redis/redis-secondary-storage.js';
 import { RedisService } from '../../src/redis/redis.service.js';
@@ -35,7 +36,11 @@ export async function createTestApp(
       onModuleDestroy: vi.fn(),
     })
     .overrideProvider(AUTH_SECONDARY_STORAGE)
-    .useValue(createMemorySecondaryStorage());
+    .useValue(createMemorySecondaryStorage())
+    // Never real Resend, even if a local .env has a key: unconfigured email only logs (M7-T4).
+    // Specs that assert emails override `EmailService` with `createEmailServiceFake()`.
+    .overrideProvider(EMAIL_SETTINGS)
+    .useValue({ resend: null, production: false });
   builder = overrideQueues(builder);
   if (override) builder = override(builder);
   // Same as main.ts: the Better Auth integration owns body parsing.
