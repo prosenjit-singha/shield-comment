@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CommentsFeedController } from './comments-feed.controller.js';
 import { CommentIngestProcessor } from './comment-ingest.processor.js';
 import { CommentIngestService } from './comment-ingest.service.js';
 import { RawPayloadPurgeService } from './raw-payload-purge.js';
@@ -10,6 +11,7 @@ import { RawPayloadPurgeService } from './raw-payload-purge.js';
  * `raw_payload` purge), run by the `meta-token-check` worker (`MetaCallbacksModule`).
  */
 @Module({
+  controllers: [CommentsFeedController],
   providers: [
     CommentIngestService,
     CommentIngestProcessor,
