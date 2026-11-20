@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 6 section + the row's decisions, `docs/project-documentation/modules/module-6-client-dashboard.md`, the code the row names.
 - Standing approvals: **client/ + admin/ approved for every Module 6 row in this run** (user, 2026-11-20, "Both, rest of run (Recommended)"). Live AI or Meta calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #13 (2026-11-20) · rows this session: 5 · estimate: 95k
+- Session: #13 (2026-11-20) · rows this session: 6 · estimate: 105k
 - Previous runs (Modules 3–5, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M6-T5 (2026-11-20) · commit: "feat(backend): add workspace dashboard summary api (M6-T5)"
+verified M6-T5 (2026-11-20)
 
 ## Resume
 `/orchestration --continue`
@@ -262,4 +262,4 @@ You are implementing exactly ONE task row, **M6-T6**, in the ShieldComment BD re
 - 2026-11-20 M6-T2 ✅ · `13a29fd` · backend 2130 unit (was 2076) + e2e 1015 (was 1010) · static rule engine before the AI: keyword → URL → BD phone, no LLM/post context on a match, Hide/Delete per kind, REVIEW → NEEDS_REVIEW, gate test (1) in the service spec
 - 2026-11-20 M6-T3 ✅ · `7f2ab4e` · backend 2157 unit (was 2130) + e2e 1041 (was 1015) · `GET /api/workspaces/:workspaceId/comments` feed: filters, Dhaka days, `q` escaped, `since`, keyset cursor, latest action; every member + impersonated
 - 2026-11-20 M6-T4 ✅ · `025b6c4` · backend 2194 unit (was 2157) + e2e 1068 (was 1041) · `POST …/comments/:commentId/override` (Hide/Unhide/Delete/Reply/Keep), 404/409/503/502 mapping, KEEP action type (migration 0033), `META_GRAPH_BASE_URL` test-only Graph host
-- 2026-11-20 M6-T5 ✅ · backend 2208 unit (was 2194) + e2e 1079 (was 1068) · `GET /api/workspaces/:workspaceId/dashboard/summary?range=7d|30d|90d`: KPIs, zero-filled Dhaka daily series, intents + flagged, live needs-review count; every member + impersonated
+- 2026-11-20 M6-T5 ✅ · `72e90c4` · backend 2208 unit (was 2194) + e2e 1079 (was 1068) · `GET /api/workspaces/:workspaceId/dashboard/summary?range=7d|30d|90d`: KPIs, zero-filled Dhaka daily series, intents + flagged, live needs-review count; every member + impersonated
