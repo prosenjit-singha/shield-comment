@@ -130,7 +130,7 @@ describe('Pooled plan limits (e2e)', () => {
     });
   });
 
-  describe('LimitService.seatsLeft (not enforced until Module 7)', () => {
+  describe('LimitService.seatsLeft (members; pending invites in workspace-invites.e2e-spec.ts)', () => {
     it('Starter trial: 1 seat − the owner = 0', async () => {
       const owner = await actors.signUp('pwt5-seat-trial', { trial: true });
       expect(await limits.seatsLeft(await actors.accountIdOf(owner))).toBe(0);

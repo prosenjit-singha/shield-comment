@@ -67,6 +67,13 @@ try {
       new PromotionService(db),
     ),
     limits: new LimitService(db),
+    // No invites from this script.
+    invitations: {
+      email: {
+        send: () => Promise.reject(new Error('No email from this script')),
+      },
+      clientAppUrl: 'http://localhost',
+    },
   });
   const result = await ensureSuperAdmin(db, auth, input);
   const messages = {

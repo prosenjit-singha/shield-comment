@@ -1,9 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { countDistinct, eq } from 'drizzle-orm';
+import { and, countDistinct, eq, gt, sql } from 'drizzle-orm';
+import { union } from 'drizzle-orm/pg-core';
 import type { Database } from '../db/database.js';
 import {
   billingAccounts,
+  users,
+  workspaceInvitations,
   workspaceMembers,
   workspaces,
 } from '../db/schema/index.js';
@@ -41,16 +44,43 @@ export function workspaceCreateCheck(
     : { kind: 'ok', limit, count };
 }
 
+/** `code` of the 409s from `POST /api/auth/organization/invite-member` (M7-T5, Module 7 D9/D10). */
+export const SEAT_ERROR_CODES = {
+  /** The workspace's billing account has no live plan. */
+  noActivePlan: 'NO_ACTIVE_PLAN',
+  /** Seats used (members + pending invites) ≥ `limits.teamSeats`; `details { limit, used }`. */
+  limitReached: 'SEAT_LIMIT_REACHED',
+} as const;
+
+/** Whether one more person may be invited to the account's workspaces. */
+export type SeatCheck =
+  | { kind: 'ok'; limit: number; used: number }
+  | { kind: 'no_active_plan'; used: number }
+  | { kind: 'limit_reached'; limit: number; used: number };
+
 /**
- * Pure rule (PW-D11): the live plan's `limits.teamSeats` minus the distinct members across the
- * account's workspaces, never below 0. No live plan → 0.
+ * Pure rule (PW-D11, Module 7 D9): the live plan's `limits.teamSeats` minus the seats used
+ * (distinct people across the account's workspaces: members incl. the owner + pending unexpired
+ * invites), never below 0. No live plan → 0.
  */
 export function seatsLeftOf(
   live: Pick<AccountLiveSubscription, 'plan'> | null,
-  members: number,
+  used: number,
 ): number {
   if (!live) return 0;
-  return Math.max(0, live.plan.featureConfig.limits.teamSeats - members);
+  return Math.max(0, live.plan.featureConfig.limits.teamSeats - used);
+}
+
+/** Pure rule (D9/D10): an invite needs a live plan and a free seat (over the limit stays refused). */
+export function seatCheckOf(
+  live: Pick<AccountLiveSubscription, 'plan'> | null,
+  used: number,
+): SeatCheck {
+  if (!live) return { kind: 'no_active_plan', used };
+  const limit = live.plan.featureConfig.limits.teamSeats;
+  return used >= limit
+    ? { kind: 'limit_reached', limit, used }
+    : { kind: 'ok', limit, used };
 }
 
 /**
@@ -62,7 +92,8 @@ export function seatsLeftOf(
  *   `no_active_plan` / `workspace_limit_reached`). The creator's **own** account counts (the new
  *   workspace is linked to it by the after-hook); the first workspace at sign-up is created by
  *   `first-workspace.ts`, not through this check.
- * - `seatsLeft(accountId)`: for Module 7 invites (not enforced yet).
+ * - `canInvite(workspaceId)`: the `/organization/invite-member` seat check (M7-T5, D9/D10);
+ *   `seatsLeft(accountId)`: the same count as a number.
  * - `workspaceCount(accountId)`: also read by `BillingSummaryService` (PW-T6).
  *
  * Read-only; every query is scoped by the account id (or the owner user id that finds it). Logs
@@ -101,17 +132,40 @@ export class LimitService {
     return check;
   }
 
-  /**
-   * Seats left on the account (PW-D11): live plan `limits.teamSeats` − distinct members across its
-   * workspaces (a user in two workspaces is one seat), floor 0; no live plan → 0. Enforced when
-   * Module 7 adds invites.
-   */
+  /** Seats left on the account (D9): live plan `limits.teamSeats` − `countSeats`, floor 0; no live plan → 0. */
   async seatsLeft(accountId: string, now: Date = new Date()): Promise<number> {
-    const [live, members] = await Promise.all([
+    const [live, used] = await Promise.all([
       findAccountLiveSubscription(this.db, accountId, now),
-      this.countMembers(accountId),
+      this.countSeats(accountId, now),
     ]);
-    return seatsLeftOf(live, members);
+    return seatsLeftOf(live, used);
+  }
+
+  /**
+   * May one more person be invited to `workspaceId` (D9/D10)? Seats are pooled on the workspace's
+   * billing account; no account = no live plan. Not locked: two parallel invites can both pass the
+   * last seat (Better Auth runs the hook outside a transaction); accept re-checks (M7-T6).
+   */
+  async canInvite(
+    workspaceId: string,
+    now: Date = new Date(),
+  ): Promise<SeatCheck> {
+    const [ws] = await this.db
+      .select({ accountId: workspaces.billingAccountId })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId));
+    if (!ws?.accountId) return seatCheckOf(null, 0);
+    const [live, used] = await Promise.all([
+      findAccountLiveSubscription(this.db, ws.accountId, now),
+      this.countSeats(ws.accountId, now),
+    ]);
+    const check = seatCheckOf(live, used);
+    if (check.kind !== 'ok') {
+      this.logger.log(
+        `invite refused account=${ws.accountId} reason=${check.kind} used=${used}`,
+      );
+    }
+    return check;
   }
 
   /**
@@ -126,13 +180,38 @@ export class LimitService {
     return row?.value ?? 0;
   }
 
-  /** Distinct users that are members of any of the account's workspaces. */
-  private async countMembers(accountId: string): Promise<number> {
-    const [row] = await this.db
-      .select({ value: countDistinct(workspaceMembers.userId) })
+  /**
+   * Seats used (D9): distinct people across the account's workspaces, by lower-cased email =
+   * members (owner included) ∪ pending unexpired invites. A person in two workspaces, or a member
+   * invited to another of the account's workspaces, is one seat.
+   */
+  private async countSeats(accountId: string, now: Date): Promise<number> {
+    const memberEmails = this.db
+      .select({ email: sql<string>`lower(${users.email})`.as('email') })
       .from(workspaceMembers)
+      .innerJoin(users, eq(users.id, workspaceMembers.userId))
       .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
       .where(eq(workspaces.billingAccountId, accountId));
+    const invitedEmails = this.db
+      .select({
+        email: sql<string>`lower(${workspaceInvitations.email})`.as('email'),
+      })
+      .from(workspaceInvitations)
+      .innerJoin(
+        workspaces,
+        eq(workspaces.id, workspaceInvitations.workspaceId),
+      )
+      .where(
+        and(
+          eq(workspaces.billingAccountId, accountId),
+          eq(workspaceInvitations.status, 'pending'),
+          gt(workspaceInvitations.expiresAt, now),
+        ),
+      );
+    const seats = union(memberEmails, invitedEmails).as('seats');
+    const [row] = await this.db
+      .select({ value: countDistinct(seats.email) })
+      .from(seats);
     return row?.value ?? 0;
   }
 }

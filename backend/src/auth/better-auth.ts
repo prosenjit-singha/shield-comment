@@ -2,10 +2,12 @@ import { APIError, betterAuth, type SecondaryStorage } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { admin, organization } from 'better-auth/plugins';
+import { and, eq } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
 import type { LimitService } from '../billing/limit.service.js';
 import type { Database } from '../db/database.js';
 import * as schema from '../db/schema/index.js';
+import type { EmailService } from '../email/email.service.js';
 import { CLIENT_IP_HEADER } from './client-ip.js';
 import {
   firstWorkspaceName,
@@ -16,6 +18,15 @@ import {
 } from './first-workspace.js';
 import { impersonationExchange } from './impersonation-exchange.plugin.js';
 import type { PasswordService } from './password.service.js';
+import {
+  assertInviteRole,
+  assertNotImpersonating,
+  assertSeatAvailable,
+  createInvitationMailer,
+  INVITATION_EXPIRES_IN_SEC,
+  INVITE_MEMBER_PATH,
+  TEAM_WRITE_PATHS,
+} from './workspace-invites.js';
 import { assertWorkspaceCreateAllowed } from './workspace-limit.js';
 import {
   platformAc,
@@ -42,15 +53,17 @@ export interface BetterAuthSettings {
    * `/organization/create` workspace link (`SubscriptionService`).
    */
   billing: AuthBilling;
-  /** Account-pooled workspace limit for `/organization/create` (PW-T5, `LimitService`). */
+  /** Account-pooled workspace limit (PW-T5) and invite seat check (M7-T5), `LimitService`. */
   limits: AuthLimits;
+  /** Invitation emails (M7-T5): `EmailService` + `CLIENT_APP_URL` for the `/invite/<id>` link. */
+  invitations: { email: Pick<EmailService, 'send'>; clientAppUrl: string };
 }
 
 /** The `SubscriptionService` calls Better Auth's hooks make (PW-T3). */
 export type AuthBilling = SessionBilling;
 
-/** The `LimitService` call the `/organization/create` before-hook makes (PW-T5). */
-export type AuthLimits = Pick<LimitService, 'canCreateWorkspace'>;
+/** The `LimitService` calls the organization hooks make (PW-T5, M7-T5). */
+export type AuthLimits = Pick<LimitService, 'canCreateWorkspace' | 'canInvite'>;
 
 const SIGN_UP_PATH = '/sign-up/email';
 
@@ -167,13 +180,27 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
             message: `workspaceName must be 1-${WORKSPACE_NAME_MAX} characters`,
           });
         }
-        if (isBlockedWhileImpersonating(ctx.path)) {
-          const current = await getSessionFromCtx(ctx);
-          if ((current?.session as SessionFields | undefined)?.impersonatedBy) {
-            throw new APIError('FORBIDDEN', {
-              message: 'Not allowed while impersonating',
-            });
-          }
+        const teamWrite = TEAM_WRITE_PATHS.has(ctx.path);
+        if (!teamWrite && !isBlockedWhileImpersonating(ctx.path)) return;
+        const current = await getSessionFromCtx(ctx);
+        const session = current?.session as
+          | (SessionFields & { activeOrganizationId?: string | null })
+          | undefined;
+        if (teamWrite) assertNotImpersonating(session?.impersonatedBy);
+        else if (session?.impersonatedBy) {
+          throw new APIError('FORBIDDEN', {
+            message: 'Not allowed while impersonating',
+          });
+        }
+        // D7 role rules run here, before the plugin cancels an older invite of the same email
+        // (re-invite) and also for `resend: true`, which skips `beforeCreateInvitation`.
+        if (ctx.path === INVITE_MEMBER_PATH && current) {
+          await checkInviteRole(
+            db,
+            current.user.id,
+            ctx.body as InviteBody | undefined,
+            session?.activeOrganizationId,
+          );
         }
       }),
     },
@@ -226,6 +253,13 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
         ac: workspaceAc,
         roles: workspaceRoles,
         creatorRole: 'owner',
+        // D7 (Module 7): 7-day links; re-inviting an email cancels its older pending invite.
+        invitationExpiresIn: INVITATION_EXPIRES_IN_SEC,
+        cancelPendingInvitationsOnReInvite: true,
+        sendInvitationEmail: createInvitationMailer(
+          settings.invitations.email,
+          settings.invitations.clientAppUrl,
+        ),
         organizationHooks: {
           // PW-T5 (plan §3.6, PW-D10/D11): the creator's account needs a live plan (else 403
           // `no_active_plan`) with room under `limits.workspaces` (else 403
@@ -240,6 +274,14 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
           // plan §3.1); no new trial.
           afterCreateOrganization: async ({ organization, user }) => {
             await settings.billing.linkWorkspace(user.id, organization.id);
+          },
+          // D9/D10 (M7-T5): seats pooled on the workspace's billing account = members + pending
+          // unexpired invites; a re-invite's older invite is already cancelled here, so it frees
+          // its seat. 409 `SEAT_LIMIT_REACHED` / `NO_ACTIVE_PLAN`.
+          beforeCreateInvitation: async ({ organization }) => {
+            assertSeatAvailable(
+              await settings.limits.canInvite(organization.id),
+            );
           },
         },
         schema: {
@@ -276,3 +318,42 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
 }
 
 export type BetterAuth = ReturnType<typeof createBetterAuth>;
+
+type InviteBody = {
+  role?: unknown;
+  organizationId?: unknown;
+};
+
+/**
+ * D7 for `/organization/invite-member`: the caller's role in the target workspace decides which
+ * roles they may invite. No membership or a malformed body → the plugin answers (400/403).
+ */
+async function checkInviteRole(
+  db: Database,
+  userId: string,
+  body: InviteBody | undefined,
+  activeWorkspaceId: string | null | undefined,
+): Promise<void> {
+  const workspaceId =
+    typeof body?.organizationId === 'string'
+      ? body.organizationId
+      : activeWorkspaceId;
+  const roles = Array.isArray(body?.role)
+    ? body.role
+    : typeof body?.role === 'string'
+      ? body.role.split(',').map((r) => r.trim())
+      : null;
+  if (!workspaceId || !roles?.length) return;
+  const [member] = await db
+    .select({ role: schema.workspaceMembers.role })
+    .from(schema.workspaceMembers)
+    .where(
+      and(
+        eq(schema.workspaceMembers.workspaceId, workspaceId),
+        eq(schema.workspaceMembers.userId, userId),
+      ),
+    );
+  if (!member) return;
+  // One role per invite (the DB role check allows a single value).
+  assertInviteRole(member.role, roles.length === 1 ? String(roles[0]) : '');
+}
