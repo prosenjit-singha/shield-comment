@@ -10,12 +10,14 @@ import {
 import { render } from '@testing-library/react'
 import { vi } from 'vitest'
 import type { BillingSummary } from '@/lib/billing-summary'
+import type { CommentFeedItem, CommentStatus, OverrideAction } from '@/lib/comments-feed'
 import type { DashboardSummary, SummaryRange } from '@/lib/dashboard-summary'
 import type { Language } from '@/lib/language'
 import type { WorkspaceMetaConnection, WorkspacePage } from '@/lib/meta-pages'
 import type { AiContextLevel, ModerationPolicy } from '@/lib/moderation-policy'
 import { createQueryClient } from '@/lib/query-client'
 import { Route as AppRoute } from '@/routes/_app'
+import { Route as CommentsRoute } from '@/routes/_app/comments'
 import { Route as DashboardRoute } from '@/routes/_app/dashboard'
 import { Route as OnboardingRoute } from '@/routes/_app/onboarding'
 import { Route as PagesRoute } from '@/routes/_app/pages'
@@ -26,7 +28,7 @@ import { json } from './auth-routes'
 
 /**
  * Harness for the logged-in screens (`/onboarding` M3-T10, `/pages` M3-T11, `/plans` PR-T6): the real `_app`
- * layout + `/onboarding` + `/pages` + `/dashboard` + `/plans` route files under a bare root (the generated tree pulls
+ * layout + `/onboarding` + `/pages` + `/dashboard` + `/comments` + `/plans` route files under a bare root (the generated tree pulls
  * in the Start server functions), with a stub /login. Test files must still
  * `vi.mock('@/server/session', …)` themselves (vi.mock is hoisted per file).
  */
@@ -39,6 +41,7 @@ const routeTree = rootRoute.addChildren([
     OnboardingRoute.update(childOptions('/onboarding')),
     PagesRoute.update(childOptions('/pages')),
     DashboardRoute.update(childOptions('/dashboard')),
+    CommentsRoute.update(childOptions('/comments')),
     PlansRoute.update(childOptions('/plans')),
   ]),
   loginRoute,
@@ -55,6 +58,8 @@ export const DISCONNECT = '/api/workspaces/w1/meta/connection'
 export const POLICY = '/api/workspaces/w1/moderation/policy'
 export const SUMMARY = '/api/workspaces/w1/billing/summary'
 export const DASHBOARD = '/api/workspaces/w1/dashboard/summary'
+export const COMMENTS = '/api/workspaces/w1/comments'
+export const overrideUrl = (id: string) => `${COMMENTS}/${id}/override`
 export const META_DIALOG = 'https://www.facebook.com/v26.0/dialog/oauth?client_id=1&state=abc'
 
 export function page(overrides: Partial<WorkspacePage> = {}): WorkspacePage {
@@ -252,6 +257,65 @@ export function dashboardApi(respond: (range: SummaryRange) => Response | Promis
       return respond(range)
     },
   }
+}
+
+/** A feed item (M6-T3 contract); default = a scam comment waiting for review. */
+export function comment(overrides: Partial<CommentFeedItem> = {}): CommentFeedItem {
+  return {
+    id: 'c1',
+    platform: 'FACEBOOK',
+    page: { id: '6f1c2a3b-0000-4000-8000-000000000001', name: 'Shop One' },
+    postId: '1001_2001',
+    authorName: 'Karim',
+    message: 'bKash e taka pathan 01712345678',
+    status: 'NEEDS_REVIEW',
+    statusReason: 'below_threshold',
+    category: 'SCAM_PHISHING',
+    confidence: 0.72,
+    language: 'banglish',
+    reasoning: 'Asks for a bKash payment to a personal number.',
+    ruleMatch: null,
+    overriddenAt: null,
+    editedAt: null,
+    createdAt: '2026-11-20T08:00:00.000Z',
+    lastAction: null,
+    ...overrides,
+  }
+}
+
+const STATUS_AFTER: Partial<Record<OverrideAction, CommentStatus>> = { HIDE: 'HIDDEN', UNHIDE: 'VISIBLE', DELETE: 'DELETED', KEEP: 'VISIBLE' }
+
+export interface CommentsApiOptions {
+  /** Answers `GET …/comments` (gets the URL: filters, `cursor`, `since`). Default: `items`, or none for `since`. */
+  onList?: (url: URL) => Response | Promise<Response>
+  /** Answers `POST …/override` instead of the default (apply the action, return the item). */
+  onOverride?: (item: CommentFeedItem, body: { action: OverrideAction; replyText?: string }) => Response | Promise<Response>
+}
+
+/** `/comments` (M6-T9): a stateful feed + `POST …/:id/override` per item. Any other method fails the test. */
+export function commentsApi(items: CommentFeedItem[] = [], options: CommentsApiOptions = {}) {
+  const state = items.map((item) => ({ ...item }))
+  const handlers: Record<string, (init?: RequestInit, url?: URL) => Response | Promise<Response>> = {
+    [COMMENTS]: (init, url) => {
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method !== 'GET' || !url) throw new Error(`Unexpected ${method} ${COMMENTS}`)
+      if (options.onList) return options.onList(url)
+      return json(200, { items: url.searchParams.has('since') ? [] : state, nextCursor: null })
+    },
+  }
+  for (const item of state) {
+    handlers[overrideUrl(item.id)] = (init) => {
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method !== 'POST' || typeof init?.body !== 'string') throw new Error(`Unexpected ${method} ${overrideUrl(item.id)}`)
+      const body = JSON.parse(init.body) as { action: OverrideAction; replyText?: string }
+      if (options.onOverride) return options.onOverride(item, body)
+      item.status = STATUS_AFTER[body.action] ?? item.status
+      item.overriddenAt = '2026-11-20T09:00:00.000Z'
+      item.lastAction = { action: body.action, source: 'USER', state: 'SUCCEEDED', at: item.overriddenAt }
+      return json(200, item)
+    }
+  }
+  return handlers
 }
 
 /** jsdom gaps the `_app` shell needs (top-bar theme toggle reads matchMedia; the router scrolls; Recharts observes size). */

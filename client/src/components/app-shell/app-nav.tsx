@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Gem, LayoutDashboard, PanelsTopLeft, type LucideIcon } from 'lucide-react'
+import { Gem, LayoutDashboard, MessagesSquare, PanelsTopLeft, type LucideIcon } from 'lucide-react'
 import type { ContentFn } from '@/lib/auth-errors'
 import { useLanguage } from '@/hooks/use-language'
 
@@ -7,17 +7,18 @@ import { useLanguage } from '@/hooks/use-language'
  * `_app` navigation (M6-T8, D16 c): a sidebar from `md` up, a fixed bottom bar below it. Both are in
  * the DOM and CSS picks one (no JS breakpoint, no flash of the wrong one).
  * D16 order: Dashboard, Comments, Pages, Rules, Playground, Analytics, Plans. Only routes that exist
- * are listed (a `<Link>` to a missing route breaks the router types); M6-T9…T12 add Comments, Rules,
- * Playground and Analytics here as they ship.
+ * are listed (a `<Link>` to a missing route breaks the router types); M6-T10…T12 add Rules, Playground
+ * and Analytics here as they ship.
  */
 interface NavItem {
-  to: '/dashboard' | '/pages' | '/plans'
+  to: '/dashboard' | '/comments' | '/pages' | '/plans'
   icon: LucideIcon
   label: (content: ContentFn) => string
 }
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard', icon: LayoutDashboard, label: (c) => c('Dashboard', 'ড্যাশবোর্ড') },
+  { to: '/comments', icon: MessagesSquare, label: (c) => c('Comments', 'কমেন্ট') },
   { to: '/pages', icon: PanelsTopLeft, label: (c) => c('Pages', 'পেজ') },
   { to: '/plans', icon: Gem, label: (c) => c('Plans', 'প্ল্যান') },
 ]

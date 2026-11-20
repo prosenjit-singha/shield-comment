@@ -32,7 +32,7 @@ const copy = {
     d7: '7 days',
     d30: '30 days',
     d90: '90 days',
-    nav: ['Dashboard', 'Pages', 'Plans'],
+    nav: ['Dashboard', 'Comments', 'Pages', 'Plans'],
     total: '1,500',
   },
   bn: {
@@ -56,7 +56,7 @@ const copy = {
     d7: '৭ দিন',
     d30: '৩০ দিন',
     d90: '৯০ দিন',
-    nav: ['ড্যাশবোর্ড', 'পেজ', 'প্ল্যান'],
+    nav: ['ড্যাশবোর্ড', 'কমেন্ট', 'পেজ', 'প্ল্যান'],
     total: '১,৫০০',
   },
 } as const
@@ -231,9 +231,9 @@ describe.each(['en', 'bn'] as const)('/dashboard (%s)', (language: Language) => 
       for (const testId of ['app-sidebar', 'app-bottom-bar']) {
         const links = navLinks(testId)
         expect(links.map((link) => link.textContent)).toEqual([...t.nav])
-        expect(links.map((link) => link.getAttribute('href'))).toEqual(['/dashboard', '/pages', '/plans'])
+        expect(links.map((link) => link.getAttribute('href'))).toEqual(['/dashboard', '/comments', '/pages', '/plans'])
         // Active even with a range in the URL.
-        expect(links.map((link) => link.getAttribute('aria-current'))).toEqual(['page', null, null])
+        expect(links.map((link) => link.getAttribute('aria-current'))).toEqual(['page', null, null, null])
       }
     })
 
@@ -248,10 +248,10 @@ describe.each(['en', 'bn'] as const)('/dashboard (%s)', (language: Language) => 
       const { history } = renderAppRoute('/dashboard', language)
       await screen.findByTestId('activity-chart')
 
-      fireEvent.click(navLinks('app-bottom-bar')[2]!)
+      fireEvent.click(navLinks('app-bottom-bar')[3]!)
       await waitFor(() => expect(history.location.pathname).toBe('/plans'))
       for (const testId of ['app-sidebar', 'app-bottom-bar']) {
-        await waitFor(() => expect(navLinks(testId).map((link) => link.getAttribute('aria-current'))).toEqual([null, null, 'page']))
+        await waitFor(() => expect(navLinks(testId).map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null, 'page']))
       }
     })
   })

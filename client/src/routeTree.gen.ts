@@ -16,6 +16,7 @@ import { Route as DataDeletionRouteImport } from './routes/data-deletion'
 import { Route as ImpersonateRouteImport } from './routes/impersonate'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as AppCommentsRouteImport } from './routes/_app/comments'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppOnboardingRouteImport } from './routes/_app/onboarding'
 import { Route as AppPagesRouteImport } from './routes/_app/pages'
@@ -56,6 +57,11 @@ const RegisterRoute = RegisterRouteImport.update({
   path: '/register',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppCommentsRoute = AppCommentsRouteImport.update({
+  id: '/comments',
+  path: '/comments',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/comments': typeof AppCommentsRoute
   '/dashboard': typeof AppDashboardRoute
   '/onboarding': typeof AppOnboardingRoute
   '/pages': typeof AppPagesRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/comments': typeof AppCommentsRoute
   '/dashboard': typeof AppDashboardRoute
   '/onboarding': typeof AppOnboardingRoute
   '/pages': typeof AppPagesRoute
@@ -117,6 +125,7 @@ export interface FileRoutesById {
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/_app/comments': typeof AppCommentsRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/onboarding': typeof AppOnboardingRoute
   '/_app/pages': typeof AppPagesRoute
@@ -132,6 +141,7 @@ export interface FileRouteTypes {
     | '/impersonate'
     | '/login'
     | '/register'
+    | '/comments'
     | '/dashboard'
     | '/onboarding'
     | '/pages'
@@ -145,6 +155,7 @@ export interface FileRouteTypes {
     | '/impersonate'
     | '/login'
     | '/register'
+    | '/comments'
     | '/dashboard'
     | '/onboarding'
     | '/pages'
@@ -159,6 +170,7 @@ export interface FileRouteTypes {
     | '/impersonate'
     | '/login'
     | '/register'
+    | '/_app/comments'
     | '/_app/dashboard'
     | '/_app/onboarding'
     | '/_app/pages'
@@ -228,6 +240,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/comments': {
+      id: '/_app/comments'
+      path: '/comments'
+      fullPath: '/comments'
+      preLoaderRoute: typeof AppCommentsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/dashboard': {
       id: '/_app/dashboard'
       path: '/dashboard'
@@ -267,6 +286,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppCommentsRoute: typeof AppCommentsRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppOnboardingRoute: typeof AppOnboardingRoute
   AppPagesRoute: typeof AppPagesRoute
@@ -274,6 +294,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppCommentsRoute: AppCommentsRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppOnboardingRoute: AppOnboardingRoute,
   AppPagesRoute: AppPagesRoute,

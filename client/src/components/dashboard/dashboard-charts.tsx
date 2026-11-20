@@ -403,14 +403,25 @@ export function IntentsChart({ data }: { data: CategoryCount[] | undefined }) {
 }
 
 /** Load failure with retry (keeps the page header and range pills above it). */
-export function DashboardError({ message, onRetry, retrying }: { message: string; onRetry: () => void; retrying: boolean }) {
+export function DashboardError({
+  message,
+  onRetry,
+  retrying,
+  title,
+}: {
+  message: string
+  onRetry: () => void
+  retrying: boolean
+  /** Default: the dashboard's heading (`/comments` passes its own). */
+  title?: string
+}) {
   const { content } = useLanguage()
   return (
     <section role="alert" className="flex flex-col items-center gap-3 rounded-3xl border bg-card px-6 py-16 text-center">
       <span className="flex size-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
         <TriangleAlert className="size-6" aria-hidden />
       </span>
-      <h2 className="text-base font-semibold">{content('Couldn’t load your dashboard', 'আপনার ড্যাশবোর্ড লোড করা যায়নি')}</h2>
+      <h2 className="text-base font-semibold">{title ?? content('Couldn’t load your dashboard', 'আপনার ড্যাশবোর্ড লোড করা যায়নি')}</h2>
       <p className="max-w-md text-sm text-balance text-muted-foreground">{message}</p>
       <Button variant="outline" onClick={onRetry} disabled={retrying}>
         <RotateCcw aria-hidden />
