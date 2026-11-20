@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { billingSummary, IMPERSONATED, renderAppRoute, SESSION, stubAppGlobals, SUMMARY, summaryApi, teamApi, ticketsApi } from '@/test/app-routes'
+import { alertSettings, alertsApi } from '@/test/alerts-api'
+import { billingSummary, IMPERSONATED, renderAppRoute, SESSION, stubAppGlobals, SUMMARY, summaryApi, team, teamApi, ticketsApi } from '@/test/app-routes'
 import { apiCalls, callsTo, fetchMock, json, mockApi } from '@/test/auth-routes'
 
 // The server-render session function needs the Start compiler; the browser path never calls it.
@@ -26,7 +27,7 @@ const copy = {
     team: 'Team',
     alerts: 'Alerts',
     teamMembers: 'Members',
-    alertsSoon: 'Scam-spike alerts are coming soon.',
+    alertsHeading: 'Scam-spike alerts',
     switcher: (name: string) => `Workspace: ${name}`,
     switchFailed: 'Couldn’t switch the workspace.',
     server: 'The server is unavailable right now.',
@@ -40,7 +41,7 @@ const copy = {
     team: 'টিম',
     alerts: 'অ্যালার্ট',
     teamMembers: 'সদস্য',
-    alertsSoon: 'স্ক্যাম-স্পাইক অ্যালার্ট শিগগিরই আসছে।',
+    alertsHeading: 'স্ক্যাম-স্পাইক অ্যালার্ট',
     switcher: (name: string) => `ওয়ার্কস্পেস: ${name}`,
     switchFailed: 'ওয়ার্কস্পেস বদলানো যায়নি।',
     server: 'সার্ভার এই মুহূর্তে পাওয়া যাচ্ছে না।',
@@ -101,7 +102,7 @@ describe.each(['en', 'bn'] as const)('M7-T11 navigation (%s)', (language) => {
   })
 
   it('/settings redirects to /settings/team; the tabs switch to Alerts and Settings stays active', async () => {
-    mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi(), ...ticketsApi(), ...teamApi() })
+    mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi(), ...ticketsApi(), ...alertsApi() })
     const { history } = renderAppRoute('/settings', language)
 
     expect(await screen.findByRole('heading', { name: t.teamMembers })).toBeTruthy()
@@ -116,7 +117,7 @@ describe.each(['en', 'bn'] as const)('M7-T11 navigation (%s)', (language) => {
     expect(sidebarCurrent()).toEqual(['/settings'])
 
     fireEvent.click(tabs.getByRole('link', { name: t.alerts }))
-    expect(await screen.findByText(t.alertsSoon)).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: t.alertsHeading })).toBeTruthy()
     expect(history.location.pathname).toBe('/settings/alerts')
     expect(tabs.getByRole('link', { name: t.alerts }).getAttribute('aria-current')).toBe('page')
     expect(tabs.getByRole('link', { name: t.team }).getAttribute('aria-current')).toBeNull()
@@ -149,6 +150,9 @@ describe.each(['en', 'bn'] as const)('M7-T11 navigation (%s)', (language) => {
         [LIST]: () => json(200, TWO_WORKSPACES),
         ...summaryApi(),
         [W2_SUMMARY]: () => json(200, billingSummary()),
+        ...alertsApi(),
+        '/api/workspaces/w2/alerts/settings': () => json(200, alertSettings({ workspaceId: 'w2' })),
+        '/api/workspaces/w2/team': () => json(200, team()),
         [SET_ACTIVE]: (init) => {
           active = (JSON.parse(String(init?.body)) as { organizationId: string }).organizationId
           return json(200, TWO_WORKSPACES[1])
@@ -168,7 +172,7 @@ describe.each(['en', 'bn'] as const)('M7-T11 navigation (%s)', (language) => {
       expect(queryClient.getQueryData(['workspace', 'w1', 'stats'])).toBeUndefined()
       await waitFor(() => expect(callsTo(W2_SUMMARY)).toHaveLength(1)) // the shell reloads for the new workspace
       expect(history.location.pathname).toBe('/settings/alerts')
-      expect(screen.getByText(t.alertsSoon)).toBeTruthy()
+      expect(await screen.findByRole('heading', { name: t.alertsHeading })).toBeTruthy()
       expect(screen.queryByRole('alert')).toBeNull()
     })
 

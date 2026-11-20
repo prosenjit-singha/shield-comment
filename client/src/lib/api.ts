@@ -68,6 +68,8 @@ export async function apiFetch<T>(path: string, options: { method?: 'GET' | 'POS
     throw new ApiError(0, 'Network error')
   }
   if (!response.ok) throw await errorFromResponse(response)
+  // 204 (e.g. removing a Telegram chat, M7-T15) has no body.
+  if (response.status === 204) return undefined as T
   try {
     return (await response.json()) as T
   } catch {

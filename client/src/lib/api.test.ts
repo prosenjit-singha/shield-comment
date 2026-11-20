@@ -29,6 +29,11 @@ describe('apiFetch', () => {
     expect(init?.headers).toMatchObject({ 'content-type': 'application/json' })
   })
 
+  it('resolves undefined for 204 No Content', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }))
+    await expect(apiFetch('/api/x', { method: 'DELETE' })).resolves.toBeUndefined()
+  })
+
   it('sends FormData as-is, without a JSON content type (multipart boundary set by the browser)', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: 1 }), { status: 201 }))
     const form = new FormData()

@@ -359,7 +359,8 @@ export function RulesForm({ workspaceId, policy }: { workspaceId: string; policy
   )
 }
 
-function Section({ icon: Icon, title, testId, children }: { icon: LucideIcon; title: string; testId: string; children: ReactNode }) {
+/** Shared with C12 `/settings/alerts` (M7-T15). */
+export function Section({ icon: Icon, title, testId, children }: { icon: LucideIcon; title: string; testId: string; children: ReactNode }) {
   const titleId = useId()
   return (
     <section aria-labelledby={titleId} data-testid={testId} className="flex flex-col gap-5 rounded-3xl border bg-card p-5 sm:p-6">
@@ -508,7 +509,8 @@ function ReplyText({ label, value, missing, onChange }: { label: string; value: 
   )
 }
 
-function SwitchRow({
+/** Shared with C12 `/settings/alerts` (M7-T15). */
+export function SwitchRow({
   label,
   description,
   checked,
@@ -537,7 +539,8 @@ function SwitchRow({
   )
 }
 
-function PlanNote({ testId, children }: { testId: string; children: ReactNode }) {
+/** Shared with C12 `/settings/alerts` (M7-T15). */
+export function PlanNote({ testId, children }: { testId: string; children: ReactNode }) {
   return (
     <p data-testid={testId} className="flex items-start gap-2 rounded-2xl bg-muted px-4 py-2.5 text-sm text-pretty text-muted-foreground">
       <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
