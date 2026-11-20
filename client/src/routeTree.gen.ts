@@ -24,7 +24,12 @@ import { Route as AppPagesRouteImport } from './routes/_app/pages'
 import { Route as AppPlansRouteImport } from './routes/_app/plans'
 import { Route as AppPlaygroundRouteImport } from './routes/_app/playground'
 import { Route as AppRulesRouteImport } from './routes/_app/rules'
+import { Route as AppSettingsRouteImport } from './routes/_app/settings'
+import { Route as AppSupportRouteImport } from './routes/_app/support'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
+import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
+import { Route as AppSettingsAlertsRouteImport } from './routes/_app/settings/alerts'
+import { Route as AppSettingsTeamRouteImport } from './routes/_app/settings/team'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -100,10 +105,35 @@ const AppRulesRoute = AppRulesRouteImport.update({
   path: '/rules',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSupportRoute = AppSupportRouteImport.update({
+  id: '/support',
+  path: '/support',
+  getParentRoute: () => AppRoute,
+} as any)
 const ApiSplatRoute = ApiSplatRouteImport.update({
   id: '/api/$',
   path: '/api/$',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
+const AppSettingsAlertsRoute = AppSettingsAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
+const AppSettingsTeamRoute = AppSettingsTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => AppSettingsRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -121,7 +151,12 @@ export interface FileRoutesByFullPath {
   '/plans': typeof AppPlansRoute
   '/playground': typeof AppPlaygroundRoute
   '/rules': typeof AppRulesRoute
+  '/settings': typeof AppSettingsRouteWithChildren
+  '/support': typeof AppSupportRoute
   '/api/$': typeof ApiSplatRoute
+  '/settings/alerts': typeof AppSettingsAlertsRoute
+  '/settings/team': typeof AppSettingsTeamRoute
+  '/settings/': typeof AppSettingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -138,7 +173,11 @@ export interface FileRoutesByTo {
   '/plans': typeof AppPlansRoute
   '/playground': typeof AppPlaygroundRoute
   '/rules': typeof AppRulesRoute
+  '/support': typeof AppSupportRoute
   '/api/$': typeof ApiSplatRoute
+  '/settings/alerts': typeof AppSettingsAlertsRoute
+  '/settings/team': typeof AppSettingsTeamRoute
+  '/settings': typeof AppSettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -157,7 +196,12 @@ export interface FileRoutesById {
   '/_app/plans': typeof AppPlansRoute
   '/_app/playground': typeof AppPlaygroundRoute
   '/_app/rules': typeof AppRulesRoute
+  '/_app/settings': typeof AppSettingsRouteWithChildren
+  '/_app/support': typeof AppSupportRoute
   '/api/$': typeof ApiSplatRoute
+  '/_app/settings/alerts': typeof AppSettingsAlertsRoute
+  '/_app/settings/team': typeof AppSettingsTeamRoute
+  '/_app/settings/': typeof AppSettingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -176,7 +220,12 @@ export interface FileRouteTypes {
     | '/plans'
     | '/playground'
     | '/rules'
+    | '/settings'
+    | '/support'
     | '/api/$'
+    | '/settings/alerts'
+    | '/settings/team'
+    | '/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -193,7 +242,11 @@ export interface FileRouteTypes {
     | '/plans'
     | '/playground'
     | '/rules'
+    | '/support'
     | '/api/$'
+    | '/settings/alerts'
+    | '/settings/team'
+    | '/settings'
   id:
     | '__root__'
     | '/'
@@ -211,7 +264,12 @@ export interface FileRouteTypes {
     | '/_app/plans'
     | '/_app/playground'
     | '/_app/rules'
+    | '/_app/settings'
+    | '/_app/support'
     | '/api/$'
+    | '/_app/settings/alerts'
+    | '/_app/settings/team'
+    | '/_app/settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -332,6 +390,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRulesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/support': {
+      id: '/_app/support'
+      path: '/support'
+      fullPath: '/support'
+      preLoaderRoute: typeof AppSupportRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/api/$': {
       id: '/api/$'
       path: '/api/$'
@@ -339,8 +411,45 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/settings/': {
+      id: '/_app/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof AppSettingsIndexRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
+    '/_app/settings/alerts': {
+      id: '/_app/settings/alerts'
+      path: '/alerts'
+      fullPath: '/settings/alerts'
+      preLoaderRoute: typeof AppSettingsAlertsRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
+    '/_app/settings/team': {
+      id: '/_app/settings/team'
+      path: '/team'
+      fullPath: '/settings/team'
+      preLoaderRoute: typeof AppSettingsTeamRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
   }
 }
+
+interface AppSettingsRouteChildren {
+  AppSettingsAlertsRoute: typeof AppSettingsAlertsRoute
+  AppSettingsTeamRoute: typeof AppSettingsTeamRoute
+  AppSettingsIndexRoute: typeof AppSettingsIndexRoute
+}
+
+const AppSettingsRouteChildren: AppSettingsRouteChildren = {
+  AppSettingsAlertsRoute: AppSettingsAlertsRoute,
+  AppSettingsTeamRoute: AppSettingsTeamRoute,
+  AppSettingsIndexRoute: AppSettingsIndexRoute,
+}
+
+const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
+  AppSettingsRouteChildren,
+)
 
 interface AppRouteChildren {
   AppAnalyticsRoute: typeof AppAnalyticsRoute
@@ -351,6 +460,8 @@ interface AppRouteChildren {
   AppPlansRoute: typeof AppPlansRoute
   AppPlaygroundRoute: typeof AppPlaygroundRoute
   AppRulesRoute: typeof AppRulesRoute
+  AppSettingsRoute: typeof AppSettingsRouteWithChildren
+  AppSupportRoute: typeof AppSupportRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -362,6 +473,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppPlansRoute: AppPlansRoute,
   AppPlaygroundRoute: AppPlaygroundRoute,
   AppRulesRoute: AppRulesRoute,
+  AppSettingsRoute: AppSettingsRouteWithChildren,
+  AppSupportRoute: AppSupportRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

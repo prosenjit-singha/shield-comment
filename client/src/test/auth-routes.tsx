@@ -48,8 +48,17 @@ export function json(status: number, body: unknown, headers: Record<string, stri
 /** Gets the `fetch` init (method, body) for paths that answer more than one method, and the full URL (query). */
 type Handler = (init?: RequestInit, url?: URL) => Response | Promise<Response>
 
+/** The `_app` workspace switcher's list (M7-T11) by default: one workspace, so no switcher. */
+export const ONE_WORKSPACE = [{ id: 'w1', name: 'Rahim Fashion', slug: 'rahim-fashion', createdAt: '2026-11-18T00:00:00.000Z' }]
+
+const DEFAULTS: Record<string, Handler> = {
+  '/api/auth/get-session': () => json(200, null),
+  '/api/auth/organization/list': () => json(200, ONE_WORKSPACE),
+}
+
 /**
- * Answers by pathname; get-session defaults to "signed out". An unknown path rejects the fetch, and
+ * Answers by pathname; get-session defaults to "signed out", the workspace list to `ONE_WORKSPACE`.
+ * An unknown path rejects the fetch, and
  * because `apiFetch` turns that into a network error (which a screen may quietly handle), the test
  * also fails when it finishes.
  */
@@ -60,7 +69,7 @@ export function mockApi(handlers: Record<string, Handler>): void {
   })
   fetchMock.mockImplementation(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost')
-    const handler = handlers[url.pathname] ?? (url.pathname === '/api/auth/get-session' ? () => json(200, null) : undefined)
+    const handler = handlers[url.pathname] ?? DEFAULTS[url.pathname]
     if (!handler) {
       unexpected.push(url.pathname)
       throw new Error(`Unexpected fetch ${url.pathname}`)

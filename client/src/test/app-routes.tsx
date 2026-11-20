@@ -27,6 +27,11 @@ import { Route as PagesRoute } from '@/routes/_app/pages'
 import { Route as PlansRoute } from '@/routes/_app/plans'
 import { Route as PlaygroundRoute } from '@/routes/_app/playground'
 import { Route as RulesRoute } from '@/routes/_app/rules'
+import { Route as SettingsRoute } from '@/routes/_app/settings'
+import { Route as SettingsAlertsRoute } from '@/routes/_app/settings/alerts'
+import { Route as SettingsIndexRoute } from '@/routes/_app/settings/index'
+import { Route as SettingsTeamRoute } from '@/routes/_app/settings/team'
+import { Route as SupportRoute } from '@/routes/_app/support'
 import { createLanguageStore, LanguageStoreContext } from '@/stores/language-store'
 import { useUiStore } from '@/stores/ui-store'
 import { json } from './auth-routes'
@@ -41,6 +46,7 @@ const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({ c
 const appRoute = AppRoute.update({ id: '/_app', getParentRoute: () => rootRoute } as never)
 const childOptions = (path: string) => ({ id: path, path, getParentRoute: () => appRoute }) as never
 const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: '/login', component: () => <p>Login stub</p> })
+const settingsRoute = SettingsRoute.update(childOptions('/settings'))
 const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     OnboardingRoute.update(childOptions('/onboarding')),
@@ -51,6 +57,12 @@ const routeTree = rootRoute.addChildren([
     RulesRoute.update(childOptions('/rules')),
     PlaygroundRoute.update(childOptions('/playground')),
     AnalyticsRoute.update(childOptions('/analytics')),
+    SupportRoute.update(childOptions('/support')),
+    settingsRoute.addChildren([
+      SettingsIndexRoute.update({ id: '/', path: '/', getParentRoute: () => settingsRoute } as never),
+      SettingsTeamRoute.update({ id: '/team', path: 'team', getParentRoute: () => settingsRoute } as never),
+      SettingsAlertsRoute.update({ id: '/alerts', path: 'alerts', getParentRoute: () => settingsRoute } as never),
+    ]),
   ]),
   loginRoute,
 ])
@@ -501,6 +513,20 @@ export function stubAppGlobals(): void {
     addEventListener: () => {},
     removeEventListener: () => {},
   }))
+  // Animate UI's menus (workspace switcher, M7-T11) stagger rows with the Web Animations API and test
+  // `instanceof SVGGeometryElement` for their check indicators.
+  vi.stubGlobal('SVGGeometryElement', globalThis.SVGGeometryElement ?? class extends SVGElement {})
+  Element.prototype.animate ??= function () {
+    return {
+      finished: Promise.resolve(),
+      playState: 'finished',
+      cancel() {},
+      finish() {},
+      addEventListener() {},
+      removeEventListener() {},
+    } as unknown as Animation
+  }
+  Element.prototype.getAnimations ??= () => []
   useUiStore.setState({ theme: 'light' })
 }
 

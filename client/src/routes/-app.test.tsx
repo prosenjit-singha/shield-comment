@@ -458,7 +458,7 @@ describe('plan status banner (PW-T8)', () => {
       expect(await screen.findByText('Dashboard stub')).toBeTruthy()
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(planBanner()).toBeNull()
-      expect(apiCalls().map((call) => call.path)).toEqual(['/api/auth/get-session'])
+      expect(apiCalls().map((call) => call.path)).toEqual(['/api/auth/get-session', '/api/auth/organization/list'])
     })
 
     it('sits under the impersonation banner when both show', async () => {

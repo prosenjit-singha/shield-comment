@@ -32,7 +32,8 @@ const copy = {
     d7: '7 days',
     d30: '30 days',
     d90: '90 days',
-    nav: ['Dashboard', 'Comments', 'Pages', 'Rules', 'Playground', 'Analytics', 'Plans'],
+    nav: ['Dashboard', 'Comments', 'Pages', 'Rules', 'Playground', 'Analytics', 'Plans', 'Support', 'Settings'],
+    more: 'More',
     total: '1,500',
   },
   bn: {
@@ -56,7 +57,8 @@ const copy = {
     d7: '৭ দিন',
     d30: '৩০ দিন',
     d90: '৯০ দিন',
-    nav: ['ড্যাশবোর্ড', 'কমেন্ট', 'পেজ', 'নিয়ম', 'প্লেগ্রাউন্ড', 'অ্যানালিটিক্স', 'প্ল্যান'],
+    nav: ['ড্যাশবোর্ড', 'কমেন্ট', 'পেজ', 'নিয়ম', 'প্লেগ্রাউন্ড', 'অ্যানালিটিক্স', 'প্ল্যান', 'সাপোর্ট', 'সেটিংস'],
+    more: 'আরও',
     total: '১,৫০০',
   },
 } as const
@@ -212,10 +214,13 @@ describe.each(['en', 'bn'] as const)('/dashboard (%s)', (language: Language) => 
     expect(requestedRanges()).toEqual(['30d'])
   })
 
-  describe('navigation (D16 c)', () => {
+  // M7-T11 (D16 a): 9 sidebar items; the bottom bar = 4 + "More" (sheet tests in `-nav.test.tsx`).
+  describe('navigation (D16)', () => {
     const navLinks = (testId: string) => within(screen.getByTestId(testId)).getAllByRole('link')
+    const ALL = ['/dashboard', '/comments', '/pages', '/rules', '/playground', '/analytics', '/plans', '/support', '/settings']
+    const BOTTOM = [0, 1, 3, 5] // Dashboard, Comments, Rules, Analytics
 
-    it('lists the same items in the desktop sidebar and the mobile bottom bar, with the active one marked', async () => {
+    it('lists every item in the desktop sidebar and four in the mobile bottom bar, with the active one marked', async () => {
       mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi(), ...dashboardApi() })
       renderAppRoute('/dashboard?range=7d', language)
       await screen.findByTestId('activity-chart')
@@ -228,13 +233,17 @@ describe.each(['en', 'bn'] as const)('/dashboard (%s)', (language: Language) => 
       expect(bottomBar.className).toContain('md:hidden')
       expect(bottomBar.className).toContain('fixed')
 
-      for (const testId of ['app-sidebar', 'app-bottom-bar']) {
-        const links = navLinks(testId)
-        expect(links.map((link) => link.textContent)).toEqual([...t.nav])
-        expect(links.map((link) => link.getAttribute('href'))).toEqual(['/dashboard', '/comments', '/pages', '/rules', '/playground', '/analytics', '/plans'])
-        // Active even with a range in the URL.
-        expect(links.map((link) => link.getAttribute('aria-current'))).toEqual(['page', null, null, null, null, null, null])
-      }
+      const side = navLinks('app-sidebar')
+      expect(side.map((link) => link.textContent)).toEqual([...t.nav])
+      expect(side.map((link) => link.getAttribute('href'))).toEqual(ALL)
+      // Active even with a range in the URL.
+      expect(side.map((link) => link.getAttribute('aria-current'))).toEqual(['page', null, null, null, null, null, null, null, null])
+
+      const bottom = navLinks('app-bottom-bar')
+      expect(bottom.map((link) => link.textContent)).toEqual(BOTTOM.map((i) => t.nav[i]))
+      expect(bottom.map((link) => link.getAttribute('href'))).toEqual(BOTTOM.map((i) => ALL[i]))
+      expect(bottom.map((link) => link.getAttribute('aria-current'))).toEqual(['page', null, null, null])
+      expect(within(bottomBar).getByRole('button', { name: t.more }).dataset.status).toBeUndefined()
     })
 
     it('moves the active item when navigating, also while impersonating', async () => {
@@ -248,11 +257,14 @@ describe.each(['en', 'bn'] as const)('/dashboard (%s)', (language: Language) => 
       const { history } = renderAppRoute('/dashboard', language)
       await screen.findByTestId('activity-chart')
 
-      fireEvent.click(navLinks('app-bottom-bar')[6]!)
+      fireEvent.click(navLinks('app-sidebar')[6]!)
       await waitFor(() => expect(history.location.pathname).toBe('/plans'))
-      for (const testId of ['app-sidebar', 'app-bottom-bar']) {
-        await waitFor(() => expect(navLinks(testId).map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null, null, null, null, 'page']))
-      }
+      await waitFor(() =>
+        expect(navLinks('app-sidebar').map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null, null, null, null, 'page', null, null]),
+      )
+      // Plans lives in "More" on mobile: the More button is the active one there.
+      expect(navLinks('app-bottom-bar').map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null, null])
+      expect(within(screen.getByTestId('app-bottom-bar')).getByRole('button', { name: t.more }).dataset.status).toBe('active')
     })
   })
 })
