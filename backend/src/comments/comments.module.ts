@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ModerationModule } from '../moderation/moderation.module.js';
+import { AnalyticsController } from './analytics.controller.js';
 import { CommentsFeedController } from './comments-feed.controller.js';
 import { DashboardSummaryController } from './dashboard-summary.controller.js';
 import { CommentIngestProcessor } from './comment-ingest.processor.js';
@@ -12,11 +13,15 @@ import { RawPayloadPurgeService } from './raw-payload-purge.js';
  * Queues come from the global `QueueModule`. M4-T7: `RawPayloadPurgeService` (D4 30-day
  * `raw_payload` purge), run by the `meta-token-check` worker (`MetaCallbacksModule`).
  * M6-T3/T4: the workspace comments feed + manual override (`ModerationActionExecutor`).
- * M6-T5: the workspace dashboard summary.
+ * M6-T5: the workspace dashboard summary. M6-T6: workspace analytics + CSV exports.
  */
 @Module({
   imports: [ModerationModule],
-  controllers: [CommentsFeedController, DashboardSummaryController],
+  controllers: [
+    CommentsFeedController,
+    DashboardSummaryController,
+    AnalyticsController,
+  ],
   providers: [
     CommentIngestService,
     CommentIngestProcessor,

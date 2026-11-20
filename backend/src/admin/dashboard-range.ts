@@ -100,7 +100,7 @@ function monthsSpanned(from: string, to: string): number {
   return (ty - fy) * 12 + (tm - fm) + 1;
 }
 
-function daysSpanned(from: string, to: string): number {
+export function daysSpanned(from: string, to: string): number {
   return (parseDateKey(to)! - parseDateKey(from)!) / DAY_MS + 1;
 }
 
@@ -122,11 +122,13 @@ function resolved(
 
 /**
  * Turns the validated query into concrete Dhaka dates + UTC bounds. Field formats were checked by
- * `DashboardStatsQueryDto`; the cross-field rules live here and answer 400.
+ * `DashboardStatsQueryDto`; the cross-field rules live here and answer 400. `maxMonths` = the
+ * calendar-month cap of a custom range (workspace analytics use 12, M6-T6 D11).
  */
 export function resolveDashboardRange(
   query: DashboardRangeQuery,
   now: Date,
+  maxMonths = MAX_SPAN_MONTHS,
 ): ResolvedRange {
   const today = dhakaBucketKey(now, 'day');
   const { from, to } = query;
@@ -160,9 +162,9 @@ export function resolveDashboardRange(
     throw new BadRequestException(
       `to must not be after today (${DASHBOARD_TIMEZONE})`,
     );
-  if (monthsSpanned(from, to) > MAX_SPAN_MONTHS)
+  if (monthsSpanned(from, to) > maxMonths)
     throw new BadRequestException(
-      `The range may cover at most ${MAX_SPAN_MONTHS} months`,
+      `The range may cover at most ${maxMonths} months`,
     );
 
   const granularity: Granularity =
