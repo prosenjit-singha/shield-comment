@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 6 section + the row's decisions, `docs/project-documentation/modules/module-6-client-dashboard.md`, the code the row names.
 - Standing approvals: none yet (client/ and admin/ approval asked at the first row that touches them). Live AI or Meta calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #13 (2026-11-20) · rows this session: 0 · estimate: 40k
+- Session: #13 (2026-11-20) · rows this session: 1 · estimate: 52k
 - Previous runs (Modules 3–5, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M6-PLAN (2026-11-20) · commit: "docs(progress): plan module 6 (M6-PLAN)"
+verified M6-PLAN (2026-11-20)
 
 ## Resume
 `/orchestration --continue`
@@ -253,4 +253,4 @@ You are implementing exactly ONE task row, **M6-T1**, in the ShieldComment BD re
 - 2026-11-20 M5-T15e ✅ · `cc5581b` · admin 432/432 (was 400; +22 lib, +10 dashboard) · backend/client untouched · `/admin/dashboard` AI spend cards (credit added, estimated spend, negative remaining, comments analyzed, Neon note + unpriced calls), recent 20 analyses table, credit top-ups add/delete; docker admin rebuilt + healthy
 - 2026-11-20 M5-T16 ✅ · `cb9bcbc` · backend 2031 unit (was 2026 + 1 skipped) + e2e 983/983 · live bake-off: jev 93.8 % $0.034/1k (winner, Text + Text + Image), gpt-oss-20b 95.8 % (recorded replay), claude-haiku 100 %, gpt-oss-120b 89.6 % / gemini 16.7 % (timeouts); temperature + structured-output + credits_required gateway fixes
 - 2026-11-20 M5-GATE ✅ · `179f9db` · backend 2031 unit + 983 e2e (unchanged) · Module 5 gate passed: live jev golden 93.8 % (45/48; bn 100 / banglish 83.3 / en 100), Graph payload e2e 8/8 FB+IG; no code change, M5-T17 skipped
-- 2026-11-20 M6-PLAN ✅ · docs only · Module 6 section in TASKS.md: 14 rows (M6-T1…T13 + GATE), 17 open decisions (D1–D17); next = pre-check asks D1–D17, then M6-T1
+- 2026-11-20 M6-PLAN ✅ · `de4d399` · docs only · Module 6 section in TASKS.md: 14 rows (M6-T1…T13 + GATE), 17 open decisions (D1–D17); next = pre-check asks D1–D17, then M6-T1
