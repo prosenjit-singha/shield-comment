@@ -11,13 +11,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)"). **PR run: admin/ + client/ approved for every PR row** (user, 2026-11-20, "Both, whole PR run (Recommended)").
 - Keep Docker current (user, 2026-11-20: "First make sure our docker runs the latest code"): a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (recreates compose containers only; never the user's own processes). Orchestrator rebuilt the backend after PR-T1 (0027 had made the old image read a renamed column).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #11 (2026-11-20) · rows this session: 4 · estimate: 150k
+- Session: #11 (2026-11-20) · rows this session: 5 · estimate: 165k
 
 ## State
-dispatched M5-AIPLAN (2026-11-20) · commit: "docs(progress): plan ai model catalog and picker (M5-AIPLAN)"
+verified M5-AIPLAN (2026-11-20)
 
 ## Resume
-`/orchestration --continue` → M5-AIPLAN, then its new rows (model catalog + per-content models, jev smoke, admin dropdowns), then M5-T16 → M5-GATE.
+`/orchestration --continue` → M5-T15a (live jev smoke), then M5-T15b (pre-check asks D23: what "Text + Image" judges today), M5-T15c, M5-T16 → M5-GATE.
 
 ## Next prompt (M5-T15a)
 
@@ -288,4 +288,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-20 PR-T6 ✅ · `06d56a7` · client 490 (was 464) · backend untouched · client `/plans` (Monthly/Yearly switch + Save up to, cards with struck list price + plain saving text, highlighted primary, trial start → `/onboarding`, WhatsApp Contact us), sign-in/sign-up → `/plans` for summary `NONE`, banner "See plans" link
 - 2026-11-20 PR-T7 ✅ · `fe7af82` (admin container force-recreated on the orchestrator's check; bundle identical, no commit) · backend 1936 unit (+1 skipped; unchanged) + e2e 963 (was 967) · admin 400 · migration 0029 drops `plans.offer_price_bdt`/`offer_badge`/`trial_days`/`trial_comment_limit` after pinning pre-PR-T3 trial limits in the wallet; readers removed (live-subscription fallback, admin plan response, `AdminPlan`)
 - 2026-11-20 PR-GATE ✅ · `6a1f220` · backend 1936 unit (+1 skipped) + e2e 963 · admin 400 · client 490 · e2e/ 2/2 · promotions gate passed, no code change (admin promotions + plan editor, client `/plans` trial/expiry/Contact us, coupon via manual activation checked in the browser; Docker current)
-- 2026-11-20 M5-AIPLAN ✅ · docs only · Neon-only re-plan: D17–D22 answered + D23 open (no images reach the classifier), rows M5-T15a (jev smoke) / M5-T15b (catalog + Text / Text + Image settings) / M5-T15c (admin) added, M5-T16 updated (five Neon models, cheapest passing ≥ 90 %)
+- 2026-11-20 M5-AIPLAN ✅ · `46c190f` · docs only · Neon-only re-plan: D17–D22 answered + D23 open (no images reach the classifier), rows M5-T15a (jev smoke) / M5-T15b (catalog + Text / Text + Image settings) / M5-T15c (admin) added, M5-T16 updated (five Neon models, cheapest passing ≥ 90 %)
