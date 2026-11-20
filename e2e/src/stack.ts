@@ -288,6 +288,8 @@ export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary>
       // Moderation (M5-T7): actions reference comments (restrict) → first; policies reference workspaces.
       await db.query('delete from moderation_actions where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from moderation_policies where workspace_id = any($1::uuid[])', [wsIds]);
+      await db.query('delete from alert_deliveries where workspace_id = any($1::uuid[])', [wsIds]);
+      await db.query('delete from alert_settings where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from webhook_events where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from comments where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from daily_comment_stats where workspace_id = any($1::uuid[])', [wsIds]);

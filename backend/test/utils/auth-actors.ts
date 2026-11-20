@@ -11,6 +11,8 @@ import {
   aiCreditTopupAuditLogs,
   aiCreditTopups,
   aiSettingsAuditLogs,
+  alertDeliveries,
+  alertSettings,
   billingAccounts,
   comments,
   dailyCommentStats,
@@ -456,6 +458,13 @@ export function createAuthActors(app: INestApplication<App>) {
         .where(inArray(aiCreditTopups.createdById, userIds));
     }
     if (workspaceIds.length) {
+      // Alerts (M7-T7): workspace FK restrict.
+      await db
+        .delete(alertDeliveries)
+        .where(inArray(alertDeliveries.workspaceId, workspaceIds));
+      await db
+        .delete(alertSettings)
+        .where(inArray(alertSettings.workspaceId, workspaceIds));
       // Moderation (M5-T7): actions reference comments + workspaces (restrict) → first;
       // the policy references the workspace.
       await db
