@@ -12,13 +12,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)"). **PR run: admin/ + client/ approved for every PR row** (user, 2026-11-20, "Both, whole PR run (Recommended)").
 - Keep Docker current (user, 2026-11-20: "First make sure our docker runs the latest code"): a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (recreates compose containers only; never the user's own processes). Orchestrator rebuilt the backend after PR-T1 (0027 had made the old image read a renamed column).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #11 (2026-11-20) · rows this session: 8 · estimate: 265k
+- Session: #11 (2026-11-20) · rows this session: 9 · estimate: 285k
 
 ## State
-dispatched M5-T15d (2026-11-20) · commit: "feat(backend): add ai analysis log and credit top-ups (M5-T15d)"
+verified M5-T15d (2026-11-20)
 
 ## Resume
-`/orchestration --continue` → M5-T15d (backend AI analyses + top-ups + summary), M5-T15e (admin dashboard), then M5-T16 → M5-GATE.
+`/orchestration --continue` → M5-T15e (admin dashboard: AI spend cards, recent analyses, credit top-ups), then M5-T16 → M5-GATE.
 
 ## Next prompt (M5-T15e)
 
@@ -313,4 +313,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-20 M5-T15a ✅ · `70a793d` (2nd attempt; orchestrator removed a leftover M5-T15a prompt fragment from the journal) · backend 1981 unit (+1 skipped; was 1936) + e2e 963 (not run, unchanged) · golden `--language` flag + jev System One adapter (`@typesafe-ai/sdk`, 5 Nouls → category in code, `jev-v1`) wired into the golden script; live smoke bn 5/5 · en 5/5 · banglish 5/5, ≈ $0.0005
 - 2026-11-20 M5-T15b ✅ · `5b4fa54` · backend 2018 unit (+1 skipped; was 1981) + e2e 974 (was 963) · Neon model catalog (prices, `supportsImages`, Jev default), Text + Image model + on/off switch (migration 0030, API + audit, catalog 400s), live classifier wired by dialect (Jev → System One, `testConnection` Noul)
 - 2026-11-20 M5-T15c ✅ · `4ec938c` · admin 400/400 (was 400; lib −3/+3, AI card block 12 → 15, history +2 labels) · backend untouched · admin AI card = Neon only: Text / Text + Image (image-capable) dropdowns with price + context, on/off switch, Neon key only, save pins `provider: 'neon'`; D25/D26 + rows M5-T15d/e recorded
-- 2026-11-20 M5-T15d ✅ · backend 2026 unit (+1 skipped; was 2018) + e2e 983 (was 974) · admin/client untouched · migration 0031: per-comment AI tokens/latency, `ai_credit_topups` + audit; `/api/admin/ai/analyses|summary|credit-topups` (SuperAdminGuard); docker backend rebuilt, healthy, `/api/plans` 200
+- 2026-11-20 M5-T15d ✅ · `6f4254e` · backend 2026 unit (+1 skipped; was 2018) + e2e 983 (was 974) · admin/client untouched · migration 0031: per-comment AI tokens/latency, `ai_credit_topups` + audit; `/api/admin/ai/analyses|summary|credit-topups` (SuperAdminGuard); docker backend rebuilt, healthy, `/api/plans` 200
