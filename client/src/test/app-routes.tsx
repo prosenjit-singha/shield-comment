@@ -15,6 +15,7 @@ import type { DashboardSummary, SummaryRange } from '@/lib/dashboard-summary'
 import type { Language } from '@/lib/language'
 import type { WorkspaceMetaConnection, WorkspacePage } from '@/lib/meta-pages'
 import type { AiContextLevel, ModerationPolicy, PolicyPatch } from '@/lib/moderation-policy'
+import type { PlaygroundResult, PlaygroundUsage } from '@/lib/playground'
 import { createQueryClient } from '@/lib/query-client'
 import { Route as AppRoute } from '@/routes/_app'
 import { Route as CommentsRoute } from '@/routes/_app/comments'
@@ -22,6 +23,7 @@ import { Route as DashboardRoute } from '@/routes/_app/dashboard'
 import { Route as OnboardingRoute } from '@/routes/_app/onboarding'
 import { Route as PagesRoute } from '@/routes/_app/pages'
 import { Route as PlansRoute } from '@/routes/_app/plans'
+import { Route as PlaygroundRoute } from '@/routes/_app/playground'
 import { Route as RulesRoute } from '@/routes/_app/rules'
 import { createLanguageStore, LanguageStoreContext } from '@/stores/language-store'
 import { useUiStore } from '@/stores/ui-store'
@@ -29,7 +31,7 @@ import { json } from './auth-routes'
 
 /**
  * Harness for the logged-in screens (`/onboarding` M3-T10, `/pages` M3-T11, `/plans` PR-T6): the real `_app`
- * layout + `/onboarding` + `/pages` + `/dashboard` + `/comments` + `/plans` + `/rules` route files under a bare root (the generated tree pulls
+ * layout + `/onboarding` + `/pages` + `/dashboard` + `/comments` + `/plans` + `/rules` + `/playground` route files under a bare root (the generated tree pulls
  * in the Start server functions), with a stub /login. Test files must still
  * `vi.mock('@/server/session', …)` themselves (vi.mock is hoisted per file).
  */
@@ -45,6 +47,7 @@ const routeTree = rootRoute.addChildren([
     CommentsRoute.update(childOptions('/comments')),
     PlansRoute.update(childOptions('/plans')),
     RulesRoute.update(childOptions('/rules')),
+    PlaygroundRoute.update(childOptions('/playground')),
   ]),
   loginRoute,
 ])
@@ -62,6 +65,8 @@ export const SUMMARY = '/api/workspaces/w1/billing/summary'
 export const DASHBOARD = '/api/workspaces/w1/dashboard/summary'
 export const COMMENTS = '/api/workspaces/w1/comments'
 export const overrideUrl = (id: string) => `${COMMENTS}/${id}/override`
+export const PLAYGROUND_TEST = '/api/workspaces/w1/playground/test'
+export const PLAYGROUND_USAGE = '/api/workspaces/w1/playground/usage'
 export const META_DIALOG = 'https://www.facebook.com/v26.0/dialog/oauth?client_id=1&state=abc'
 
 export function page(overrides: Partial<WorkspacePage> = {}): WorkspacePage {
@@ -335,6 +340,46 @@ export function commentsApi(items: CommentFeedItem[] = [], options: CommentsApiO
     }
   }
   return handlers
+}
+
+/** A playground answer (M6-T7 contract); default = an AI result that would hide a scam. */
+export function playgroundResult(overrides: Partial<PlaygroundResult> = {}): PlaygroundResult {
+  return {
+    ruleMatch: null,
+    classification: { category: 'SCAM_PHISHING', confidence: 0.93, reasoning: 'Asks for a bKash payment.', language: 'banglish' },
+    decision: { action: 'HIDE', status: 'HIDDEN', reason: 'policy' },
+    latencyMs: 324,
+    testsLeft: 7,
+    ...overrides,
+  }
+}
+
+export interface PlaygroundApiOptions {
+  /** Answers `GET …/playground/usage` (default: 8 of 10 left). */
+  onUsage?: () => Response | Promise<Response>
+}
+
+/**
+ * `/playground` (M6-T11): `POST …/playground/test` answers `respond(body)`; `GET …/usage` answers `onUsage`.
+ * Any other method fails the test.
+ */
+export function playgroundApi(
+  respond: (body: { text: string; platform?: string }) => Response | Promise<Response> = () => json(200, playgroundResult()),
+  options: PlaygroundApiOptions = {},
+) {
+  const usage: PlaygroundUsage = { limit: 10, used: 2, testsLeft: 8, resetsAt: '2026-11-20T18:00:00.000Z' }
+  return {
+    [PLAYGROUND_USAGE]: (init?: RequestInit) => {
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method !== 'GET') throw new Error(`Unexpected ${method} ${PLAYGROUND_USAGE}`)
+      return options.onUsage ? options.onUsage() : json(200, usage)
+    },
+    [PLAYGROUND_TEST]: (init?: RequestInit) => {
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method !== 'POST' || typeof init?.body !== 'string') throw new Error(`Unexpected ${method} ${PLAYGROUND_TEST}`)
+      return respond(JSON.parse(init.body) as { text: string; platform?: string })
+    },
+  }
 }
 
 /** jsdom gaps the `_app` shell needs (top-bar theme toggle reads matchMedia; the router scrolls; Recharts observes size). */

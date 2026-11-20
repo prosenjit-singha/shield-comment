@@ -21,6 +21,7 @@ import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppOnboardingRouteImport } from './routes/_app/onboarding'
 import { Route as AppPagesRouteImport } from './routes/_app/pages'
 import { Route as AppPlansRouteImport } from './routes/_app/plans'
+import { Route as AppPlaygroundRouteImport } from './routes/_app/playground'
 import { Route as AppRulesRouteImport } from './routes/_app/rules'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
 
@@ -83,6 +84,11 @@ const AppPlansRoute = AppPlansRouteImport.update({
   path: '/plans',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPlaygroundRoute = AppPlaygroundRouteImport.update({
+  id: '/playground',
+  path: '/playground',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppRulesRoute = AppRulesRouteImport.update({
   id: '/rules',
   path: '/rules',
@@ -106,6 +112,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof AppOnboardingRoute
   '/pages': typeof AppPagesRoute
   '/plans': typeof AppPlansRoute
+  '/playground': typeof AppPlaygroundRoute
   '/rules': typeof AppRulesRoute
   '/api/$': typeof ApiSplatRoute
 }
@@ -121,6 +128,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AppOnboardingRoute
   '/pages': typeof AppPagesRoute
   '/plans': typeof AppPlansRoute
+  '/playground': typeof AppPlaygroundRoute
   '/rules': typeof AppRulesRoute
   '/api/$': typeof ApiSplatRoute
 }
@@ -138,6 +146,7 @@ export interface FileRoutesById {
   '/_app/onboarding': typeof AppOnboardingRoute
   '/_app/pages': typeof AppPagesRoute
   '/_app/plans': typeof AppPlansRoute
+  '/_app/playground': typeof AppPlaygroundRoute
   '/_app/rules': typeof AppRulesRoute
   '/api/$': typeof ApiSplatRoute
 }
@@ -155,6 +164,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/pages'
     | '/plans'
+    | '/playground'
     | '/rules'
     | '/api/$'
   fileRoutesByTo: FileRoutesByTo
@@ -170,6 +180,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/pages'
     | '/plans'
+    | '/playground'
     | '/rules'
     | '/api/$'
   id:
@@ -186,6 +197,7 @@ export interface FileRouteTypes {
     | '/_app/onboarding'
     | '/_app/pages'
     | '/_app/plans'
+    | '/_app/playground'
     | '/_app/rules'
     | '/api/$'
   fileRoutesById: FileRoutesById
@@ -287,6 +299,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPlansRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/playground': {
+      id: '/_app/playground'
+      path: '/playground'
+      fullPath: '/playground'
+      preLoaderRoute: typeof AppPlaygroundRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/rules': {
       id: '/_app/rules'
       path: '/rules'
@@ -310,6 +329,7 @@ interface AppRouteChildren {
   AppOnboardingRoute: typeof AppOnboardingRoute
   AppPagesRoute: typeof AppPagesRoute
   AppPlansRoute: typeof AppPlansRoute
+  AppPlaygroundRoute: typeof AppPlaygroundRoute
   AppRulesRoute: typeof AppRulesRoute
 }
 
@@ -319,6 +339,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppOnboardingRoute: AppOnboardingRoute,
   AppPagesRoute: AppPagesRoute,
   AppPlansRoute: AppPlansRoute,
+  AppPlaygroundRoute: AppPlaygroundRoute,
   AppRulesRoute: AppRulesRoute,
 }
 

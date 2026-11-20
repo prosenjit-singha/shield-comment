@@ -62,3 +62,13 @@ export interface PlaygroundTestResponse {
   /** Tests left today (Dhaka day) after this one. */
   testsLeft: number;
 }
+
+/** `GET …/playground/usage` (M6-T11): today's count without running a test. */
+export interface PlaygroundUsageResponse {
+  /** Admin setting `playgroundDailyLimit`; 0 = playground off. */
+  limit: number;
+  used: number;
+  testsLeft: number;
+  /** Next Dhaka midnight (ISO). */
+  resetsAt: string;
+}

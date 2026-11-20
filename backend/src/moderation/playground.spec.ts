@@ -51,6 +51,9 @@ class MemoryCounter extends PlaygroundCounter {
   async undo(key: string) {
     this.counts.set(key, (this.counts.get(key) ?? 0) - 1);
   }
+  async peek(key: string) {
+    return this.counts.get(key) ?? 0;
+  }
 }
 
 const success = (
@@ -107,7 +110,8 @@ function setup(
   );
   const run = (text: string, platform?: 'FACEBOOK' | 'INSTAGRAM') =>
     service.test(WS, { text, platform }, NOW);
-  return { counter, classify, run };
+  const usage = () => service.usage(WS, NOW);
+  return { counter, classify, run, usage };
 }
 
 async function rejected(promise: Promise<unknown>): Promise<HttpException> {
@@ -305,6 +309,38 @@ describe('PlaygroundService', () => {
   });
 });
 
+describe('PlaygroundService.usage (M6-T11)', () => {
+  it('reads the count without counting; testsLeft follows each test', async () => {
+    const { counter, run, usage } = setup();
+    const fresh = {
+      limit: 10,
+      used: 0,
+      testsLeft: 10,
+      resetsAt: '2026-11-20T18:00:00.000Z',
+    };
+    await expect(usage()).resolves.toEqual(fresh);
+    await expect(usage()).resolves.toEqual(fresh);
+    expect(counter.counts.size).toBe(0);
+    await run('hello');
+    await expect(usage()).resolves.toMatchObject({ used: 1, testsLeft: 9 });
+  });
+
+  it('a lowered limit never shows a negative count; 0 = off', async () => {
+    const lowered = setup(undefined, 2);
+    lowered.counter.counts.set(KEY, 5);
+    await expect(lowered.usage()).resolves.toMatchObject({
+      limit: 2,
+      used: 5,
+      testsLeft: 0,
+    });
+    await expect(setup(undefined, 0).usage()).resolves.toMatchObject({
+      limit: 0,
+      used: 0,
+      testsLeft: 0,
+    });
+  });
+});
+
 describe('playground helpers', () => {
   it('playgroundDailyLimit: the setting, or 10 without a row', async () => {
     await expect(playgroundDailyLimit(settingsDb().db)).resolves.toBe(10);
@@ -316,7 +352,7 @@ describe('playground helpers', () => {
     expect(playgroundCounterKey(WS, '2026-11-20')).toBe(KEY);
   });
 
-  it('RedisPlaygroundCounter: INCR + EXPIRE in one MULTI, DECR on undo', async () => {
+  it('RedisPlaygroundCounter: INCR + EXPIRE in one MULTI, DECR on undo, GET on peek', async () => {
     const multi = {
       incr: vi.fn(() => multi),
       expire: vi.fn(() => multi),
@@ -329,6 +365,7 @@ describe('playground helpers', () => {
       status: 'ready',
       multi: vi.fn(() => multi),
       decr: vi.fn(async () => 2),
+      get: vi.fn(async (): Promise<string | null> => '2'),
     };
     const counter = new RedisPlaygroundCounter({
       client,
@@ -341,6 +378,10 @@ describe('playground helpers', () => {
     );
     await counter.undo(KEY);
     expect(client.decr).toHaveBeenCalledWith(KEY);
+    await expect(counter.peek(KEY)).resolves.toBe(2);
+    expect(client.get).toHaveBeenCalledWith(KEY);
+    client.get.mockResolvedValueOnce(null);
+    await expect(counter.peek(KEY)).resolves.toBe(0);
     multi.exec.mockResolvedValueOnce([[new Error('READONLY'), null]] as never);
     await expect(counter.hit(KEY)).rejects.toThrow('READONLY');
   });

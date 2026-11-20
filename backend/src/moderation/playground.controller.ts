@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Post,
@@ -13,6 +14,7 @@ import { WorkspaceAccessGuard } from '../auth/guards/workspace-access.guard.js';
 import {
   PlaygroundTestDto,
   type PlaygroundTestResponse,
+  type PlaygroundUsageResponse,
 } from './dto/playground.dto.js';
 import { PlaygroundService } from './playground.js';
 
@@ -25,6 +27,14 @@ import { PlaygroundService } from './playground.js';
 @Roles('owner', 'admin', 'moderator')
 export class PlaygroundController {
   constructor(private readonly playground: PlaygroundService) {}
+
+  /** Today's limit, use and reset time (read only; never counts a test). */
+  @Get('usage')
+  usage(
+    @CurrentWorkspace() workspace: WorkspaceContext,
+  ): Promise<PlaygroundUsageResponse> {
+    return this.playground.usage(workspace.id);
+  }
 
   @Post('test')
   @HttpCode(HttpStatus.OK)

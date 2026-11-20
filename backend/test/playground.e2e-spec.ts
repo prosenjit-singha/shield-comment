@@ -35,6 +35,9 @@ class MemoryPlaygroundCounter extends PlaygroundCounter {
   async undo(key: string) {
     this.counts.set(key, (this.counts.get(key) ?? 0) - 1);
   }
+  async peek(key: string) {
+    return this.counts.get(key) ?? 0;
+  }
 }
 
 /**
@@ -60,6 +63,11 @@ describe('Playground API (e2e)', () => {
     `/api/workspaces/${workspaceId}/playground/test`;
   const post = (cookie: string, workspaceId: string, body: object) =>
     actors.http().post(path(workspaceId)).set('Cookie', cookie).send(body);
+  const usage = (cookie: string, workspaceId: string) =>
+    actors
+      .http()
+      .get(`/api/workspaces/${workspaceId}/playground/usage`)
+      .set('Cookie', cookie);
   const key = (workspaceId: string) =>
     playgroundCounterKey(workspaceId, dhakaDayKey());
   const llm = (category: string, confidence = 0.95) =>
@@ -236,6 +244,28 @@ describe('Playground API (e2e)', () => {
     await post(other.cookie, other.workspaceId, { text: 'hi' }).expect(200);
   });
 
+  it('GET usage (M6-T11): limit, used, testsLeft, resetsAt; read only', async () => {
+    const fresh = (await usage(owner.cookie, owner.workspaceId).expect(200))
+      .body;
+    expect(fresh).toEqual({
+      limit: 10,
+      used: 0,
+      testsLeft: 10,
+      resetsAt: expect.any(String),
+    });
+    expect(Date.parse(fresh.resetsAt)).toBeGreaterThan(Date.now());
+    await usage(owner.cookie, owner.workspaceId).expect(200);
+    expect(counter.counts.size).toBe(0);
+    counter.counts.set(key(owner.workspaceId), 3);
+    expect(
+      (await usage(owner.cookie, owner.workspaceId).expect(200)).body,
+    ).toMatchObject({ used: 3, testsLeft: 7 });
+    // Another workspace has its own count.
+    expect(
+      (await usage(other.cookie, other.workspaceId).expect(200)).body,
+    ).toMatchObject({ used: 0, testsLeft: 10 });
+  });
+
   it('AI failure → 502 PLAYGROUND_AI_FAILED with details; not configured → 503; neither counts', async () => {
     ai.failWith(
       new AiGatewayError('transient', 'Service unavailable', {
@@ -283,6 +313,11 @@ describe('Playground API (e2e)', () => {
         404,
       );
       await post(owner.cookie, 'not-a-uuid', { text: 'hi' }).expect(404);
+      await actors
+        .http()
+        .get(`/api/workspaces/${owner.workspaceId}/playground/usage`)
+        .expect(401);
+      await usage(outsider.cookie, owner.workspaceId).expect(404);
       expect(counter.counts.size).toBe(0);
     });
 
@@ -293,6 +328,7 @@ describe('Playground API (e2e)', () => {
       });
       llm('SPAM_IRRELEVANT');
       await post(cookie, owner.workspaceId, { text: 'follow me' }).expect(200);
+      await usage(cookie, owner.workspaceId).expect(200);
     });
 
     it('an impersonated session tests its workspace only', async () => {
@@ -303,8 +339,12 @@ describe('Playground API (e2e)', () => {
       });
       llm('SAFE_INQUIRY');
       await post(cookie, owner.workspaceId, { text: 'hi' }).expect(200);
+      expect(
+        (await usage(cookie, owner.workspaceId).expect(200)).body,
+      ).toMatchObject({ used: 1, testsLeft: 9 });
       await actors.addMember(other.workspaceId, owner.id, 'admin');
       await post(cookie, other.workspaceId, { text: 'hi' }).expect(404);
+      await usage(cookie, other.workspaceId).expect(404);
     });
 
     it("another workspace's rules never apply", async () => {
@@ -415,6 +455,9 @@ describe('Playground API (e2e)', () => {
         message: 'The playground is turned off right now.',
         details: { limit: 0 },
       });
+      expect(
+        (await usage(other.cookie, other.workspaceId).expect(200)).body,
+      ).toMatchObject({ limit: 0, testsLeft: 0 });
       expect(counter.counts.get(key(other.workspaceId))).toBe(0);
     });
   });

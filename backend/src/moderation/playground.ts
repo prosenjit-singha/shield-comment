@@ -24,6 +24,7 @@ import {
   PLAYGROUND_ERROR_CODES,
   type PlaygroundTestDto,
   type PlaygroundTestResponse,
+  type PlaygroundUsageResponse,
 } from './dto/playground.dto.js';
 import {
   decideAction,
@@ -57,12 +58,18 @@ export const playgroundCounterKey = (workspaceId: string, day: string) =>
   `playground:${workspaceId}:${day}`;
 export const PLAYGROUND_COUNTER_TTL_SECONDS = 2 * 24 * 60 * 60;
 
+/** Next Dhaka midnight after `day`: when the daily count starts again. */
+const playgroundResetsAt = (day: string) =>
+  dhakaMidnight(addDays(day, 1)).toISOString();
+
 /** Daily test counter (DI token: e2e swaps in a memory store, Redis is stubbed there). */
 export abstract class PlaygroundCounter {
   /** Adds one test; returns the count including it. */
   abstract hit(key: string): Promise<number>;
   /** Takes one back (a refused or failed test). */
   abstract undo(key: string): Promise<void>;
+  /** Today's count, read only (0 when unset). */
+  abstract peek(key: string): Promise<number>;
 }
 
 @Injectable()
@@ -85,6 +92,10 @@ export class RedisPlaygroundCounter extends PlaygroundCounter {
 
   async undo(key: string): Promise<void> {
     await (await this.connected()).decr(key);
+  }
+
+  async peek(key: string): Promise<number> {
+    return Number((await (await this.connected()).get(key)) ?? 0);
   }
 
   private async connected() {
@@ -114,6 +125,25 @@ export class PlaygroundService {
     private readonly counter: PlaygroundCounter,
   ) {}
 
+  /** Today's usage (M6-T11 `GET …/playground/usage`): reads the counter, never counts. */
+  async usage(
+    workspaceId: string,
+    now = new Date(),
+  ): Promise<PlaygroundUsageResponse> {
+    const limit = await playgroundDailyLimit(this.db);
+    const day = dhakaDayKey(now);
+    const used = Math.max(
+      0,
+      await this.counter.peek(playgroundCounterKey(workspaceId, day)),
+    );
+    return {
+      limit,
+      used,
+      testsLeft: Math.max(0, limit - used),
+      resetsAt: playgroundResetsAt(day),
+    };
+  }
+
   /** Every test counts (rule-only too); a refused or failed one is given back. */
   async test(
     workspaceId: string,
@@ -136,7 +166,7 @@ export class PlaygroundService {
           code: PLAYGROUND_ERROR_CODES.limitReached,
           details: {
             limit,
-            resetsAt: dhakaMidnight(addDays(day, 1)).toISOString(),
+            resetsAt: playgroundResetsAt(day),
           },
         },
         HttpStatus.TOO_MANY_REQUESTS,
