@@ -210,6 +210,22 @@ export async function commentState(workspaceId: string, commentId: string) {
   });
 }
 
+/** The run's ticket with this subject: status + its messages (oldest first). */
+export async function ticketState(subject: string) {
+  return withDb(async (db) => {
+    const { rows } = await db.query<{ status: string; sender_role: string; is_internal_note: boolean; body: string }>(
+      `select t.status, m.sender_role, m.is_internal_note, m.body from tickets t
+         join ticket_messages m on m.ticket_id = t.id
+        where t.subject = $1 order by m.created_at`,
+      [subject],
+    );
+    return {
+      status: rows[0]?.status,
+      messages: rows.map((r) => ({ senderRole: r.sender_role, internal: r.is_internal_note, body: r.body })),
+    };
+  });
+}
+
 export async function userExists(email: string): Promise<boolean> {
   return withDb(async (db) => {
     const { rowCount } = await db.query('select 1 from users where email = $1', [email]);
@@ -288,6 +304,11 @@ export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary>
       // Moderation (M5-T7): actions reference comments (restrict) → first; policies reference workspaces.
       await db.query('delete from moderation_actions where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from moderation_policies where workspace_id = any($1::uuid[])', [wsIds]);
+      // Support tickets (M7-GATE): attachments → messages (sender may be the run's admin) → tickets.
+      const runTickets = 'select id from tickets where workspace_id = any($1::uuid[])';
+      await db.query(`delete from ticket_attachments where ticket_id in (${runTickets})`, [wsIds]);
+      await db.query(`delete from ticket_messages where ticket_id in (${runTickets})`, [wsIds]);
+      await db.query('delete from tickets where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from alert_deliveries where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from alert_settings where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from telegram_chats where workspace_id = any($1::uuid[])', [wsIds]);

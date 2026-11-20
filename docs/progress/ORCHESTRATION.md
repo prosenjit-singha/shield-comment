@@ -11,52 +11,14 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Previous runs (Modules 3–6, PW, PR): see `## Log` and git history.
 
 ## State
-verified M7-T15
+dispatched M7-GATE (2026-11-21) · commit: "test(e2e): add support round-trip gate spec (M7-GATE)"
 
 ## Resume
 `/orchestration --continue` (dispatches M7-T9; no open decisions)
 
-## Next prompt (M7-GATE)
+## Next prompt
 
-You are implementing exactly ONE task row, **M7-GATE**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
-
-**Read first (only these)**
-1. `AGENTS.md`.
-2. `docs/progress/MEMORY.md` (large: `grep -n` the "Gate E2E suite (M3-T12", "Module 6 gate e2e (M6-GATE", "Client tickets (M7-T2", "Ticket attachments (M7-T3", "Ticket reply email (M7-T4", "Admin ticket attachments + plan (M7-T10", "Scam-spike alerts (M7-T9", "Client support (M7-T12", "Client alerts (M7-T15" lines, the "Browser checks" line and the `**Next:**` line).
-3. From `docs/progress/TASKS.md` (use `grep -n`/`sed -n`; the file is large): Module 7 decision **D17** (ANSWERED 2026-11-20: (a) Playwright round trip in root `e2e/` on the compose stack + backend e2e mocked-alert test), the rows M7-T9 (its D17 mocked-alert e2e is already in `backend/test/alerts.e2e-spec.ts`), M7-T10 (admin `/admin/tickets`), M7-T12 (client `/support`), M7-T15 (previous row) and the M7-GATE row. The row note "Waits on D17" is satisfied (answered).
-4. Spec: `docs/project-documentation/modules/module-7-support-team.md` § "Agent Test & Verification Gate".
-5. Code to read or reuse: root `e2e/` (`playwright.config.ts`, `src/stack.ts` seeding/cleanup helpers, `src/global-setup.ts`/`global-teardown.ts`, `src/env.ts`, `tests/impersonation.spec.ts` (admin + client sign-in pattern) and `tests/dashboard-comments.spec.ts` (seeded owner workspace pattern), `package.json` scripts `test` + `test:docker`); backend `test/alerts.e2e-spec.ts` (D17 case: one email + one Telegram + one `alert_deliveries` row per channel, none inside the cool-down). Client `/support` screens (`client/src/components/support/`), admin `/admin/tickets` (grep `admin/src/routes` for `tickets`).
-
-**Recorded decisions:** D17 (a) (user, 2026-11-20): round trip = Playwright in the root `e2e/` suite on the compose stack (M6-GATE pattern): client signs in, creates a ticket on `/support`, admin signs in on `/admin/tickets` and replies, client sees the reply; mocked alert = backend e2e `test/alerts.e2e-spec.ts` (already built in M7-T9; verify it, don't rebuild it).
-
-**Task (M7-GATE): Module 7 spec gate**
-- (1) New `e2e/tests/support-round-trip.spec.ts`: seed a client owner workspace (with a live plan if `/support` needs one) + use the existing super-admin seeding; client logs in → `/support` → new ticket (subject + message, no image) → admin logs in → `/admin/tickets` lists it → opens it → replies → client reloads its thread and sees the admin reply (and the ticket status the backend sets). Clean every row it creates (tickets, messages, users, sessions + their Redis keys) so the DB returns to its baseline. Email sends must not go live: compose without `RESEND_API_KEY` is fine (sends fail, callers catch) — check how M7-T4 handles it and don't add secrets.
-- (2) Confirm the D17 mocked-alert case in `backend/test/alerts.e2e-spec.ts` passes in the full backend e2e run (fires at the threshold, nothing inside the cool-down). Add nothing unless it's missing.
-- (3) Full gate checks below. Fix only what the gate finds; a real product gap that needs a decision → STOP with `STATUS: needs-decision`.
-
-**Rules:** TS strict, ESM, no `any`. Vitest (backend/apps), Playwright (`e2e/`). No live external calls (Meta/Resend/Telegram/WhatsApp/AI); tests must fail on unexpected requests. Every tenant query is scoped by `workspace_id`. Frontend: TanStack Query for all API calls, client copy via `content(en, bn)`, shadcn OKLCH tokens, `rounded-full` buttons/inputs/pills, `rounded-2xl`/`3xl` cards. Never commit `.env*` (except `.env.example`) or build/test output (`e2e/playwright-report`, `e2e/test-results`). **Never stop or kill the user's own processes** (local Postgres 5432, Redis 6379, dev servers); on a port clash use env overrides or stop and report. Leave `skills-lock.json` and untracked `.claude/skills/*` alone. The user commits admin/ restyles on this branch at the same time: stage only your own files (no `git add -A` / `commit -a`); if admin/ files show as modified, leave them out and mention them.
-
-**Verify** (run all; report real numbers):
-- backend: `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test`, `npm run test:e2e`, `npm run lint`, `npx prettier --check "src/**/*.ts" "test/**/*.ts"` (known `src/scripts/ai-sdk-smoke.ts`). The test DB must end empty except the baseline (4 plans + 4 promotions + 4 promotion_plans).
-- admin: `npm run build`, `npm test`, `npm run lint`. client: `npm run build`, `npx vitest run --maxWorkers=2` (the default run can get OOM-killed on the 7 GB WSL box), `npm run lint` (37 warnings today, 0 errors; don't add warnings).
-- root `e2e/`: `cd e2e && npm test` (host) and `npm run test:docker`; the DB must return to its baseline.
-- `docker compose up -d --build backend admin client` → `/api/health/live` 200, all three containers healthy (compose containers only).
-- Current test counts: backend 2503 unit + 1185 e2e, admin 448, client 930, Playwright 3.
-
-**If a decision is missing:** D17 is recorded above. If the gate needs another product decision, STOP without coding that part and report `STATUS: needs-decision` with the question and options (recommended first). M7-GATE is the last row of this run's scope (`## Run`): after it, write `RUN COMPLETE` in place of the next prompt.
-
-**Finish (in this order)**
-1. TASKS.md: the M7-GATE row → `✅ <date>` + concise notes (what each gate item proved). Add a Verification log entry at the TOP of `## Verification log`. Add short lasting facts to MEMORY.md ("Module 7 gate passed <date>") and point its `**Next:**` pointer at what comes after Module 7 (Module 8 planning; keep the M5-T17 note; exactly one `**Next:**`).
-2. Journal `docs/progress/ORCHESTRATION.md`:
-   - append one `## Log` line at the end of `## Log` (`- <date> M7-GATE ✅ · <tests> · <1-line summary>`); the orchestrator adds the commit hash;
-   - append your choices under `## Choices to confirm` as `- M7-GATE: …` (after the last `- M7-…` line);
-   - **replace** the `## Next prompt (M7-GATE)` section — everything from that heading up to, but not including, the exact line `## Choices to confirm` — with `## Next prompt` + `RUN COMPLETE` (run scope finished). Leave no fragment of the old prompt behind.
-3. Commit only your files, journal included (not `skills-lock.json` / `.claude/skills/*` / admin/ restyles), with `test(e2e): add support round-trip gate spec (M7-GATE)` (optional 2–4 bullet body) and the Co-Authored-By trailer given in your dispatch message.
-4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
-
-### Decisions added by orchestrator
-- M7-T11 admin redesign (user, 2026-11-20): "Keep admin redesign (Recommended)" → don't re-run `shadcn add`/`animate all` over admin components; if the gate needs an admin code fix, keep it minimal and say so. `git diff --stat HEAD~ -- admin/` should be empty in your commit unless a gate fix needed it.
-- Orchestrator (run rule, 2026-11-20): end with `docker compose up -d --build` for every service whose code changed and check `/api/health/live` 200 and the containers are up (compose containers only).
+RUN COMPLETE
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -160,6 +122,7 @@ You are implementing exactly ONE task row, **M7-GATE**, in the ShieldComment BD 
 - M7-T13b: (1) the button sits in the owner's own row (the M7-T13 slot) and the dialog has a native member picker with an empty placeholder, so the owner must choose explicitly; hidden when the owner is alone; (2) the method is fetched only while the dialog is open; Transfer is disabled in the code method until a code was sent; the code field strips non-digits; (3) success = `setQueryData` with the returned team + invalidate every other `['workspace', id]` query (billing summary, plans, …), no team refetch; (4) a codeless 403 reads "Only the workspace owner can transfer ownership"; `TRANSFER_CODE_NOT_NEEDED` refetches the method (shows the password fields); `TRANSFER_TARGET_HAS_ACCOUNT` / `…_OTHER_WORKSPACES` point to support; (5) the warning says only the new owner can give ownership back.
 - M7-T14: (1) signed-out page = the sign-up form itself with a "Log in" link (no separate chooser step); the email is typed and the backend checks it (M7-D22). (2) The inviter shows as an email: Better Auth's `get-invitation` returns `inviterEmail`, not a name, and no backend change was wanted. (3) "Already a member" is detected client-side (the invite's workspace is in `organization/list`) because accepting again would hit the member unique key; it shows a note + dashboard link instead of Accept. (4) After sign-up the page accepts automatically; if accept fails the user stays signed in and sees the invite + error with a retryable Accept (seats/plan/network) or no Accept (gone/wrong email). (5) A non-uuid invite id counts as not found without calling the API. (6) No expiry date shown on the invite.
 - M7-T15: (1) the screen reads the team list too (recipient tick list + viewer role; the settings GET has neither); a failed team load fails the screen. (2) Live validation (threshold whole number 1–1,000, recipients ≤ 10 / ≥ 1 with email on) disables Save instead of sending; the backend codes still have en/bn messages. (3) Telegram switch is locked on plans without `messengerAlerts` but can still be turned off (saved settings stay when a plan drops). (4) Telegram link = two `target=_blank` links (person + group) + Dhaka expiry + an "I've linked it, refresh chats" button (no polling); Connect hidden at 3 chats, when not configured or for moderators. (5) Remove has no confirm (re-linking is easy). (6) "Send test alert" is off while there are unsaved changes (a test uses saved settings). (7) `apiFetch` now resolves `undefined` on 204. (8) `rules-form.tsx` exports `Section`/`SwitchRow`/`PlanNote` for reuse.
+- M7-GATE: (1) no plan seeded (`/support` has no plan gate, ticket priority MEDIUM); (2) admin finds the ticket through `/admin/tickets?q=<subject>` (the queue is shared with other data on the stack); (3) reply email checked only via the compose backend warn log (`EmailNotConfiguredError`), the spec does not assert it; (4) D17 mocked alert left as built in M7-T9 (passes, nothing added).
 
 ## Decisions asked
 - 2026-11-18 M3-T10: D13 0-Pages redirect → entry points only (recorded in TASKS.md D13)
@@ -334,3 +297,4 @@ You are implementing exactly ONE task row, **M7-GATE**, in the ShieldComment BD 
 - 2026-11-20 M7-T13b ✅ c10d039 · client 827 (was 777) · backend/admin untouched · client transfer ownership on `/settings/team`: owner-only button → member picker + billing warning, password twice or emailed 6-digit code with resend countdown, every `TRANSFER_*` code en + bn, success → team cache + workspace data reload; compose client rebuilt, `/api/health/live` 200
 - 2026-11-20 M7-T14 ✅ a4c8916 · client 859 (was 827) · backend/admin untouched · client invite link `/invite/$invitationId`: signed-out generic page with sign-up (`invitationId`, no `workspaceName`) → auto-accept, log-in link back to the invite; signed-in invite details + Accept → session refetch → `/dashboard`; en/bn errors (gone, wrong email + log out, seats, no plan, already member, generic)
 - 2026-11-21 M7-T15 ✅ 82fa3e9 · client 930 (was 859) · backend/admin untouched · client C12 `/settings/alerts`: threshold, email switch + member tick list (≤ 10), Telegram switch (plan-gated) + connect links with Dhaka expiry + linked chats with Remove (≤ 3), WhatsApp coming soon, last alert per channel, save only changed fields, test alert results, moderator read-only, impersonated edit, every code en + bn
+- 2026-11-21 M7-GATE ✅ · backend 2503 unit + 1185 e2e, admin 448, client 930, Playwright 4/4 host + docker · support round-trip Playwright spec + ticket cleanup; D17 mocked alert verified; Module 7 gate passed
