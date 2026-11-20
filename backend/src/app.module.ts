@@ -48,6 +48,8 @@ import { PlansModule } from './plans/plans.module.js';
               'req.headers.cookie',
               // Meta webhook HMAC (M4-T3).
               'req.headers["x-hub-signature-256"]',
+              // Telegram webhook secret (M7-T8).
+              'req.headers["x-telegram-bot-api-secret-token"]',
             ],
             autoLogging: { ignore: (req) => isHealthProbe(req.url) },
             // OAuth `code`/`state` in callback URLs never reach the logs (M3-T4).

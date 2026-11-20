@@ -109,6 +109,55 @@ export class EnvironmentVariables {
   })
   EMAIL_FROM?: string;
 
+  // --- Telegram alert bot (M7-T8, Module 7 D13). Optional; set all three or none (unset = the
+  // link route answers 503 and the webhook 503). Register the webhook once with `setWebhook`
+  // (url = <backend>/api/telegram/webhook, secret_token = TELEGRAM_WEBHOOK_SECRET).
+  /** BotFather token `<bot id>:<secret>`. */
+  @ValidateIf((env: EnvironmentVariables) => hasTelegramEnv(env))
+  @Matches(/^[0-9]{5,16}:[A-Za-z0-9_-]{30,64}$/, {
+    message:
+      'TELEGRAM_BOT_TOKEN must be a BotFather token <id>:<secret> (set together with TELEGRAM_BOT_USERNAME and TELEGRAM_WEBHOOK_SECRET)',
+  })
+  TELEGRAM_BOT_TOKEN?: string;
+
+  /** The bot's username without `@` (ends in "bot"); builds the `t.me/<bot>?start=<code>` links. */
+  @ValidateIf((env: EnvironmentVariables) => hasTelegramEnv(env))
+  @Matches(/^[A-Za-z][A-Za-z0-9_]{1,29}bot$/i, {
+    message:
+      'TELEGRAM_BOT_USERNAME must be the bot username without @, ending in "bot" (set together with the other TELEGRAM_* vars)',
+  })
+  TELEGRAM_BOT_USERNAME?: string;
+
+  /** `setWebhook` secret_token: Telegram sends it in `X-Telegram-Bot-Api-Secret-Token`. 16-256 of A-Z a-z 0-9 _ -. */
+  @ValidateIf((env: EnvironmentVariables) => hasTelegramEnv(env))
+  @Matches(/^[A-Za-z0-9_-]{16,256}$/, {
+    message:
+      'TELEGRAM_WEBHOOK_SECRET must be 16-256 characters of A-Z a-z 0-9 _ - (set together with the other TELEGRAM_* vars)',
+  })
+  TELEGRAM_WEBHOOK_SECRET?: string;
+
+  /** Test/compose-only Bot API host (a stub). Unset = `https://api.telegram.org`. Refused when `NODE_ENV=production`. */
+  @IsOptional()
+  @IsUrl(
+    {
+      require_tld: false,
+      require_protocol: true,
+      protocols: ['http', 'https'],
+    },
+    { message: 'TELEGRAM_API_BASE_URL must be an absolute http(s) URL' },
+  )
+  @ValidateBy({
+    name: 'isNotProduction',
+    validator: {
+      validate: (_value: unknown, args) =>
+        (args?.object as EnvironmentVariables | undefined)?.NODE_ENV !==
+        NodeEnv.Production,
+      defaultMessage: () =>
+        'TELEGRAM_API_BASE_URL is a test-only override and must not be set when NODE_ENV=production',
+    },
+  })
+  TELEGRAM_API_BASE_URL?: string;
+
   // --- Neon Object Storage (S3-compatible). Optional: StorageService is disabled without them.
   // `neon deploy` / `neon env pull` writes the AWS_* names; STORAGE_BUCKET is the bucket key in neon.ts.
   @IsOptional()
@@ -347,6 +396,14 @@ function hasMetaAppEnv(env: EnvironmentVariables): boolean {
     env.META_APP_SECRET !== undefined ||
     env.META_LOGIN_CONFIG_ID !== undefined ||
     env.META_OAUTH_REDIRECT_URI !== undefined
+  );
+}
+
+function hasTelegramEnv(env: EnvironmentVariables): boolean {
+  return (
+    env.TELEGRAM_BOT_TOKEN !== undefined ||
+    env.TELEGRAM_BOT_USERNAME !== undefined ||
+    env.TELEGRAM_WEBHOOK_SECRET !== undefined
   );
 }
 

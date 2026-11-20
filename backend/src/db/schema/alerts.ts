@@ -1,13 +1,16 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   check,
   index,
   integer,
   pgTable,
   text,
+  unique,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { users } from './auth.js';
 import { inListSql } from './check-sql.js';
 import { id, timestamps, timestamptz } from './columns.js';
 import { workspaces } from './workspaces.js';
@@ -94,6 +97,44 @@ export const alertDeliveries = pgTable(
     check(
       'alert_deliveries_error_kind_check',
       sql`(status = 'FAILED') = (error_kind is not null)`,
+    ),
+  ],
+);
+
+/** D13: at most 3 linked Telegram chats per workspace (a person or a group). */
+export const MAX_TELEGRAM_CHATS = 3;
+/** Chats the bot links (`/start <code>` arrives as a `message`; channels are not linked). */
+export const TELEGRAM_CHAT_TYPES = ['private', 'group', 'supergroup'] as const;
+export type TelegramChatType = (typeof TELEGRAM_CHAT_TYPES)[number];
+
+/**
+ * Telegram chats linked through the platform bot (M7-T8, D13). The count limit is checked in the
+ * linking transaction (workspace row locked). `linked_by_user_id` = who created the link code.
+ */
+export const telegramChats = pgTable(
+  'telegram_chats',
+  {
+    id: id(),
+    workspaceId: uuid()
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'restrict' }),
+    /** Telegram chat id (≤ 52 bits, so a JS number is exact). */
+    telegramChatId: bigint({ mode: 'number' }).notNull(),
+    title: text().notNull(),
+    type: text().$type<TelegramChatType>().notNull(),
+    linkedByUserId: uuid().references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    linkedAt: timestamptz().notNull().defaultNow(),
+  },
+  (t) => [
+    unique('telegram_chats_workspace_chat_unique').on(
+      t.workspaceId,
+      t.telegramChatId,
+    ),
+    check(
+      'telegram_chats_type_check',
+      sql.raw(inListSql('type', TELEGRAM_CHAT_TYPES)),
     ),
   ],
 );

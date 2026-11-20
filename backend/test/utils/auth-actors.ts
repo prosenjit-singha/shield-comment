@@ -30,6 +30,7 @@ import {
   socialPages,
   subscriptionAuditLogs,
   subscriptions,
+  telegramChats,
   ticketAttachments,
   ticketMessages,
   tickets,
@@ -465,6 +466,9 @@ export function createAuthActors(app: INestApplication<App>) {
       await db
         .delete(alertSettings)
         .where(inArray(alertSettings.workspaceId, workspaceIds));
+      await db
+        .delete(telegramChats)
+        .where(inArray(telegramChats.workspaceId, workspaceIds));
       // Moderation (M5-T7): actions reference comments + workspaces (restrict) → first;
       // the policy references the workspace.
       await db

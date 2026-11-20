@@ -3,6 +3,7 @@ import { IsArray, IsBoolean, IsInt, IsOptional, IsUUID } from 'class-validator';
 import type {
   AlertChannel,
   AlertDeliveryStatus,
+  TelegramChatType,
 } from '../../db/schema/index.js';
 
 /**
@@ -66,13 +67,29 @@ export interface AlertDeliveryView {
   sentAt: Date;
 }
 
+/** A linked Telegram chat (M7-T8). `id` = our row id (`DELETE …/alerts/telegram/chats/:id`). */
+export interface TelegramChatView {
+  id: string;
+  title: string;
+  type: TelegramChatType;
+  linkedAt: Date;
+}
+
 export interface AlertSettingsResponse {
   workspaceId: string;
   spikeThreshold: number;
   /** Email is on every plan (D12). `recipients` = current members only (default: the owner). */
   email: { enabled: boolean; available: true; recipients: AlertRecipient[] };
-  /** `available` = the live plan has `messengerAlerts`. */
-  telegram: { enabled: boolean; available: boolean };
+  /**
+   * `available` = the live plan has `messengerAlerts`; `configured` = the platform bot is set up
+   * (TELEGRAM_* env); `chats` = linked chats, oldest first (≤ 3, kept when the plan drops).
+   */
+  telegram: {
+    enabled: boolean;
+    available: boolean;
+    configured: boolean;
+    chats: TelegramChatView[];
+  };
   /** D12: "Coming soon" placeholder. */
   whatsapp: { enabled: false; available: false; comingSoon: true };
   /** Latest delivery per channel, newest first (empty = never alerted). */

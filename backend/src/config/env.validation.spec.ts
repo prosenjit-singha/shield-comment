@@ -342,3 +342,56 @@ describe('validateEnv: transactional email (M7-T1)', () => {
     expect(message).not.toContain('sk-secret-value-123456');
   });
 });
+
+describe('validateEnv: Telegram bot (M7-T8, D13)', () => {
+  const TELEGRAM = {
+    TELEGRAM_BOT_TOKEN: '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw',
+    TELEGRAM_BOT_USERNAME: 'ShieldCommentBot',
+    TELEGRAM_WEBHOOK_SECRET: 'telegram-webhook-secret-0123',
+  };
+
+  it('accepts none (Telegram off) or all three', () => {
+    expect(validateEnv(BASE).TELEGRAM_BOT_TOKEN).toBeUndefined();
+    expect(validateEnv({ ...BASE, ...TELEGRAM }).TELEGRAM_BOT_USERNAME).toBe(
+      'ShieldCommentBot',
+    );
+  });
+
+  it.each(Object.keys(TELEGRAM))('needs all three: %s missing fails', (key) => {
+    const env: Record<string, string> = { ...TELEGRAM };
+    delete env[key];
+    expectInvalid(env, `- ${key}:`);
+  });
+
+  it.each([
+    ['TELEGRAM_BOT_TOKEN', 'not-a-token'],
+    ['TELEGRAM_BOT_USERNAME', '@ShieldCommentBot'],
+    ['TELEGRAM_BOT_USERNAME', 'ShieldComment'],
+    ['TELEGRAM_WEBHOOK_SECRET', 'short'],
+    ['TELEGRAM_WEBHOOK_SECRET', 'has spaces in the secret value'],
+  ])('rejects bad %s=%j without echoing it', (key, value) => {
+    let message = '';
+    try {
+      validateEnv({ ...BASE, ...TELEGRAM, [key]: value });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain(`- ${key}:`);
+    expect(message).not.toContain(value);
+  });
+
+  it('TELEGRAM_API_BASE_URL: test-only absolute URL, refused in production', () => {
+    expect(
+      validateEnv({ ...BASE, TELEGRAM_API_BASE_URL: 'http://127.0.0.1:4011' })
+        .TELEGRAM_API_BASE_URL,
+    ).toBe('http://127.0.0.1:4011');
+    expectInvalid(
+      { TELEGRAM_API_BASE_URL: 'not a url' },
+      '- TELEGRAM_API_BASE_URL:',
+    );
+    expectInvalid(
+      { NODE_ENV: 'production', TELEGRAM_API_BASE_URL: 'http://stub:4011' },
+      'must not be set when NODE_ENV=production',
+    );
+  });
+});

@@ -1,10 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import {
   alertDeliveries,
   alertSettings,
+  telegramChats,
   users,
   workspaceMembers,
 } from '../db/schema/index.js';
@@ -25,6 +26,7 @@ import type {
   AlertSettingsResponse,
   UpdateAlertSettingsDto,
 } from './dto/alert-settings.dto.js';
+import { TELEGRAM_CONFIG, type TelegramConfig } from './telegram.client.js';
 
 type AlertSettingsRow = typeof alertSettings.$inferSelect;
 type Reader = Pick<Database, 'select' | 'selectDistinctOn'>;
@@ -77,7 +79,11 @@ function toValues(row: AlertSettingsRow | undefined): AlertSettingsValues {
  */
 @Injectable()
 export class AlertSettingsService {
-  constructor(@InjectDrizzle() private readonly db: Database) {}
+  constructor(
+    @InjectDrizzle() private readonly db: Database,
+    @Inject(TELEGRAM_CONFIG)
+    private readonly telegramConfig: TelegramConfig | null,
+  ) {}
 
   async get(workspaceId: string): Promise<AlertSettingsResponse> {
     const [row] = await this.db
@@ -141,6 +147,16 @@ export class AlertSettingsService {
       .where(eq(alertDeliveries.workspaceId, workspaceId))
       .orderBy(alertDeliveries.channel, desc(alertDeliveries.sentAt));
     lastAlerts.sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
+    const chats = await db
+      .select({
+        id: telegramChats.id,
+        title: telegramChats.title,
+        type: telegramChats.type,
+        linkedAt: telegramChats.linkedAt,
+      })
+      .from(telegramChats)
+      .where(eq(telegramChats.workspaceId, workspaceId))
+      .orderBy(asc(telegramChats.linkedAt), asc(telegramChats.id));
     return {
       workspaceId,
       spikeThreshold: values.spikeThreshold,
@@ -149,7 +165,12 @@ export class AlertSettingsService {
         available: true,
         recipients: resolveRecipients(values.emailRecipientMemberIds, members),
       },
-      telegram: { enabled: values.telegramEnabled, available: messenger },
+      telegram: {
+        enabled: values.telegramEnabled,
+        available: messenger,
+        configured: this.telegramConfig !== null,
+        chats,
+      },
       whatsapp: { enabled: false, available: false, comingSoon: true },
       lastAlerts,
       updatedAt: row?.updatedAt ?? null,

@@ -91,7 +91,12 @@ describe('Alert settings API (e2e)', () => {
           },
         ],
       },
-      telegram: { enabled: false, available: false },
+      telegram: {
+        enabled: false,
+        available: false,
+        configured: false,
+        chats: [],
+      },
       whatsapp: { enabled: false, available: false, comingSoon: true },
       lastAlerts: [],
       updatedAt: null,
@@ -184,11 +189,19 @@ describe('Alert settings API (e2e)', () => {
     const res = await patch(growth.cookie, ws, {
       telegramEnabled: true,
     }).expect(200);
-    expect(res.body.telegram).toEqual({ enabled: true, available: true });
+    expect(res.body.telegram).toEqual({
+      enabled: true,
+      available: true,
+      configured: false,
+      chats: [],
+    });
 
     await actors.expirePlan(growth);
     const after = await get(growth.cookie, ws).expect(200);
-    expect(after.body.telegram).toEqual({ enabled: true, available: false });
+    expect(after.body.telegram).toMatchObject({
+      enabled: true,
+      available: false,
+    });
     // Other edits keep it; switching it on again is refused.
     await patch(growth.cookie, ws, { spikeThreshold: 3 }).expect(200);
     expect((await storedRow(ws))?.telegramEnabled).toBe(true);
@@ -256,5 +269,18 @@ describe('Alert settings API (e2e)', () => {
         sentAt: t(6).toISOString(),
       },
     ]);
+  });
+
+  it('Telegram not configured (no TELEGRAM_* env): link 503, webhook 503 (M7-T8)', async () => {
+    const res = await http()
+      .post(`/api/workspaces/${growth.workspaceId}/alerts/telegram/link`)
+      .set('Cookie', growth.cookie)
+      .expect(503);
+    expect(res.body.code).toBe('TELEGRAM_NOT_CONFIGURED');
+    await http()
+      .post('/api/telegram/webhook')
+      .set('X-Telegram-Bot-Api-Secret-Token', 'anything-0123456789')
+      .send({ update_id: 1 })
+      .expect(503);
   });
 });
