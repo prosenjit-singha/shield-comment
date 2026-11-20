@@ -34,7 +34,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-async function errorFromResponse(response: Response): Promise<ApiError> {
+export async function errorFromResponse(response: Response): Promise<ApiError> {
   let body: ApiErrorBody = {}
   try {
     const parsed: unknown = await response.json()

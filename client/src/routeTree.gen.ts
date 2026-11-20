@@ -16,6 +16,7 @@ import { Route as DataDeletionRouteImport } from './routes/data-deletion'
 import { Route as ImpersonateRouteImport } from './routes/impersonate'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as AppAnalyticsRouteImport } from './routes/_app/analytics'
 import { Route as AppCommentsRouteImport } from './routes/_app/comments'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppOnboardingRouteImport } from './routes/_app/onboarding'
@@ -58,6 +59,11 @@ const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppCommentsRoute = AppCommentsRouteImport.update({
   id: '/comments',
@@ -107,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/analytics': typeof AppAnalyticsRoute
   '/comments': typeof AppCommentsRoute
   '/dashboard': typeof AppDashboardRoute
   '/onboarding': typeof AppOnboardingRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/analytics': typeof AppAnalyticsRoute
   '/comments': typeof AppCommentsRoute
   '/dashboard': typeof AppDashboardRoute
   '/onboarding': typeof AppOnboardingRoute
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/_app/analytics': typeof AppAnalyticsRoute
   '/_app/comments': typeof AppCommentsRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/onboarding': typeof AppOnboardingRoute
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
     | '/impersonate'
     | '/login'
     | '/register'
+    | '/analytics'
     | '/comments'
     | '/dashboard'
     | '/onboarding'
@@ -175,6 +185,7 @@ export interface FileRouteTypes {
     | '/impersonate'
     | '/login'
     | '/register'
+    | '/analytics'
     | '/comments'
     | '/dashboard'
     | '/onboarding'
@@ -192,6 +203,7 @@ export interface FileRouteTypes {
     | '/impersonate'
     | '/login'
     | '/register'
+    | '/_app/analytics'
     | '/_app/comments'
     | '/_app/dashboard'
     | '/_app/onboarding'
@@ -264,6 +276,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/analytics': {
+      id: '/_app/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AppAnalyticsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/comments': {
       id: '/_app/comments'
       path: '/comments'
@@ -324,6 +343,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppAnalyticsRoute: typeof AppAnalyticsRoute
   AppCommentsRoute: typeof AppCommentsRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppOnboardingRoute: typeof AppOnboardingRoute
@@ -334,6 +354,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAnalyticsRoute: AppAnalyticsRoute,
   AppCommentsRoute: AppCommentsRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppOnboardingRoute: AppOnboardingRoute,

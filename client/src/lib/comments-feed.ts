@@ -81,13 +81,14 @@ export const REPLY_MAX = 500
 export const FEED_POLL_MS = 15_000
 const NEW_COMMENTS_LIMIT = 50
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 
 const oneOf = <T extends string>(values: readonly T[], value: unknown): T | undefined =>
   (values as readonly unknown[]).includes(value) ? (value as T) : undefined
 
-const day = (value: unknown): string | undefined =>
+/** A real calendar day `YYYY-MM-DD`, else `undefined`. */
+export const validDay = (value: unknown): string | undefined =>
   typeof value === 'string' && DAY.test(value) && new Date(`${value}T00:00:00Z`).toISOString().startsWith(value)
     ? value
     : undefined
@@ -100,8 +101,8 @@ export function validateCommentsFeedSearch(raw: Record<string, unknown>): Commen
     category: oneOf(MODERATION_CATEGORIES, raw.category),
     platform: oneOf(COMMENT_PLATFORMS, raw.platform),
     pageId: typeof raw.pageId === 'string' && UUID.test(raw.pageId) ? raw.pageId : undefined,
-    from: day(raw.from),
-    to: day(raw.to),
+    from: validDay(raw.from),
+    to: validDay(raw.to),
     q: q && q.length <= FEED_SEARCH_MAX ? q : undefined,
   }
 }

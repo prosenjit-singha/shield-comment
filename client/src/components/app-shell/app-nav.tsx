@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { FlaskConical, Gem, LayoutDashboard, ListChecks, MessagesSquare, PanelsTopLeft, type LucideIcon } from 'lucide-react'
+import { ChartLine, FlaskConical, Gem, LayoutDashboard, ListChecks, MessagesSquare, PanelsTopLeft, type LucideIcon } from 'lucide-react'
 import type { ContentFn } from '@/lib/auth-errors'
 import { useLanguage } from '@/hooks/use-language'
 
@@ -7,10 +7,10 @@ import { useLanguage } from '@/hooks/use-language'
  * `_app` navigation (M6-T8, D16 c): a sidebar from `md` up, a fixed bottom bar below it. Both are in
  * the DOM and CSS picks one (no JS breakpoint, no flash of the wrong one).
  * D16 order: Dashboard, Comments, Pages, Rules, Playground, Analytics, Plans. Only routes that exist
- * are listed (a `<Link>` to a missing route breaks the router types); M6-T12 adds Analytics here.
+ * are listed (a `<Link>` to a missing route breaks the router types).
  */
 interface NavItem {
-  to: '/dashboard' | '/comments' | '/pages' | '/rules' | '/playground' | '/plans'
+  to: '/dashboard' | '/comments' | '/pages' | '/rules' | '/playground' | '/analytics' | '/plans'
   icon: LucideIcon
   label: (content: ContentFn) => string
 }
@@ -21,6 +21,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/pages', icon: PanelsTopLeft, label: (c) => c('Pages', 'পেজ') },
   { to: '/rules', icon: ListChecks, label: (c) => c('Rules', 'নিয়ম') },
   { to: '/playground', icon: FlaskConical, label: (c) => c('Playground', 'প্লেগ্রাউন্ড') },
+  { to: '/analytics', icon: ChartLine, label: (c) => c('Analytics', 'অ্যানালিটিক্স') },
   { to: '/plans', icon: Gem, label: (c) => c('Plans', 'প্ল্যান') },
 ]
 

@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useLanguage } from '@/hooks/use-language'
 import { categoryLabel, type CategoryCount, type DashboardSummary, formatCount, formatDay, type SummaryDay } from '@/lib/dashboard-summary'
 import type { ModerationCategory } from '@/lib/moderation-policy'
+import { axisProps, CATEGORY_COLORS, CHART_HEIGHT } from './chart-theme'
 
 /*
  * C4 charts (M6-T8): Recharts with shadcn tokens only (`var(--primary)`, `--secondary`, `--chart-*`,
@@ -27,19 +28,10 @@ import type { ModerationCategory } from '@/lib/moderation-policy'
  * `undefined` data = skeleton; all-zero data keeps the chart slot and lays an empty overlay on top.
  */
 
-const CHART_HEIGHT = 256
 /** Recharts measures its parent with ResizeObserver; this is the size before the first measure. */
 const INITIAL_SIZE = { width: 560, height: CHART_HEIGHT }
-const axisProps = { tickLine: false, axisLine: false, tick: { fill: 'var(--muted-foreground)', fontSize: 12 } } as const
 
 const LINE_COLORS = { scanned: 'var(--primary)', autoHidden: 'var(--secondary)' }
-const CATEGORY_COLORS: Record<ModerationCategory, string> = {
-  SAFE_INQUIRY: 'var(--chart-3)',
-  COMPETITOR_POACH: 'var(--chart-4)',
-  SCAM_PHISHING: 'var(--chart-2)',
-  SPAM_IRRELEVANT: 'var(--chart-5)',
-  ABUSIVE_TOXIC: 'var(--chart-1)',
-}
 
 // ---------------------------------------------------------------------------------------------
 // KPI cards
@@ -106,7 +98,7 @@ export function KpiCards({ kpis }: { kpis: DashboardSummary['kpis'] | undefined 
 // ---------------------------------------------------------------------------------------------
 // Shared pieces
 
-function ChartCard({
+export function ChartCard({
   title,
   description,
   legend,
@@ -133,7 +125,7 @@ function ChartCard({
   )
 }
 
-function ChartSkeleton() {
+export function ChartSkeleton() {
   return (
     <div className="flex h-64 items-end gap-2 px-2 pb-6" aria-hidden data-testid="chart-skeleton">
       {[40, 65, 50, 80, 55, 70, 90, 60, 75, 45, 85, 68].map((h, i) => (
@@ -143,7 +135,7 @@ function ChartSkeleton() {
   )
 }
 
-function EmptyOverlay({ icon: Icon, title, body }: { icon: LucideIcon; title: string; body: string }) {
+export function EmptyOverlay({ icon: Icon, title, body }: { icon: LucideIcon; title: string; body: string }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
       <span className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -155,7 +147,7 @@ function EmptyOverlay({ icon: Icon, title, body }: { icon: LucideIcon; title: st
   )
 }
 
-function LegendItem({ color, label }: { color: string; label: string }) {
+export function LegendItem({ color, label }: { color: string; label: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
       <span className="size-2.5 rounded-full" style={{ backgroundColor: color }} aria-hidden />
@@ -173,7 +165,7 @@ interface TooltipRow {
 }
 
 /** Tooltip body. Recharts clones it with `active`, `payload` and `label`. */
-function ChartTooltip({
+export function ChartTooltip({
   active,
   payload,
   label,
@@ -203,10 +195,20 @@ function ChartTooltip({
 }
 
 // ---------------------------------------------------------------------------------------------
-// Line: scanned vs auto-hidden per day
+// Line: scanned vs auto-hidden per day (or per month on `/analytics`)
 
-export function ActivityChart({ data }: { data: SummaryDay[] | undefined }) {
+export function ActivityChart({
+  data,
+  formatKey,
+  description,
+}: {
+  data: SummaryDay[] | undefined
+  /** X-axis + tooltip label of a `day` key (default `formatDay`; `/analytics` passes months too). */
+  formatKey?: (key: string) => string
+  description?: string
+}) {
   const { content, language } = useLanguage()
+  const label = formatKey ?? ((day: string) => formatDay(day, language))
   const empty = data !== undefined && data.every((d) => d.scanned === 0 && d.autoHidden === 0)
   const scanned = content('Scanned', 'স্ক্যান')
   const autoHidden = content('Auto-hidden', 'অটো-হাইড')
@@ -214,7 +216,7 @@ export function ActivityChart({ data }: { data: SummaryDay[] | undefined }) {
   return (
     <ChartCard
       title={content('Comments scanned vs. auto-hidden', 'স্ক্যান করা বনাম অটো-হাইড কমেন্ট')}
-      description={content('Every day of the range, Dhaka time.', 'বেছে নেওয়া সময়ের প্রতিদিন, ঢাকা সময়।')}
+      description={description ?? content('Every day of the range, Dhaka time.', 'বেছে নেওয়া সময়ের প্রতিদিন, ঢাকা সময়।')}
       legend={
         <div className="flex flex-wrap gap-x-3 gap-y-1">
           <LegendItem color={LINE_COLORS.scanned} label={scanned} />
@@ -233,7 +235,7 @@ export function ActivityChart({ data }: { data: SummaryDay[] | undefined }) {
                 <XAxis
                   dataKey="day"
                   {...axisProps}
-                  tickFormatter={(day: string) => formatDay(day, language)}
+                  tickFormatter={label}
                   interval="preserveStartEnd"
                   minTickGap={24}
                 />
@@ -241,7 +243,7 @@ export function ActivityChart({ data }: { data: SummaryDay[] | undefined }) {
                 {!empty && (
                   <Tooltip
                     cursor={{ stroke: 'var(--border)' }}
-                    content={<ChartTooltip title={(day) => formatDay(String(day), language)} />}
+                    content={<ChartTooltip title={(day) => label(String(day))} />}
                   />
                 )}
                 <Line type="monotone" dataKey="scanned" name={scanned} stroke={LINE_COLORS.scanned} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />

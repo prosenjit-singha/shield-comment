@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-router'
 import { render } from '@testing-library/react'
 import { vi } from 'vitest'
+import type { Analytics, AnalyticsBucket, AnalyticsCounts, Granularity } from '@/lib/analytics'
 import type { BillingSummary } from '@/lib/billing-summary'
 import type { CommentFeedItem, CommentStatus, OverrideAction } from '@/lib/comments-feed'
 import type { DashboardSummary, SummaryRange } from '@/lib/dashboard-summary'
@@ -18,6 +19,7 @@ import type { AiContextLevel, ModerationPolicy, PolicyPatch } from '@/lib/modera
 import type { PlaygroundResult, PlaygroundUsage } from '@/lib/playground'
 import { createQueryClient } from '@/lib/query-client'
 import { Route as AppRoute } from '@/routes/_app'
+import { Route as AnalyticsRoute } from '@/routes/_app/analytics'
 import { Route as CommentsRoute } from '@/routes/_app/comments'
 import { Route as DashboardRoute } from '@/routes/_app/dashboard'
 import { Route as OnboardingRoute } from '@/routes/_app/onboarding'
@@ -31,7 +33,7 @@ import { json } from './auth-routes'
 
 /**
  * Harness for the logged-in screens (`/onboarding` M3-T10, `/pages` M3-T11, `/plans` PR-T6): the real `_app`
- * layout + `/onboarding` + `/pages` + `/dashboard` + `/comments` + `/plans` + `/rules` + `/playground` route files under a bare root (the generated tree pulls
+ * layout + `/onboarding` + `/pages` + `/dashboard` + `/comments` + `/plans` + `/rules` + `/playground` + `/analytics` route files under a bare root (the generated tree pulls
  * in the Start server functions), with a stub /login. Test files must still
  * `vi.mock('@/server/session', …)` themselves (vi.mock is hoisted per file).
  */
@@ -48,6 +50,7 @@ const routeTree = rootRoute.addChildren([
     PlansRoute.update(childOptions('/plans')),
     RulesRoute.update(childOptions('/rules')),
     PlaygroundRoute.update(childOptions('/playground')),
+    AnalyticsRoute.update(childOptions('/analytics')),
   ]),
   loginRoute,
 ])
@@ -67,6 +70,9 @@ export const COMMENTS = '/api/workspaces/w1/comments'
 export const overrideUrl = (id: string) => `${COMMENTS}/${id}/override`
 export const PLAYGROUND_TEST = '/api/workspaces/w1/playground/test'
 export const PLAYGROUND_USAGE = '/api/workspaces/w1/playground/usage'
+export const ANALYTICS = '/api/workspaces/w1/analytics'
+export const ANALYTICS_DAILY_CSV = `${ANALYTICS}/export.csv`
+export const ANALYTICS_COMMENTS_CSV = `${ANALYTICS}/comments.csv`
 export const META_DIALOG = 'https://www.facebook.com/v26.0/dialog/oauth?client_id=1&state=abc'
 
 export function page(overrides: Partial<WorkspacePage> = {}): WorkspacePage {
@@ -379,6 +385,102 @@ export function playgroundApi(
       if (method !== 'POST' || typeof init?.body !== 'string') throw new Error(`Unexpected ${method} ${PLAYGROUND_TEST}`)
       return respond(JSON.parse(init.body) as { text: string; platform?: string })
     },
+  }
+}
+
+const COUNTERS = [
+  'received',
+  'edited',
+  'removed',
+  'classified',
+  'safeInquiry',
+  'competitorPoach',
+  'scamPhishing',
+  'spamIrrelevant',
+  'abusiveToxic',
+  'ruleMatched',
+  'hidden',
+  'unhidden',
+  'deleted',
+  'replied',
+  'skipped',
+  'failed',
+] as const
+
+/** Zero counts with `overrides`; `scanned` / `autoHidden` derived like the backend. */
+export function analyticsCounts(overrides: Partial<AnalyticsCounts> = {}): AnalyticsCounts {
+  const c = { ...Object.fromEntries(COUNTERS.map((k) => [k, 0])), ...overrides } as AnalyticsCounts
+  return { ...c, scanned: c.classified + c.ruleMatched, autoHidden: c.hidden + c.deleted }
+}
+
+/**
+ * An analytics answer (M6-T6 contract): `buckets` keys (`YYYY-MM-DD` or `YYYY-MM`) with `fill(i)` counts;
+ * totals = their sum. Default = 3 empty days.
+ */
+export function analytics(
+  overrides: Partial<Omit<Analytics, 'series' | 'totals'>> = {},
+  buckets: string[] = ['2026-11-18', '2026-11-19', '2026-11-20'],
+  fill: (i: number) => Partial<AnalyticsCounts> = () => ({}),
+): Analytics {
+  const granularity: Granularity = overrides.granularity ?? (buckets[0]?.length === 7 ? 'month' : 'day')
+  const series: AnalyticsBucket[] = buckets.map((bucket, i) => ({ bucket, ...analyticsCounts(fill(i)) }))
+  const sum = Object.fromEntries(COUNTERS.map((k) => [k, series.reduce((total, b) => total + b[k], 0)]))
+  const zero = (category: Analytics['intents'][number]['category']) => ({ category, count: 0 })
+  return {
+    from: '2026-11-18',
+    to: '2026-11-20',
+    granularity,
+    page: null,
+    totals: analyticsCounts(sum),
+    series,
+    intents: (['SAFE_INQUIRY', 'COMPETITOR_POACH', 'SCAM_PHISHING', 'SPAM_IRRELEVANT', 'ABUSIVE_TOXIC'] as const).map(zero),
+    flagged: (['COMPETITOR_POACH', 'SCAM_PHISHING', 'SPAM_IRRELEVANT', 'ABUSIVE_TOXIC'] as const).map(zero),
+    ...overrides,
+  }
+}
+
+/** Pages with real UUID ids (the analytics `pageId` filter drops anything else). */
+export const ANALYTICS_PAGES = [
+  page({ id: '0b8f3c1e-1111-4a2b-9c3d-000000000001' }),
+  { ...SECOND, id: '0b8f3c1e-2222-4a2b-9c3d-000000000002' },
+]
+
+export interface AnalyticsApiOptions {
+  /** `GET …/pages` items for the Page filter (default: Shop One + Shop Two). */
+  pages?: WorkspacePage[]
+  /** `GET …/analytics/export.csv` / `comments.csv` answers (default: a small CSV). */
+  onCsv?: (kind: 'daily' | 'comments', url: URL) => Response | Promise<Response>
+}
+
+const csvResponse = (filename: string) =>
+  new Response('\uFEFFday,received\r\n', {
+    status: 200,
+    headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="${filename}"` },
+  })
+
+/**
+ * `/analytics` (M6-T12): `GET …/analytics` answers `respond(url)` (default: `analytics()`), the CSVs `onCsv`,
+ * `GET …/pages` the Page list. Any other method fails the test.
+ */
+export function analyticsApi(
+  respond: (url: URL) => Response | Promise<Response> = () => json(200, analytics()),
+  options: AnalyticsApiOptions = {},
+) {
+  const get =
+    (path: string, answer: (url: URL) => Response | Promise<Response>) =>
+    (init?: RequestInit, url?: URL) => {
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method !== 'GET' || !url) throw new Error(`Unexpected ${method} ${path}`)
+      return answer(url)
+    }
+  const items = options.pages ?? ANALYTICS_PAGES
+  const csv = (kind: 'daily' | 'comments') => (url: URL) =>
+    options.onCsv ? options.onCsv(kind, url) : csvResponse(`shieldcomment-${kind}-2026-11-18-to-2026-11-20.csv`)
+  return {
+    [ANALYTICS]: get(ANALYTICS, respond),
+    [ANALYTICS_DAILY_CSV]: get(ANALYTICS_DAILY_CSV, csv('daily')),
+    [ANALYTICS_COMMENTS_CSV]: get(ANALYTICS_COMMENTS_CSV, csv('comments')),
+    [PAGES]: get(PAGES, () => json(200, { items, pageLimit: { limit: 3, activeCount: items.length }, connection: connection() })),
   }
 }
 
