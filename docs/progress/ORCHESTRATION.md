@@ -12,13 +12,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)"). **PR run: admin/ + client/ approved for every PR row** (user, 2026-11-20, "Both, whole PR run (Recommended)").
 - Keep Docker current (user, 2026-11-20: "First make sure our docker runs the latest code"): a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (recreates compose containers only; never the user's own processes). Orchestrator rebuilt the backend after PR-T1 (0027 had made the old image read a renamed column).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #11 (2026-11-20) · rows this session: 9 · estimate: 285k
+- Session: #11 (2026-11-20) · rows this session: 10 · estimate: 300k
 
 ## State
-dispatched M5-T15e (2026-11-20) · commit: "feat(admin): show ai spend and recent analyses on dashboard (M5-T15e)"
+paused: row cap (10 rows this session) after verified M5-T15e (2026-11-20)
 
 ## Resume
-`/orchestration --continue` → M5-T15e (admin dashboard: AI spend cards, recent analyses, credit top-ups), then M5-T16 → M5-GATE.
+`/orchestration --continue` → dispatches M5-T16 (live golden bake-off of the five Neon models, US$2 cap; credentials in `backend/.env.neon`), then M5-GATE (M5-T17 live Meta smoke stays pending).
 
 ## Next prompt (M5-T16)
 
@@ -196,55 +196,6 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-20 orchestrator check (web docs): Neon documents **no API** for the AI Gateway credit balance or dollar spend (Console → Billing → "AI gateway credits" card only); chat responses carry no cost field; exhaustion shows as HTTP 429 with `unavailable_reason: "credits_required"`. The consumption API gives token counts only (Neon API key, paid plan). Our app already stores input/output tokens per AI call (`moderation.ts` schema) and has `/admin/system` "AI moderation" usage card (M5-T14). Actions today: NONE (allowed) / HIDE / DELETE.
 - 2026-11-20 credit display (user answer to "How should the admin dashboard show remaining credit?", verbatim): "Admin will enter topup info with amount and topup date." → admin records each top-up (amount USD + date); dashboard shows credit added, estimated spend (stored tokens × catalog prices), estimated remaining (with a "check Neon Billing for the exact figure" note).
 
-## Parked prompt (M5-T16)
-
-Parked again 2026-11-20 by the orchestrator: the user bought Neon AI credits and added new work first (M5-AIPLAN → new rows). The credentials question is answered (Neon only; see `## Decisions asked`, 2026-11-20 M5 lines). The row that runs just before M5-T16 restores this section as the Next prompt, updating its models (the five from the 2026-11-20 decision), winner rule (cheapest passing ≥ 90 % per content type) and test counts, and deletes this section.
-
-You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
-
-**Read first (only these)**
-1. `AGENTS.md`.
-2. `docs/progress/MEMORY.md` (large: `grep -n` it, then read: LLM client (M5-T1), AI provider settings (M5-T3), Comment classifier (M5-T5), **Golden suite (M5-T6)**, Admin AI data (M5-T13: model prices), Environment facts).
-3. From `docs/progress/TASKS.md` (use `grep -n`/`sed -n`; the file is large): the Module 5 header paragraph, decisions **D1** (provider + who pays), **D12** (golden suite + live checks, incl. the emoji fallback), **D16** (AI provider settings), the previous row `M5-T15` (context only) and this row `M5-T16`. All answered 2026-11-19; the only open input is the PRE-CHECK above (the orchestrator adds the user's answers under "### Decisions added by orchestrator").
-4. Spec: `docs/project-documentation/modules/module-5-ai-moderation.md` (only the golden-suite / accuracy gate part). No UI work.
-5. Code to read or reuse: `backend/src/scripts/golden-suite.ts` (built to `dist/scripts/golden-suite.js`) (`npm run ai:golden` / `ai:golden:neon`, flags `--provider --model --level --limit --record --help`, config = DB settings → `.env`; stops on not_configured/payment_required/auth; exit 1 below 90 %), `backend/src/moderation/golden-*.ts` (`golden-score.ts` report + `GOLDEN_MODEL_PRICES`, `golden-replay.ts` replay files keyed by `promptVersion` + id + `textSha256`), `backend/src/moderation/ai-model-prices.ts` (`DEFAULT_AI_MODEL_PRICES`, env `AI_MODEL_PRICES`), `backend/test/fixtures/golden-comments.ts` (48 items, user-reviewed labels: do not edit texts or labels), existing replay `backend/test/fixtures/golden-responses.neon.handmade-replay.json`, the replay spec that CI runs (`grep -rln golden-responses backend/src backend/test`), the D16 settings service/resolver (`src/ai-gateway/db-ai-config.resolver.ts`, `PATCH /api/admin/settings/ai`) if the user allows setting the winner.
-
-**Recorded decisions** (user, 2026-11-19; TASKS.md Module 5): D1 both the Neon AI Gateway (with this bake-off) and direct provider keys; ShieldComment pays. D12 accuracy = the opt-in live `npm run ai:golden`, ≥ 90 %; CI only replays recorded files; **if the live run shows the model can't tell emoji sentiment reliably, the fallback is to hide all emoji-only comments** (report it as a decision; don't build it here). D16 the active provider + model live in `/admin/settings` (keys encrypted in the DB, `.env` fallback). Run rule (journal `## Run`): live AI rows pause until the user gives credits/keys.
-
-**Task (M5-T16): Live golden bake-off**
-- `npm run build` then, per confirmed provider/model (and level), a quick `--limit 5` smoke, then the full run; collect accuracy, per-category precision/recall, per-language slices, failures, tokens, latency and estimated cost from the report. Stop a provider on not_configured / payment_required / auth errors and report it; respect the spend cap (sum the reported estimated costs; unpriced models: estimate from tokens or stop and ask).
-- Winner = cheapest passing ≥ 90 % (tie → higher accuracy, then lower latency). `--record` the winner (whole fixture) → `test/fixtures/golden-responses.<provider>.<model>.json`; the CI replay must pass with it. Keep or delete the hand-made replay as the replay spec requires (say which).
-- If allowed, set the winner as the active provider/model (D16 API or settings service; audit row written); else only report it. If a model price is missing from `DEFAULT_AI_MODEL_PRICES` and the price is known from the run's provider docs, add it (+ test).
-- If no model passes 90 %: no prompt change in this row; report the per-category misses and ask (`STATUS: needs-decision`: e.g. bump the prompt to `moderation-v3` with few-shots for the missed cases, a bigger model, or the emoji fallback).
-- Results table (model, level, accuracy, cost per 1,000 comments USD + ৳, avg latency, failures) in the TASKS.md verification log and the row notes.
-
-**Since the park (PW rows, 2026-11-19/20):** AI credits are gone: the plan limit is **monthly comments** (`WalletService.consume(ws, 'monthlyComments')` counts each comment once before its first AI call; no `CreditService`, no credit costs per context level, `daily_ai_usage.credits` dropped). The golden script never touches the wallet; report cost per 1,000 **comments** (USD + ৳), not credits. MEMORY "Plans, subscriptions & wallet (PW)" has the details if needed (don't read it all).
-
-**Since PR (2026-11-20):** plans are fixed facts and offers are promotions (MEMORY "Promotions (PR"); nothing in the golden script or the classifier changed, and the e2e test DB baseline now includes the seeded promotions.
-
-**Rules:** TS strict, ESM, no `any`. Vitest. Live calls only in the opt-in script, never in unit/e2e (they replay the recorded file; tests must fail on unexpected requests). Every tenant query is scoped by `workspace_id`. Never print, log or commit an API key or `.env*` (except `.env.example`); comment texts never go to logs. Never commit build/test output. **Never stop or kill the user's own processes** (local Postgres 5432, Redis 6379, dev servers); on a port clash use env overrides or stop and report. The user's compose stack runs the latest code (checked at PR-GATE, 2026-11-20): do not stop it; rebuild only as the orchestrator's Docker decision below says.
-
-**Verify** (run what applies; report real numbers):
-- backend: `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test` (the new replay file is replayed), `npm run test:e2e`, `npm run lint`, `npx prettier --check "src/**/*.ts" "test/**/*.ts"`. The test DB must end with only the 4 `plans` rows + the 4 seeded promotions + their 4 `promotion_plans` rows (0 redemptions, 0 `platform_settings`, 0 users).
-- admin/client untouched (not expected).
-- Current test counts: backend 1936 unit (+1 skipped) / 963 e2e · admin 400 · client 490 · e2e/ 2/2 (so drops are visible).
-
-**If a decision is missing:** if THIS row needs a product decision that is not recorded in TASKS.md/MEMORY.md/this prompt (e.g. no credentials, no model passes, spend cap reached), STOP without coding that part. Report `STATUS: needs-decision` with the question and 2–4 options (recommended first). If your row finishes but the NEXT row needs decisions, report `STATUS: done`, list them under DECISION NEEDED and start the next prompt with `PRE-CHECK: needs user decisions <ids> before dispatch`. Next row M5-T17 (live Meta smoke) stays pending without the Meta test app: if it is still blocked, write the M5-GATE prompt next and say in its PRE-CHECK that M5-T17 is skipped (optional per the gate row).
-
-**Finish (in this order)**
-1. TASKS.md: the row → `✅ <date>` + concise notes (built + choices + results table). Add a Verification log entry at the TOP of `## Verification log`. Add short lasting facts to MEMORY.md (chosen provider/model, replay file name) and point its "**Next:**" phrase (in the Environment facts "Browser checks" line) at the next row.
-2. Journal `docs/progress/ORCHESTRATION.md`:
-   - append one `## Log` line (`- <date> M5-T16 ✅ · <tests> · <1-line summary>`); the orchestrator adds the commit hash;
-   - append your choices under `## Choices to confirm` as `- M5-T16: …`;
-   - **replace** the `## Next prompt` section (everything from that heading up to, not including, `## Choices to confirm`) with the next row's prompt in this same format (contract: `.claude/skills/orchestration/subagent-prompt.md`).
-3. Commit everything, journal included, with `test(backend): record live golden bake-off results (M5-T16)` (or a similar Conventional Commits subject containing `(M5-T16)`, ≤ 72 chars; count it) and an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
-4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
-
-### Decisions added by orchestrator
-- 2026-11-19 (user, M5-T16 pre-check): **models** = Neon `gpt-oss-20b` + `gpt-oss-120b`, OpenAI `gpt-4.1-nano` + `gpt-4.1-mini`, Google `gemini-2.5-flash-lite` + `gemini-2.5-flash`, Anthropic `claude-haiku-5-5` (only those with working credentials run). **Spend cap** = up to US$2 total. **Winner** = set it active locally: the agent saves it as the active provider/model in the local dev DB's AI settings (D16, audit row written) and records its replay. Context level: `comment_only` only (prompt default; not asked). Credentials: resolved below.
-- 2026-11-19 (orchestrator, `/orchestration --continue`): **credentials found** = Neon AI Gateway only (`NEON_AI_GATEWAY_BASE_URL` + `NEON_AI_GATEWAY_TOKEN` set in `backend/.env.neon`; never print them). No direct provider keys in `backend/.env` and none saved in `ai_provider_keys`. So only Neon `gpt-oss-20b` + `gpt-oss-120b` run; skip OpenAI/Google/Anthropic and list them as "skipped: no key" in the results table (the Anthropic version-header check stays unconfirmed). If the gateway answers payment_required/auth errors, stop and report `STATUS: needs-decision` (the user may need to buy Neon credits). The winner is set active in the compose dev DB (postgres on host 5433).
-- 2026-11-20 (user, "First make sure our docker runs the latest code"): before your finish steps, run `docker compose up -d --build backend` (plus `admin`/`client` when you changed them), wait for healthy, and check `curl -s http://localhost:3000/api/plans` still answers 200; report it under CHECKS. This recreates compose containers only. Carry this block into every later prompt.
-
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
 - 2026-11-18 M3-T9 ✅ dcab638 · client 151 · app shell + impersonation banner
@@ -316,4 +267,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-20 M5-T15b ✅ · `5b4fa54` · backend 2018 unit (+1 skipped; was 1981) + e2e 974 (was 963) · Neon model catalog (prices, `supportsImages`, Jev default), Text + Image model + on/off switch (migration 0030, API + audit, catalog 400s), live classifier wired by dialect (Jev → System One, `testConnection` Noul)
 - 2026-11-20 M5-T15c ✅ · `4ec938c` · admin 400/400 (was 400; lib −3/+3, AI card block 12 → 15, history +2 labels) · backend untouched · admin AI card = Neon only: Text / Text + Image (image-capable) dropdowns with price + context, on/off switch, Neon key only, save pins `provider: 'neon'`; D25/D26 + rows M5-T15d/e recorded
 - 2026-11-20 M5-T15d ✅ · `6f4254e` · backend 2026 unit (+1 skipped; was 2018) + e2e 983 (was 974) · admin/client untouched · migration 0031: per-comment AI tokens/latency, `ai_credit_topups` + audit; `/api/admin/ai/analyses|summary|credit-topups` (SuperAdminGuard); docker backend rebuilt, healthy, `/api/plans` 200
-- 2026-11-20 M5-T15e ✅ · admin 432/432 (was 400; +22 lib, +10 dashboard) · backend/client untouched · `/admin/dashboard` AI spend cards (credit added, estimated spend, negative remaining, comments analyzed, Neon note + unpriced calls), recent 20 analyses table, credit top-ups add/delete; docker admin rebuilt + healthy
+- 2026-11-20 M5-T15e ✅ · `cc5581b` · admin 432/432 (was 400; +22 lib, +10 dashboard) · backend/client untouched · `/admin/dashboard` AI spend cards (credit added, estimated spend, negative remaining, comments analyzed, Neon note + unpriced calls), recent 20 analyses table, credit top-ups add/delete; docker admin rebuilt + healthy
