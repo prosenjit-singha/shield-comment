@@ -11,6 +11,7 @@ Implement BDT subscription payments via [SSLCommerz V4 API](https://developer.ss
 > - add a **coupon box** to checkout and a **public "apply coupon" endpoint** that calls `PromotionService.validateCoupon(code, accountId, planId, interval)` (preview or `COUPON_NOT_FOUND`/`COUPON_EXPIRED`/`COUPON_USED_UP`/`COUPON_ALREADY_USED`/`COUPON_NOT_FOR_PLAN`), redeeming only when the payment is validated;
 > - give every **invoice line** the promotion data (PR-D12): `promotion_redemption_id`, `promotion_name` / `code`, `discount_bdt` and the "k of N" month counter for multi-month discounts;
 > - on **renewals**, keep applying a claimed discount (the account's redemption, `months_used` + 1 per term) until its months run out; a forever discount lasts until the client cancels or leaves the targeted plans; Stop / end date only blocks new claims (PR-D15);
+> - **coupons (PR-D19):** once per client account; a coupon runs only its set months (first N bills, usually 1), never past them;
 > - replace "Contact us" with the checkout button on `/plans` and the landing cards, which read `GET /api/plans` (badge, description, highlighted plan, discounted price + plain "50% off" text, trial).
 
 ## Backend Implementation (`backend/`)
