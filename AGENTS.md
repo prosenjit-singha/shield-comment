@@ -14,7 +14,7 @@ docs/      specs. Progress files: docs/progress/TASKS.md, docs/progress/MEMORY.m
 
 ## Token-saving rules for agents (IMPORTANT)
 1. **Start every session by reading `docs/progress/MEMORY.md` and `docs/progress/TASKS.md`.** Read nothing else until you need it.
-2. Open only the module spec you are working on: `docs/project-documentation/modules/module-N-*.md`. For UI work, also open `docs/design/base.md` plus `admin.md` or `client.md`.
+2. Open only the module spec you are working on: `docs/project-documentation/modules/module-N-*.md`. For UI work, also open `docs/design/base.md` plus `admin.md` or `client.md`. `docs/design/DESIGN.md` is the Apple-inspired design philosophy (restraint, single accent, tight type). Use it as inspiration; where it conflicts, the project tokens and rules win.
 3. Do **one task at a time** (one TASKS.md row). Don't build a whole module in one go.
 4. When a task is finished, in this order:
    1. Update its row in TASKS.md (and the verification log) and add any lasting facts to MEMORY.md (keep it short).
