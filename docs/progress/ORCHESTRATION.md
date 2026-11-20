@@ -7,14 +7,14 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 7 section + the row's decisions, `docs/project-documentation/modules/module-7-support-team.md`, the code the row names.
 - Standing approvals: none yet for client/ or admin/ in this run (asked at the first row that touches them). Live AI, Meta, email, Telegram or WhatsApp calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #15 (2026-11-20) · rows this session: 9 · estimate: 134k
+- Session: #15 (2026-11-20) · rows this session: 10 · estimate: 145k
 - Previous runs (Modules 3–6, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M7-T8 (2026-11-20) · commit: "feat(backend): add telegram alert bot and chat linking (M7-T8)"
+paused: row cap (10 rows this session) after M7-T8 · next M7-T9 (its decisions answered)
 
 ## Resume
-`/orchestration --continue`
+`/orchestration --continue` (dispatches M7-T9; no open decisions)
 
 ## Next prompt (M7-T9)
 
@@ -57,6 +57,11 @@ You are implementing exactly ONE task row, **M7-T9**, in the ShieldComment BD re
    - **replace** the `## Next prompt (M7-T9)` section — everything from that heading up to, but not including, the exact line `## Choices to confirm` — with the M7-T10 prompt in the same format (contract: `.claude/skills/orchestration/subagent-prompt.md`). Leave no fragment of the old prompt behind.
 3. Commit everything, journal included (not `skills-lock.json` / `.claude/skills/*`), with `feat(backend): add scam spike alerts dispatcher (M7-T9)` (optional 2–4 bullet body) and the Co-Authored-By trailer given in your dispatch message.
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
+
+### Decisions added by orchestrator
+- M7-T9 test alert while impersonated (user, 2026-11-20): "Yes, allowed (Recommended)" → an impersonated session may press "Send test alert" (rate limit still applies); logged with the session user.
+- M7-T9 test alert vs "last alert" (user, 2026-11-20): "No, marked as test (Recommended)" → test sends are stored with a test flag, are not the "last alert" and never start the 60-minute cool-down.
+Record both in TASKS.md (M7-T9 row notes / Module 7 decisions).
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -209,6 +214,7 @@ You are implementing exactly ONE task row, **M7-T9**, in the ShieldComment BD re
 - 2026-11-20 credit display (user answer to "How should the admin dashboard show remaining credit?", verbatim): "Admin will enter topup info with amount and topup date." → admin records each top-up (amount USD + date); dashboard shows credit added, estimated spend (stored tokens × catalog prices), estimated remaining (with a "check Neon Billing for the exact figure" note).
 - 2026-11-20 Module 6 pre-check (M6-T1), user answers verbatim: D1 "Poll every 15 s (Recommended)" · D2 "Client picks per rule" · D3 "Counts 1 (Recommended)" · D4 "Link+phone all, keywords Growth/Pro (Recommended)" · D5 "Substring, ignore case (Recommended)" · D6 "Both off by default (Recommended)" · D7 "Every member (Recommended)" · D8 "Add \"Keep visible\" (Recommended)" · D9 "Free 10/day. And make sure admin can configure this from its setting page." · D10 "7d/30d/90d + 4 KPIs (Recommended)" · D11 "Per workspace, 12 months (Recommended)" · D12 "+ per-comment CSV on Pro" · D13 "Not in Module 6 (Recommended)" · D14 "Keep one en+bn per category (Recommended)" · D15 "Not in Module 6 (Recommended)" · D16 "Mobile bottom bar + sidebar" · D17 "Graph stub for tests (Recommended)" · app approval "Both, rest of run (Recommended)"
 - 2026-11-20 M6-T11 pre-check: "tests left before the first test?" → "Show from the start (Recommended)"
+- 2026-11-20 M7-T9 pre-check: test alert while impersonated → "Yes, allowed (Recommended)" · test alert counts as last alert? → "No, marked as test (Recommended)"
 - 2026-11-20 M7-T6b pre-check: M7-D19 what a transfer moves → "Whole account if only this ws (Recommended)"
 - 2026-11-20 M7-T6 pre-check: M7-D18 accepting an invite with an unverified email → "Turn the check off (Recommended)"
 - 2026-11-20 Module 7 pre-check (M7-T1), user answers verbatim: D1 "All open; mods see own (Recommended)" · D2 "Read all, edit alerts only (Recommended)" · D3 "Support sets; Pro = HIGH (Recommended)" · D4 "Up to 3, admin too" · D5 "In-app badge + email (Recommended)" · D6 "Resend API (Recommended)" · D7 "Owner→admin/mod, admin→mod, 7d (Recommended)" · D8 "Invite page + switcher (Recommended)" · D9 "Members + owner + pending (Recommended)" · D10 "Keep everyone, block new (Recommended)" · D11 "Add transfer ownership but with verification step like password or otp system" → follow-up "Set dynamic verification, like if they have password set, verify with their current password twice. If the are signed in with google account show otp." → billing "Billing moves, old→admin (Recommended)" · D12 "Email all, Telegram plan, WA soon (Recommended)" · D13 "Platform bot + link (Recommended)" · D14 "Rolling 60 min, 10, cool-down (Recommended)" · D15 "Ticked members + Telegram (Recommended)" · D16 "Sidebar + mobile 'More' (Recommended)" · D17 "Playwright + backend e2e (Recommended)"
@@ -311,4 +317,4 @@ You are implementing exactly ONE task row, **M7-T9**, in the ShieldComment BD re
 - 2026-11-20 M7-T6 ✅ 164e6d1 · backend 2424 unit (was 2391) + e2e 1158 (was 1149) · admin/client untouched · sign-up from an invite (no workspace/billing/trial), accept with seat re-check (`used > limit`) + active workspace + cookie-cache refresh, M7-D18 verification gate off, D7/D11 member matrix (`WORKSPACE_OWNER_PROTECTED`), `GET /api/workspaces/:id/team` · next M7-T6b needs M7-D19
 - 2026-11-20 M7-T6b ✅ 6a31326 · backend 2440 unit (was 2424) + e2e 1163 (was 1158) · admin/client untouched · ownership transfer: password twice or emailed 6-digit code (Redis, 10 min, 5 tries, 1/min resend), one tx swaps owner ↔ admin and moves the billing account per M7-D19 (a)
 - 2026-11-20 M7-T7 ✅ f869aeb · backend 2449 unit (was 2440) + e2e 1170 (was 1163) · admin/client untouched · alert settings: migration 0036 `alert_settings` + `alert_deliveries`, `GET/PATCH …/alerts/settings` (threshold 1–1,000, member recipients ≤ 10 default owner, Telegram 409 without `messengerAlerts`, WhatsApp placeholder, last alert per channel)
-- 2026-11-20 M7-T8 ✅ · backend 2490 unit (was 2449) + e2e 1177 (was 1170) · admin/client untouched · Telegram platform bot: migration 0037 `telegram_chats` (≤ 3/workspace), `TelegramClient.sendMessage` (fetch, error kinds), one-time 15-min `t.me` link codes (Redis GETDEL), `POST /api/telegram/webhook` (secret header, `/start <code>`, en + bn replies), remove chat, settings view `telegram.configured/chats`
+- 2026-11-20 M7-T8 ✅ 3730c8f · backend 2490 unit (was 2449) + e2e 1177 (was 1170) · admin/client untouched · Telegram platform bot: migration 0037 `telegram_chats` (≤ 3/workspace), `TelegramClient.sendMessage` (fetch, error kinds), one-time 15-min `t.me` link codes (Redis GETDEL), `POST /api/telegram/webhook` (secret header, `/start <code>`, en + bn replies), remove chat, settings view `telegram.configured/chats`
