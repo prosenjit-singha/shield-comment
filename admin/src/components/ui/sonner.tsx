@@ -40,7 +40,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       toastOptions={{
         classNames: {
           toast:
-            "cn-toast gap-2.5! px-4! py-3! bg-popover/90! backdrop-blur-xl backdrop-saturate-150 shadow-[0_4px_24px_rgb(0_0_0/0.08)]! ring-1 ring-foreground/5",
+            "cn-toast gap-2.5! px-4! py-3! bg-popover/90! backdrop-blur-xl backdrop-saturate-150 shadow-[0_4px_24px_rgb(0_0_0/0.08)]! ring-1 ring-border",
           title: "text-sm! font-medium! leading-snug! tracking-tight",
           description: "text-[13px]! leading-snug! text-muted-foreground!",
           actionButton:

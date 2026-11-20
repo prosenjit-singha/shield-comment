@@ -12,7 +12,7 @@ const ENTER = { duration: 0.15, ease: EASE_OUT }
 const EXIT = { duration: 0.1, ease: EASE_OUT }
 
 const SURFACE =
-  "z-50 min-w-44 origin-(--radix-dropdown-menu-content-transform-origin) rounded-[calc(var(--spacing)*1.5+var(--radius-2xl))] bg-popover/90 p-1.5 text-popover-foreground shadow-[0_4px_24px_rgb(0_0_0/0.08)] ring-1 ring-foreground/5 backdrop-blur-xl backdrop-saturate-150 dark:ring-foreground/10"
+  "z-50 min-w-44 origin-(--radix-dropdown-menu-content-transform-origin) rounded-[calc(var(--spacing)*1.5+var(--radius-2xl))] bg-popover/90 p-1.5 text-popover-foreground shadow-[0_4px_24px_rgb(0_0_0/0.08)] ring-1 ring-border backdrop-blur-xl backdrop-saturate-150"
 
 // Shared item recipe: muted icons that turn foreground on highlight.
 const ITEM =

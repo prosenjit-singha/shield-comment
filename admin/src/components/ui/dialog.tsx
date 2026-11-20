@@ -65,7 +65,7 @@ function DialogContent({
         transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
         exitTransition={{ duration: 0.15, ease: [0.4, 0, 1, 1] }}
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-4xl bg-popover p-6 text-sm text-popover-foreground shadow-[0_12px_40px_rgb(0_0_0/0.16)] ring-1 ring-foreground/5 outline-none sm:max-w-md",
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-4xl bg-popover p-6 text-sm text-popover-foreground shadow-[0_12px_40px_rgb(0_0_0/0.16)] ring-1 ring-border outline-none sm:max-w-md",
           className
         )}
         {...props}

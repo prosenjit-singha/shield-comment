@@ -104,8 +104,8 @@
     --muted: oklch(0.294 0.004 286);          /* #2C2C2E: one step above --card so fills show on cards */
     --muted-foreground: oklch(0.711 0.007 286);/* #A1A1A6 */
     --destructive: oklch(0.66 0.22 14);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
+    --border: oklch(0.34 0.004 286);         /* #38383A solid: same hairline on every surface */
+    --input: oklch(0.4 0.004 286);           /* #48484A */
     --ring: oklch(0.62 0.19 258);
     --chart-1: oklch(0.62 0.19 258);
     --chart-2: oklch(0.66 0.22 14);
@@ -118,7 +118,7 @@
     --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.294 0.004 286); /* #2C2C2E */
     --sidebar-accent-foreground: oklch(0.971 0.003 286);
-    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-border: oklch(0.34 0.004 286);
     --sidebar-ring: oklch(0.62 0.19 258);
 }
 

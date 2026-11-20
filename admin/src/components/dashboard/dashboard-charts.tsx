@@ -143,7 +143,7 @@ function ChartTooltip({
 }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="flex min-w-36 flex-col gap-1.5 rounded-2xl bg-popover px-3 py-2 text-xs text-popover-foreground shadow-[0_4px_24px_rgb(0_0_0/0.08)] ring-1 ring-foreground/5">
+    <div className="flex min-w-36 flex-col gap-1.5 rounded-2xl bg-popover px-3 py-2 text-xs text-popover-foreground shadow-[0_4px_24px_rgb(0_0_0/0.08)] ring-1 ring-border">
       <p className="font-medium">{formatTitle(label, payload)}</p>
       {payload.map((row) => (
         <div key={String(row.dataKey ?? row.name)} className="flex items-center justify-between gap-4">
