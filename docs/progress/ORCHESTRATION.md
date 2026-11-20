@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 6 section + the row's decisions, `docs/project-documentation/modules/module-6-client-dashboard.md`, the code the row names.
 - Standing approvals: **client/ + admin/ approved for every Module 6 row in this run** (user, 2026-11-20, "Both, rest of run (Recommended)"). Live AI or Meta calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #13 (2026-11-20) · rows this session: 8 · estimate: 127k
+- Session: #13 (2026-11-20) · rows this session: 9 · estimate: 138k
 - Previous runs (Modules 3–5, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M6-T7b (2026-11-20) · commit: "feat(admin): add playground daily limit setting (M6-T7b)"
+verified M6-T7b (2026-11-20)
 
 ## Resume
 `/orchestration --continue`
@@ -268,4 +268,4 @@ You are implementing exactly ONE task row, **M6-T8**, in the ShieldComment BD re
 - 2026-11-20 M6-T5 ✅ · `72e90c4` · backend 2208 unit (was 2194) + e2e 1079 (was 1068) · `GET /api/workspaces/:workspaceId/dashboard/summary?range=7d|30d|90d`: KPIs, zero-filled Dhaka daily series, intents + flagged, live needs-review count; every member + impersonated
 - 2026-11-20 M6-T6 ✅ · `c9023d6` + fix `6bb612b` · backend 2231 unit (was 2208) + e2e 1098 (was 1079) · `GET …/analytics` (12-month cap, daily/monthly zero-filled series, Page filter) + `export.csv` (daily aggregates, every plan) + `comments.csv` (Pro, 409 otherwise); BOM + formula guard; every member + impersonated
 - 2026-11-20 M6-T7 ✅ · `1c5ac00` · backend 2246 unit (was 2231) + e2e 1107 (was 1098) · `POST …/playground/test`: rules → AI (comment only) → worker decision, nothing stored but `daily_ai_usage`, Redis daily cap 10 → 429, 502/503 AI errors; every member + impersonated
-- 2026-11-20 M6-T7b ✅ · backend 2263 unit (was 2246) + e2e 1111 (was 1107) · admin 439 (was 432) · platform setting `playgroundDailyLimit` (migration 0034, default 10, 0–1,000, 0 = off) in the partial `PATCH /api/admin/settings/platform`; playground cap reads it; admin "Playground" card on `/admin/settings`
+- 2026-11-20 M6-T7b ✅ · `37620a5` · backend 2263 unit (was 2246) + e2e 1111 (was 1107) · admin 439 (was 432) · platform setting `playgroundDailyLimit` (migration 0034, default 10, 0–1,000, 0 = off) in the partial `PATCH /api/admin/settings/platform`; playground cap reads it; admin "Playground" card on `/admin/settings`
