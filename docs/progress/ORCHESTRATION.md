@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 6 section + the row's decisions, `docs/project-documentation/modules/module-6-client-dashboard.md`, the code the row names.
 - Standing approvals: **client/ + admin/ approved for every Module 6 row in this run** (user, 2026-11-20, "Both, rest of run (Recommended)"). Live AI or Meta calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #14 (2026-11-20) · rows this session: 0 · estimate: 40k
+- Session: #14 (2026-11-20) · rows this session: 1 · estimate: 52k
 - Previous runs (Modules 3–5, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M6-T9 (2026-11-20) · commit: "feat(client): add live comments feed with overrides (M6-T9)"
+verified M6-T9 (2026-11-20)
 
 ## Resume
 `/orchestration --continue`
@@ -51,10 +51,6 @@ You are implementing exactly ONE task row, **M6-T10**, in the ShieldComment BD r
 1. TASKS.md: M6-T10 → `✅ <date>` + concise notes. Verification log entry at the TOP. Short lasting facts in MEMORY.md (client rules lib/components) and point its "next" phrase at M6-T11.
 2. Journal `docs/progress/ORCHESTRATION.md`: append one `## Log` line; append choices under `## Choices to confirm` as `- M6-T10: …`; **replace** `## Next prompt` with the M6-T11 prompt in the format of `.claude/skills/orchestration/subagent-prompt.md`.
 3. Commit everything with `feat(client): add moderation rules screen (M6-T10)` (+ 2–4 bullet body) and the Co-Authored-By trailer from your dispatch message.
-4. Return the report in the contract format.
-
-## Choices to confirm` as `- M6-T9: …`; **replace** `## Next prompt` with the M6-T10 prompt in the format of `.claude/skills/orchestration/subagent-prompt.md`.
-3. Commit everything with `feat(client): add live comments feed with overrides (M6-T9)` (+ 2–4 bullet body) and the Co-Authored-By trailer from your dispatch message.
 4. Return the report in the contract format.
 
 ## Choices to confirm
@@ -278,4 +274,4 @@ You are implementing exactly ONE task row, **M6-T10**, in the ShieldComment BD r
 - 2026-11-20 M6-T7 ✅ · `1c5ac00` · backend 2246 unit (was 2231) + e2e 1107 (was 1098) · `POST …/playground/test`: rules → AI (comment only) → worker decision, nothing stored but `daily_ai_usage`, Redis daily cap 10 → 429, 502/503 AI errors; every member + impersonated
 - 2026-11-20 M6-T7b ✅ · `37620a5` · backend 2263 unit (was 2246) + e2e 1111 (was 1107) · admin 439 (was 432) · platform setting `playgroundDailyLimit` (migration 0034, default 10, 0–1,000, 0 = off) in the partial `PATCH /api/admin/settings/platform`; playground cap reads it; admin "Playground" card on `/admin/settings`
 - 2026-11-20 M6-T8 ✅ · `3793c9f` · client 506/506 (was 490) · backend/admin untouched · client nav (sidebar md+ / bottom bar mobile, existing routes only) + C4 `/dashboard`: range pills 7/30/90d in URL, 4 KPIs, Line/Bar/Donut (Recharts, `var(--token)`), skeletons, empty, error + retry, en + bn; docker client rebuilt + healthy
-- 2026-11-20 M6-T9 ✅ · client 546/546 (was 506) · backend/admin untouched · C5 `/comments`: status/category/search filters in URL, cursor Load more, pills + confidence + reasoning, 15 s `since` poll + new-comments pill, Hide/Unhide/Delete/Reply/Keep with dialogs, per-row pending, en/bn error codes; nav Comments; docker client rebuilt healthy
+- 2026-11-20 M6-T9 ✅ · `17e8128` · client 546/546 (was 506) · backend/admin untouched · C5 `/comments`: status/category/search filters in URL, cursor Load more, pills + confidence + reasoning, 15 s `since` poll + new-comments pill, Hide/Unhide/Delete/Reply/Keep with dialogs, per-row pending, en/bn error codes; nav Comments; docker client rebuilt healthy
