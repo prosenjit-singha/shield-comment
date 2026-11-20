@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 7 section + the row's decisions, `docs/project-documentation/modules/module-7-support-team.md`, the code the row names.
 - Standing approvals: none yet for client/ or admin/ in this run (asked at the first row that touches them). Live AI, Meta, email, Telegram or WhatsApp calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #15 (2026-11-20) · rows this session: 5 · estimate: 91k
+- Session: #15 (2026-11-20) · rows this session: 6 · estimate: 102k
 - Previous runs (Modules 3–6, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M7-T5 (2026-11-20) · commit: "feat(backend): add workspace invites with seat limits (M7-T5)"
+verified M7-T5
 
 ## Resume
 `/orchestration --continue`
@@ -307,4 +307,4 @@ You are implementing exactly ONE task row, **M7-T6**, in the ShieldComment BD re
 - 2026-11-20 M7-T2 ✅ 2f629c3 · backend 2328 unit (was 2315) + e2e 1124 (was 1112) · admin/client untouched · client ticket API `/api/workspaces/:workspaceId/support/tickets` (list/create/thread/reply): D1 moderator-own visibility, D2 impersonated POST 403 `IMPERSONATION_READ_ONLY`, D3 Pro → HIGH, cap 20 → 409 `TICKET_LIMIT_REACHED`, notes never returned
 - 2026-11-20 M7-T3 ✅ 105d7d5 · backend 2350 unit (was 2328) + e2e 1135 (was 1124) · admin/client untouched · ticket screenshots: `ticket_attachments` (0035), multipart `files` (≤ 3 PNG/JPEG/WebP ≤ 5 MB, magic bytes) on client create/reply + admin reply/note, `ATTACHMENT_*` 400s + 409 `ATTACHMENTS_UNAVAILABLE`, presigned `attachments[]` on every thread message (notes hidden from clients), strict storage fake
 - 2026-11-20 M7-T4 ✅ 423eef8 · backend 2364 unit (was 2350) + e2e 1139 (was 1135) · admin/client untouched · `TicketReplyNotifier` on `ticket.replied`: one bilingual email (subject + `/support?ticket=` link, no reply text) to the requester per public admin reply, idempotency key `ticket-reply:<messageId>`, non-member/banned skipped, failures logged only
-- 2026-11-20 M7-T5 ✅ · backend 2391 unit (was 2364) + e2e 1149 (was 1139) · admin/client untouched · workspace invites via Better Auth org plugin: 7-day links, re-invite cancels old, bilingual invite email `/invite/<id>`, D7 role rules + D2 impersonation 403 in before-middleware, pooled seats (members + pending invites) → 409 `SEAT_LIMIT_REACHED` / `NO_ACTIVE_PLAN`
+- 2026-11-20 M7-T5 ✅ f93cb6d · backend 2391 unit (was 2364) + e2e 1149 (was 1139) · admin/client untouched · workspace invites via Better Auth org plugin: 7-day links, re-invite cancels old, bilingual invite email `/invite/<id>`, D7 role rules + D2 impersonation 403 in before-middleware, pooled seats (members + pending invites) → 409 `SEAT_LIMIT_REACHED` / `NO_ACTIVE_PLAN`
