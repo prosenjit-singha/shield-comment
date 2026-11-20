@@ -48,6 +48,7 @@
     "@nestjs/throttler": "^6.8.0",
     "@node-rs/argon2": "^2.2.2",
     "@thallesp/nestjs-better-auth": "^2.8.0",
+    "@typesafe-ai/sdk": "0.7.0",
     "better-auth": "^1.7.25",
     "bullmq": "^6.7.7",
     "class-transformer": "^0.5.1",

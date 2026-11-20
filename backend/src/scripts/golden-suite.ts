@@ -6,14 +6,25 @@ import { ConfigService } from '@nestjs/config';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { aiEnvSettingsFromConfig } from '../ai-gateway/ai-gateway.module.js';
-import { AiGatewayService } from '../ai-gateway/ai-gateway.service.js';
-import type { AiConfigResolver } from '../ai-gateway/ai-provider.js';
+import { AiGatewayError } from '../ai-gateway/ai-gateway.errors.js';
+import {
+  AiGatewayService,
+  MODERATION_TIMEOUT_MS,
+} from '../ai-gateway/ai-gateway.service.js';
+import type {
+  AiConfigResolver,
+  AiProviderConfig,
+} from '../ai-gateway/ai-provider.js';
 import {
   type AiSettingsSnapshot,
   buildAiSettingsSnapshot,
   draftAiConfig,
 } from '../ai-gateway/ai-settings.rules.js';
 import { DbAiConfigResolver } from '../ai-gateway/db-ai-config.resolver.js';
+import {
+  isSystemOneModel,
+  SystemOneAdapter,
+} from '../ai-gateway/systemone.adapter.js';
 import { relaxHappyEyeballsTimeout } from '../common/net/happy-eyeballs.js';
 import {
   type EnvironmentVariables,
@@ -27,27 +38,45 @@ import {
   type GoldenArgs,
   GoldenArgsError,
   parseGoldenArgs,
+  selectGoldenItems,
 } from '../moderation/golden-args.js';
-import { validateGoldenFixture } from '../moderation/golden-fixture.js';
+import { normalizeClassifierInput } from '../moderation/classifier-input.js';
+import {
+  type GoldenComment,
+  goldenClassifierInput,
+  validateGoldenFixture,
+} from '../moderation/golden-fixture.js';
 import {
   buildGoldenReplay,
+  type GoldenRunResult,
   goldenReplayFileName,
   runGoldenSuite,
 } from '../moderation/golden-replay.js';
 import {
   formatGoldenReport,
+  type GoldenOutcome,
   modelPrice,
   scoreGolden,
 } from '../moderation/golden-score.js';
+import {
+  JEV_PROMPT_VERSION,
+  JEV_QUESTIONS,
+  jevDecision,
+  jevState,
+} from '../moderation/jev-moderation.js';
+import type { ModelPrice } from '../moderation/ai-model-prices.js';
+import type { ContextLevel } from '../moderation/moderation.constants.js';
 import { PROMPT_VERSION } from '../moderation/moderation-prompt.js';
 
 /**
- * `npm run ai:golden -- [--provider p] [--model m] [--level l] [--limit n] [--record]` (after
+ * `npm run ai:golden -- [--provider p] [--model m] [--level l] [--language l] [--limit n] [--record]` (after
  * `npm run build`; M5-T6, D12). Classifies `test/fixtures/golden-comments.ts` with LIVE calls (costs
  * money) through `CommentClassifier`, prints accuracy / precision / recall / confusion / tokens /
  * latency / estimated cost, exits 1 below 90 % (or when the provider has no key / no credits).
  * Config = the D16 resolver rules (DB settings → `.env`, per field); `--provider/--model` override.
  * `--record` writes `test/fixtures/golden-responses.<provider>.<model>.json` for the CI replay.
+ * A System One model (Jev, `--provider neon --model typesafeai-jev-1-14-0`) runs through the
+ * `systemone` adapter + `jev-moderation.ts` instead of the chat classifier (M5-T15a; no `--record`).
  * Never prints keys. Host only (the fixture is TypeScript under test/, loaded by Node's type stripping).
  *   cd backend && npm run build && npm run ai:golden -- --provider openai --limit 5
  */
@@ -64,7 +93,94 @@ const FATAL_HINTS: Record<(typeof FATAL_KINDS)[number], string> = {
   auth: 'the provider rejected the API key. Check the key in /admin/settings or .env.',
 };
 
+/** Neon docs: decision models are billed on input tokens only; jev input $0.042 / 1M (D19). */
+const SYSTEMONE_PRICES: Record<string, ModelPrice> = {
+  'typesafeai-jev-1-14-0': { input: 0.042, output: 0 },
+};
+
 class CleanExit extends Error {}
+
+type ItemPrinter = (
+  outcome: GoldenOutcome,
+  index: number,
+  detail?: string,
+) => void;
+
+type SuiteRun = Pick<GoldenRunResult, 'outcomes' | 'aborted'> &
+  Partial<Pick<GoldenRunResult, 'calls'>>;
+
+/** One System One call per item (no retries: a smoke run), sequential like `runGoldenSuite`. */
+async function runSystemOneSuite(
+  items: readonly GoldenComment[],
+  config: AiProviderConfig,
+  contextLevel: ContextLevel,
+  print: ItemPrinter,
+): Promise<SuiteRun> {
+  const adapter = new SystemOneAdapter();
+  const outcomes: GoldenOutcome[] = [];
+  for (const [index, item] of items.entries()) {
+    const input = normalizeClassifierInput(
+      goldenClassifierInput(item, contextLevel),
+    );
+    const started = performance.now();
+    const ms = () => Math.max(0, Math.round(performance.now() - started));
+    let outcome: GoldenOutcome;
+    let detail: string | undefined;
+    let fatal: AiGatewayError | undefined;
+    if (!input) {
+      outcome = {
+        item,
+        result: { ok: false, kind: 'empty_text' },
+        latencyMs: 0,
+        attempts: 0,
+      };
+    } else {
+      try {
+        const res = await adapter.decide(config, {
+          model: config.model,
+          state: jevState(input),
+          questions: JEV_QUESTIONS,
+          timeoutMs: MODERATION_TIMEOUT_MS,
+        });
+        outcome = {
+          item,
+          result: {
+            ok: true,
+            ...jevDecision(res.nouls),
+            outputMode: 'systemone',
+          },
+          latencyMs: ms(),
+          attempts: 1,
+          ...(res.usage && { usage: res.usage }),
+        };
+        detail = Object.entries(res.nouls)
+          .map(([id, p]) => `${id} ${p.toFixed(2)}`)
+          .join(' · ');
+      } catch (error) {
+        if (!(error instanceof AiGatewayError)) throw error;
+        outcome = {
+          item,
+          result: { ok: false, kind: error.kind },
+          latencyMs: ms(),
+          attempts: 1,
+        };
+        detail = error.message;
+        if ((FATAL_KINDS as readonly string[]).includes(error.kind)) {
+          fatal = error;
+        }
+      }
+    }
+    outcomes.push(outcome);
+    print(outcome, index, detail);
+    if (fatal) {
+      return {
+        outcomes,
+        aborted: { itemId: item.id, kind: fatal.kind, status: fatal.status },
+      };
+    }
+  }
+  return { outcomes };
+}
 
 function fail(message: string): never {
   console.error(`ai:golden: ${message}`);
@@ -140,7 +256,7 @@ async function main(): Promise<void> {
       }
     ).GOLDEN_COMMENTS,
   );
-  const items = args.limit ? fixture.slice(0, args.limit) : fixture;
+  const items = selectGoldenItems(fixture, args);
 
   const { snapshot, source, pool } = await loadSnapshot(env);
   await pool.end();
@@ -154,31 +270,41 @@ async function main(): Promise<void> {
       `not_configured: ${provider} has no API key${provider === 'neon' ? ' or no NEON_AI_GATEWAY_BASE_URL' : ''} (config from ${source}). Set it in /admin/settings or .env. No call was made.`,
     );
   }
+  const systemOne = isSystemOneModel(config.model);
+  if (systemOne && args.record) {
+    fail(
+      `--record is not supported for System One models yet (${config.model}). No call was made.`,
+    );
+  }
+  const promptVersion = systemOne ? JEV_PROMPT_VERSION : PROMPT_VERSION;
   console.log(
-    `ai:golden: ${items.length} comments · ${config.provider} / ${config.model} · key from ${snapshot.keys[config.provider].source} · level ${args.contextLevel} · prompt ${PROMPT_VERSION} · LIVE calls`,
+    `ai:golden: ${items.length} comments · ${config.provider} / ${config.model} · key from ${snapshot.keys[config.provider].source} · level ${args.contextLevel}${args.language ? ` · language ${args.language}` : ''} · prompt ${promptVersion} · LIVE calls`,
   );
 
   // Library logs (classifier / gateway) carry no comment text, but they would clutter the report.
   Logger.overrideLogger(['error']);
+  const print: ItemPrinter = (outcome, index, detail) => {
+    const got = outcome.result.ok
+      ? `${outcome.result.category} [${outcome.result.outputMode ?? '?'}]`
+      : `failed: ${outcome.result.kind}`;
+    const mark =
+      outcome.result.ok && outcome.result.category === outcome.item.expected
+        ? 'ok '
+        : 'XX ';
+    console.log(
+      `${mark}${String(index + 1).padStart(2)}/${items.length} ${outcome.item.id} → ${got} (${outcome.latencyMs} ms)${detail ? ` · ${detail}` : ''}`,
+    );
+  };
   const unusedResolver: AiConfigResolver = { resolve: async () => config };
-  const run = await runGoldenSuite(items, {
-    chat: new AiGatewayService(unusedResolver),
-    contextLevel: args.contextLevel,
-    config,
-    abortOn: FATAL_KINDS,
-    onItem: (outcome, index) => {
-      const got = outcome.result.ok
-        ? outcome.result.category
-        : `failed: ${outcome.result.kind}`;
-      const mark =
-        outcome.result.ok && outcome.result.category === outcome.item.expected
-          ? 'ok '
-          : 'XX ';
-      console.log(
-        `${mark}${String(index + 1).padStart(2)}/${items.length} ${outcome.item.id} → ${got} (${outcome.latencyMs} ms)`,
-      );
-    },
-  });
+  const run: SuiteRun = systemOne
+    ? await runSystemOneSuite(items, config, args.contextLevel, print)
+    : await runGoldenSuite(items, {
+        chat: new AiGatewayService(unusedResolver),
+        contextLevel: args.contextLevel,
+        config,
+        abortOn: FATAL_KINDS,
+        onItem: (outcome, index) => print(outcome, index),
+      });
   if (run.aborted) {
     const kind = run.aborted.kind as (typeof FATAL_KINDS)[number];
     fail(
@@ -188,7 +314,9 @@ async function main(): Promise<void> {
 
   const report = scoreGolden(
     run.outcomes,
-    modelPrice(config.provider, config.model),
+    systemOne
+      ? (SYSTEMONE_PRICES[config.model] ?? null)
+      : modelPrice(config.provider, config.model),
   );
   console.log('');
   console.log(
@@ -196,12 +324,12 @@ async function main(): Promise<void> {
       provider: config.provider,
       model: config.model,
       level: args.contextLevel,
-      promptVersion: PROMPT_VERSION,
+      promptVersion,
       source: 'live',
     }),
   );
 
-  if (args.record) {
+  if (args.record && run.calls) {
     const file = buildGoldenReplay({
       source: 'recorded',
       provider: config.provider,

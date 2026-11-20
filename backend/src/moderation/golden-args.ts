@@ -3,8 +3,11 @@ import {
   type AiProvider,
   isAiProvider,
 } from '../ai-gateway/ai-provider.js';
+import type { GoldenComment } from './golden-fixture.js';
 import {
+  COMMENT_LANGUAGES,
   CONTEXT_LEVELS,
+  type CommentLanguage,
   type ContextLevel,
   DEFAULT_CONTEXT_LEVEL,
   isContextLevel,
@@ -21,6 +24,8 @@ export interface GoldenArgs {
   record: boolean;
   /** Only the first N fixture items (quick smoke; not with `--record`). */
   limit?: number;
+  /** Only the fixture items of this language, applied before `limit` (M5-T15a; not with `--record`). */
+  language?: CommentLanguage;
   help: boolean;
 }
 
@@ -29,6 +34,7 @@ export const GOLDEN_USAGE = `Usage: npm run ai:golden -- [options]   (run npm ru
   --model <id>                         model id (default: that provider's configured model)
   --level <${CONTEXT_LEVELS.join('|')}>   data sent per comment (default ${DEFAULT_CONTEXT_LEVEL})
   --limit <n>                          only the first n fixture comments (not with --record)
+  --language <${COMMENT_LANGUAGES.join('|')}>      only comments in this language, before --limit (not with --record)
   --record                             write test/fixtures/golden-responses.<provider>.<model>.json
   --help                               show this help
 Live calls cost money. Exit 1 below 90 % accuracy or when the provider is not usable.`;
@@ -111,6 +117,16 @@ export function parseGoldenArgs(argv: readonly string[]): GoldenArgs {
         args.limit = limit;
         break;
       }
+      case '--language': {
+        const language = value();
+        if (!(COMMENT_LANGUAGES as readonly string[]).includes(language)) {
+          throw new GoldenArgsError(
+            `--language must be one of ${COMMENT_LANGUAGES.join(', ')}`,
+          );
+        }
+        args.language = language as CommentLanguage;
+        break;
+      }
       case '--record':
         noValue();
         args.record = true;
@@ -124,10 +140,21 @@ export function parseGoldenArgs(argv: readonly string[]): GoldenArgs {
         throw new GoldenArgsError(`unknown option ${token}`);
     }
   }
-  if (args.record && args.limit !== undefined) {
+  if (args.record && (args.limit !== undefined || args.language)) {
     throw new GoldenArgsError(
-      '--record needs the whole fixture: drop --limit (CI replays every item)',
+      '--record needs the whole fixture: drop --limit / --language (CI replays every item)',
     );
   }
   return args;
+}
+
+/** The fixture items a run classifies: `--language` filter first, then `--limit` (fixture order kept). */
+export function selectGoldenItems(
+  fixture: readonly GoldenComment[],
+  args: Pick<GoldenArgs, 'language' | 'limit'>,
+): GoldenComment[] {
+  const items = args.language
+    ? fixture.filter((item) => item.language === args.language)
+    : [...fixture];
+  return args.limit ? items.slice(0, args.limit) : items;
 }

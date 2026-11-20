@@ -368,7 +368,12 @@ export async function runGoldenSuite(
     const outcome: GoldenOutcome = {
       item,
       result: result.ok
-        ? { ok: true, category: result.category, confidence: result.confidence }
+        ? {
+            ok: true,
+            category: result.category,
+            confidence: result.confidence,
+            outputMode: result.outputMode,
+          }
         : { ok: false, kind: result.kind },
       latencyMs: itemCalls.reduce((sum, call) => sum + call.latencyMs, 0),
       attempts: result.attempts,

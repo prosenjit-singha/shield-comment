@@ -1,4 +1,9 @@
-import { GOLDEN_USAGE, parseGoldenArgs } from './golden-args.js';
+import {
+  GOLDEN_USAGE,
+  parseGoldenArgs,
+  selectGoldenItems,
+} from './golden-args.js';
+import type { GoldenComment } from './golden-fixture.js';
 
 describe('parseGoldenArgs', () => {
   it('defaults to the active provider, comment_only, no record, all items', () => {
@@ -56,6 +61,10 @@ describe('parseGoldenArgs', () => {
     [['openai'], /unknown option openai/],
     [['--level', 'page_name', '--level=comment_only'], /--level given twice/],
     [['--record', '--limit', '3'], /--record needs the whole fixture/],
+    [['--language', 'hindi'], /--language must be one of bn, banglish, en/],
+    [['--language'], /--language needs a value/],
+    [['--language', 'bn', '--language=en'], /--language given twice/],
+    [['--language=bn', '--record'], /--record needs the whole fixture/],
   ])('rejects %j', (argv, error) => {
     expect(() => parseGoldenArgs(argv)).toThrow(error);
   });
@@ -66,10 +75,51 @@ describe('parseGoldenArgs', () => {
       '--model',
       '--level',
       '--limit',
+      '--language',
       '--record',
       '--help',
     ]) {
       expect(GOLDEN_USAGE).toContain(flag);
     }
+  });
+
+  it('parses --language in both forms and combines it with --limit', () => {
+    expect(parseGoldenArgs(['--language', 'bn']).language).toBe('bn');
+    expect(parseGoldenArgs(['--language=en']).language).toBe('en');
+    expect(
+      parseGoldenArgs(['--language', 'banglish', '--limit=5']),
+    ).toMatchObject({ language: 'banglish', limit: 5 });
+  });
+});
+
+describe('selectGoldenItems', () => {
+  const item = (id: string, language: GoldenComment['language']) =>
+    ({ id, language }) as GoldenComment;
+  const fixture = [
+    item('scam-01', 'bn'),
+    item('scam-02', 'en'),
+    item('spam-01', 'bn'),
+    item('safe-01', 'banglish'),
+    item('abuse-01', 'bn'),
+  ];
+
+  it('keeps every item without filters', () => {
+    expect(selectGoldenItems(fixture, {})).toEqual(fixture);
+  });
+
+  it('filters by language before the limit, in fixture order', () => {
+    const ids = (items: GoldenComment[]) => items.map((i) => i.id);
+    expect(ids(selectGoldenItems(fixture, { language: 'bn' }))).toEqual([
+      'scam-01',
+      'spam-01',
+      'abuse-01',
+    ]);
+    expect(
+      ids(selectGoldenItems(fixture, { language: 'bn', limit: 2 })),
+    ).toEqual(['scam-01', 'spam-01']);
+    expect(ids(selectGoldenItems(fixture, { limit: 2 }))).toEqual([
+      'scam-01',
+      'scam-02',
+    ]);
   });
 });

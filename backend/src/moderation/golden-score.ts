@@ -12,6 +12,7 @@ import {
   MODERATION_CATEGORIES,
   type ModerationCategory,
 } from './moderation.constants.js';
+import type { ClassifierOutputMode } from './moderation-prompt.js';
 
 /**
  * Pure scorer of a golden-suite run (M5-T6, D12): accuracy, per-category precision / recall,
@@ -25,7 +26,13 @@ export const GOLDEN_PASS_ACCURACY = 0.9;
 export interface GoldenOutcome {
   item: Pick<GoldenComment, 'id' | 'text' | 'expected' | 'language' | 'tags'>;
   result:
-    | { ok: true; category: ModerationCategory; confidence: number }
+    | {
+        ok: true;
+        category: ModerationCategory;
+        confidence: number;
+        /** Output mode that answered (after any fallback), or `systemone` (Jev typed questions). */
+        outputMode?: ClassifierOutputMode | 'systemone';
+      }
     | { ok: false; kind: string };
   /** Tokens of every call made for this item (retries included); absent = provider sent none. */
   usage?: AiUsage;
