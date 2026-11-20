@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 8 section + the row's decisions, `docs/project-documentation/modules/module-8-billing-sslcommerz.md`, the code the row names.
 - Standing approvals: none yet for admin/ or client/ (asked at the first row that touches each). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included): none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #17 (2026-11-21) · rows this session: 3 · estimate: 135k
+- Session: #17 (2026-11-21) · rows this session: 4 · estimate: 155k
 - Previous runs (Modules 3–7, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M8-T3 (2026-11-21) · commit: "feat(backend): add paid-term core and checkout price (M8-T3)"
+verified M8-T3
 
 ## Resume
 `/orchestration --continue`
@@ -341,4 +341,4 @@ You are implementing exactly ONE task row, **M8-T4**, in the ShieldComment BD re
 - 2026-11-21 M8-PLAN ✅ 0fcf2f1 · docs only · Module 8 section in TASKS.md: readings 1–14, open decisions D1–D13, rows M8-T1…T13 + GATE; spec superseded notes; MEMORY next → M8-T1
 - 2026-11-21 M8-T1 ✅ 3f35b04 · backend 2523 unit (was 2503) + 1185 e2e · admin/client untouched · SSLCommerz client (`src/payments/`: session, Order Validation, `verifySign`, callback URLs), optional `SSLCOMMERZ_*` env (D1 sandbox default, test-only base URL refused in prod), D3 no card filter; D1–D13 recorded in TASKS.md, row M8-T6b added
 - 2026-11-21 M8-T2 ✅ 7bf9132 · backend 2535 unit (was 2523) + 1226 e2e (was 1185) · root e2e 4/4 · admin/client untouched · payments schema 0039 (`payment_transactions` with D8 invoice numbers from a global sequence + D10 risk level, `payment_events`), cleanup order, A4 list = real newest-first query with `gatewayLabel()`
-- 2026-11-21 M8-T3 ✅ · backend 2561 unit (was 2535) + 1231 e2e (was 1226) · admin/client/root e2e untouched · shared `activatePaidTerm` (manual activation unchanged; renewal extends the live row, trial → paid, upgrade), pure `paid-term.ts` (terms, D7 credit, `paymentKind`), `checkoutPrice` with PR-D19 coupon months, audit `source` (migration 0040)
+- 2026-11-21 M8-T3 ✅ ebe53a5 · backend 2561 unit (was 2535) + 1231 e2e (was 1226) · admin/client/root e2e untouched · shared `activatePaidTerm` (manual activation unchanged; renewal extends the live row, trial → paid, upgrade), pure `paid-term.ts` (terms, D7 credit, `paymentKind`), `checkoutPrice` with PR-D19 coupon months, audit `source` (migration 0040)
