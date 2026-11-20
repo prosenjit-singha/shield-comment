@@ -124,6 +124,14 @@ export function mergeModelPrices(
   return merged;
 }
 
+/** Built-in prices + the `AI_MODEL_PRICES` env override (validated at boot; unset = none). */
+export function configuredModelPrices(override: unknown): ModelPriceTable {
+  return mergeModelPrices(
+    DEFAULT_AI_MODEL_PRICES,
+    typeof override === 'string' ? parseModelPrices(override) : {},
+  );
+}
+
 /** The price of a provider + model, or `null` when the table has none. */
 export function lookupModelPrice(
   table: ModelPriceTable,

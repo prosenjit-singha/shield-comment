@@ -4,6 +4,8 @@ import { TokenCipherModule } from '../crypto/token-cipher.module.js';
 import { HealthModule } from '../health/health.module.js';
 import { PromotionsModule } from '../promotions/promotions.module.js';
 import { WalletModule } from '../wallet/wallet.module.js';
+import { AdminAiController } from './admin-ai.controller.js';
+import { AdminAiService } from './admin-ai.service.js';
 import { AdminAiSettingsController } from './admin-ai-settings.controller.js';
 import { AdminAiSettingsService } from './admin-ai-settings.service.js';
 import { AdminBillingController } from './admin-billing.controller.js';
@@ -37,9 +39,11 @@ import { AdminSystemService } from './admin-system.service.js';
     AdminSystemController,
     AdminSettingsController,
     AdminAiSettingsController,
+    AdminAiController,
     AdminPromotionsController,
   ],
   providers: [
+    AdminAiService,
     AdminAiSettingsService,
     AdminBillingService,
     AdminClientsService,

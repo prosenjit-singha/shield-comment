@@ -409,6 +409,10 @@ describe('Comment moderation worker (e2e)', () => {
       contextLevel: 'comment_only',
       usageCountedAt: expect.any(Date),
       moderationStage: null,
+      // M5-T15d (D25): the classification's tokens + wall time.
+      aiInputTokens: 120,
+      aiOutputTokens: 30,
+      aiLatencyMs: expect.any(Number),
     });
     // PW-D1: the comment counts 1 against the account's monthly comments.
     expect(await used(a.workspaceId)).toBe(usedBefore + 1);

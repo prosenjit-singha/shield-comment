@@ -27,11 +27,17 @@ export type DailyCommentStatsRow = typeof dailyCommentStats.$inferSelect;
 
 /**
  * A comment as lists show it (no `raw_payload`, no disconnect stamp `facebook_user_id`, no
- * worker bookkeeping `moderation_stage` / `usage_counted_at`).
+ * worker bookkeeping `moderation_stage` / `usage_counted_at`, no admin-only AI usage, M5-T15d).
  */
 export type WorkspaceComment = Omit<
   CommentRow,
-  'rawPayload' | 'facebookUserId' | 'moderationStage' | 'usageCountedAt'
+  | 'rawPayload'
+  | 'facebookUserId'
+  | 'moderationStage'
+  | 'usageCountedAt'
+  | 'aiInputTokens'
+  | 'aiOutputTokens'
+  | 'aiLatencyMs'
 >;
 
 /** Asia/Dhaka calendar day (`YYYY-MM-DD`) of an instant: the `daily_comment_stats.day` key. */

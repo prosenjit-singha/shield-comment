@@ -2,7 +2,9 @@ import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  date,
   index,
+  numeric,
   pgTable,
   smallint,
   text,
@@ -171,4 +173,85 @@ export const aiSettingsAuditLogsRelations = relations(
       references: [users.id],
     }),
   }),
+);
+
+/** Longest top-up note (M5-T15d, D26). */
+export const AI_CREDIT_TOPUP_NOTE_MAX = 200;
+
+/**
+ * Neon AI credit top-ups entered by the super admin (M5-T15d, D26): Neon has no API for the AI
+ * Gateway balance, so "remaining" = sum of these − our estimated spend. `topped_up_on` is an
+ * Asia/Dhaka calendar date (not in the future: checked by the API, it needs the clock). A
+ * mistaken entry is deleted (audited in `ai_credit_topup_audit_logs`). Creator FK `restrict` like
+ * the audit tables (e2e `cleanup()` deletes the rows first). Not tenant data: super admin only.
+ */
+export const aiCreditTopups = pgTable(
+  'ai_credit_topups',
+  {
+    id: id(),
+    amountUsd: numeric({ precision: 10, scale: 2, mode: 'number' }).notNull(),
+    toppedUpOn: date({ mode: 'string' }).notNull(),
+    note: text(),
+    createdById: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    ...timestamps,
+  },
+  (t) => [
+    index().on(t.createdById),
+    check('ai_credit_topups_amount_positive', sql`${t.amountUsd} > 0`),
+    check(
+      'ai_credit_topups_note_length',
+      sql.raw(
+        `note is null or char_length(note) between 1 and ${AI_CREDIT_TOPUP_NOTE_MAX}`,
+      ),
+    ),
+  ],
+);
+
+export const AI_CREDIT_TOPUP_AUDIT_ACTIONS = ['add', 'delete'] as const;
+export type AiCreditTopupAuditAction =
+  (typeof AI_CREDIT_TOPUP_AUDIT_ACTIONS)[number];
+
+/**
+ * Top-up change log (M5-T15d, D26): one row per add / delete with a copy of the top-up (the row
+ * itself is gone after a delete, so `topup_id` has no FK). Written in the same transaction; never
+ * updated.
+ */
+export const aiCreditTopupAuditLogs = pgTable(
+  'ai_credit_topup_audit_logs',
+  {
+    id: id(),
+    adminId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    action: text().$type<AiCreditTopupAuditAction>().notNull(),
+    topupId: uuid().notNull(),
+    amountUsd: numeric({ precision: 10, scale: 2, mode: 'number' }).notNull(),
+    toppedUpOn: date({ mode: 'string' }).notNull(),
+    note: text(),
+    ipAddress: text(),
+    userAgent: text(),
+    createdAt: timestamptz().notNull().defaultNow(),
+  },
+  (t) => [
+    index().on(t.adminId),
+    index().on(t.topupId),
+    check(
+      'ai_credit_topup_audit_logs_action_check',
+      sql.raw(
+        `action in (${AI_CREDIT_TOPUP_AUDIT_ACTIONS.map((a) => `'${a}'`).join(', ')})`,
+      ),
+    ),
+    check(
+      'ai_credit_topup_audit_logs_ip_address_length',
+      sql`ip_address is null or char_length(ip_address) between 1 and 45`,
+    ),
+    check(
+      'ai_credit_topup_audit_logs_user_agent_length',
+      sql.raw(
+        `user_agent is null or char_length(user_agent) between 1 and ${AI_SETTINGS_AUDIT_USER_AGENT_MAX}`,
+      ),
+    ),
+  ],
 );

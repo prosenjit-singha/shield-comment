@@ -416,6 +416,9 @@ export class CommentModerationService {
           model: result.model,
           promptVersion: result.promptVersion,
           contextLevel: result.contextLevel,
+          aiInputTokens: result.usage?.promptTokens ?? null,
+          aiOutputTokens: result.usage?.completionTokens ?? null,
+          aiLatencyMs: result.latencyMs,
         },
       };
       if (metaSkip !== null) {

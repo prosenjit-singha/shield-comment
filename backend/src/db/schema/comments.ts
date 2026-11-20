@@ -178,6 +178,15 @@ export const comments = pgTable(
     promptVersion: text(),
     /** The level actually sent (D8; a missing caption drops `post_caption` to `page_name`). */
     contextLevel: text().$type<ContextLevel>(),
+    /**
+     * Usage of the latest classification (M5-T15d, D25): input / output tokens summed over every
+     * call of that `classify()` (retries included, like `daily_ai_usage`) and its wall time.
+     * Written with the classification; tokens `null` = the provider reported none, all `null` =
+     * classified before M5-T15d (cost "n/a").
+     */
+    aiInputTokens: integer(),
+    aiOutputTokens: integer(),
+    aiLatencyMs: integer(),
     /** Machine code explaining `SKIPPED` / `FAILED` / `NEEDS_REVIEW` (e.g. `comment_limit_reached`). */
     statusReason: text(),
     /** First human moderation action (D10): from then on the AI never changes the comment. */
@@ -214,6 +223,10 @@ export const comments = pgTable(
     index('comments_moderation_stage_index')
       .on(sql`coalesce(${t.editedAt}, ${t.createdAt})`)
       .where(sql`${t.moderationStage} is not null`),
+    // Admin AI analysis log + analyzed counts (M5-T15d): newest classifications first.
+    index('comments_classified_at_index')
+      .on(t.classifiedAt.desc())
+      .where(sql`${t.classifiedAt} is not null`),
     index('comments_moderation_retry_index')
       .on(t.createdAt)
       .where(sql.raw(`status in (${quoted(['PENDING', 'FAILED'])})`)),
@@ -269,6 +282,12 @@ export const comments = pgTable(
     check(
       'comments_classification_complete',
       sql.raw(allOrNoneSql(CLASSIFICATION_COLUMNS)),
+    ),
+    check(
+      'comments_ai_usage_check',
+      sql.raw(
+        `(ai_input_tokens is null or ai_input_tokens >= 0) and (ai_output_tokens is null or ai_output_tokens >= 0) and (ai_latency_ms is null or ai_latency_ms >= 0)`,
+      ),
     ),
     check(
       'comments_moderation_stage_check',

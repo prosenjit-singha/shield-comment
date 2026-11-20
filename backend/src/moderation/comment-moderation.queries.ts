@@ -182,6 +182,10 @@ export interface StoredClassification {
   model: string;
   promptVersion: string;
   contextLevel: ContextLevel;
+  /** M5-T15d (D25): the classification's summed tokens (`null` = not reported) + wall time. */
+  aiInputTokens: number | null;
+  aiOutputTokens: number | null;
+  aiLatencyMs: number;
 }
 
 /** What a worker step writes on the comment (only the given keys change). */

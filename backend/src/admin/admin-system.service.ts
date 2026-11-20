@@ -10,10 +10,8 @@ import { MIGRATIONS_FOLDER } from '../db/migrator.js';
 import { withTimeout } from '../common/async/with-timeout.js';
 import { HealthService } from '../health/health.service.js';
 import {
-  DEFAULT_AI_MODEL_PRICES,
-  mergeModelPrices,
+  configuredModelPrices,
   type ModelPriceTable,
-  parseModelPrices,
 } from '../moderation/ai-model-prices.js';
 import { listDailyAiUsage } from '../moderation/moderation.queries.js';
 import { QueueRegistry } from '../queue/queue.registry.js';
@@ -80,10 +78,8 @@ export class AdminSystemService {
     private readonly config: ConfigService<EnvironmentVariables, true>,
     private readonly queueRegistry: QueueRegistry,
   ) {
-    const override = config.get('AI_MODEL_PRICES', { infer: true });
-    this.prices = mergeModelPrices(
-      DEFAULT_AI_MODEL_PRICES,
-      typeof override === 'string' ? parseModelPrices(override) : {},
+    this.prices = configuredModelPrices(
+      config.get('AI_MODEL_PRICES', { infer: true }),
     );
     const rate = Number(config.get('AI_COST_USD_TO_BDT', { infer: true }));
     this.usdToBdtRate = Number.isFinite(rate) && rate > 0 ? rate : 122;

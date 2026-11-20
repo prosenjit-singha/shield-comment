@@ -218,6 +218,13 @@
       "when": 1795151474779,
       "tag": "0030_ai_text_image_model",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1795153046730,
+      "tag": "0031_ai_usage_and_credit_topups",
+      "breakpoints": true
     }
   ]
 }

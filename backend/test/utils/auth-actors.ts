@@ -8,6 +8,8 @@ import type { BetterAuth } from '../../src/auth/better-auth.js';
 import { ensureSuperAdmin } from '../../src/auth/super-admin.js';
 import type { Database } from '../../src/db/database.js';
 import {
+  aiCreditTopupAuditLogs,
+  aiCreditTopups,
   aiSettingsAuditLogs,
   billingAccounts,
   comments,
@@ -425,6 +427,13 @@ export function createAuthActors(app: INestApplication<App>) {
       await db
         .delete(aiSettingsAuditLogs)
         .where(inArray(aiSettingsAuditLogs.adminId, userIds));
+      // AI credit top-ups + their audit (M5-T15d): creator / actor FK restrict.
+      await db
+        .delete(aiCreditTopupAuditLogs)
+        .where(inArray(aiCreditTopupAuditLogs.adminId, userIds));
+      await db
+        .delete(aiCreditTopups)
+        .where(inArray(aiCreditTopups.createdById, userIds));
     }
     if (workspaceIds.length) {
       // Moderation (M5-T7): actions reference comments + workspaces (restrict) → first;
