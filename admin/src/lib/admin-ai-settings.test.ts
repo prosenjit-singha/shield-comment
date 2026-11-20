@@ -12,15 +12,14 @@ import {
   aiSettingsPatch,
   aiSettingsQueryOptions,
   aiTestBody,
-  canTestAiDraft,
   draftFromAiSettings,
   formatAiAuditValue,
-  hasAiDraftErrors,
   isAiDraftDirty,
   keyStatusText,
-  modelSuggestions,
-  validateAiDraft,
-  withProvider,
+  type NeonModel,
+  neonModelLabel,
+  neonModelOptions,
+  validateAiKey,
 } from './admin-ai-settings'
 
 function status(defaultModel: string, patch: Partial<AiProviderStatus> = {}): AiProviderStatus {
@@ -34,147 +33,148 @@ function status(defaultModel: string, patch: Partial<AiProviderStatus> = {}): Ai
   }
 }
 
+/** Same facts as the backend's `NEON_MODEL_CATALOG` (M5-T15b) + one model without an output price. */
+const catalog: NeonModel[] = [
+  { code: 'gemini-4-carbon', name: 'Gemini 4 Carbon', lab: 'Google', inputs: ['text', 'image', 'video', 'audio', 'file'], contextWindow: 1_048_576, inputUsdPer1M: 0, outputUsdPer1M: 0, free: true, dialect: 'chat' },
+  { code: 'typesafeai-jev-1-14-0', name: 'Jev 1.14', lab: 'TypeSafe AI', inputs: ['text', 'image'], contextWindow: 65_536, inputUsdPer1M: 0.042, outputUsdPer1M: 0, free: false, dialect: 'systemone' },
+  { code: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', lab: 'Anthropic', inputs: ['text', 'image', 'file'], contextWindow: 200_000, inputUsdPer1M: 0.1, outputUsdPer1M: 0.5, free: false, dialect: 'chat' },
+  { code: 'gpt-oss-20b', name: 'GPT OSS 20B', lab: 'OpenAI', inputs: ['text'], contextWindow: 131_072, inputUsdPer1M: 0.07, outputUsdPer1M: null, free: false, dialect: 'chat' },
+]
+
+/** Neon active from the DB (jev), a Neon DB key. */
 const settings: AiSettingsResponse = {
-  provider: 'openai',
+  provider: 'neon',
   providerSource: 'db',
-  model: 'gpt-4.1-nano',
+  model: 'typesafeai-jev-1-14-0',
   modelSource: 'db',
+  textImageModel: 'claude-haiku-5-5',
+  textImageModelSource: 'default',
+  textImageEnabled: false,
+  catalog,
   configured: true,
   cipherConfigured: true,
   providers: {
-    neon: status('gpt-oss-20b', { baseUrlConfigured: false }),
-    openai: status('gpt-4.1-mini', {
-      model: 'gpt-4.1-nano',
+    neon: status('typesafeai-jev-1-14-0', {
+      model: 'typesafeai-jev-1-14-0',
       modelSource: 'db',
       key: { configured: true, source: 'db', last4: '1234', unreadable: false, updatedAt: '2026-11-19T04:00:00.000Z' },
     }),
+    openai: status('gpt-4.1-mini'),
     anthropic: status('claude-haiku-4-5', {
-      model: 'claude-sonnet-4-5',
-      modelSource: 'env',
       key: { configured: true, source: 'env', last4: '9876', unreadable: false, updatedAt: null },
     }),
-    google: status('gemini-2.5-flash-lite', {
-      key: { configured: false, source: 'none', last4: null, unreadable: true, updatedAt: '2026-11-18T00:00:00.000Z' },
-    }),
+    google: status('gemini-2.5-flash-lite'),
   },
   updatedAt: null,
   updatedBy: null,
 }
 
-const pristine = (): AiDraft => draftFromAiSettings(settings)
+/** OpenAI saved as the provider; Neon would use its env model. */
+const direct: AiSettingsResponse = {
+  ...settings,
+  provider: 'openai',
+  model: 'gpt-4.1-mini',
+  providers: { ...settings.providers, neon: status('typesafeai-jev-1-14-0', { model: 'gpt-oss-20b', modelSource: 'env' }) },
+}
+
+const pristine = (s: AiSettingsResponse = settings): AiDraft => draftFromAiSettings(s)
 const KEY = 'sk-test-abcdefgh1234'
 
-describe('validateAiDraft', () => {
-  it('accepts the saved settings and empty key fields', () => {
-    expect(hasAiDraftErrors(validateAiDraft(pristine()))).toBe(false)
+describe('model options', () => {
+  it('labels name, lab, price per 1M (Free, n/a) and context window (66K, 1M)', () => {
+    expect(catalog.map(neonModelLabel)).toEqual([
+      'Gemini 4 Carbon · Google · Free · 1M context',
+      'Jev 1.14 · TypeSafe AI · in $0.042 / out $0.00 per 1M · 66K context',
+      'Claude Haiku 5.5 · Anthropic · in $0.10 / out $0.50 per 1M · 200K context',
+      'GPT OSS 20B · OpenAI · in $0.07 / out n/a per 1M · 131K context',
+    ])
   })
 
-  it('applies the backend model rule (1–100 printable, no spaces, trimmed)', () => {
-    const check = (model: string) => validateAiDraft({ ...pristine(), model }).model
-    expect(check('  gpt-4o-mini  ')).toBeUndefined()
-    expect(check('models/gemini-2.5-flash')).toBeUndefined()
-    expect(check('a'.repeat(100))).toBeUndefined()
-    expect(check('')).toBe('Enter a model id.')
-    expect(check('   ')).toBe('Enter a model id.')
-    expect(check('a'.repeat(101))).toBe('Up to 100 characters.')
-    expect(check('gpt 4')).toBe('Use printable characters without spaces.')
-    expect(check('gpt-৪')).toBe('Use printable characters without spaces.')
+  it('Text + Image lists only image-capable models', () => {
+    expect(neonModelOptions(catalog, 'typesafeai-jev-1-14-0').map((o) => o.value)).toEqual(catalog.map((m) => m.code))
+    expect(neonModelOptions(catalog, 'claude-haiku-5-5', true).map((o) => o.value)).toEqual([
+      'gemini-4-carbon',
+      'typesafeai-jev-1-14-0',
+      'claude-haiku-5-5',
+    ])
   })
 
-  it('applies the backend key rule (8–500 printable, no spaces, trimmed) per provider', () => {
-    const check = (key: string) => validateAiDraft({ ...pristine(), keys: { ...pristine().keys, anthropic: key } }).keys
-    expect(check(` ${KEY} `)).toEqual({})
-    expect(check('x'.repeat(8))).toEqual({})
-    expect(check('x'.repeat(500))).toEqual({})
-    expect(check('x'.repeat(7))).toEqual({ anthropic: 'A key is 8–500 characters.' })
-    expect(check('x'.repeat(501))).toEqual({ anthropic: 'A key is 8–500 characters.' })
-    expect(check('sk-test abcdefgh')).toEqual({ anthropic: 'Use printable characters without spaces.' })
+  it('keeps a saved value that is outside the list', () => {
+    expect(neonModelOptions(catalog, 'gpt-oss-20b', true).at(-1)).toEqual({ value: 'gpt-oss-20b', label: 'gpt-oss-20b · not in the list' })
+  })
+})
+
+describe('validateAiKey', () => {
+  it('applies the backend key rule (8–500 printable, no spaces, trimmed); empty = unchanged', () => {
+    expect(validateAiKey('')).toBeUndefined()
+    expect(validateAiKey(` ${KEY} `)).toBeUndefined()
+    expect(validateAiKey('x'.repeat(8))).toBeUndefined()
+    expect(validateAiKey('x'.repeat(500))).toBeUndefined()
+    expect(validateAiKey('x'.repeat(7))).toBe('A key is 8–500 characters.')
+    expect(validateAiKey('x'.repeat(501))).toBe('A key is 8–500 characters.')
+    expect(validateAiKey('sk-test abcdefgh')).toBe('Use printable characters without spaces.')
   })
 })
 
 describe('aiSettingsPatch', () => {
-  it('is empty for the pristine draft and for whitespace-only edits', () => {
+  it('is empty for the pristine draft (Neon saved) and whitespace-only keys', () => {
     expect(aiSettingsPatch(pristine(), settings)).toEqual({})
-    expect(aiSettingsPatch({ ...pristine(), model: ' gpt-4.1-nano ', keys: { ...pristine().keys, neon: '   ' } }, settings)).toEqual({})
+    expect(aiSettingsPatch({ ...pristine(), key: '   ' }, settings)).toEqual({})
   })
 
-  it('sends a changed model trimmed', () => {
-    expect(aiSettingsPatch({ ...pristine(), model: ' gpt-4o-mini ' }, settings)).toEqual({ model: 'gpt-4o-mini' })
-  })
-
-  it("provider switch: only the provider when the model is that provider's own", () => {
-    const draft = withProvider(pristine(), settings, 'anthropic')
-    expect(draft.model).toBe('claude-sonnet-4-5')
-    expect(aiSettingsPatch(draft, settings)).toEqual({ provider: 'anthropic' })
-    expect(aiSettingsPatch({ ...draft, model: 'claude-haiku-4-5' }, settings)).toEqual({
-      provider: 'anthropic',
-      model: 'claude-haiku-4-5',
+  it('sends provider neon with every change', () => {
+    const draft: AiDraft = { ...pristine(), model: 'gpt-oss-20b', textImageModel: 'gemini-4-carbon', textImageEnabled: true, key: ` ${KEY} ` }
+    expect(aiSettingsPatch(draft, settings)).toEqual({
+      provider: 'neon',
+      model: 'gpt-oss-20b',
+      textImageModel: 'gemini-4-carbon',
+      textImageEnabled: true,
+      keys: { neon: KEY },
     })
   })
 
-  it('switching back to the saved provider restores its model and sends nothing', () => {
-    const back = withProvider(withProvider(pristine(), settings, 'google'), settings, 'openai')
-    expect(back.model).toBe('gpt-4.1-nano')
-    expect(aiSettingsPatch(back, settings)).toEqual({})
+  it('a saved direct provider: the pristine draft switches to Neon with its own model', () => {
+    expect(pristine(direct).model).toBe('gpt-oss-20b')
+    expect(aiSettingsPatch(pristine(direct), direct)).toEqual({ provider: 'neon' })
+    expect(aiSettingsPatch({ ...pristine(direct), model: 'claude-haiku-5-5' }, direct)).toEqual({ provider: 'neon', model: 'claude-haiku-5-5' })
   })
 
-  it('sends typed keys trimmed and confirmed clears of DB keys as null', () => {
-    const draft: AiDraft = {
-      ...pristine(),
-      keys: { ...pristine().keys, anthropic: ` ${KEY} ` },
-      clearKeys: { ...pristine().clearKeys, openai: true, google: true, neon: true },
-    }
-    // Neon has no DB key: nothing to clear. Google's DB key is unreadable but can be cleared.
-    expect(aiSettingsPatch(draft, settings)).toEqual({ keys: { openai: null, anthropic: KEY, google: null } })
-  })
-
-  it('a typed key wins over a pending clear', () => {
-    const draft: AiDraft = {
-      ...pristine(),
-      keys: { ...pristine().keys, openai: KEY },
-      clearKeys: { ...pristine().clearKeys, openai: true },
-    }
-    expect(aiSettingsPatch(draft, settings)).toEqual({ keys: { openai: KEY } })
+  it('a confirmed clear of the DB key is null; a typed key wins; no DB key = nothing to clear', () => {
+    expect(aiSettingsPatch({ ...pristine(), clearKey: true }, settings)).toEqual({ provider: 'neon', keys: { neon: null } })
+    expect(aiSettingsPatch({ ...pristine(), clearKey: true, key: KEY }, settings)).toEqual({ provider: 'neon', keys: { neon: KEY } })
+    expect(aiSettingsPatch({ ...pristine(direct), clearKey: true }, direct)).toEqual({ provider: 'neon' })
   })
 })
 
 describe('isAiDraftDirty', () => {
-  it('false without a draft or settings, or for an unchanged draft', () => {
+  it('false without a draft or settings, or for an unchanged draft (even with a direct provider saved)', () => {
     expect(isAiDraftDirty(undefined, settings)).toBe(false)
     expect(isAiDraftDirty(pristine(), undefined)).toBe(false)
     expect(isAiDraftDirty(pristine(), settings)).toBe(false)
+    expect(isAiDraftDirty(pristine(direct), direct)).toBe(false)
   })
 
-  it('true for a typed key, a clear, a provider switch or an invalid draft', () => {
-    expect(isAiDraftDirty({ ...pristine(), keys: { ...pristine().keys, google: KEY } }, settings)).toBe(true)
-    expect(isAiDraftDirty({ ...pristine(), clearKeys: { ...pristine().clearKeys, openai: true } }, settings)).toBe(true)
-    expect(isAiDraftDirty(withProvider(pristine(), settings, 'neon'), settings)).toBe(true)
-    expect(isAiDraftDirty({ ...pristine(), keys: { ...pristine().keys, google: 'short' } }, settings)).toBe(true)
-    expect(isAiDraftDirty({ ...pristine(), model: '' }, settings)).toBe(true)
+  it('true for a model, the switch, a typed key, a clear or an invalid key', () => {
+    expect(isAiDraftDirty({ ...pristine(), model: 'gpt-oss-20b' }, settings)).toBe(true)
+    expect(isAiDraftDirty({ ...pristine(), textImageModel: 'gemini-4-carbon' }, settings)).toBe(true)
+    expect(isAiDraftDirty({ ...pristine(), textImageEnabled: true }, settings)).toBe(true)
+    expect(isAiDraftDirty({ ...pristine(), key: KEY }, settings)).toBe(true)
+    expect(isAiDraftDirty({ ...pristine(), clearKey: true }, settings)).toBe(true)
+    expect(isAiDraftDirty({ ...pristine(), key: 'short' }, settings)).toBe(true)
   })
 })
 
-describe('aiTestBody / canTestAiDraft', () => {
+describe('aiTestBody', () => {
   it('tests the saved config with {}', () => {
     expect(aiTestBody(pristine(), settings)).toEqual({})
   })
 
-  it("sends the draft's provider, a differing model and the typed key of that provider only", () => {
-    const draft: AiDraft = {
-      ...withProvider(pristine(), settings, 'google'),
-      model: 'gemini-2.5-flash',
-      keys: { ...pristine().keys, google: KEY, openai: 'sk-other-key-0000' },
-    }
-    expect(aiTestBody(draft, settings)).toEqual({ provider: 'google', model: 'gemini-2.5-flash', apiKey: KEY })
-    expect(aiTestBody({ ...pristine(), keys: { ...pristine().keys, openai: ` ${KEY}` } }, settings)).toEqual({ apiKey: KEY })
-  })
-
-  it('needs a valid model and a valid (or no) key for the tested provider', () => {
-    expect(canTestAiDraft(pristine())).toBe(true)
-    expect(canTestAiDraft({ ...pristine(), model: 'a b' })).toBe(false)
-    expect(canTestAiDraft({ ...pristine(), keys: { ...pristine().keys, openai: 'short' } })).toBe(false)
-    // Another provider's half-typed key doesn't block the test.
-    expect(canTestAiDraft({ ...pristine(), keys: { ...pristine().keys, google: 'short' } })).toBe(true)
+  it('sends Neon when a direct provider is saved, a differing Text model and the typed key', () => {
+    expect(aiTestBody(pristine(direct), direct)).toEqual({ provider: 'neon' })
+    expect(aiTestBody({ ...pristine(), model: 'gemini-4-carbon', key: ` ${KEY}`, textImageEnabled: true }, settings)).toEqual({
+      model: 'gemini-4-carbon',
+      apiKey: KEY,
+    })
   })
 })
 
@@ -188,22 +188,19 @@ describe('labels and messages', () => {
   })
 
   it('masks key status as last4 + source', () => {
-    expect(keyStatusText(settings.providers.openai.key)).toBe('Saved ••••1234 · database')
+    expect(keyStatusText(settings.providers.neon.key)).toBe('Saved ••••1234 · database')
     expect(keyStatusText(settings.providers.anthropic.key)).toBe('Saved ••••9876 · .env')
-    expect(keyStatusText(settings.providers.neon.key)).toBe('Not set')
+    expect(keyStatusText(settings.providers.openai.key)).toBe('Not set')
     expect(keyStatusText({ ...settings.providers.anthropic.key, last4: null })).toBe('Saved · .env')
-  })
-
-  it('suggests the default model first without duplicates', () => {
-    expect(modelSuggestions('openai', settings.providers.openai)).toEqual(['gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o-mini'])
-    expect(modelSuggestions('neon', status('new-default'))).toEqual(['new-default', 'gpt-oss-20b', 'gpt-oss-120b'])
   })
 })
 
 describe('audit formatting', () => {
   it('labels fields', () => {
     expect(aiAuditFieldLabel('provider')).toBe('Provider')
-    expect(aiAuditFieldLabel('model')).toBe('Model')
+    expect(aiAuditFieldLabel('model')).toBe('Text model')
+    expect(aiAuditFieldLabel('text_image_model')).toBe('Text + Image model')
+    expect(aiAuditFieldLabel('text_image_enabled')).toBe('Text + Image switch')
     expect(aiAuditFieldLabel('key.neon')).toBe('Neon AI gateway API key')
     expect(aiAuditFieldLabel('key.google')).toBe('Google API key')
     expect(aiAuditFieldLabel('key.mistral')).toBe('key.mistral')
@@ -218,6 +215,10 @@ describe('audit formatting', () => {
     expect(formatAiAuditValue('key.openai', null)).toBe('Not set')
     expect(formatAiAuditValue('key.openai', 'set')).toBe('Set')
     expect(formatAiAuditValue('key.openai', 'cleared')).toBe('Cleared')
+    expect(formatAiAuditValue('text_image_model', null)).toBe('default')
+    expect(formatAiAuditValue('text_image_model', 'gemini-4-carbon')).toBe('gemini-4-carbon')
+    expect(formatAiAuditValue('text_image_enabled', 'true')).toBe('On')
+    expect(formatAiAuditValue('text_image_enabled', 'false')).toBe('Off')
   })
 })
 

@@ -4,11 +4,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   AiConnectionTestResult,
-  AiProvider,
   AiProviderStatus,
   AiSettingsAuditEntry,
   AiSettingsAuditList,
   AiSettingsResponse,
+  NeonModel,
 } from '@/lib/admin-ai-settings'
 import type { PlanAuditEntry, PlanAuditList } from '@/lib/admin-plan-audit'
 import type { AdminPlan } from '@/lib/admin-plans'
@@ -116,24 +116,35 @@ function providerStatus(defaultModel: string, patch: Partial<AiProviderStatus> =
   }
 }
 
-/** OpenAI active from the DB with a DB key; Anthropic has an .env key; Neon has no URL. */
+/** The backend's `NEON_MODEL_CATALOG` (M5-T15b), with GPT OSS 120B's output price unpublished to cover `n/a`. */
+const CATALOG: NeonModel[] = [
+  { code: 'gemini-4-carbon', name: 'Gemini 4 Carbon', lab: 'Google', inputs: ['text', 'image', 'video', 'audio', 'file'], contextWindow: 1_048_576, inputUsdPer1M: 0, outputUsdPer1M: 0, free: true, dialect: 'chat' },
+  { code: 'typesafeai-jev-1-14-0', name: 'Jev 1.14', lab: 'TypeSafe AI', inputs: ['text', 'image'], contextWindow: 65_536, inputUsdPer1M: 0.042, outputUsdPer1M: 0, free: false, dialect: 'systemone' },
+  { code: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', lab: 'Anthropic', inputs: ['text', 'image', 'file'], contextWindow: 200_000, inputUsdPer1M: 0.1, outputUsdPer1M: 0.5, free: false, dialect: 'chat' },
+  { code: 'gpt-oss-20b', name: 'GPT OSS 20B', lab: 'OpenAI', inputs: ['text'], contextWindow: 131_072, inputUsdPer1M: 0.07, outputUsdPer1M: 0.3, free: false, dialect: 'chat' },
+  { code: 'gpt-oss-120b', name: 'GPT OSS 120B', lab: 'OpenAI', inputs: ['text'], contextWindow: 131_072, inputUsdPer1M: 0.15, outputUsdPer1M: null, free: false, dialect: 'chat' },
+]
+
+/** Neon active from the DB (jev) with a DB key; Anthropic has an .env key (hidden: direct provider). */
 function aiSettings(patch: Partial<AiSettingsResponse> = {}): AiSettingsResponse {
   return {
-    provider: 'openai',
+    provider: 'neon',
     providerSource: 'db',
-    model: 'gpt-4.1-mini',
+    model: 'typesafeai-jev-1-14-0',
     modelSource: 'db',
+    textImageModel: 'claude-haiku-5-5',
+    textImageModelSource: 'default',
+    textImageEnabled: false,
+    catalog: CATALOG,
     configured: true,
     cipherConfigured: true,
     providers: {
-      neon: providerStatus('gpt-oss-20b', { baseUrlConfigured: false }),
-      openai: providerStatus('gpt-4.1-mini', {
+      neon: providerStatus('typesafeai-jev-1-14-0', {
         modelSource: 'db',
         key: { configured: true, source: 'db', last4: '1234', unreadable: false, updatedAt: '2026-11-19T04:00:00.000Z' },
       }),
+      openai: providerStatus('gpt-4.1-mini'),
       anthropic: providerStatus('claude-haiku-4-5', {
-        model: 'claude-sonnet-4-5',
-        modelSource: 'env',
         key: { configured: true, source: 'env', last4: '9876', unreadable: false, updatedAt: null },
       }),
       google: providerStatus('gemini-2.5-flash-lite'),
@@ -901,8 +912,14 @@ describe('/admin/settings AI provider', () => {
   function aiCard() {
     return screen.findByTestId('ai-provider-card')
   }
-  function keyRow(card: HTMLElement, provider: AiProvider) {
-    return within(card).getByTestId(`ai-key-${provider}`)
+  function neonKey(card: HTMLElement) {
+    return within(card).getByTestId('ai-key-neon')
+  }
+  function select(card: HTMLElement, label: string) {
+    return within(card).getByLabelText(label) as HTMLSelectElement
+  }
+  function optionLabels(el: HTMLSelectElement) {
+    return Array.from(el.options).map((o) => o.textContent)
   }
   function aiCalls(method: string, path: string) {
     return fetchMock.mock.calls
@@ -913,54 +930,57 @@ describe('/admin/settings AI provider', () => {
     return within(card).getByRole('button', { name: 'Save' }) as HTMLButtonElement
   }
 
-  it('shows the active provider + model with sources, masked keys and the Neon URL note', async () => {
+  it('shows Neon only: two model dropdowns with price + context, the switch and the Neon key', async () => {
     renderSettings()
     const card = await aiCard()
     expect(within(card).getByTestId('ai-status').textContent).toBe('AI calls on')
-    expect(within(card).getByTestId('ai-active').textContent).toBe('In use: OpenAI database · gpt-4.1-mini database')
+    expect(within(card).getByTestId('ai-active').textContent).toBe('In use: Neon AI gateway database · typesafeai-jev-1-14-0 database')
     expect(within(card).getByText(/Saved by Root Admin/)).toBeTruthy()
 
-    const radios = within(card).getAllByRole('radio')
-    expect(radios.map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false', 'false'])
-    expect(within(within(card).getByTestId('ai-provider-openai')).getByText('Active')).toBeTruthy()
-    expect(within(card).getByTestId('ai-provider-neon').textContent).toContain('No key · URL missing')
-    expect(within(card).getByTestId('ai-provider-anthropic').textContent).toContain('Key ready')
-
-    expect((within(card).getByLabelText('Model') as HTMLInputElement).value).toBe('gpt-4.1-mini')
-    expect(within(card).getByTestId('ai-model-hint').textContent).toBe('OpenAI uses gpt-4.1-mini (database) · default gpt-4.1-mini')
-
-    expect(within(keyRow(card, 'openai')).getByTestId('key-status').textContent).toBe('Saved ••••1234 · database')
-    expect(within(keyRow(card, 'anthropic')).getByTestId('key-status').textContent).toBe('Saved ••••9876 · .env')
-    expect(within(keyRow(card, 'neon')).getByTestId('key-status').textContent).toBe('Not set')
-    expect(within(keyRow(card, 'google')).getByTestId('key-status').textContent).toBe('Not set')
-    expect(within(keyRow(card, 'neon')).getByTestId('neon-url-missing')).toBeTruthy()
-    expect(within(card).queryByTestId('key-unreadable')).toBeNull()
-
-    for (const label of ['Neon AI gateway API key', 'OpenAI API key', 'Anthropic API key', 'Google API key']) {
-      const field = within(card).getByLabelText(label) as HTMLInputElement
-      expect(field.type).toBe('password')
-      expect(field.autocomplete).toBe('off')
-      expect(field.value).toBe('')
-      expect(field.disabled).toBe(false)
-      expect(field.className).toContain('rounded-full')
+    // No provider choice, no direct-provider keys.
+    expect(within(card).queryAllByRole('radio')).toHaveLength(0)
+    for (const label of ['OpenAI API key', 'Anthropic API key', 'Google API key', 'Model']) {
+      expect(within(card).queryByLabelText(label)).toBeNull()
     }
-    // Only the DB key can be cleared (.env keys can't).
+    expect(within(card).queryByTestId('ai-direct-provider')).toBeNull()
+
+    const text = select(card, 'Text model')
+    expect(text.value).toBe('typesafeai-jev-1-14-0')
+    expect(text.className).toContain('rounded-full')
+    expect(optionLabels(text)).toEqual([
+      'Gemini 4 Carbon · Google · Free · 1M context',
+      'Jev 1.14 · TypeSafe AI · in $0.042 / out $0.00 per 1M · 66K context',
+      'Claude Haiku 5.5 · Anthropic · in $0.10 / out $0.50 per 1M · 200K context',
+      'GPT OSS 20B · OpenAI · in $0.07 / out $0.30 per 1M · 131K context',
+      'GPT OSS 120B · OpenAI · in $0.15 / out n/a per 1M · 131K context',
+    ])
+    const image = select(card, 'Text + Image model')
+    expect(image.value).toBe('claude-haiku-5-5')
+    expect(Array.from(image.options).map((o) => o.value)).toEqual(['gemini-4-carbon', 'typesafeai-jev-1-14-0', 'claude-haiku-5-5'])
+    const toggle = within(card).getByRole('switch', { name: 'Use the Text + Image model' })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    expect(within(card).getByText('Saved now; images are judged in a later update.')).toBeTruthy()
+
+    const field = within(card).getByLabelText('Neon AI gateway API key') as HTMLInputElement
+    expect(field.type).toBe('password')
+    expect(field.autocomplete).toBe('off')
+    expect(field.value).toBe('')
+    expect(field.className).toContain('rounded-full')
+    expect(within(neonKey(card)).getByTestId('key-status').textContent).toBe('Saved ••••1234 · database')
     expect(within(card).getAllByRole('button', { name: /^Clear the/ }).map((b) => b.getAttribute('aria-label'))).toEqual([
-      'Clear the OpenAI key',
+      'Clear the Neon AI gateway key',
     ])
     expect(within(card).queryByTestId('ai-not-configured')).toBeNull()
     expect(within(card).queryByTestId('ai-cipher-off')).toBeNull()
     expect(aiSave(card).disabled).toBe(true)
   })
 
-  it('warns when AI is off, the cipher is unset and a saved key is unreadable', async () => {
+  it('warns when AI is off, the Neon URL and cipher are missing and the key is unreadable', async () => {
     const base = aiSettings()
     aiGetHandler = () =>
       json(
         aiSettings({
-          provider: 'neon',
           providerSource: 'default',
-          model: 'gpt-oss-20b',
           modelSource: 'default',
           configured: false,
           cipherConfigured: false,
@@ -968,10 +988,10 @@ describe('/admin/settings AI provider', () => {
           updatedBy: null,
           providers: {
             ...base.providers,
-            google: {
-              ...base.providers.google,
+            neon: providerStatus('typesafeai-jev-1-14-0', {
+              baseUrlConfigured: false,
               key: { configured: false, source: 'none', last4: null, unreadable: true, updatedAt: '2026-11-18T00:00:00.000Z' },
-            },
+            }),
           },
         }),
       )
@@ -982,26 +1002,16 @@ describe('/admin/settings AI provider', () => {
       'AI calls are off until Neon AI gateway has an API key and NEON_AI_GATEWAY_BASE_URL is set on the backend. New comments stay visible meanwhile.',
     )
     expect(within(card).getByTestId('ai-cipher-off').textContent).toContain('key encryption is not configured')
-    expect(within(card).getByTestId('ai-active').textContent).toBe('In use: Neon AI gateway default · gpt-oss-20b default')
-    expect(within(keyRow(card, 'google')).getByTestId('key-unreadable').textContent).toContain("can't be decrypted")
-    for (const label of ['Neon AI gateway API key', 'OpenAI API key', 'Anthropic API key', 'Google API key']) {
-      expect((within(card).getByLabelText(label) as HTMLInputElement).disabled).toBe(true)
-    }
-    // Clearing still works without the cipher (the unreadable Google row and the OpenAI DB key).
-    expect(within(card).getAllByRole('button', { name: /^Clear the/ })).toHaveLength(2)
+    expect(within(card).getByTestId('ai-active').textContent).toBe('In use: Neon AI gateway default · typesafeai-jev-1-14-0 default')
+    expect(within(neonKey(card)).getByTestId('key-unreadable').textContent).toContain("can't be decrypted")
+    expect(within(neonKey(card)).getByTestId('neon-url-missing')).toBeTruthy()
+    expect((within(card).getByLabelText('Neon AI gateway API key') as HTMLInputElement).disabled).toBe(true)
+    // Clearing the unreadable DB key still works without the cipher.
+    expect(within(card).getAllByRole('button', { name: /^Clear the/ })).toHaveLength(1)
   })
 
-  it('saves a typed key alone, updates the cache, refreshes the history and forgets the key', async () => {
-    const base = aiSettings()
-    const saved = aiSettings({
-      providers: {
-        ...base.providers,
-        google: {
-          ...base.providers.google,
-          key: { configured: true, source: 'db', last4: '5678', unreadable: false, updatedAt: '2026-11-19T09:00:00.000Z' },
-        },
-      },
-    })
+  it('saves both models and the switch with provider neon, updates the cache and the history', async () => {
+    const saved = aiSettings({ model: 'gpt-oss-20b', textImageModel: 'gemini-4-carbon', textImageModelSource: 'db', textImageEnabled: true })
     let done = false
     aiPatchHandler = () => {
       done = true
@@ -1012,20 +1022,55 @@ describe('/admin/settings AI provider', () => {
     const card = await aiCard()
     await waitFor(() => expect(aiCalls('GET', AI_AUDIT)).toHaveLength(1))
 
-    const field = within(card).getByLabelText('Google API key') as HTMLInputElement
-    type(field, `  ${KEY} `)
+    // The switch alone is a change; toggling back is not.
+    const toggle = within(card).getByRole('switch', { name: 'Use the Text + Image model' })
+    fireEvent.click(toggle)
     expect(within(card).getByTestId('ai-unsaved')).toBeTruthy()
     expect(aiSave(card).disabled).toBe(false)
+    fireEvent.click(toggle)
+    expect(within(card).queryByTestId('ai-unsaved')).toBeNull()
+    expect(aiSave(card).disabled).toBe(true)
+
+    fireEvent.change(select(card, 'Text model'), { target: { value: 'gpt-oss-20b' } })
+    fireEvent.change(select(card, 'Text + Image model'), { target: { value: 'gemini-4-carbon' } })
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(aiSave(card))
 
     expect(await screen.findByText('AI settings saved.')).toBeTruthy()
-    expect(aiCalls('PATCH', AI).map((c) => c.body)).toEqual([{ keys: { google: KEY } }])
-    await waitFor(() => expect(within(keyRow(card, 'google')).getByTestId('key-status').textContent).toBe('Saved ••••5678 · database'))
+    expect(aiCalls('PATCH', AI).map((c) => c.body)).toEqual([
+      { provider: 'neon', model: 'gpt-oss-20b', textImageModel: 'gemini-4-carbon', textImageEnabled: true },
+    ])
     expect(queryClient.getQueryData(AI_KEY_PATH)).toEqual(saved)
-    expect((within(card).getByLabelText('Google API key') as HTMLInputElement).value).toBe('')
+    await waitFor(() => expect(within(card).getByTestId('ai-active').textContent).toContain('gpt-oss-20b'))
+    expect(select(card, 'Text model').value).toBe('gpt-oss-20b')
     expect(within(card).queryByTestId('ai-unsaved')).toBeNull()
     await waitFor(() => expect(aiCalls('GET', AI_AUDIT)).toHaveLength(2))
-    expect(aiCalls('GET', AI)).toHaveLength(2)
+  })
+
+  it('saves a typed Neon key alone and forgets it', async () => {
+    const base = aiSettings()
+    const saved = aiSettings({
+      providers: {
+        ...base.providers,
+        neon: { ...base.providers.neon, key: { configured: true, source: 'db', last4: '5678', unreadable: false, updatedAt: '2026-11-19T09:00:00.000Z' } },
+      },
+    })
+    aiPatchHandler = () => {
+      aiGetHandler = () => json(saved)
+      return json(saved)
+    }
+    const { queryClient } = renderSettings()
+    const card = await aiCard()
+
+    type(within(card).getByLabelText('Neon AI gateway API key'), `  ${KEY} `)
+    expect(within(card).getByTestId('ai-unsaved')).toBeTruthy()
+    fireEvent.click(aiSave(card))
+
+    expect(await screen.findByText('AI settings saved.')).toBeTruthy()
+    expect(aiCalls('PATCH', AI).map((c) => c.body)).toEqual([{ provider: 'neon', keys: { neon: KEY } }])
+    await waitFor(() => expect(within(neonKey(card)).getByTestId('key-status').textContent).toBe('Saved ••••5678 · database'))
+    expect((within(card).getByLabelText('Neon AI gateway API key') as HTMLInputElement).value).toBe('')
 
     // The key is nowhere: not in the DOM, the query cache or the mutation cache.
     expect(document.body.innerHTML).not.toContain(KEY)
@@ -1035,13 +1080,13 @@ describe('/admin/settings AI provider', () => {
     )
   })
 
-  it('clears a DB key only after confirming, and can undo before saving', async () => {
+  it('clears the Neon DB key only after confirming, and can undo before saving', async () => {
     const base = aiSettings()
     const cleared = aiSettings({
       configured: false,
       providers: {
         ...base.providers,
-        openai: { ...base.providers.openai, key: { configured: false, source: 'none', last4: null, unreadable: false, updatedAt: null } },
+        neon: { ...base.providers.neon, key: { configured: false, source: 'none', last4: null, unreadable: false, updatedAt: null } },
       },
     })
     aiPatchHandler = () => {
@@ -1050,92 +1095,99 @@ describe('/admin/settings AI provider', () => {
     }
     renderSettings()
     const card = await aiCard()
+    const clearButton = () => within(card).getByRole('button', { name: 'Clear the Neon AI gateway key' })
+    const dialogName = 'Clear the Neon AI gateway key?'
 
-    fireEvent.click(within(card).getByRole('button', { name: 'Clear the OpenAI key' }))
-    let dialog = await screen.findByRole('dialog', { name: 'Clear the OpenAI key?' })
+    fireEvent.click(clearButton())
+    let dialog = await screen.findByRole('dialog', { name: dialogName })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(within(card).queryByTestId('key-clear-pending')).toBeNull()
 
-    fireEvent.click(within(card).getByRole('button', { name: 'Clear the OpenAI key' }))
-    dialog = await screen.findByRole('dialog', { name: 'Clear the OpenAI key?' })
+    fireEvent.click(clearButton())
+    dialog = await screen.findByRole('dialog', { name: dialogName })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Clear key' }))
     expect(await within(card).findByTestId('key-clear-pending')).toBeTruthy()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    fireEvent.click(within(keyRow(card, 'openai')).getByRole('button', { name: 'Undo' }))
+    fireEvent.click(within(neonKey(card)).getByRole('button', { name: 'Undo' }))
     expect(within(card).queryByTestId('key-clear-pending')).toBeNull()
     expect(aiSave(card).disabled).toBe(true)
 
-    fireEvent.click(within(card).getByRole('button', { name: 'Clear the OpenAI key' }))
-    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Clear the OpenAI key?' })).getByRole('button', { name: 'Clear key' }))
+    fireEvent.click(clearButton())
+    fireEvent.click(within(await screen.findByRole('dialog', { name: dialogName })).getByRole('button', { name: 'Clear key' }))
     await within(card).findByTestId('key-clear-pending')
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     fireEvent.click(aiSave(card))
-    await waitFor(() => expect(within(keyRow(card, 'openai')).getByTestId('key-status').textContent).toBe('Not set'))
-    expect(aiCalls('PATCH', AI).map((c) => c.body)).toEqual([{ keys: { openai: null } }])
+    await waitFor(() => expect(within(neonKey(card)).getByTestId('key-status').textContent).toBe('Not set'))
+    expect(aiCalls('PATCH', AI).map((c) => c.body)).toEqual([{ provider: 'neon', keys: { neon: null } }])
   })
 
-  it("switching provider shows that provider's model and saves only the provider", async () => {
-    const switched = aiSettings({ provider: 'anthropic', model: 'claude-sonnet-4-5', modelSource: 'env' })
+  it('a saved direct provider: one-line note, Save switches to Neon without blocking navigation', async () => {
+    const base = aiSettings()
+    const direct = aiSettings({
+      provider: 'openai',
+      model: 'gpt-4.1-mini',
+      providers: { ...base.providers, neon: providerStatus('typesafeai-jev-1-14-0', { model: 'gpt-oss-20b', modelSource: 'env' }) },
+    })
+    aiGetHandler = () => json(direct)
     aiPatchHandler = () => {
-      aiGetHandler = () => json(switched)
-      return json(switched)
+      aiGetHandler = () => json(aiSettings({ model: 'gpt-oss-20b', modelSource: 'env' }))
+      return json(aiSettings({ model: 'gpt-oss-20b', modelSource: 'env' }))
     }
-    renderSettings()
+    const { router } = renderSettings()
     const card = await aiCard()
-    const model = within(card).getByLabelText('Model') as HTMLInputElement
-
-    fireEvent.click(within(card).getByTestId('ai-provider-anthropic'))
-    expect(within(card).getByTestId('ai-provider-anthropic').getAttribute('aria-checked')).toBe('true')
-    expect(model.value).toBe('claude-sonnet-4-5')
-    expect(within(card).getByTestId('ai-model-hint').textContent).toBe(
-      'Anthropic uses claude-sonnet-4-5 (.env) · default claude-haiku-4-5',
+    expect(within(card).getByTestId('ai-direct-provider').textContent).toBe(
+      'OpenAI is saved as the provider. Saving switches to the Neon AI gateway.',
     )
-    const suggested = within(within(card).getByRole('group', { name: 'Suggested models' })).getAllByRole('button')
-    expect(suggested.map((b) => b.textContent)).toEqual(['claude-haiku-4-5', 'claude-sonnet-4-5'])
-    expect(suggested[1]?.getAttribute('aria-pressed')).toBe('true')
-
-    // Arrow keys move through the radios.
-    fireEvent.keyDown(within(card).getByTestId('ai-provider-anthropic'), { key: 'ArrowRight' })
-    expect(model.value).toBe('gemini-2.5-flash-lite')
-    fireEvent.keyDown(within(card).getByTestId('ai-provider-google'), { key: 'ArrowLeft' })
-    expect(model.value).toBe('claude-sonnet-4-5')
+    expect(select(card, 'Text model').value).toBe('gpt-oss-20b')
+    expect(within(card).queryByTestId('ai-unsaved')).toBeNull()
+    expect(aiSave(card).disabled).toBe(false)
 
     fireEvent.click(aiSave(card))
-    await waitFor(() => expect(aiCalls('PATCH', AI)).toHaveLength(1))
-    expect(aiCalls('PATCH', AI)[0]?.body).toEqual({ provider: 'anthropic' })
-    await waitFor(() => expect(within(card).getByTestId('ai-active').textContent).toBe('In use: Anthropic database · claude-sonnet-4-5 .env'))
+    await waitFor(() => expect(within(card).queryByTestId('ai-direct-provider')).toBeNull())
+    expect(aiCalls('PATCH', AI).map((c) => c.body)).toEqual([{ provider: 'neon' }])
+    expect(aiSave(card).disabled).toBe(true)
+
+    act(() => void router.navigate({ to: '/admin/billing' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/admin/billing'))
   })
 
-  it('validates inline and sends nothing while invalid or unchanged', async () => {
+  it('keeps a saved model that is not in the catalog selectable', async () => {
+    aiGetHandler = () => json(aiSettings({ model: 'my-env-model', modelSource: 'env' }))
+    renderSettings()
+    const text = select(await aiCard(), 'Text model')
+    expect(text.value).toBe('my-env-model')
+    expect(optionLabels(text).at(-1)).toBe('my-env-model · not in the list')
+  })
+
+  it('validates the key inline and sends nothing while invalid or unchanged', async () => {
     renderSettings()
     const card = await aiCard()
-    const model = within(card).getByLabelText('Model')
-    type(model, 'gpt 4')
-    expect(within(card).getByText('Use printable characters without spaces.')).toBeTruthy()
+    const field = within(card).getByLabelText('Neon AI gateway API key')
+    type(field, 'short')
+    expect(within(neonKey(card)).getByText('A key is 8–500 characters.')).toBeTruthy()
     expect(aiSave(card).disabled).toBe(true)
-    fireEvent.submit(aiSave(card).closest('form') as HTMLFormElement)
-    type(model, 'gpt-4.1-mini')
-    type(within(card).getByLabelText('OpenAI API key'), 'short')
-    expect(within(keyRow(card, 'openai')).getByText('A key is 8–500 characters.')).toBeTruthy()
     expect(within(card).getByRole('button', { name: 'Test connection' })).toHaveProperty('disabled', true)
-    type(within(card).getByLabelText('OpenAI API key'), '')
+    fireEvent.submit(aiSave(card).closest('form') as HTMLFormElement)
+    type(field, '')
     expect(within(card).getByTestId('ai-save-error').textContent).toBe('No changes.')
     fireEvent.submit(aiSave(card).closest('form') as HTMLFormElement)
     expect(aiCalls('PATCH', AI)).toHaveLength(0)
   })
 
-  it('shows a 400 message and keeps the draft', async () => {
-    aiPatchHandler = () =>
-      json({ statusCode: 400, message: ['model must be 1–100 printable characters without spaces'], error: 'Bad Request' }, 400)
+  it.each([
+    ['UNKNOWN_AI_MODEL', 'model "gpt-oss-20b" is not in the Neon model catalog'],
+    ['MODEL_NOT_IMAGE_CAPABLE', 'textImageModel "gpt-oss-20b" does not take images'],
+  ])('shows the API message for 400 %s and keeps the draft', async (code, message) => {
+    aiPatchHandler = () => json({ statusCode: 400, error: 'Bad Request', message, code }, 400)
     renderSettings()
     const card = await aiCard()
-    type(within(card).getByLabelText('Model'), 'gpt-4o-mini')
+    fireEvent.change(select(card, 'Text model'), { target: { value: 'gpt-oss-20b' } })
     fireEvent.click(aiSave(card))
     const error = await within(card).findByRole('alert')
-    expect(error.textContent).toBe('model must be 1–100 printable characters without spaces')
-    expect((within(card).getByLabelText('Model') as HTMLInputElement).value).toBe('gpt-4o-mini')
-    expect(aiCalls('PATCH', AI).map((c) => c.body)).toEqual([{ model: 'gpt-4o-mini' }])
+    expect(error.textContent).toBe(message)
+    expect(select(card, 'Text model').value).toBe('gpt-oss-20b')
+    expect(aiCalls('PATCH', AI).map((c) => c.body)).toEqual([{ provider: 'neon', model: 'gpt-oss-20b' }])
   })
 
   it('maps 503 KEY_ENCRYPTION_NOT_CONFIGURED to the encryption message', async () => {
@@ -1151,71 +1203,65 @@ describe('/admin/settings AI provider', () => {
       )
     renderSettings()
     const card = await aiCard()
-    type(within(card).getByLabelText('Anthropic API key'), KEY)
+    type(within(card).getByLabelText('Neon AI gateway API key'), KEY)
     fireEvent.click(aiSave(card))
     const error = await within(card).findByRole('alert')
     expect(error.textContent).toContain("API keys can't be saved here: key encryption is not configured")
     // The draft stays (still dirty); the settings are refetched to pick up cipherConfigured.
-    expect((within(card).getByLabelText('Anthropic API key') as HTMLInputElement).value).toBe(KEY)
+    expect((within(card).getByLabelText('Neon AI gateway API key') as HTMLInputElement).value).toBe(KEY)
     await waitFor(() => expect(aiCalls('GET', AI)).toHaveLength(2))
   })
 
-  it('Test connection sends the draft and shows ok + latency without saving or clearing it', async () => {
-    const ok: AiConnectionTestResult = { ok: true, provider: 'anthropic', model: 'claude-haiku-4-5', latencyMs: 412 }
+  it('Test connection sends the draft Text model + key and shows ok + latency without saving', async () => {
+    const ok: AiConnectionTestResult = { ok: true, provider: 'neon', model: 'claude-haiku-5-5', latencyMs: 412 }
     aiTestHandler = () => json(ok)
     renderSettings()
     const card = await aiCard()
-    fireEvent.click(within(card).getByTestId('ai-provider-anthropic'))
-    type(within(card).getByLabelText('Model'), 'claude-haiku-4-5')
-    type(within(card).getByLabelText('Anthropic API key'), KEY)
+    fireEvent.change(select(card, 'Text model'), { target: { value: 'claude-haiku-5-5' } })
+    type(within(card).getByLabelText('Neon AI gateway API key'), KEY)
     fireEvent.click(within(card).getByRole('button', { name: 'Test connection' }))
 
     const result = await within(card).findByTestId('ai-test-result')
-    await waitFor(() => expect(result.textContent).toBe('Connected · Anthropic · claude-haiku-4-5 · 412 ms'))
-    expect(aiCalls('POST', AI_TEST).map((c) => c.body)).toEqual([
-      { provider: 'anthropic', model: 'claude-haiku-4-5', apiKey: KEY },
-    ])
+    await waitFor(() => expect(result.textContent).toBe('Connected · Neon AI gateway · claude-haiku-5-5 · 412 ms'))
+    expect(aiCalls('POST', AI_TEST).map((c) => c.body)).toEqual([{ model: 'claude-haiku-5-5', apiKey: KEY }])
     expect(aiCalls('PATCH', AI)).toHaveLength(0)
-    expect((within(card).getByLabelText('Anthropic API key') as HTMLInputElement).value).toBe(KEY)
+    expect((within(card).getByLabelText('Neon AI gateway API key') as HTMLInputElement).value).toBe(KEY)
     expect(within(card).getByTestId('ai-unsaved')).toBeTruthy()
   })
 
   it('Test connection shows the failure kind and the scrubbed provider message', async () => {
-    aiTestHandler = (body) =>
-      json(
-        (body as { provider?: string }).provider === 'google'
-          ? ({ ok: false, kind: 'not_configured', latencyMs: 0, provider: 'google', model: 'gemini-2.5-flash-lite' } satisfies AiConnectionTestResult)
-          : ({ ok: false, kind: 'auth', latencyMs: 230, provider: 'openai', model: 'gpt-4.1-mini', message: 'Incorrect API key provided: sk-***' } satisfies AiConnectionTestResult),
-      )
+    aiTestHandler = () =>
+      json({
+        ok: false,
+        kind: 'auth',
+        latencyMs: 230,
+        provider: 'neon',
+        model: 'typesafeai-jev-1-14-0',
+        message: 'Invalid token: neon-***',
+      } satisfies AiConnectionTestResult)
     renderSettings()
     const card = await aiCard()
-
     fireEvent.click(within(card).getByRole('button', { name: 'Test connection' }))
-    let result = await within(card).findByTestId('ai-test-kind')
+    const result = await within(card).findByTestId('ai-test-kind')
     expect(result.textContent).toBe('The API key was rejected. Check that it is correct and still active.')
-    expect(within(card).getByTestId('ai-test-message').textContent).toBe('Incorrect API key provided: sk-***')
-    expect(within(card).getByTestId('ai-test-result').textContent).toContain('Connection failed · OpenAI · gpt-4.1-mini · 230 ms')
-
-    fireEvent.click(within(card).getByTestId('ai-provider-google'))
-    fireEvent.click(within(card).getByRole('button', { name: 'Test connection' }))
-    await waitFor(() => expect(aiCalls('POST', AI_TEST)).toHaveLength(2))
-    result = await within(card).findByTestId('ai-test-kind')
-    await waitFor(() => expect(within(card).getByTestId('ai-test-kind').textContent).toContain('no API key'))
-    expect(within(card).queryByTestId('ai-test-message')).toBeNull()
-    expect(aiCalls('POST', AI_TEST).map((c) => c.body)).toEqual([{}, { provider: 'google' }])
+    expect(within(card).getByTestId('ai-test-message').textContent).toBe('Invalid token: neon-***')
+    expect(within(card).getByTestId('ai-test-result').textContent).toContain(
+      'Connection failed · Neon AI gateway · typesafeai-jev-1-14-0 · 230 ms',
+    )
+    expect(aiCalls('POST', AI_TEST).map((c) => c.body)).toEqual([{}])
   })
 
   it('asks before leaving with an unsaved AI draft (one dialog for plans and AI)', async () => {
     const { router } = renderSettings()
     const ai = await aiCard()
-    type(within(ai).getByLabelText('Google API key'), KEY)
+    fireEvent.click(within(ai).getByRole('switch', { name: 'Use the Text + Image model' }))
 
     act(() => void router.navigate({ to: '/admin/billing' }))
     let dialog = await screen.findByRole('dialog', { name: 'Leave without saving?' })
     expect(within(dialog).getByText('The AI provider settings have unsaved changes. They will be lost.')).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Stay' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect((within(ai).getByLabelText('Google API key') as HTMLInputElement).value).toBe(KEY)
+    expect(within(ai).getByRole('switch', { name: 'Use the Text + Image model' }).getAttribute('aria-checked')).toBe('true')
 
     type(input(await card('Starter'), 'Monthly price'), '599')
     act(() => void router.navigate({ to: '/admin/billing' }))
@@ -1269,6 +1315,8 @@ describe('/admin/settings AI settings history', () => {
             aiAuditEntry(2, { field: 'model', before: 'gpt-4.1-mini', after: null }),
             aiAuditEntry(1, { field: 'key.openai', before: 'set', after: 'cleared', admin: { id: 'u2', name: ' ', email: 'ops@shield.bd' }, ip: null }),
             aiAuditEntry(0, { field: 'key.neon', before: null, after: 'set' }),
+            aiAuditEntry(5, { field: 'text_image_model', before: null, after: 'gemini-4-carbon' }),
+            aiAuditEntry(6, { field: 'text_image_enabled', before: 'false', after: 'true' }),
           ],
           url,
         ),
@@ -1284,15 +1332,17 @@ describe('/admin/settings AI settings history', () => {
       ]),
     ).toEqual([
       ['Provider', '.env / default', 'Anthropic'],
-      ['Model', 'gpt-4.1-mini', '.env / default'],
+      ['Text model', 'gpt-4.1-mini', '.env / default'],
       ['OpenAI API key', 'Set', 'Cleared'],
       ['Neon AI gateway API key', 'Not set', 'Set'],
+      ['Text + Image model', 'default', 'gemini-4-carbon'],
+      ['Text + Image switch', 'Off', 'On'],
     ])
     const [first, , third] = entries as [HTMLElement, HTMLElement, HTMLElement]
     expect(first.querySelector('time')?.textContent).toBe('19 Nov 2026, 12:00')
     expect(first.textContent).toContain('by Root Admin root@shield.bd · IP 203.0.113.7')
     expect(third.textContent).toContain('by ops@shield.bd ops@shield.bd')
-    expect(within(panel).getByText('1–4 of 4 changes')).toBeTruthy()
+    expect(within(panel).getByText('1–6 of 6 changes')).toBeTruthy()
   })
 
   it('pages 20 at a time and shows the empty state', async () => {

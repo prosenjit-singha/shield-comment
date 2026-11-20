@@ -1,4 +1,5 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
+import { formatUsd } from '@/lib/admin-system'
 import { apiFetch } from '@/lib/api'
 
 /**
@@ -6,11 +7,15 @@ import { apiFetch } from '@/lib/api'
  * `src/admin/dto/ai-settings.dto.ts`, `AiConnectionTestResult` and `AiErrorKind`.
  *
  * - `GET /api/admin/settings/ai` → `AiSettingsResponse` (never a key: only `last4`).
- * - `PATCH /api/admin/settings/ai` `{ provider?, model?, keys?: { <p>: key | null } }` → same shape.
- *   400 = invalid / nothing to update; 503 `KEY_ENCRYPTION_NOT_CONFIGURED` = key save without cipher.
+ * - `PATCH /api/admin/settings/ai` `{ provider?, model?, textImageModel?, textImageEnabled?, keys?: { <p>: key | null } }`
+ *   → same shape. 400 = invalid / nothing to update (`UNKNOWN_AI_MODEL`, `MODEL_NOT_IMAGE_CAPABLE` with
+ *   provider neon); 503 `KEY_ENCRYPTION_NOT_CONFIGURED` = key save without cipher.
  * - `POST /api/admin/settings/ai/test` `{ provider?, model?, apiKey? }` (a draft over the saved
  *   config, never saved) → `AiConnectionTestResult`.
  * - `GET /api/admin/settings/ai/audit?skip&take` → `{ items, total, skip, take }`, newest first.
+ *
+ * The card shows the Neon AI gateway only (M5-T15c, D17): a Text model and a Text + Image model
+ * (+ its switch, D22/D23) from `catalog`; the API keeps the direct providers.
  *
  * Keys typed by the admin live only in the page's React state (the draft): never in Zustand,
  * `localStorage` or the query cache.
@@ -43,11 +48,37 @@ export interface AiProviderStatus {
   key: AiKeyStatus
 }
 
+export const NEON_MODEL_INPUTS = ['text', 'image', 'video', 'audio', 'file'] as const
+export type NeonModelInput = (typeof NEON_MODEL_INPUTS)[number]
+
+/** Mirror of the backend's `NeonModel` (`src/ai-gateway/neon-model-catalog.ts`). */
+export interface NeonModel {
+  code: string
+  name: string
+  lab: string
+  inputs: readonly NeonModelInput[]
+  /** Tokens. */
+  contextWindow: number
+  /** USD per 1M tokens; `null` = not published (n/a). */
+  inputUsdPer1M: number | null
+  outputUsdPer1M: number | null
+  /** The model page says "Free" (prices 0). */
+  free: boolean
+  dialect: 'chat' | 'systemone'
+}
+
 export interface AiSettingsResponse {
   provider: AiProvider
   providerSource: AiSettingSource
+  /** Text model. */
   model: string
   modelSource: AiSettingSource
+  /** Text + Image model (stored only; images are judged in a later update, D23). */
+  textImageModel: string
+  textImageModelSource: AiSettingSource
+  textImageEnabled: boolean
+  /** Neon AI gateway models for the dropdowns. */
+  catalog: readonly NeonModel[]
   /** The active provider has a key (and Neon a base URL): calls can be attempted. */
   configured: boolean
   /** Keys can be saved (`TOKEN_ENCRYPTION_KEY` set); else a key save answers 503. */
@@ -61,6 +92,8 @@ export interface AiSettingsResponse {
 export interface UpdateAiSettingsBody {
   provider?: AiProvider
   model?: string | null
+  textImageModel?: string | null
+  textImageEnabled?: boolean
   keys?: Partial<Record<AiProvider, string | null>>
 }
 
@@ -96,10 +129,11 @@ export type AiConnectionTestResult =
       message?: string
     }
 
-export type AiSettingsAuditField = 'provider' | 'model' | `key.${AiProvider}`
+export type AiSettingsAuditField = 'provider' | 'model' | 'text_image_model' | 'text_image_enabled' | `key.${AiProvider}`
 
 /**
- * One changed field. `provider`/`model`: DB values (`null` = `.env`/default fallback);
+ * One changed field. `provider`/`model`/`text_image_model`: DB values (`null` = `.env`/default
+ * fallback); `text_image_enabled`: `true` | `false`;
  * `key.<provider>`: `before` `set` | `null`, `after` `set` | `cleared`.
  */
 export interface AiSettingsAuditEntry {
@@ -120,11 +154,9 @@ export interface AiSettingsAuditList {
   take: number
 }
 
-/** Same as the backend: model 1–100, key 8–500 printable ASCII characters without spaces, trimmed. */
-export const AI_MODEL_MAX_LENGTH = 100
+/** Same as the backend: key 8–500 printable ASCII characters without spaces, trimmed. */
 export const AI_KEY_MIN_LENGTH = 8
 export const AI_KEY_MAX_LENGTH = 500
-export const AI_MODEL_PATTERN = new RegExp(`^[\\x21-\\x7E]{1,${AI_MODEL_MAX_LENGTH}}$`)
 export const AI_KEY_PATTERN = new RegExp(`^[\\x21-\\x7E]{${AI_KEY_MIN_LENGTH},${AI_KEY_MAX_LENGTH}}$`)
 
 /** 503 `code` of a key save while `TOKEN_ENCRYPTION_KEY` is unset. */
@@ -140,13 +172,6 @@ export const aiProviderLabels: Record<AiProvider, string> = {
   google: 'Google',
 }
 
-export const aiProviderHints: Record<AiProvider, string> = {
-  neon: 'One key for many models, billed by Neon',
-  openai: 'GPT models, direct',
-  anthropic: 'Claude models, direct',
-  google: 'Gemini models, direct',
-}
-
 export const aiSettingSourceLabels: Record<AiSettingSource, string> = {
   db: 'database',
   env: '.env',
@@ -157,23 +182,6 @@ export const aiKeySourceLabels: Record<AiKeySource, string> = {
   db: 'database',
   env: '.env',
   none: 'not set',
-}
-
-/**
- * Suggested model ids per provider (the backend's `DEFAULT_AI_MODELS` first). Suggestions only:
- * any id the provider accepts can be typed. The response's `defaultModel` is always offered too.
- */
-export const AI_MODEL_SUGGESTIONS: Record<AiProvider, readonly string[]> = {
-  neon: ['gpt-oss-20b', 'gpt-oss-120b'],
-  openai: ['gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o-mini'],
-  anthropic: ['claude-haiku-4-5', 'claude-sonnet-4-5'],
-  google: ['gemini-2.5-flash-lite', 'gemini-2.5-flash'],
-}
-
-/** `defaultModel` first, then the static suggestions, without duplicates. */
-export function modelSuggestions(provider: AiProvider, status: AiProviderStatus | undefined): string[] {
-  const list = [status?.defaultModel, ...AI_MODEL_SUGGESTIONS[provider]].filter((m): m is string => !!m)
-  return [...new Set(list)]
 }
 
 /** `Saved ••••1234 · database`, `Saved · .env` (no last4), or `Not set`. */
@@ -251,106 +259,117 @@ export function aiAuditQueryOptions(page: number) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Draft: strings so half-typed values can be shown and validated. Typed keys are write-only.
+// Neon model dropdowns (M5-T15c, D17/D22): the admin shows the Neon AI gateway only.
 
-export interface AiDraft {
-  provider: AiProvider
-  model: string
-  /** Typed (unsaved) keys; `''` = keep the saved one. */
-  keys: Record<AiProvider, string>
-  /** Confirmed "Clear" of the DB key, sent as `null` on save. */
-  clearKeys: Record<AiProvider, boolean>
+const compactTokens = new Intl.NumberFormat('en-US', { notation: 'compact' })
+
+/** `in $0.07 / out $0.30 per 1M` (`n/a` = not published), `Free`. */
+export function neonPriceLabel(model: NeonModel): string {
+  if (model.free) return 'Free'
+  return `in ${formatUsd(model.inputUsdPer1M)} / out ${formatUsd(model.outputUsdPer1M)} per 1M`
 }
 
-function perProvider<T>(value: T): Record<AiProvider, T> {
-  return { neon: value, openai: value, anthropic: value, google: value }
+/** `Jev 1.14 · TypeSafe AI · in $0.042 / out $0.00 per 1M · 66K context`. */
+export function neonModelLabel(model: NeonModel): string {
+  return `${model.name} · ${model.lab} · ${neonPriceLabel(model)} · ${compactTokens.format(model.contextWindow)} context`
 }
 
-/** The model a provider gets when it is (or becomes) the active one. */
-export function effectiveModel(settings: AiSettingsResponse, provider: AiProvider): string {
-  return provider === settings.provider ? settings.model : settings.providers[provider].model
+export function supportsImages(model: NeonModel): boolean {
+  return model.inputs.includes('image')
 }
 
-export function draftFromAiSettings(settings: AiSettingsResponse): AiDraft {
-  return { provider: settings.provider, model: settings.model, keys: perProvider(''), clearKeys: perProvider(false) }
-}
-
-/** Switching provider shows that provider's effective model (as the backend would resolve it). */
-export function withProvider(draft: AiDraft, settings: AiSettingsResponse, provider: AiProvider): AiDraft {
-  if (provider === draft.provider) return draft
-  return { ...draft, provider, model: effectiveModel(settings, provider) }
-}
-
-export interface AiDraftErrors {
-  model?: string
-  keys: Partial<Record<AiProvider, string>>
-}
-
-/** Same rules as the backend's `UpdateAiSettingsDto` (after trimming). An empty key field is "unchanged". */
-export function validateAiDraft(draft: AiDraft): AiDraftErrors {
-  const errors: AiDraftErrors = { keys: {} }
-  const model = draft.model.trim()
-  if (model === '') errors.model = 'Enter a model id.'
-  else if (model.length > AI_MODEL_MAX_LENGTH) errors.model = `Up to ${AI_MODEL_MAX_LENGTH} characters.`
-  else if (!AI_MODEL_PATTERN.test(model)) errors.model = 'Use printable characters without spaces.'
-
-  for (const provider of AI_PROVIDERS) {
-    const key = draft.keys[provider].trim()
-    if (key === '') continue
-    if (key.length < AI_KEY_MIN_LENGTH || key.length > AI_KEY_MAX_LENGTH)
-      errors.keys[provider] = `A key is ${AI_KEY_MIN_LENGTH}–${AI_KEY_MAX_LENGTH} characters.`
-    else if (!AI_KEY_PATTERN.test(key)) errors.keys[provider] = 'Use printable characters without spaces.'
-  }
-  return errors
-}
-
-export function hasAiDraftErrors(errors: AiDraftErrors): boolean {
-  return errors.model !== undefined || Object.keys(errors.keys).length > 0
+export interface ModelOption {
+  value: string
+  label: string
 }
 
 /**
- * Minimal `PATCH` body: only what differs from the saved settings. Call it on a valid draft;
- * `{}` means nothing changed. A provider switch sends `model` only when it differs from what the
- * backend would pick for that provider (it resets the DB model when `model` is absent).
+ * Dropdown options from the API catalog (image-capable only for Text + Image). A saved value
+ * outside that list (e.g. an `.env` model) stays selectable so the select shows the truth.
+ */
+export function neonModelOptions(catalog: readonly NeonModel[], current: string, imageOnly = false): ModelOption[] {
+  const options = catalog
+    .filter((m) => !imageOnly || supportsImages(m))
+    .map((m) => ({ value: m.code, label: neonModelLabel(m) }))
+  if (!options.some((o) => o.value === current)) options.push({ value: current, label: `${current} · not in the list` })
+  return options
+}
+
+// ---------------------------------------------------------------------------------------------
+// Draft. Only the Neon key can be typed; typed keys are write-only.
+
+export interface AiDraft {
+  /** Text model (catalog code). */
+  model: string
+  textImageModel: string
+  textImageEnabled: boolean
+  /** Typed (unsaved) Neon key; `''` = keep the saved one. */
+  key: string
+  /** Confirmed "Clear" of the Neon DB key, sent as `null` on save. */
+  clearKey: boolean
+}
+
+/** The Text model Neon uses once it is (or becomes) the active provider. */
+export function neonTextModel(settings: AiSettingsResponse): string {
+  return settings.provider === 'neon' ? settings.model : settings.providers.neon.model
+}
+
+export function draftFromAiSettings(settings: AiSettingsResponse): AiDraft {
+  return {
+    model: neonTextModel(settings),
+    textImageModel: settings.textImageModel,
+    textImageEnabled: settings.textImageEnabled,
+    key: '',
+    clearKey: false,
+  }
+}
+
+/** Same rule as the backend's key DTO (after trimming). An empty field is "unchanged". */
+export function validateAiKey(key: string): string | undefined {
+  const value = key.trim()
+  if (value === '') return undefined
+  if (value.length < AI_KEY_MIN_LENGTH || value.length > AI_KEY_MAX_LENGTH)
+    return `A key is ${AI_KEY_MIN_LENGTH}–${AI_KEY_MAX_LENGTH} characters.`
+  if (!AI_KEY_PATTERN.test(value)) return 'Use printable characters without spaces.'
+  return undefined
+}
+
+/**
+ * Minimal `PATCH` body for a valid draft; `{}` = nothing to save. Every save sends
+ * `provider: 'neon'`, so a saved direct provider (D17: hidden) can be switched with Save alone.
+ * `model` is sent only when it differs from what the backend would pick for Neon.
  */
 export function aiSettingsPatch(draft: AiDraft, settings: AiSettingsResponse): UpdateAiSettingsBody {
   const body: UpdateAiSettingsBody = {}
-  if (draft.provider !== settings.provider) body.provider = draft.provider
-  const model = draft.model.trim()
-  if (model !== '' && model !== effectiveModel(settings, draft.provider)) body.model = model
-
-  const keys: Partial<Record<AiProvider, string | null>> = {}
-  for (const provider of AI_PROVIDERS) {
-    const typed = draft.keys[provider].trim()
-    if (typed !== '') keys[provider] = typed
-    else if (draft.clearKeys[provider] && hasDbKey(settings.providers[provider].key)) keys[provider] = null
-  }
-  if (Object.keys(keys).length > 0) body.keys = keys
-  return body
+  if (draft.model !== neonTextModel(settings)) body.model = draft.model
+  if (draft.textImageModel !== settings.textImageModel) body.textImageModel = draft.textImageModel
+  if (draft.textImageEnabled !== settings.textImageEnabled) body.textImageEnabled = draft.textImageEnabled
+  const key = draft.key.trim()
+  if (key !== '') body.keys = { neon: key }
+  else if (draft.clearKey && hasDbKey(settings.providers.neon.key)) body.keys = { neon: null }
+  if (Object.keys(body).length === 0 && settings.provider === 'neon') return body
+  return { provider: 'neon', ...body }
 }
 
-/** Unsaved changes: an invalid draft always counts; a valid one when its PATCH body isn't empty. */
+/**
+ * Unsaved edits: an invalid key, or a PATCH with more than the provider (a saved direct provider
+ * alone doesn't block leaving the page; the card says Save switches it).
+ */
 export function isAiDraftDirty(draft: AiDraft | undefined, settings: AiSettingsResponse | undefined): boolean {
   if (!draft || !settings) return false
-  if (hasAiDraftErrors(validateAiDraft(draft))) return true
-  return Object.keys(aiSettingsPatch(draft, settings)).length > 0
+  if (validateAiKey(draft.key) !== undefined) return true
+  const { provider: _provider, ...changes } = aiSettingsPatch(draft, settings)
+  return Object.keys(changes).length > 0
 }
 
-/** "Test connection" body: the draft's provider/model/typed key where they differ from the saved config. */
+/** "Test connection" body: Neon + the draft's Text model / typed key where they differ from the saved config. */
 export function aiTestBody(draft: AiDraft, settings: AiSettingsResponse): TestAiConnectionBody {
   const body: TestAiConnectionBody = {}
-  if (draft.provider !== settings.provider) body.provider = draft.provider
-  const model = draft.model.trim()
-  if (model !== '' && model !== effectiveModel(settings, draft.provider)) body.model = model
-  const key = draft.keys[draft.provider].trim()
+  if (settings.provider !== 'neon') body.provider = 'neon'
+  if (draft.model !== neonTextModel(settings)) body.model = draft.model
+  const key = draft.key.trim()
   if (key !== '') body.apiKey = key
   return body
-}
-
-/** The draft can be tested: valid model and a valid (or no) typed key for the draft's provider. */
-export function canTestAiDraft(draft: AiDraft): boolean {
-  const errors = validateAiDraft(draft)
-  return errors.model === undefined && errors.keys[draft.provider] === undefined
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -367,7 +386,9 @@ function keyProvider(field: string): AiProvider | undefined {
 
 export function aiAuditFieldLabel(field: string): string {
   if (field === 'provider') return 'Provider'
-  if (field === 'model') return 'Model'
+  if (field === 'model') return 'Text model'
+  if (field === 'text_image_model') return 'Text + Image model'
+  if (field === 'text_image_enabled') return 'Text + Image switch'
   const provider = keyProvider(field)
   // A field added to the backend later still shows up, just not prettified.
   return provider ? `${aiProviderLabels[provider]} API key` : field
@@ -379,7 +400,9 @@ export function formatAiAuditValue(field: string, value: string | null): string 
     if (value === 'cleared') return 'Cleared'
     return value === null ? 'Not set' : value
   }
-  if (value === null) return AI_AUDIT_FALLBACK
+  if (field === 'text_image_enabled') return value === 'true' ? 'On' : value === 'false' ? 'Off' : String(value)
+  // The Text + Image model has no .env value: null = the built-in default.
+  if (value === null) return field === 'text_image_model' ? 'default' : AI_AUDIT_FALLBACK
   if (field === 'provider' && (AI_PROVIDERS as readonly string[]).includes(value))
     return aiProviderLabels[value as AiProvider]
   return value

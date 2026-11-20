@@ -13,8 +13,8 @@ import {
 import { formatDhakaDateTime } from '@/lib/admin-system'
 
 /**
- * A7 "AI settings history" (M5-T4): one row per changed field (provider, model, `key.<p>` as
- * set/cleared), newest first, 20 per page. The page is component state (the settings page blocks
+ * A7 "AI settings history" (M5-T4): one row per changed field (provider, Text model, Text + Image
+ * model + switch (M5-T15c), `key.<p>` as set/cleared), newest first, 20 per page. The page is component state (the settings page blocks
  * navigation while a draft is dirty), like the plan history.
  */
 export function AiSettingsHistory() {
@@ -30,7 +30,7 @@ export function AiSettingsHistory() {
         <h2 id="ai-audit-title" className="text-base font-semibold">
           AI settings history
         </h2>
-        <p className="text-xs text-muted-foreground">Provider, model and key changes, newest first · Bangladesh time</p>
+        <p className="text-xs text-muted-foreground">Provider, model, switch and key changes, newest first · Bangladesh time</p>
       </div>
 
       {query.isError && !data ? (
