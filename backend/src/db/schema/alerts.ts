@@ -81,6 +81,8 @@ export const alertDeliveries = pgTable(
     scamCount: integer().notNull(),
     /** Short error class (e.g. `timeout`, `not_configured`) when `FAILED`, else null. */
     errorKind: text(),
+    /** M7-T9: a "Send test alert" send. Never the "last alert" and never starts the cool-down. */
+    isTest: boolean().notNull().default(false),
     sentAt: timestamptz().notNull().defaultNow(),
   },
   (t) => [

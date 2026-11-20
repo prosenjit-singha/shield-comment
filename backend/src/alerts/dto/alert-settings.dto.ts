@@ -92,7 +92,7 @@ export interface AlertSettingsResponse {
   };
   /** D12: "Coming soon" placeholder. */
   whatsapp: { enabled: false; available: false; comingSoon: true };
-  /** Latest delivery per channel, newest first (empty = never alerted). */
+  /** Latest real (non-test) delivery per channel, newest first (empty = never alerted). */
   lastAlerts: AlertDeliveryView[];
   /** `null` = no row saved yet (defaults). */
   updatedAt: Date | null;

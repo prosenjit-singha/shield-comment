@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { type Job, UnrecoverableError } from 'bullmq';
+import type { ScamSpikeDetector } from '../alerts/scam-spike.detector.js';
 import type { EnvironmentVariables } from '../config/env.validation.js';
 import { QUEUE_NAMES } from '../queue/queue.constants.js';
 import {
@@ -36,6 +37,7 @@ const pgError = (code: string) =>
 describe('CommentModerationProcessor', () => {
   const moderate = vi.fn<CommentModerationService['moderate']>();
   const sweep = vi.fn<ModerationSweeper['sweep']>();
+  const afterModeration = vi.fn<ScamSpikeDetector['afterModeration']>();
   const env: Partial<EnvironmentVariables> = {
     MODERATION_WORKER_CONCURRENCY: 6,
     MODERATION_LLM_RATE_MAX: 12,
@@ -48,12 +50,14 @@ describe('CommentModerationProcessor', () => {
     { moderate } as unknown as CommentModerationService,
     { sweep } as unknown as ModerationSweeper,
     config,
+    { afterModeration } as unknown as ScamSpikeDetector,
   );
   let logs: string[];
 
   beforeEach(() => {
     moderate.mockReset();
     sweep.mockReset();
+    afterModeration.mockReset().mockResolvedValue('not_scam');
     logs = [];
     for (const level of ['log', 'warn', 'error', 'debug'] as const) {
       vi.spyOn(Logger.prototype, level).mockImplementation((message) => {
@@ -110,6 +114,29 @@ describe('CommentModerationProcessor', () => {
     expect(moderate).toHaveBeenLastCalledWith(expect.anything(), {
       finalAttempt: true,
     });
+  });
+
+  it('M7-T9: a moderated outcome runs the spike check after it is saved; skips and failures do not', async () => {
+    const moderated: ModerationResult = {
+      kind: 'moderated',
+      classified: true,
+      counted: true,
+      action: 'HIDE',
+      status: 'HIDDEN',
+      replied: false,
+    };
+    moderate.mockResolvedValueOnce(moderated);
+    await expect(processor.process(job())).resolves.toBe(moderated);
+    expect(afterModeration).toHaveBeenCalledWith(WS, ROW);
+
+    afterModeration.mockClear();
+    moderate.mockResolvedValueOnce({ kind: 'skipped', reason: 'no_text' });
+    await processor.process(job());
+    moderate.mockRejectedValueOnce(
+      new ModerationStepError('classify', 'transient', true),
+    );
+    await expect(processor.process(job())).rejects.toThrow();
+    expect(afterModeration).not.toHaveBeenCalled();
   });
 
   it('moderation-sweep → sweeper', async () => {

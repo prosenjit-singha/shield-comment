@@ -34,12 +34,14 @@ export class QueueRegistry implements OnModuleInit {
     @InjectQueue(QUEUE_NAMES.commentModeration) commentModeration: Queue,
     @InjectQueue(QUEUE_NAMES.metaTokenCheck) metaTokenCheck: Queue,
     @InjectQueue(QUEUE_NAMES.billing) billing: Queue,
+    @InjectQueue(QUEUE_NAMES.alerts) alerts: Queue,
   ) {
     this.queues = new Map<QueueName, Queue>([
       [QUEUE_NAMES.commentIngest, commentIngest],
       [QUEUE_NAMES.commentModeration, commentModeration],
       [QUEUE_NAMES.metaTokenCheck, metaTokenCheck],
       [QUEUE_NAMES.billing, billing],
+      [QUEUE_NAMES.alerts, alerts],
     ]);
   }
 

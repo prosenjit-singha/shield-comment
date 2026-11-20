@@ -9,10 +9,14 @@ export interface TelegramStubMessage {
 /**
  * Bot API stub on 127.0.0.1 (random port): answers only `POST /bot<token>/sendMessage` with
  * `{ ok: true }` and records it; anything else gets 404 and lands in `unexpected` (assert it empty).
+ * `failChat(id, status, description)` makes sends to that chat fail (recorded in `failed`) until
+ * `failures.clear()`.
  */
 export async function startTelegramStub(botToken: string) {
   const sent: TelegramStubMessage[] = [];
+  const failed: TelegramStubMessage[] = [];
   const unexpected: string[] = [];
+  const failures = new Map<number, { status: number; description: string }>();
   const server: Server = createServer((req, res) => {
     let raw = '';
     req.on('data', (chunk: Buffer) => (raw += chunk.toString('utf8')));
@@ -20,6 +24,19 @@ export async function startTelegramStub(botToken: string) {
       res.setHeader('Content-Type', 'application/json');
       if (req.method === 'POST' && req.url === `/bot${botToken}/sendMessage`) {
         const body = JSON.parse(raw) as { chat_id: number; text: string };
+        const failure = failures.get(body.chat_id);
+        if (failure) {
+          failed.push({ chatId: body.chat_id, text: body.text });
+          res.statusCode = failure.status;
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error_code: failure.status,
+              description: failure.description,
+            }),
+          );
+          return;
+        }
         sent.push({ chatId: body.chat_id, text: body.text });
         res.end(
           JSON.stringify({ ok: true, result: { message_id: sent.length } }),
@@ -42,7 +59,12 @@ export async function startTelegramStub(botToken: string) {
   return {
     url: `http://127.0.0.1:${port}`,
     sent,
+    failed,
     unexpected,
+    failures,
+    failChat(chatId: number, status: number, description: string) {
+      failures.set(chatId, { status, description });
+    },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }

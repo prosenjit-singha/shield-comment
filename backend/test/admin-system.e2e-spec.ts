@@ -123,12 +123,13 @@ describe('Admin system health (e2e)', () => {
       );
     });
 
-    it('lists the D3 queues + billing with their counts (from the fake queues)', () => {
+    it('lists the D3 queues + billing + alerts with their counts (from the fake queues)', () => {
       expect(body.queues).toEqual([
         { name: 'comment-ingest', waiting: 4, active: 1, failed: 0 },
         { name: 'comment-moderation', waiting: 0, active: 0, failed: 0 },
         { name: 'meta-token-check', waiting: 0, active: 0, failed: 2 },
         { name: 'billing', waiting: 0, active: 0, failed: 0 },
+        { name: 'alerts', waiting: 0, active: 0, failed: 0 },
       ]);
     });
 
@@ -190,6 +191,7 @@ describe('Admin system health (e2e)', () => {
         'comment-ingest',
         'meta-token-check',
         'billing',
+        'alerts',
       ]);
     });
 

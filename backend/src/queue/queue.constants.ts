@@ -15,6 +15,8 @@ export const QUEUE_NAMES = {
   metaTokenCheck: 'meta-token-check',
   /** Scheduled billing jobs: `subscription-expiry` every 15 min (PW-T3). */
   billing: 'billing',
+  /** Scam-spike alerts: `scam-spike` (M7-T9, Module 7 reading 9). */
+  alerts: 'alerts',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -25,6 +27,7 @@ export const ALL_QUEUE_NAMES: readonly QueueName[] = [
   QUEUE_NAMES.commentModeration,
   QUEUE_NAMES.metaTokenCheck,
   QUEUE_NAMES.billing,
+  QUEUE_NAMES.alerts,
 ];
 
 const HOUR_SECONDS = 60 * 60;

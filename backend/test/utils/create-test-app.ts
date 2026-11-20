@@ -2,6 +2,7 @@ import { type INestApplication, Module, type Type } from '@nestjs/common';
 import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import type { App } from 'supertest/types.js';
 import { AppModule } from '../../src/app.module.js';
+import { TELEGRAM_CONFIG } from '../../src/alerts/telegram.client.js';
 import { EMAIL_SETTINGS } from '../../src/email/email.service.js';
 import { configureApp } from '../../src/app.setup.js';
 import { AUTH_SECONDARY_STORAGE } from '../../src/redis/redis-secondary-storage.js';
@@ -40,7 +41,11 @@ export async function createTestApp(
     // Never real Resend, even if a local .env has a key: unconfigured email only logs (M7-T4).
     // Specs that assert emails override `EmailService` with `createEmailServiceFake()`.
     .overrideProvider(EMAIL_SETTINGS)
-    .useValue({ resend: null, production: false });
+    .useValue({ resend: null, production: false })
+    // Never the real Bot API either, even if a local .env sets TELEGRAM_*: unconfigured by default.
+    // Telegram specs override `TELEGRAM_CONFIG` again with the local stub (the later override wins).
+    .overrideProvider(TELEGRAM_CONFIG)
+    .useValue(null);
   builder = overrideQueues(builder);
   if (override) builder = override(builder);
   // Same as main.ts: the Better Auth integration owns body parsing.

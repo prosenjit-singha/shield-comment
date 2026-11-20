@@ -8,18 +8,20 @@ import {
 } from './queue.constants.js';
 
 describe('queue constants (D3)', () => {
-  it('names the three D3 queues + billing (PW-T3)', () => {
+  it('names the three D3 queues + billing (PW-T3) + alerts (M7-T9)', () => {
     expect(QUEUE_NAMES).toEqual({
       commentIngest: 'comment-ingest',
       commentModeration: 'comment-moderation',
       metaTokenCheck: 'meta-token-check',
       billing: 'billing',
+      alerts: 'alerts',
     });
     expect(ALL_QUEUE_NAMES).toEqual([
       'comment-ingest',
       'comment-moderation',
       'meta-token-check',
       'billing',
+      'alerts',
     ]);
     // BullMQ rejects queue names with `:`.
     for (const name of ALL_QUEUE_NAMES) expect(name).not.toContain(':');

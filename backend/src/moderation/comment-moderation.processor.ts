@@ -7,6 +7,7 @@ import {
   errorCode,
   isPermanentDbError,
 } from '../comments/comment-ingest.rules.js';
+import { ScamSpikeDetector } from '../alerts/scam-spike.detector.js';
 import type { EnvironmentVariables } from '../config/env.validation.js';
 import { QUEUE_NAMES } from '../queue/queue.constants.js';
 import {
@@ -58,6 +59,7 @@ export class CommentModerationProcessor
     private readonly moderation: CommentModerationService,
     private readonly sweeper: ModerationSweeper,
     private readonly config: ConfigService<EnvironmentVariables, true>,
+    private readonly spikes: ScamSpikeDetector,
   ) {
     super();
   }
@@ -110,8 +112,9 @@ export class CommentModerationProcessor
       }
       throw error;
     }
+    let result: ModerationResult;
     try {
-      return await this.moderation.moderate(target, {
+      result = await this.moderation.moderate(target, {
         finalAttempt: isFinalAttempt(job),
       });
     } catch (error) {
@@ -130,6 +133,13 @@ export class CommentModerationProcessor
       }
       throw error;
     }
+    // M7-T9 (D14): the outcome is saved; a scam may start a spike alert. Never throws.
+    if (result.kind === 'moderated')
+      await this.spikes.afterModeration(
+        target.workspaceId,
+        target.commentRowId,
+      );
+    return result;
   }
 
   /** Last attempt failed (or an `UnrecoverableError`): the job lands in the failed set (7 d). */

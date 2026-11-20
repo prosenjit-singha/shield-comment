@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AiGatewayModule } from '../ai-gateway/ai-gateway.module.js';
+import { AlertsModule } from '../alerts/alerts.module.js';
 import { TokenCipherModule } from '../crypto/token-cipher.module.js';
 import { MetaGraphModule } from '../meta/meta-graph.module.js';
 import { CommentClassifier } from './comment-classifier.js';
@@ -33,7 +34,13 @@ import { WalletModule } from '../wallet/wallet.module.js';
  * playground (`POST …/playground/test`, `PlaygroundService` + Redis daily counter).
  */
 @Module({
-  imports: [AiGatewayModule, MetaGraphModule, TokenCipherModule, WalletModule],
+  imports: [
+    AiGatewayModule,
+    AlertsModule,
+    MetaGraphModule,
+    TokenCipherModule,
+    WalletModule,
+  ],
   controllers: [ModerationPolicyController, PlaygroundController],
   providers: [
     CommentClassifier,

@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import {
   alertDeliveries,
@@ -144,7 +144,12 @@ export class AlertSettingsService {
         sentAt: alertDeliveries.sentAt,
       })
       .from(alertDeliveries)
-      .where(eq(alertDeliveries.workspaceId, workspaceId))
+      .where(
+        and(
+          eq(alertDeliveries.workspaceId, workspaceId),
+          eq(alertDeliveries.isTest, false),
+        ),
+      )
       .orderBy(alertDeliveries.channel, desc(alertDeliveries.sentAt));
     lastAlerts.sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
     const chats = await db
