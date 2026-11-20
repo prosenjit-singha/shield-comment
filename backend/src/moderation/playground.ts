@@ -39,7 +39,7 @@ import {
   classificationUsageDelta,
   recordDailyAiUsage,
 } from './moderation.queries.js';
-import { matchStaticRules } from './static-rules.js';
+import { matchStaticRules, rulesForPlan } from './static-rules.js';
 
 /**
  * The daily limit (D9): admin platform setting `playgroundDailyLimit` (M6-T7b), 10 without a row,
@@ -192,7 +192,8 @@ export class PlaygroundService {
     const latency = () => Math.round(performance.now() - started);
     const policy = await this.policies.policy(workspaceId);
 
-    const match = matchStaticRules(text, policy.rules);
+    const plan = await workspacePlanFeatures(this.db, workspaceId, now);
+    const match = matchStaticRules(text, rulesForPlan(policy.rules, plan));
     if (match) {
       return {
         ruleMatch: match,
@@ -225,12 +226,7 @@ export class PlaygroundService {
     return {
       ruleMatch: null,
       classification: { category, confidence, reasoning, language },
-      decision: decideAction(
-        policy,
-        result,
-        await workspacePlanFeatures(this.db, workspaceId, now),
-        NEW_COMMENT,
-      ),
+      decision: decideAction(policy, result, plan, NEW_COMMENT),
       latencyMs: latency(),
     };
   }

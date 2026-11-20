@@ -44,6 +44,7 @@ import {
   decideRuleAction,
   type ModerationDecision,
 } from './moderation-decision.js';
+import type { PolicyPlanFeatures } from './moderation-policy.rules.js';
 import {
   ModerationPolicyService,
   workspacePlanFeatures,
@@ -61,7 +62,11 @@ import {
   recordDailyAiUsage,
 } from './moderation.queries.js';
 import { PostContextService } from './post-context.service.js';
-import { matchStaticRules, type StaticRuleMatch } from './static-rules.js';
+import {
+  matchStaticRules,
+  rulesForPlan,
+  type StaticRuleMatch,
+} from './static-rules.js';
 
 /** What one `moderate-comment` job did (the job's return value; ids and codes only). */
 export type ModerationResult =
@@ -270,7 +275,12 @@ export class CommentModerationService {
     const { countedAt } = usage;
 
     // M6-T2 (D3: after the usage step): a static rule match skips the post context and the LLM.
-    const match = matchStaticRules(comment.message, policy.rules);
+    // Only the rules the live plan allows run (`rulesForPlan`).
+    const plan = await workspacePlanFeatures(this.db, comment.workspaceId);
+    const match = matchStaticRules(
+      comment.message,
+      rulesForPlan(policy.rules, plan),
+    );
     if (match !== null) {
       return this.ruleMatched(
         comment,
@@ -328,6 +338,7 @@ export class CommentModerationService {
       comment,
       policy,
       result,
+      plan,
       countedAt !== null,
       attempt,
       now,
@@ -429,11 +440,11 @@ export class CommentModerationService {
     comment: ModerationComment,
     policy: ModerationPolicy,
     result: ClassificationSuccess,
+    plan: PolicyPlanFeatures,
     counted: boolean,
     attempt: ModerationAttempt,
     now: () => Date,
   ): Promise<ModerationResult> {
-    const plan = await workspacePlanFeatures(this.db, comment.workspaceId);
     return this.decided(
       comment,
       {

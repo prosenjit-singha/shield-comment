@@ -1,7 +1,7 @@
 import { MAX_RULE_MATCH_CHARS } from './moderation.constants.js';
 import type { StaticRules } from './moderation.queries.js';
 import { normalizeRuleText } from './rule-text.js';
-import { matchStaticRules } from './static-rules.js';
+import { matchStaticRules, rulesForPlan } from './static-rules.js';
 
 const rules = (patch: Partial<StaticRules> = {}): StaticRules => ({
   blockedKeywords: [],
@@ -167,5 +167,43 @@ describe('matchStaticRules (M6-T2)', () => {
         matchStaticRules('01712345678', rules({ blockPhoneNumbers: false })),
       ).toBeNull();
     });
+  });
+});
+
+describe('rulesForPlan (plan without the feature → saved rules stop running)', () => {
+  const saved = rules({ blockedKeywords: [normalizeRuleText('cashback')] });
+  const text = 'cashback 01712345678 https://scam.example.com';
+
+  it('runs every saved rule when the plan has both features', () => {
+    const plan = { customBlocklist: true, autoHideScams: true };
+    expect(matchStaticRules(text, rulesForPlan(saved, plan))?.kind).toBe(
+      'keyword',
+    );
+  });
+
+  it('drops keywords without customBlocklist, keeps URL + phone', () => {
+    const plan = { customBlocklist: false, autoHideScams: true };
+    expect(rulesForPlan(saved, plan).blockedKeywords).toEqual([]);
+    expect(matchStaticRules(text, rulesForPlan(saved, plan))?.kind).toBe('url');
+  });
+
+  it('drops URL + phone without autoHideScams, keeps keywords', () => {
+    const plan = { customBlocklist: true, autoHideScams: false };
+    expect(
+      matchStaticRules(
+        '01712345678 https://scam.example.com',
+        rulesForPlan(saved, plan),
+      ),
+    ).toBeNull();
+    expect(matchStaticRules(text, rulesForPlan(saved, plan))?.kind).toBe(
+      'keyword',
+    );
+  });
+
+  it('runs nothing with no live plan, and keeps the saved rules untouched', () => {
+    const none = { customBlocklist: false, autoHideScams: false };
+    expect(matchStaticRules(text, rulesForPlan(saved, none))).toBeNull();
+    expect(saved.blockedKeywords).toEqual(['cashback']);
+    expect(saved.blockUrls).toBe(true);
   });
 });

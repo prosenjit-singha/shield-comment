@@ -127,6 +127,9 @@ describe('Playground API (e2e)', () => {
     outsider = await actors.signUp('m6t7-outsider');
     superAdmin = await actors.signUpSuperAdmin('m6t7-super');
     await actors.addMember(owner.workspaceId, moderator.id, 'moderator');
+    // Keyword rules only run on a plan with `customBlocklist` (Growth/Pro).
+    await actors.activatePlan(owner, 'growth');
+    await actors.activatePlan(other, 'growth');
     const policies = app.get(ModerationPolicyService);
     await policies.policy(owner.workspaceId);
     await policies.policy(other.workspaceId);

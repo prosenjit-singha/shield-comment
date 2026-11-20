@@ -63,6 +63,23 @@ const BD_PHONE_PATTERN =
   /(?<!\d)(?:\+?88[\s-]?)?0[\s-]?1[3-9](?:[\s-]?\d){8}(?!\d)/u;
 const BANGLA_DIGITS = /[০-৯]/gu;
 
+/**
+ * The rules the workspace's live plan allows right now (user, 2026-11-20): saved rules stay stored
+ * but don't run without their feature: keywords need `customBlocklist`, URL + phone `autoHideScams`
+ * (the same flags the policy PATCH gates on). A later upgrade brings them back unchanged.
+ */
+export function rulesForPlan(
+  rules: StaticRules,
+  plan: { customBlocklist: boolean; autoHideScams: boolean },
+): StaticRules {
+  return {
+    ...rules,
+    blockedKeywords: plan.customBlocklist ? rules.blockedKeywords : [],
+    blockUrls: plan.autoHideScams && rules.blockUrls,
+    blockPhoneNumbers: plan.autoHideScams && rules.blockPhoneNumbers,
+  };
+}
+
 export function matchStaticRules(
   text: string | null,
   rules: StaticRules,

@@ -21,7 +21,10 @@ import {
   ModerationStepError,
 } from './comment-moderation.service.js';
 import type { ModerationActionExecutor } from './moderation-action.executor.js';
-import type { ModerationPolicyService } from './moderation-policy.service.js';
+import {
+  type ModerationPolicyService,
+  workspacePlanFeatures,
+} from './moderation-policy.service.js';
 import {
   defaultModerationPolicy,
   type ModerationPolicy,
@@ -47,7 +50,11 @@ vi.mock('./moderation.queries.js', async (importOriginal) => ({
 }));
 vi.mock('./moderation-policy.service.js', () => ({
   ModerationPolicyService: class {},
-  workspacePlanFeatures: vi.fn(async () => ({ autoReplyTemplates: false })),
+  workspacePlanFeatures: vi.fn(async () => ({
+    autoReplyTemplates: false,
+    customBlocklist: true,
+    autoHideScams: true,
+  })),
 }));
 
 const WS = '019a0000-0000-7000-8000-00000000000a';
@@ -385,6 +392,25 @@ describe('CommentModerationService static rules (M6-T2)', () => {
         { stage: null, statusReason: `rule_${kind}` },
       ]);
       expect(recordDailyAiUsage).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['keyword', 'Free CASHBACK pete inbox korun', { customBlocklist: false }],
+    ['url', 'claim here bit.ly/x', { autoHideScams: false }],
+    ['phone', 'bKash korun 01812345678', { autoHideScams: false }],
+  ] as const)(
+    'saved %s rule on a plan without its feature → not applied, the AI decides',
+    async (_kind, message, missing) => {
+      vi.mocked(workspacePlanFeatures).mockResolvedValueOnce({
+        autoReplyTemplates: false,
+        customBlocklist: true,
+        autoHideScams: true,
+        ...missing,
+      });
+      withMessage(message);
+      expect(await run()).toMatchObject({ classified: true });
+      expect(classify).toHaveBeenCalledTimes(1);
     },
   );
 

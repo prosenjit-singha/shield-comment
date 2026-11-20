@@ -33,7 +33,11 @@ vi.mock('./moderation.queries.js', async (importOriginal) => ({
 }));
 vi.mock('./moderation-policy.service.js', () => ({
   ModerationPolicyService: class {},
-  workspacePlanFeatures: vi.fn(async () => ({ autoReplyTemplates: false })),
+  workspacePlanFeatures: vi.fn(async () => ({
+    autoReplyTemplates: false,
+    customBlocklist: true,
+    autoHideScams: true,
+  })),
 }));
 
 const WS = '019a0000-0000-7000-8000-00000000000a';
@@ -141,6 +145,20 @@ describe('PlaygroundService', () => {
       testsLeft: 9,
     });
     expect(res.latencyMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('a plan without customBlocklist skips saved keywords (the AI decides)', async () => {
+    vi.mocked(workspacePlanFeatures).mockResolvedValueOnce({
+      autoReplyTemplates: false,
+      customBlocklist: false,
+      autoHideScams: true,
+    });
+    const policy = defaultModerationPolicy(WS);
+    policy.rules.blockedKeywords = ['cashback'];
+    const { classify, run } = setup(policy);
+    const res = await run('Get CASHBACK now');
+    expect(classify).toHaveBeenCalledOnce();
+    expect(res.ruleMatch).toBeNull();
   });
 
   it('REVIEW mode: a rule hit is not applied (NEEDS_REVIEW)', async () => {
