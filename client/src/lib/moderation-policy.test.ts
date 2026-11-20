@@ -8,7 +8,11 @@ import {
   moderationPolicyLoadErrorMessage,
   moderationPolicyQueryKey,
   moderationPolicyQueryOptions,
+  normalizeAllowedDomain,
+  normalizeKeyword,
+  policyDraft,
   policyFromUpdate,
+  policyPatch,
   updateAiContextLevel,
   type ModerationPolicy,
   type ModerationPolicyUpdate,
@@ -34,6 +38,9 @@ function policy(overrides: Partial<ModerationPolicy> = {}): ModerationPolicy {
       ABUSIVE_TOXIC: rule,
     },
     autoReplyAvailable: false,
+    rules: { blockedKeywords: [], blockUrls: false, blockPhoneNumbers: false, allowedDomains: [], actions: { keyword: 'HIDE', url: 'HIDE', phone: 'HIDE' } },
+    keywordRulesAvailable: false,
+    urlPhoneRulesAvailable: true,
     updatedAt: '2026-11-19T00:00:00.000Z',
     ...overrides,
   }
@@ -128,5 +135,22 @@ describe('messages', () => {
     expect(aiContextLevelSaveErrorMessage(new ApiError(500, 'x'), en)).toBe(
       'Your choice wasn’t saved. The server is unavailable right now. Try again shortly.',
     )
+  })
+})
+
+describe('/rules helpers (M6-T10)', () => {
+  it('policyPatch is null until something changes, and maps blank texts to null', () => {
+    const saved = policy({ categories: { ...policy().categories, SAFE_INQUIRY: { action: 'NONE', autoReply: false, replyEn: 'Hi', replyBn: null } } })
+    const draft = policyDraft(saved)
+    expect(policyPatch(saved, draft)).toBeNull()
+    draft.categories.SAFE_INQUIRY = { ...draft.categories.SAFE_INQUIRY, replyEn: '   ', replyBn: ' নমস্কার ' }
+    expect(policyPatch(saved, draft)).toEqual({ categories: { SAFE_INQUIRY: { replyEn: null, replyBn: 'নমস্কার' } } })
+  })
+
+  it('normalises keywords and domains like the backend', () => {
+    expect(normalizeKeyword('  ＢＫＡＳＨ\n  Agent ')).toBe('bkash agent')
+    expect(normalizeAllowedDomain(' WWW.MyShop.com. ')).toBe('myshop.com')
+    expect(normalizeAllowedDomain('দোকান.বাংলা')).toBe('দোকান.বাংলা')
+    for (const bad of ['myshop', 'https://myshop.com', 'myshop.com/x', 'a b.com', '1.2.3.4']) expect(normalizeAllowedDomain(bad)).toBeNull()
   })
 })

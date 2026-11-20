@@ -14,7 +14,7 @@ import type { CommentFeedItem, CommentStatus, OverrideAction } from '@/lib/comme
 import type { DashboardSummary, SummaryRange } from '@/lib/dashboard-summary'
 import type { Language } from '@/lib/language'
 import type { WorkspaceMetaConnection, WorkspacePage } from '@/lib/meta-pages'
-import type { AiContextLevel, ModerationPolicy } from '@/lib/moderation-policy'
+import type { AiContextLevel, ModerationPolicy, PolicyPatch } from '@/lib/moderation-policy'
 import { createQueryClient } from '@/lib/query-client'
 import { Route as AppRoute } from '@/routes/_app'
 import { Route as CommentsRoute } from '@/routes/_app/comments'
@@ -22,13 +22,14 @@ import { Route as DashboardRoute } from '@/routes/_app/dashboard'
 import { Route as OnboardingRoute } from '@/routes/_app/onboarding'
 import { Route as PagesRoute } from '@/routes/_app/pages'
 import { Route as PlansRoute } from '@/routes/_app/plans'
+import { Route as RulesRoute } from '@/routes/_app/rules'
 import { createLanguageStore, LanguageStoreContext } from '@/stores/language-store'
 import { useUiStore } from '@/stores/ui-store'
 import { json } from './auth-routes'
 
 /**
  * Harness for the logged-in screens (`/onboarding` M3-T10, `/pages` M3-T11, `/plans` PR-T6): the real `_app`
- * layout + `/onboarding` + `/pages` + `/dashboard` + `/comments` + `/plans` route files under a bare root (the generated tree pulls
+ * layout + `/onboarding` + `/pages` + `/dashboard` + `/comments` + `/plans` + `/rules` route files under a bare root (the generated tree pulls
  * in the Start server functions), with a stub /login. Test files must still
  * `vi.mock('@/server/session', …)` themselves (vi.mock is hoisted per file).
  */
@@ -43,6 +44,7 @@ const routeTree = rootRoute.addChildren([
     DashboardRoute.update(childOptions('/dashboard')),
     CommentsRoute.update(childOptions('/comments')),
     PlansRoute.update(childOptions('/plans')),
+    RulesRoute.update(childOptions('/rules')),
   ]),
   loginRoute,
 ])
@@ -157,6 +159,9 @@ export function policy(overrides: Partial<ModerationPolicy> = {}): ModerationPol
       ABUSIVE_TOXIC: rule('HIDE'),
     },
     autoReplyAvailable: false,
+    rules: { blockedKeywords: [], blockUrls: false, blockPhoneNumbers: false, allowedDomains: [], actions: { keyword: 'HIDE', url: 'HIDE', phone: 'HIDE' } },
+    keywordRulesAvailable: false,
+    urlPhoneRulesAvailable: true,
     updatedAt: '2026-11-19T00:00:00.000Z',
     ...overrides,
   }
@@ -167,14 +172,17 @@ export interface PolicyApiOptions {
   onGet?: () => Response | Promise<Response>
   /** Answers the PATCH (gets the parsed body) instead of storing it. */
   onPatch?: (body: unknown) => Response | Promise<Response>
+  /** Starting policy fields (`/rules`, M6-T10). */
+  initial?: Partial<ModerationPolicy>
 }
 
 /**
- * A stateful moderation policy API (M5-T8 contract): GET returns the policy; PATCH `{ aiContextLevel }`
- * stores it and answers `{ ...policy, changed }`. Any other method fails the test.
+ * A stateful moderation policy API (M5-T8 + M6-T1 contract): GET returns the policy; PATCH merges the
+ * partial body (categories and rules per field) and answers `{ ...policy, changed }`. Any other method
+ * fails the test.
  */
 export function policyApi(level: AiContextLevel = 'comment_only', options: PolicyApiOptions = {}) {
-  let current = policy({ aiContextLevel: level })
+  let current = policy({ aiContextLevel: level, ...options.initial })
   return {
     [POLICY]: async (init?: RequestInit) => {
       const method = (init?.method ?? 'GET').toUpperCase()
@@ -182,9 +190,20 @@ export function policyApi(level: AiContextLevel = 'comment_only', options: Polic
       if (method !== 'PATCH') throw new Error(`Unexpected ${method} ${POLICY}`)
       const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
       if (options.onPatch) return options.onPatch(body)
-      const next = (body as { aiContextLevel: AiContextLevel }).aiContextLevel
-      const changed = next !== current.aiContextLevel
-      current = { ...current, aiContextLevel: next, updatedAt: changed ? '2026-11-19T10:00:00.000Z' : current.updatedAt }
+      const patch = body as PolicyPatch & { aiContextLevel?: AiContextLevel }
+      const categories = { ...current.categories }
+      for (const [category, change] of Object.entries(patch.categories ?? {}) as [keyof typeof categories, object][]) {
+        categories[category] = { ...categories[category], ...change }
+      }
+      const { actions, ...rules } = patch.rules ?? {}
+      const next: ModerationPolicy = {
+        ...current,
+        ...patch,
+        categories,
+        rules: { ...current.rules, ...rules, actions: { ...current.rules.actions, ...actions } },
+      }
+      const changed = JSON.stringify(next) !== JSON.stringify(current)
+      current = { ...next, updatedAt: changed ? '2026-11-19T10:00:00.000Z' : current.updatedAt }
       return json(200, { ...current, changed })
     },
   }
