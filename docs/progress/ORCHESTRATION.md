@@ -11,13 +11,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)"). **PR run: admin/ + client/ approved for every PR row** (user, 2026-11-20, "Both, whole PR run (Recommended)").
 - Keep Docker current (user, 2026-11-20: "First make sure our docker runs the latest code"): a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (recreates compose containers only; never the user's own processes). Orchestrator rebuilt the backend after PR-T1 (0027 had made the old image read a renamed column).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #11 (2026-11-20) · rows this session: 5 · estimate: 165k
+- Session: #11 (2026-11-20) · rows this session: 5 · estimate: 180k
 
 ## State
-verified M5-AIPLAN (2026-11-20)
+paused: needs decision M5-T15a (jev is served only on Neon's `systemone` dialect, not chat completions) · uncommitted (finished, verified `--language` flag): backend/src/moderation/golden-args.ts, golden-args.spec.ts, golden-replay.ts, golden-score.ts, backend/src/scripts/golden-suite.ts (2026-11-20)
 
 ## Resume
-`/orchestration --continue` → M5-T15a (live jev smoke), then M5-T15b (pre-check asks D23: what "Text + Image" judges today), M5-T15c, M5-T16 → M5-GATE.
+Answer the jev question (drop jev and smoke `gemini-4-carbon` + `gpt-oss-20b` / build a `systemone` adapter / flag only, skip the smoke), then `/orchestration --continue` → re-dispatches M5-T15a with the answer (it keeps the uncommitted `--language` work), then M5-T15b (D23 answered), M5-T15c, M5-T16 → M5-GATE.
 
 ## Next prompt (M5-T15a)
 
@@ -173,6 +173,7 @@ You are implementing exactly ONE task row, **M5-T15a**, in the ShieldComment BD 
 - 2026-11-20 M5 gateway + smoke (user, verbatim): "First setup the neon ai gateway. Doc ref - https://neon.com/docs/ai-gateway/get-started. I want you to do some test first in bangla, english, banglish with the typesafeai-jev-1-14-0. Let me know if you need anything from me. For now Ignore the direct provider method disable in the admin panel or don't show it."
 - 2026-11-20 M5 model per content type (user, verbatim): "Can you make the admin to choose the model for type of content to be judge with. like For Text & Image -> claude-haiku-5-5 For text -> typesafeai-jev-1-14-0 Give the dropdown option to choose by the admin. make sure if for text + image only the supported models are listed. include the pricing details to that drop down and context window also."
 - 2026-11-20 orchestrator check: the gateway credential is NOT the DB connection string; `NEON_AI_GATEWAY_BASE_URL` + `NEON_AI_GATEWAY_TOKEN` already sit in `backend/.env.neon`. `GET /v1/models` (free) → 65 models, all enabled; the five above enabled (jev inputs text + image).
+- 2026-11-20 D23 Text + Image (user answer to "What should the new Text + Image model setting do for now?", verbatim): "Save setting, images later and show a enable disable switch button with it." → store the Text + Image model setting now with an on/off switch beside it; the classifier stays text-only; image moderation is a later row.
 
 ## Parked prompt (M5-T16)
 
@@ -289,3 +290,4 @@ You are implementing exactly ONE task row, **M5-T16**, in the ShieldComment BD r
 - 2026-11-20 PR-T7 ✅ · `fe7af82` (admin container force-recreated on the orchestrator's check; bundle identical, no commit) · backend 1936 unit (+1 skipped; unchanged) + e2e 963 (was 967) · admin 400 · migration 0029 drops `plans.offer_price_bdt`/`offer_badge`/`trial_days`/`trial_comment_limit` after pinning pre-PR-T3 trial limits in the wallet; readers removed (live-subscription fallback, admin plan response, `AdminPlan`)
 - 2026-11-20 PR-GATE ✅ · `6a1f220` · backend 1936 unit (+1 skipped) + e2e 963 · admin 400 · client 490 · e2e/ 2/2 · promotions gate passed, no code change (admin promotions + plan editor, client `/plans` trial/expiry/Contact us, coupon via manual activation checked in the browser; Docker current)
 - 2026-11-20 M5-AIPLAN ✅ · `46c190f` · docs only · Neon-only re-plan: D17–D22 answered + D23 open (no images reach the classifier), rows M5-T15a (jev smoke) / M5-T15b (catalog + Text / Text + Image settings) / M5-T15c (admin) added, M5-T16 updated (five Neon models, cheapest passing ≥ 90 %)
+- 2026-11-20 M5-T15a 🟡 blocked: jev is not served on `/v1/chat/completions` (HTTP 400 `model "typesafeai-jev-1-14-0" is not available on the chat_completions endpoint`; `/v1/models`: dialect `systemone` only, `features.chat` false) · bn smoke 0/5 (all `invalid_request`, ~100–370 ms, 0 tokens, $0) · en/banglish not run · `--language` flag + tests done in the tree, uncommitted (backend 1943 unit +1 skipped, was 1936) · needs a user decision on jev
