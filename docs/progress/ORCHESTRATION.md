@@ -3,22 +3,57 @@
 Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committed. Resume with `/orchestration --continue`. No secrets here.
 
 ## Run
-- Scope: **Module 6 from M6-PLAN until M6-GATE** (user, 2026-11-20). M6-PLAN is docs only (adds the Module 6 section to TASKS.md: rows + open decisions); its decisions are asked at the pre-check of the first M6 row; then M6-T1… in order until M6-GATE.
-- Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 6 section + the row's decisions, `docs/project-documentation/modules/module-6-client-dashboard.md`, the code the row names.
-- Standing approvals: **client/ + admin/ approved for every Module 6 row in this run** (user, 2026-11-20, "Both, rest of run (Recommended)"). Live AI or Meta calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
+- Scope: **Module 7 from M7-PLAN until M7-GATE** (user, 2026-11-20). M7-PLAN is docs only (adds the Module 7 section to TASKS.md: rows + open decisions); its decisions are asked at the pre-check of the first M7 row; then M7-T1… in order until M7-GATE.
+- Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 7 section + the row's decisions, `docs/project-documentation/modules/module-7-support-team.md`, the code the row names.
+- Standing approvals: none yet for client/ or admin/ in this run (asked at the first row that touches them). Live AI, Meta, email, Telegram or WhatsApp calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #14 (2026-11-20) · rows this session: 5 · estimate: 100k
-- Previous runs (Modules 3–5, PW, PR): see `## Log` and git history.
+- Session: #15 (2026-11-20) · rows this session: 0 · estimate: 40k
+- Previous runs (Modules 3–6, PW, PR): see `## Log` and git history.
 
 ## State
-done: Module 6 (M6-PLAN … M6-GATE; M6-T13 boosted posts moved to backlog per D15) (2026-11-20)
+dispatched M7-PLAN (2026-11-20) · commit: "docs(progress): plan module 7 (M7-PLAN)"
 
 ## Resume
-Run finished. Start the next run with new instructions, e.g. `/orchestration Module 7 from M7-PLAN until M7-GATE`.
+`/orchestration --continue`
 
-## Next prompt
+## Next prompt (M7-T1)
 
-RUN COMPLETE
+PRE-CHECK: needs user decisions D1–D17 (TASKS.md Module 7) before dispatch. M7-T1 itself needs D6 (email provider); record every answer in TASKS.md (decision lines + "ANSWERED <date>") and paste D6's answer under **Recorded decisions** below before dispatching.
+
+You are implementing exactly ONE task row, **M7-T1**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
+
+**Read first (only these)**
+1. `AGENTS.md`.
+2. `docs/progress/MEMORY.md` (all).
+3. From `docs/progress/TASKS.md` (use `grep -n`/`sed -n`; the file is large): the Module 7 header paragraph + planner's readings (reading 10: bilingual emails, no comment text / author ids, links to `CLIENT_APP_URL`), decision **D6** (and skim D5, D7, D15 for how later rows will use email), the M7-PLAN row and the M7-T1 row.
+4. Spec: `docs/project-documentation/modules/module-7-support-team.md` (Backend: "Invitation emails use the transactional email provider").
+5. Code to read or reuse: `src/config/env.validation.ts` (optional env pattern, e.g. the storage block) + `backend/.env.example`; `src/storage/storage.config.ts` + `storage.module.ts` + `storage.service.ts` (optional-provider module pattern: token + "not configured" error); `src/meta/` `MetaGraphClient` (how outbound `fetch` is wrapped + tested, test-only base URL refused in production); a small existing `*.spec.ts` with `vi.fn()` fetch mocks to copy.
+
+**Recorded decisions** (only if the row needs them): D6 — <paste the user's answer, date>.
+
+**Task (M7-T1): Backend `EmailService` (transactional email)**
+- New `src/email/` module (global or exported like `StorageModule`): `EmailService.send({ to, subject, html, text })` using the D6 provider (for Resend: one `fetch` POST to `https://api.resend.com/emails` with `Authorization: Bearer`, no SDK; for SMTP: `nodemailer`, `npm approve-scripts` if needed). Env (optional, validated in `env.validation.ts`, documented in `.env.example`): provider key/credentials + `EMAIL_FROM`. Without config: in non-production the email is logged (to, subject only; never secrets) and `send` resolves with `{ delivered: false, reason: 'not_configured' }`; in production a missing config is logged once at boot and `send` throws a typed `EmailNotConfiguredError` that callers catch.
+- Provider errors → typed error with `retryable` (5xx/429/network = true, 4xx = false); one request timeout (e.g. 10 s); logs carry recipient domain + provider message id only.
+- `bilingualEmail({ en: { subject, lines, cta? }, bn: { … } })` helper → `{ subject, html, text }` (English block, then Bangla; plain inline-styled HTML; escapes user-supplied values; CTA link must start with `CLIENT_APP_URL`).
+- Test fake `FakeEmailTransport` / `createEmailServiceFake()` under `test/utils/` that records sends and throws on any send the test didn't expect.
+- Tests to write (Vitest, no live calls; fetch/transport mocked and failing on unexpected requests): request shape + headers, success id, 4xx non-retryable, 5xx/429/timeout retryable, not-configured dev + prod behaviour, env validation (bad from address → boot error), `bilingualEmail` escaping + both languages + CTA origin check.
+
+**Rules:** TS strict, ESM, no `any`. Vitest. No live external calls in tests (email provider mocked); tests must fail on unexpected requests. Every tenant query is scoped by `workspace_id`. Never commit `.env*` (except `.env.example`) or build/test output. **Never stop or kill the user's own processes** (local Postgres 5432, Redis 6379, dev servers); on a port clash use env overrides or stop and report. Keep Docker current: end with `docker compose up -d --build backend` + `/api/health/live` 200 (compose containers only).
+
+**Verify** (run what applies; report real numbers):
+- backend: `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test`, `npm run test:e2e`, `npm run lint`, `npx prettier --check "src/**/*.ts" "test/**/*.ts"` (known `src/scripts/ai-sdk-smoke.ts`). The test DB must end empty except the baseline (4 plans + 4 promotions + 4 promotion_plans).
+- Current test counts: backend 2275 unit + 1112 e2e, admin 439, client 658, Playwright 3.
+
+**If a decision is missing:** if D6 is not recorded in TASKS.md/MEMORY.md/this prompt, STOP without coding. Report `STATUS: needs-decision` with the question and options (recommended first). If your row finishes but the NEXT row (M7-T2) needs decisions that are still open (D1, D2, D3), report `STATUS: done`, list them under DECISION NEEDED and start the next prompt with `PRE-CHECK: needs user decisions <ids> before dispatch`.
+
+**Finish (in this order)**
+1. TASKS.md: the M7-T1 row → `✅ <date>` + concise notes (built + choices). Add a Verification log entry at the TOP of `## Verification log`. Add short lasting facts to MEMORY.md (email env names, dev fallback) and point its `**Next:**` pointer at M7-T2 (keep the M5-T17 note; exactly one `**Next:**`).
+2. Journal `docs/progress/ORCHESTRATION.md`:
+   - append one `## Log` line at the end of `## Log` (`- <date> M7-T1 ✅ · <tests> · <1-line summary>`); the orchestrator adds the commit hash;
+   - append your choices under `## Choices to confirm` as `- M7-T1: …` (after the last `- M7-…` line);
+   - **replace** the `## Next prompt (M7-T1)` section — everything from that heading up to, but not including, the exact line `## Choices to confirm` — with the M7-T2 prompt in the same format (contract: `.claude/skills/orchestration/subagent-prompt.md`). Leave no fragment of the old prompt behind.
+3. Commit everything, journal included, with `feat(backend): add transactional email service (M7-T1)` (optional 2–4 bullet body) and the Co-Authored-By trailer given in your dispatch message.
+4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -104,6 +139,7 @@ RUN COMPLETE
 - M6-T11: (1) usage = new read-only `GET …/playground/usage` (orchestrator decision) via `PlaygroundCounter.peek()` (Redis `GET`); `testsLeft` clamped ≥ 0, `used` raw · (2) Test button disabled when 0 left (incl. limit 0); a usage load failure shows a muted line and still lets you test · (3) text checked on submit only (no `maxLength`, counter = trimmed length) · (4) platform always sent (default Facebook) · (5) 429 copy shows the reset as date + time (`formatCommentTime`, Dhaka); 502 copy says the test wasn't counted (backend gives it back) · (6) result adds a why-line for review (review mode / below threshold); `classification.language` not shown; `UNHIDE` (impossible for a new comment) reads as "leave visible" · (7) 403 copy = generic "no access" (D7 lets every member in) · (8) no client moderator test: the client session has no role, so the owner case is the member case; impersonated has its own test, backend e2e covers moderator
 - M6-T12: (1) CSV links are real `<a href download>` (filters in the href) but the click fetches the file (`useMutation` → blob → server file name), because a plain link can't show the 409/400 body; the per-comment card shows a "Pro" pill and the plan is not checked up front (billing summary has no feature flags; the policy GET is owners/admins only) → 409 `PLAN_FEATURE_UNAVAILABLE` = Pro message + Plans link · (2) range UI = native date inputs + Apply + "Back to the last 30 days" (no presets); a client range check refuses what the API would 400 (alert, URL untouched) · (3) Bar = flagged categories per bucket (stacked), plus totals table (13 counters) and the intents Donut; the C4 flagged-totals Bar is not repeated · (4) over-cap: per-comment > 92 days → disabled link + hint; the 366-day daily hint is unreachable today (the 12-calendar-month cap keeps ranges ≤ 366 days) but uses the same code · (5) a 404 for a filtered Page says "Pick another Page" (the select stays usable above the error) · (6) nav keeps all 7 items in the phone bottom bar (no "More" item; labels truncate) · (7) chart constants moved to `components/dashboard/chart-theme.ts` to keep lint at its 3 known warnings · (8) no client moderator test: the session has no role (impersonated case tested; backend e2e covers moderator).
 - M6-GATE: (1) backend under test = compose service `backend-e2e` (profile e2e, built backend image, NODE_ENV=test, placeholder Meta app + dev-only token key committed in docker-compose.yml, `META_GRAPH_BASE_URL` → stub); the production guard and the user's `backend` stay untouched · (2) only the override request is forwarded to it by Playwright (`page.route` → `route.fetch`, same cookie); login, dashboard and feed use the normal stack — no second client/origin needed · (3) `backend-e2e` shares Postgres + Redis, so its BullMQ workers join the user's queues while it is up (seconds; same code, a supported multi-process topology); host runs start/remove it in global setup/teardown, `test:docker` removes it after `run` · (4) Graph stub started in the spec (beforeAll), not global setup, so the test reads its recorded calls directly · (5) rule-priority unit test reused (M6-T2 block) + 2 phone cases (plain number, Bangla digits); dashboard KPIs asserted on the default 30-day range, en only
+- M7-PLAN: readings (1) client ticket routes `/api/workspaces/:workspaceId/support/tickets` (list/create/thread/reply) on the M2 tables + `SupportTicketsService`, internal notes hidden · (2) no admin change for the round trip · (3) "new reply" = last public message from ADMIN, no read tracking · (4) ≤ 20 unresolved tickets per workspace · (5) team writes via Better Auth organization endpoints + server hooks, one read route `GET …/team` (pooled seats) · (6) removed member loses access next request, sessions not revoked · (7) `alert_settings` + `alert_deliveries` in `src/alerts/` · (8) hourly scam count from `comments` (SCAM_PHISHING + `rule_url`/`rule_phone`) · (9) new `alerts` BullMQ queue, enqueue failure never fails moderation · (10) bilingual emails/alerts, no comment text or author ids, links to `CLIENT_APP_URL` · (11) alert channels gated at run time by the live plan · (12) owner/admin edit alerts, "Send test alert" 5/h
 
 ## Decisions asked
 - 2026-11-18 M3-T10: D13 0-Pages redirect → entry points only (recorded in TASKS.md D13)
@@ -251,3 +287,4 @@ RUN COMPLETE
 - 2026-11-20 M6-T11 ✅ · `1103c2f` · backend 2265 unit (was 2263) + e2e 1112 (was 1111) · client 630/630 (was 596) · admin untouched · C8 `/playground`: text + platform, tests-left pill from new read-only `GET …/playground/usage`, result card (rule hit or category + confidence + reasoning, decision line, reply preview, latency), en/bn errors 429/503/502/400/403/404/network; nav Playground; docker backend + client rebuilt healthy
 - 2026-11-20 M6-T12 ✅ · `8f12cf3` · client 658/658 (was 630) · backend/admin untouched · C9 `/analytics`: From/To + Page filter in URL, history Line + stacked flagged Bar per API granularity (day/month), totals table + intents Donut, daily + per-comment CSV (fetch → blob; 409 Pro message + Plans link, > 92-day hint), en/bn errors 400/404/network/5xx + retry; nav Analytics (7 items); docker client rebuilt healthy
 - 2026-11-20 M6-GATE ✅ · `5fa6f19` · backend 2267 unit (was 2265) + e2e 1112 · admin 439 · client 658 · e2e suite 3/3 host + Docker (was 2) · Module 6 gate: rule-priority phone cases + Playwright dashboard KPIs/charts + Unhide via `backend-e2e` and an in-test Graph stub; DB back to baseline
+- 2026-11-20 M7-PLAN ✅ · docs only · Module 7 split into M7-T1…T15 + GATE (backend T1–T9, admin T10, client T11–T15); 17 open decisions D1–D17 (tickets, invites/seats, alerts, nav, gate)
