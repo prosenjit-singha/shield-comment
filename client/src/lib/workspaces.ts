@@ -27,8 +27,11 @@ export const workspacesQueryOptions = queryOptions({
   },
 })
 
-/** Makes `workspaceId` the session's active workspace (`organization/set-active`); throws `AuthError`. */
-export async function setActiveWorkspace(workspaceId: string): Promise<void> {
+/**
+ * Makes `workspaceId` the session's active workspace (`organization/set-active`; `null` clears it and
+ * refreshes the cookie cache, e.g. after leaving the last one); throws `AuthError`.
+ */
+export async function setActiveWorkspace(workspaceId: string | null): Promise<void> {
   let result: Awaited<ReturnType<typeof authClient.organization.setActive>>
   try {
     result = await authClient.organization.setActive({ organizationId: workspaceId })

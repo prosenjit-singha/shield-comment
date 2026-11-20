@@ -18,6 +18,7 @@ import type { WorkspaceMetaConnection, WorkspacePage } from '@/lib/meta-pages'
 import type { AiContextLevel, ModerationPolicy, PolicyPatch } from '@/lib/moderation-policy'
 import type { PlaygroundResult, PlaygroundUsage } from '@/lib/playground'
 import type { TicketDetail, TicketItem, TicketMessage } from '@/lib/support-tickets'
+import type { Team, TeamInvitation, TeamMember } from '@/lib/team'
 import { createQueryClient } from '@/lib/query-client'
 import { Route as AppRoute } from '@/routes/_app'
 import { Route as AnalyticsRoute } from '@/routes/_app/analytics'
@@ -623,6 +624,120 @@ export function ticketsApi(items: TicketDetail[] = [], options: TicketsApiOption
     }
   }
   return handlers
+}
+
+export const TEAM = '/api/workspaces/w1/team'
+export const ORG = (path: string) => `/api/auth/organization/${path}`
+
+export function member(overrides: Partial<TeamMember> = {}): TeamMember {
+  return {
+    memberId: 'm-owner',
+    userId: 'u1',
+    name: 'Rahim',
+    email: 'owner@shop.bd',
+    role: 'owner',
+    joinedAt: '2026-11-18T08:00:00.000Z',
+    ...overrides,
+  }
+}
+
+export function invitation(overrides: Partial<TeamInvitation> = {}): TeamInvitation {
+  return {
+    id: 'inv-1',
+    email: 'new.mod@shop.bd',
+    role: 'moderator',
+    expiresAt: '2026-11-27T08:00:00.000Z',
+    inviterName: 'Rahim',
+    ...overrides,
+  }
+}
+
+/** Owner Rahim (u1, the `SESSION` user), admin Karim (u2), moderator Mina (u3), one pending moderator invite, 4 / 10 seats. */
+export function team(overrides: Partial<Team> = {}): Team {
+  return {
+    members: [
+      member(),
+      member({ memberId: 'm-admin', userId: 'u2', name: 'Karim', email: 'karim@shop.bd', role: 'admin', joinedAt: '2026-11-19T08:00:00.000Z' }),
+      member({ memberId: 'm-mod', userId: 'u3', name: 'Mina', email: 'mina@shop.bd', role: 'moderator', joinedAt: '2026-11-19T09:00:00.000Z' }),
+    ],
+    invitations: [invitation()],
+    seats: { used: 4, limit: 10 },
+    ...overrides,
+  }
+}
+
+type OrgHandler = (body: Record<string, unknown>) => Response | Promise<Response>
+
+export interface TeamApiOptions {
+  /** Answers `GET …/team` (default: the stored team). */
+  onGet?: () => Response | Promise<Response>
+  /** Answer `POST /api/auth/organization/<path>`; defaults update the stored team and answer 200. */
+  onInvite?: OrgHandler
+  onCancel?: OrgHandler
+  onUpdateRole?: OrgHandler
+  onRemove?: OrgHandler
+  onLeave?: OrgHandler
+}
+
+/**
+ * `/settings/team` (M7-T13): a stateful team API (`GET …/team` + the Better Auth organization writes,
+ * POST only). Leave also answers `organization/set-active`.
+ */
+export function teamApi(initial: Team = team(), options: TeamApiOptions = {}) {
+  const state = structuredClone(initial)
+  const post = (path: string, handler: OrgHandler) => (init?: RequestInit) => {
+    const method = (init?.method ?? 'GET').toUpperCase()
+    if (method !== 'POST' || typeof init?.body !== 'string') throw new Error(`Unexpected ${method} ${path}`)
+    return handler(JSON.parse(init.body) as Record<string, unknown>)
+  }
+  const ok = () => json(200, { status: true })
+  return {
+    [TEAM]: (init?: RequestInit) => {
+      if ((init?.method ?? 'GET').toUpperCase() !== 'GET') throw new Error('Unexpected write to the team route')
+      return options.onGet ? options.onGet() : json(200, state)
+    },
+    [ORG('invite-member')]: post(
+      'invite-member',
+      options.onInvite ??
+        ((body) => {
+          if (!body.resend) {
+            state.invitations = state.invitations.filter((item) => item.email !== body.email)
+            state.invitations.push(invitation({ id: `inv-${state.invitations.length + 2}`, email: String(body.email), role: body.role as TeamInvitation['role'] }))
+            state.seats.used += 1
+          }
+          return json(200, { id: 'inv-x' })
+        }),
+    ),
+    [ORG('cancel-invitation')]: post(
+      'cancel-invitation',
+      options.onCancel ??
+        ((body) => {
+          state.invitations = state.invitations.filter((item) => item.id !== body.invitationId)
+          state.seats.used -= 1
+          return ok()
+        }),
+    ),
+    [ORG('update-member-role')]: post(
+      'update-member-role',
+      options.onUpdateRole ??
+        ((body) => {
+          const found = state.members.find((item) => item.memberId === body.memberId)
+          if (found) found.role = body.role as TeamMember['role']
+          return ok()
+        }),
+    ),
+    [ORG('remove-member')]: post(
+      'remove-member',
+      options.onRemove ??
+        ((body) => {
+          state.members = state.members.filter((item) => item.memberId !== body.memberIdOrEmail)
+          state.seats.used -= 1
+          return ok()
+        }),
+    ),
+    [ORG('leave')]: post('leave', options.onLeave ?? ok),
+    [ORG('set-active')]: post('set-active', () => json(200, null)),
+  }
 }
 
 /** jsdom gaps the `_app` shell needs (top-bar theme toggle reads matchMedia; the router scrolls; Recharts observes size). */

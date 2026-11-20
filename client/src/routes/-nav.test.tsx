@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { billingSummary, IMPERSONATED, renderAppRoute, SESSION, stubAppGlobals, SUMMARY, summaryApi, ticketsApi } from '@/test/app-routes'
+import { billingSummary, IMPERSONATED, renderAppRoute, SESSION, stubAppGlobals, SUMMARY, summaryApi, teamApi, ticketsApi } from '@/test/app-routes'
 import { apiCalls, callsTo, fetchMock, json, mockApi } from '@/test/auth-routes'
 
 // The server-render session function needs the Start compiler; the browser path never calls it.
@@ -25,7 +25,7 @@ const copy = {
     settings: 'Settings',
     team: 'Team',
     alerts: 'Alerts',
-    teamSoon: 'Team management is coming soon.',
+    teamMembers: 'Members',
     alertsSoon: 'Scam-spike alerts are coming soon.',
     switcher: (name: string) => `Workspace: ${name}`,
     switchFailed: 'Couldn’t switch the workspace.',
@@ -39,7 +39,7 @@ const copy = {
     settings: 'সেটিংস',
     team: 'টিম',
     alerts: 'অ্যালার্ট',
-    teamSoon: 'টিম ম্যানেজমেন্ট শিগগিরই আসছে।',
+    teamMembers: 'সদস্য',
     alertsSoon: 'স্ক্যাম-স্পাইক অ্যালার্ট শিগগিরই আসছে।',
     switcher: (name: string) => `ওয়ার্কস্পেস: ${name}`,
     switchFailed: 'ওয়ার্কস্পেস বদলানো যায়নি।',
@@ -68,7 +68,7 @@ describe.each(['en', 'bn'] as const)('M7-T11 navigation (%s)', (language) => {
   const t = copy[language]
 
   it('"More" opens a sheet with the other five pages; picking one navigates, closes it and marks More active', async () => {
-    mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi(), ...ticketsApi() })
+    mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi(), ...ticketsApi(), ...teamApi() })
     const { history } = renderAppRoute('/support', language)
     expect(await screen.findByText(t.supportEmpty)).toBeTruthy()
     expect(within(bottomBar()).getByRole('button', { name: t.more }).dataset.status).toBe('active')
@@ -101,10 +101,10 @@ describe.each(['en', 'bn'] as const)('M7-T11 navigation (%s)', (language) => {
   })
 
   it('/settings redirects to /settings/team; the tabs switch to Alerts and Settings stays active', async () => {
-    mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi(), ...ticketsApi() })
+    mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi(), ...ticketsApi(), ...teamApi() })
     const { history } = renderAppRoute('/settings', language)
 
-    expect(await screen.findByText(t.teamSoon)).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: t.teamMembers })).toBeTruthy()
     expect(history.location.pathname).toBe('/settings/team')
     expect(screen.getByRole('heading', { name: t.settings })).toBeTruthy()
     const tabs = within(screen.getByRole('navigation', { name: t.settings }))
