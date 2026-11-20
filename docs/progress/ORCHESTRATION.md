@@ -3,27 +3,55 @@
 Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committed. Resume with `/orchestration --continue`. No secrets here.
 
 ## Run
-- Scope: **Module 5 from M5-T1 until M5-GATE** (user, 2026-11-19). First a docs-only re-plan (commit tagged `(M5-PLAN)`) records the answered decisions D1–D14 + follow-ups and reshapes the rows; then M5-T1… in order until M5-GATE.
-- Scope change (user, 2026-11-19): **first PW-PLAN … PW-GATE** (plans, subscriptions & wallet; plan doc `docs/plans/2026-11-19-plans-subscriptions-wallet.md`), **then resume Module 5 at M5-T16 → M5-GATE** (M5-T16 still needs Neon AI credits or a provider key: ask at its pre-check).
-- Scope change (user, 2026-11-20, "yes please proceed" on `docs/plans/2026-11-20-promotions.md`): **first PR-PLAN … PR-GATE** (promotions: trial / discount / coupon; plans = fixed facts), **then M5-T16 → M5-GATE** (M5-T16 parked again below; still needs Neon AI credits or a provider key).
-- Scope change (user, 2026-11-20, Neon AI credits bought): **first M5-AIPLAN** (Neon model catalog file, model per content type in admin, direct providers hidden, a jev smoke in bn/en/Banglish) **→ its new rows → M5-T16 (bake-off, cheapest passing) → M5-GATE**.
-- Scope addition (user, 2026-11-20, while M5-T15b ran): **AI analysis log + AI spend dashboard** in admin (last 20 analyzed comments with decision, cost, comment, client, tokens as "0.4k"; credit top-ups entered by the admin → added / estimated spend / estimated remaining; comments analyzed). Orchestrator adds it as rows after M5-T15c (the M5-T15c prompt gets a decision block telling its agent to add the rows to TASKS.md), before M5-T16.
-- Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 5 section + the row's decisions, the module spec, the code the row names.
-- Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)"). **PR run: admin/ + client/ approved for every PR row** (user, 2026-11-20, "Both, whole PR run (Recommended)").
-- Keep Docker current (user, 2026-11-20: "First make sure our docker runs the latest code"): a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (recreates compose containers only; never the user's own processes). Orchestrator rebuilt the backend after PR-T1 (0027 had made the old image read a renamed column).
+- Scope: **Module 6 from M6-PLAN until M6-GATE** (user, 2026-11-20). M6-PLAN is docs only (adds the Module 6 section to TASKS.md: rows + open decisions); its decisions are asked at the pre-check of the first M6 row; then M6-T1… in order until M6-GATE.
+- Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 6 section + the row's decisions, `docs/project-documentation/modules/module-6-client-dashboard.md`, the code the row names.
+- Standing approvals: none yet (client/ and admin/ approval asked at the first row that touches them). Live AI or Meta calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #12 (2026-11-20) · rows this session: 2 · estimate: 62k
+- Session: #13 (2026-11-20) · rows this session: 0 · estimate: 40k
+- Previous runs (Modules 3–5, PW, PR): see `## Log` and git history.
 
 ## State
-done: Module 5 (M5-T1 … M5-GATE; M5-T17 live Meta smoke pending until the Meta test app exists) (2026-11-20)
+dispatched M6-PLAN (2026-11-20) · commit: "docs(progress): plan module 6 (M6-PLAN)"
 
 ## Resume
-Run finished. Start the next run with new instructions, e.g. `/orchestration Module 6 from M6-PLAN until M6-GATE`.
+`/orchestration --continue`
 
 ## Next prompt
-RUN COMPLETE
+PRE-CHECK: needs user decisions D1–D17 (Module 6, TASKS.md) before dispatch. Ask them all at once (recommended option first), record the answers in TASKS.md (each `— OPEN` → `— ANSWERED 2026-11-20 …`, plus an M6-PLAN decisions Verification log entry and a MEMORY.md line), re-plan rows if an answer changes them (e.g. D15 in/out → M6-T13, D17 → M6-T4/GATE), ask for the client/ approval for the run, then dispatch M6-T1 with the answers filled in below.
 
-Module 5 run scope (M5-T1 … M5-GATE) is finished. M5-T17 (live Meta smoke) stays pending until the Meta test app exists. Next work (not in this run): Module 6 planning (M6-PLAN, `docs/project-documentation/modules/module-6-client-dashboard.md`).
+**(M6-T1)**
+
+You are implementing exactly ONE task row, **M6-T1**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
+
+**Read first (only these)**
+1. `AGENTS.md`.
+2. `docs/progress/MEMORY.md` (all; lines are long: focus on Moderation schema M5-T7, Moderation policy M5-T8, Moderation worker M5-T12, PW plan flags).
+3. From `docs/progress/TASKS.md` (use `grep -n`/`sed -n`; the file is large): the Module 6 header + readings (1)–(7), decisions **D2, D4, D5, D6, D14** (answers), the M6-PLAN row and the **M6-T1** row. Module 5 D4/D5/D6 for the existing policy.
+4. Spec: `docs/project-documentation/modules/module-6-client-dashboard.md` (Backend Implementation).
+5. Code to read or reuse: `backend/src/db/schema/moderation.ts` (`moderationPolicies`), `backend/src/db/schema/comments.ts` (`DAILY_COMMENT_COUNTERS`, `daily_comment_stats` check), `backend/src/db/schema/check-sql.ts`, `backend/src/moderation/moderation-policy.{controller,service,rules}.ts`, `backend/src/moderation/dto/moderation-policy.dto.ts`, `backend/src/moderation/moderation.queries.ts` (`toModerationPolicy`), `workspacePlanFeatures()` + plan flags `customBlocklist`/`autoHideScams` (`backend/src/db/schema/plans.ts`), the policy e2e spec under `backend/test/` (copy its harness: `createAuthActors`, `activatePlan`).
+
+**Recorded decisions** (fill in at pre-check): D2 …, D4 …, D5 …, D6 …, D14 ….
+
+**Task (M6-T1): backend rules storage + policy API**
+- Migration (`npx drizzle-kit generate --name module6_rules`, review the SQL): `moderation_policies` gets `blocked_keywords text[]` default `{}`, `block_urls` / `block_phone_numbers` booleans (defaults per D6), `allowed_domains text[]` default `{}`, check constraints for counts/lengths (D5); `daily_comment_stats.rule_matched_count` (+ `ruleMatched` in `DAILY_COMMENT_COUNTERS`, check updated); the comment match record per D2 (e.g. `status_reason` codes `rule_keyword`/`rule_url`/`rule_phone` + a nullable matched-value column on `comments`, kept out of `WorkspaceComment` if not needed).
+- Shared pure keyword normaliser (NFKC, lower-case, whitespace collapse per D5) in `src/moderation/` (M6-T2 reuses it).
+- `GET/PATCH /api/workspaces/:workspaceId/moderation/policy`: response adds `rules { blockedKeywords, blockUrls, blockPhoneNumbers, allowedDomains }` + availability flags; PATCH accepts partial `rules` (normalised, de-duplicated, limits → 400 with a `code`), gating per D4 → 409 `PLAN_FEATURE_UNAVAILABLE` `details { feature }`; no-op keeps `updatedAt`. Auto-reply unchanged unless D14 ≠ (a). Spec's `/rules` endpoints = this API (reading 3); no new route.
+- Tests: DTO/rules unit (duplicates, limits, blanks, Bangla keywords, domain format), service merge + no-op, gating; e2e GET/PATCH (defaults, round trip, 400/409 codes, roles owner/admin vs moderator, impersonated, tenant isolation). Update the client mirror only if the backend change breaks `client/src/lib/moderation-policy.ts` types (prefer not touching client in this row).
+
+**Rules:** TS strict, ESM, no `any`. Vitest. No live external calls in tests (Meta/AI mocked); tests must fail on unexpected requests. Every tenant query is scoped by `workspace_id`. Never `drizzle-kit push`. Never commit `.env*` (except `.env.example`) or build/test output. **Never stop or kill the user's own processes** (local Postgres 5432, Redis 6379, dev servers); on a port clash use env overrides or stop and report.
+
+**Verify** (report real numbers):
+- backend: `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test`, `npm run test:e2e`, `npm run lint`, `npx prettier --check "src/**/*.ts" "test/**/*.ts"` (known exception `src/scripts/ai-sdk-smoke.ts`). The test DB must end at its baseline (4 `plans` + 4 promotions + 4 promotion_plans, 0 users).
+- Migration applied: `docker compose up -d --build backend` (migrate service runs) + `/api/health/live` check.
+- Current test counts: backend 2031 unit + 983 e2e, admin 432, client 490.
+
+**If a decision is missing:** if D2/D4/D5/D6/D14 are still OPEN, STOP without coding. Report `STATUS: needs-decision` with the question and 2–4 options (recommended first).
+
+**Finish (in this order)**
+1. TASKS.md: M6-T1 → `✅ <date>` + concise notes. Verification log entry at the TOP. Short lasting facts in MEMORY.md; point its "Next" phrase at M6-T2.
+2. Journal `docs/progress/ORCHESTRATION.md`: append one `## Log` line; append choices under `## Choices to confirm` as `- M6-T1: …`; **replace** `## Next prompt` with the M6-T2 prompt in the format of `.claude/skills/orchestration/subagent-prompt.md`.
+3. Commit everything with `feat(backend): add moderation rules storage and api (M6-T1)` (+ 2–4 bullet body) and the Co-Authored-By trailer from your dispatch message.
+4. Return the report in the contract format.
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -94,6 +122,7 @@ Module 5 run scope (M5-T1 … M5-GATE) is finished. M5-T17 (live Meta smoke) sta
 - M5-T15e: (1) AI section sits under the stats on `/admin/dashboard`, outside the stats error branch; each block (cards, analyses, top-ups) has its own query + inline error/Try again · (2) Comments analyzed card = today as the big number, `7 days · total` caption · (3) negative remaining = `text-destructive` + "Spend is above the credit added: top up on Neon" · (4) tokens < 100 shown raw (`40`), not `0.04k` · (5) comment preview = 80 chars + …, full text in `title` + "Show full comment" toggle; null text = "No text" · (6) amount = text input `inputMode=decimal` + regex (≤ 2 dp, rejects `1e3`), date defaults to today (Dhaka) with `max` · (7) delete dialog always closes + refetches; 404 → "already deleted" toast · (8) no new shadcn component; spend by model / by decision from the summary not shown (not asked for in the row; add when wanted).
 - M5-T16: (1) winners Text = Text + Image = `typesafeai-jev-1-14-0` (cheapest passing, 93.8 %); `gemini-4-carbon` is Free but failed (40/48 calls hit the 15 s `MODERATION_TIMEOUT_MS`; timeout kept as production truth, not raised for the bake-off) — a Free model would have won on price, and free tiers can change · (2) jev as the Text + Image model too: it is the cheapest passing image-capable catalog model, but its image path through System One is untested (image moderation is a later row, switch stays off) · (3) jev cost = input tokens × $0.042/1M only (output not shown, billed 0) · ৳ figures use an assumed ৳122/USD (no project rate exists) · (4) replay: jev can't be recorded, so the cheapest passing chat model `gpt-oss-20b` is recorded; the claude/120b/gemini recordings were deleted; hand-made replay kept (planted failures) · (5) three gateway fixes from the smoke: catalog `temperature` flag (Gemini/Claude/jev false, from `/v1/models`) → `temperature` left out; Neon "Structured output is not supported" 400 marked as a `response_format` refusal (Claude Haiku answers in prompt mode, 3 calls/comment, refused calls cost no tokens); 429 `credits_required` → `payment_required` · (6) `gpt-oss-120b` 89.6 % counted as FAIL although its only misses are 5 cold-start timeouts (43/43 answered right) · (7) winners set in the compose dev DB through `AdminAiSettingsService.update` in the backend container (actor = the local super admin, user agent `M5-T16 golden bake-off (agent script)`), not through HTTP (no admin password) · (8) golden spend ≈ US$0.07, not on `/admin/dashboard` (no `daily_ai_usage` rows): add a top-up only if you want the dashboard estimate to match Neon billing.
 - M5-GATE: (1) gate (1) = one live jev run on the whole fixture (93.8 %, same 3 misses as M5-T16), no prompt change · (2) gate (2) = the existing "exact Graph payloads" block in `test/moderation-executor.e2e-spec.ts` covers all 8 (hide/unhide/delete/reply × FB/IG), so no test added · (3) no Docker rebuild (no code change) · (4) M5-T17 skipped (optional; Meta test app) · (5) MEMORY **Next:** points at Module 6 planning (M6-PLAN).
+- M6-PLAN: (1) spec reconciled instead of new tables: `ModerationRule` → new columns on `moderation_policies` + the existing policy API (no `/rules` route), `DailyAnalytics` → `daily_comment_stats` + one `ruleMatched` counter, override → M5 executor (readings 1–7 in TASKS.md) · (2) backend rows first (T1 rules storage, T2 engine, T3 feed, T4 override, T5 dashboard, T6 analytics + CSV, T7 playground), then client (T8 nav + dashboard, T9 comments, T10 rules, T11 playground, T12 analytics); nav folded into T8, `recharts` install too · (3) boosted posts = conditional row M6-T13 (D15) · (4) added D17 (gate e2e without live Meta: `MetaGraphClient` host is fixed) beyond the prompt's list · (5) the gate's e2e UI test stays in M6-GATE (root `e2e/`), unit rule-priority test in M6-T2
 
 ## Decisions asked
 - 2026-11-18 M3-T10: D13 0-Pages redirect → entry points only (recorded in TASKS.md D13)
@@ -224,3 +253,4 @@ Module 5 run scope (M5-T1 … M5-GATE) is finished. M5-T17 (live Meta smoke) sta
 - 2026-11-20 M5-T15e ✅ · `cc5581b` · admin 432/432 (was 400; +22 lib, +10 dashboard) · backend/client untouched · `/admin/dashboard` AI spend cards (credit added, estimated spend, negative remaining, comments analyzed, Neon note + unpriced calls), recent 20 analyses table, credit top-ups add/delete; docker admin rebuilt + healthy
 - 2026-11-20 M5-T16 ✅ · `cb9bcbc` · backend 2031 unit (was 2026 + 1 skipped) + e2e 983/983 · live bake-off: jev 93.8 % $0.034/1k (winner, Text + Text + Image), gpt-oss-20b 95.8 % (recorded replay), claude-haiku 100 %, gpt-oss-120b 89.6 % / gemini 16.7 % (timeouts); temperature + structured-output + credits_required gateway fixes
 - 2026-11-20 M5-GATE ✅ · `179f9db` · backend 2031 unit + 983 e2e (unchanged) · Module 5 gate passed: live jev golden 93.8 % (45/48; bn 100 / banglish 83.3 / en 100), Graph payload e2e 8/8 FB+IG; no code change, M5-T17 skipped
+- 2026-11-20 M6-PLAN ✅ · docs only · Module 6 section in TASKS.md: 14 rows (M6-T1…T13 + GATE), 17 open decisions (D1–D17); next = pre-check asks D1–D17, then M6-T1
