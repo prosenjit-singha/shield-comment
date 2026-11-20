@@ -3,6 +3,7 @@ import {
   type DecisionCurrent,
   DECISION_REASONS,
   decideAction,
+  decideRuleAction,
   type ModerationDecision,
 } from './moderation-decision.js';
 import {
@@ -11,6 +12,7 @@ import {
   MODERATION_CATEGORIES,
   type ModerationCategory,
   type PolicyAction,
+  RULE_KINDS,
 } from './moderation.constants.js';
 import {
   defaultModerationPolicy,
@@ -380,5 +382,73 @@ describe('decideAction', () => {
         reply: { language: 'bn', text: withReply().replyBn },
       });
     });
+  });
+});
+
+describe('decideRuleAction (M6-T2, Module 6 D2 b)', () => {
+  const rules = (action: 'HIDE' | 'DELETE') => ({
+    ...policy().rules,
+    actions: { keyword: action, url: action, phone: action },
+  });
+
+  it.each(RULE_KINDS)('%s: AUTO + HIDE → HIDE, HIDDEN', (kind) => {
+    expect(decideRuleAction(policy(), kind, fresh())).toEqual({
+      action: 'HIDE',
+      status: 'HIDDEN',
+      reason: 'policy',
+    });
+  });
+
+  it.each(RULE_KINDS)('%s: AUTO + DELETE → DELETE, DELETED', (kind) => {
+    const p = policy({ rules: rules('DELETE') });
+    expect(decideRuleAction(p, kind, fresh())).toEqual({
+      action: 'DELETE',
+      status: 'DELETED',
+      reason: 'policy',
+    });
+    // Delete escalates a hidden comment too.
+    expect(decideRuleAction(p, kind, fresh({ status: 'HIDDEN' })).action).toBe(
+      'DELETE',
+    );
+  });
+
+  it('uses the action of the matched kind only', () => {
+    const p = policy({
+      rules: {
+        ...policy().rules,
+        actions: { keyword: 'HIDE', url: 'DELETE', phone: 'HIDE' },
+      },
+    });
+    expect(decideRuleAction(p, 'keyword', fresh()).action).toBe('HIDE');
+    expect(decideRuleAction(p, 'url', fresh()).action).toBe('DELETE');
+    expect(decideRuleAction(p, 'phone', fresh()).action).toBe('HIDE');
+  });
+
+  it('REVIEW mode → no action, NEEDS_REVIEW (HIDDEN stays HIDDEN)', () => {
+    const p = policy({ mode: 'REVIEW', rules: rules('DELETE') });
+    expect(decideRuleAction(p, 'phone', fresh())).toEqual({
+      action: 'NONE',
+      status: 'NEEDS_REVIEW',
+      reason: 'review_mode',
+    });
+    expect(
+      decideRuleAction(p, 'phone', fresh({ status: 'HIDDEN' })).status,
+    ).toBe('HIDDEN');
+  });
+
+  it('already hidden + HIDE → nothing to do; deleted / human-stamped → untouched', () => {
+    expect(
+      decideRuleAction(policy(), 'url', fresh({ status: 'HIDDEN' })),
+    ).toEqual({ action: 'NONE', status: 'HIDDEN', reason: 'already_applied' });
+    expect(
+      decideRuleAction(policy(), 'url', fresh({ deletedAt: STAMP })),
+    ).toMatchObject({ action: 'NONE', reason: 'comment_deleted' });
+    expect(
+      decideRuleAction(
+        policy(),
+        'url',
+        fresh({ status: 'VISIBLE', overriddenAt: STAMP }),
+      ),
+    ).toEqual({ action: 'NONE', status: 'VISIBLE', reason: 'human_override' });
   });
 });

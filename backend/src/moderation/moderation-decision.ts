@@ -1,6 +1,10 @@
 import type { PlanFeatureConfig } from '../db/schema/index.js';
 import type { ClassificationOutput } from './classifier-output.js';
-import type { CommentStatus, PolicyAction } from './moderation.constants.js';
+import type {
+  CommentStatus,
+  PolicyAction,
+  RuleKind,
+} from './moderation.constants.js';
 import type { ModerationPolicy } from './moderation.queries.js';
 
 /**
@@ -137,6 +141,38 @@ export function decideAction(
         : { language: 'bn', text: rule.replyBn };
   }
   return decision;
+}
+
+/**
+ * M6-T2 (Module 6 D2 b): the decision for a static-rule match. Same table as `decideAction`
+ * without the AI parts: the wanted action is the policy's `rules.actions[kind]` (HIDE / DELETE),
+ * REVIEW mode never acts (`NEEDS_REVIEW`, or `HIDDEN` when hidden on Meta), never a reply.
+ */
+export function decideRuleAction(
+  policy: Pick<ModerationPolicy, 'mode' | 'rules'>,
+  kind: RuleKind,
+  current: Pick<DecisionCurrent, 'status' | 'overriddenAt' | 'deletedAt'>,
+): ModerationDecision {
+  if (current.deletedAt !== null || current.status === 'DELETED') {
+    return {
+      action: 'NONE',
+      status: current.status,
+      reason: 'comment_deleted',
+    };
+  }
+  if (current.overriddenAt !== null) {
+    return { action: 'NONE', status: current.status, reason: 'human_override' };
+  }
+  const hidden = current.status === 'HIDDEN';
+  const wanted = wantedAction(policy.rules.actions[kind], hidden, false);
+  if (policy.mode === 'REVIEW' && wanted.action !== 'NONE') {
+    return {
+      action: 'NONE',
+      status: hidden ? 'HIDDEN' : 'NEEDS_REVIEW',
+      reason: 'review_mode',
+    };
+  }
+  return wanted;
 }
 
 function wantedAction(

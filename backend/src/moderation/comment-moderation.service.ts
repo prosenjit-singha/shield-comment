@@ -11,6 +11,7 @@ import { WalletService } from '../wallet/wallet.service.js';
 import type { ClassifierInput } from './classifier-input.js';
 import type { ModerateCommentTarget } from './comment-moderation.job.js';
 import {
+  type AutoActionFlags,
   clearCommentCounted,
   findAutoActionFlags,
   findWorkspaceBillingAccountId,
@@ -40,6 +41,7 @@ import { ModerationActionExecutor } from './moderation-action.executor.js';
 import {
   type DecisionClassification,
   decideAction,
+  decideRuleAction,
   type ModerationDecision,
 } from './moderation-decision.js';
 import {
@@ -50,20 +52,25 @@ import {
   type CommentStatus,
   MODERATION_CATEGORY_KEYS,
   type ModerationStage,
+  RULE_STATUS_REASONS,
+  type RuleKind,
 } from './moderation.constants.js';
 import {
   type ModerationPolicy,
   recordDailyAiUsage,
 } from './moderation.queries.js';
 import { PostContextService } from './post-context.service.js';
+import { matchStaticRules, type StaticRuleMatch } from './static-rules.js';
 
 /** What one `moderate-comment` job did (the job's return value; ids and codes only). */
 export type ModerationResult =
   | { kind: 'skipped'; reason: ModerationWorkerSkip }
   | {
       kind: 'moderated';
-      /** Classified in this run (`false` = a retry that only finished the Meta step). */
+      /** Classified in this run (`false` = a retry that only finished the Meta step, or a rule). */
       classified: boolean;
+      /** M6-T2: a static rule decided (no AI call). */
+      rule?: RuleKind;
       /** This run counted the comment against the monthly comment limit (PW-D1/D2: once). */
       counted: boolean;
       action: ModerationDecision['action'];
@@ -94,6 +101,28 @@ export interface ModerationAttempt {
 }
 
 type Counters = Partial<Record<DailyCommentCounter, number>>;
+
+/** What decided a comment version: the AI classification or a static rule (M6-T2). */
+interface Verdict {
+  decide(
+    current: ModerationComment,
+    flags: AutoActionFlags,
+  ): ModerationDecision;
+  /** The columns the verdict writes (classification + `rule_match` null, or the rule match). */
+  patch: ModerationStatePatch;
+  counters: Counters;
+  statusReason(decision: ModerationDecision): string | null;
+  rule?: RuleKind;
+  /** Log label (kinds and scores only, never text or matched values). */
+  label: string;
+}
+
+/** Ran in this run: counted against the monthly comments, classified by the AI, or a rule. */
+interface RunFacts {
+  counted: boolean;
+  classified: boolean;
+  rule?: RuleKind;
+}
 
 type Prepared =
   | { kind: 'done'; result: ModerationResult }
@@ -158,10 +187,33 @@ export class CommentModerationService {
     const { comment } = prepared;
     const policy = await this.policies.policy(target.workspaceId);
 
-    if (comment.moderationStage === 'act') {
+    // A rule-decided version (`rule_match` set) re-runs the rules in `classify()` (free: counted).
+    if (comment.moderationStage === 'act' && comment.ruleMatch === null) {
       const stored = storedClassification(comment);
       if (stored) {
-        return this.act(comment, policy, stored, false, false, attempt, now);
+        const decision = decideAction(
+          policy,
+          stored,
+          await workspacePlanFeatures(this.db, comment.workspaceId),
+          {
+            status: comment.status,
+            overriddenAt: comment.overriddenAt,
+            deletedAt: comment.deletedAt,
+            ...(await findAutoActionFlags(
+              this.db,
+              comment.workspaceId,
+              comment.id,
+            )),
+          },
+        );
+        return this.act(
+          comment,
+          decision,
+          decisionStatusReason(decision),
+          { counted: false, classified: false },
+          attempt,
+          now,
+        );
       }
     }
     return this.classify(comment, policy, target, attempt, now);
@@ -215,6 +267,19 @@ export class CommentModerationService {
       return { kind: 'skipped', reason: usage.reason };
     }
     const { countedAt } = usage;
+
+    // M6-T2 (D3: after the usage step): a static rule match skips the post context and the LLM.
+    const match = matchStaticRules(comment.message, policy.rules);
+    if (match !== null) {
+      return this.ruleMatched(
+        comment,
+        policy,
+        match,
+        countedAt !== null,
+        attempt,
+        now,
+      );
+    }
 
     let result;
     try {
@@ -358,7 +423,7 @@ export class CommentModerationService {
     throw new ModerationStepError('classify', failure.kind, failure.retryable);
   }
 
-  /** tx2: store the classification and decide; finish here when Meta has nothing to do. */
+  /** The AI verdict (tx2 stores the classification and clears `rule_match`). */
   private async classified(
     comment: ModerationComment,
     policy: ModerationPolicy,
@@ -368,6 +433,98 @@ export class CommentModerationService {
     now: () => Date,
   ): Promise<ModerationResult> {
     const plan = await workspacePlanFeatures(this.db, comment.workspaceId);
+    return this.decided(
+      comment,
+      {
+        decide: (current, flags) =>
+          decideAction(policy, result, plan, {
+            status: current.status,
+            overriddenAt: current.overriddenAt,
+            deletedAt: current.deletedAt,
+            ...flags,
+          }),
+        patch: {
+          classification: {
+            category: result.category,
+            confidence: result.confidence,
+            reasoning: result.reasoning,
+            language: result.language,
+            classifiedAt: now(),
+            aiProvider: result.provider,
+            model: result.model,
+            promptVersion: result.promptVersion,
+            contextLevel: result.contextLevel,
+            aiInputTokens: result.usage?.promptTokens ?? null,
+            aiOutputTokens: result.usage?.completionTokens ?? null,
+            aiLatencyMs: result.latencyMs,
+          },
+          ruleMatch: null,
+        },
+        counters: {
+          classified: 1,
+          [MODERATION_CATEGORY_KEYS[result.category]]: 1,
+        },
+        statusReason: decisionStatusReason,
+        label: `classified ${result.category} (${result.confidence}, ${result.contextLevel}`,
+      },
+      { counted, classified: true },
+      attempt,
+      now,
+    );
+  }
+
+  /**
+   * M6-T2 (Module 6 D2 b): a static rule matched. No AI call and no classification columns:
+   * `rule_match` = the value, `status_reason` = `rule_<kind>`, `ruleMatched` counter, the action
+   * = the policy's `rules.actions[kind]` through the same executor path (REVIEW → `NEEDS_REVIEW`).
+   */
+  private async ruleMatched(
+    comment: ModerationComment,
+    policy: ModerationPolicy,
+    match: StaticRuleMatch,
+    counted: boolean,
+    attempt: ModerationAttempt,
+    now: () => Date,
+  ): Promise<ModerationResult> {
+    const reason = RULE_STATUS_REASONS[match.kind];
+    const run: RunFacts = { counted, classified: false, rule: match.kind };
+    if (comment.moderationStage === 'act') {
+      // A retry after a failed Meta step: stored and counted before, only act again.
+      return this.act(
+        comment,
+        decideRuleAction(policy, match.kind, comment),
+        reason,
+        run,
+        attempt,
+        now,
+      );
+    }
+    return this.decided(
+      comment,
+      {
+        decide: (current) => decideRuleAction(policy, match.kind, current),
+        patch: { ruleMatch: match.value },
+        counters: { ruleMatched: 1 },
+        statusReason: () => reason,
+        rule: match.kind,
+        label: `rule ${match.kind} matched (`,
+      },
+      run,
+      attempt,
+      now,
+    );
+  }
+
+  /** tx2: store the verdict and decide; finish here when Meta has nothing to do. */
+  private async decided(
+    comment: ModerationComment,
+    verdict: Verdict,
+    run: RunFacts,
+    attempt: ModerationAttempt,
+    now: () => Date,
+  ): Promise<ModerationResult> {
+    // `act` only when a rule-decided version no longer matches on a retry (the AI decides now).
+    const stage: ModerationStage = comment.moderationStage ?? 'classify';
     const stored = await this.db.transaction(async (tx) => {
       const at = now();
       const current = await lockModerationComment(
@@ -379,15 +536,15 @@ export class CommentModerationService {
         workspaceId: comment.workspaceId,
         commentRowId: comment.id,
         editedAt: comment.editedAt,
-        stage: 'classify' as const,
+        stage,
       };
       if (
         !current ||
         !sameVersion(current.editedAt, comment.editedAt) ||
-        current.moderationStage !== 'classify'
+        current.moderationStage !== stage
       ) {
-        // A newer edit (its own job classifies it, free: the comment is counted) or another run
-        // finished first. The call happened, so the count stays.
+        // A newer edit (its own job decides it, free: the comment is counted) or another run
+        // finished first. The count stays.
         return null;
       }
       const flags = await findAutoActionFlags(
@@ -395,34 +552,14 @@ export class CommentModerationService {
         comment.workspaceId,
         comment.id,
       );
-      const decision = decideAction(policy, result, plan, {
-        status: current.status,
-        overriddenAt: current.overriddenAt,
-        deletedAt: current.deletedAt,
-        ...flags,
-      });
+      const decision = verdict.decide(current, flags);
       const metaSkip =
         needsMeta(decision) && current.connectionStatus !== 'ACTIVE'
           ? 'connection_needs_reauth'
           : null;
-      const patch: ModerationStatePatch = {
-        classification: {
-          category: result.category,
-          confidence: result.confidence,
-          reasoning: result.reasoning,
-          language: result.language,
-          classifiedAt: at,
-          aiProvider: result.provider,
-          model: result.model,
-          promptVersion: result.promptVersion,
-          contextLevel: result.contextLevel,
-          aiInputTokens: result.usage?.promptTokens ?? null,
-          aiOutputTokens: result.usage?.completionTokens ?? null,
-          aiLatencyMs: result.latencyMs,
-        },
-      };
+      const patch: ModerationStatePatch = { ...verdict.patch };
       if (metaSkip !== null) {
-        // D13: classified, the Meta action is skipped; visible comments wait for a human.
+        // D13: decided, the Meta action is skipped; visible comments wait for a human.
         const status = statusWhenUnfinished(current.status, 'NEEDS_REVIEW');
         Object.assign(patch, {
           stage: null,
@@ -435,29 +572,23 @@ export class CommentModerationService {
         Object.assign(patch, {
           stage: null,
           status: decision.status,
-          statusReason: decisionStatusReason(decision),
+          statusReason: verdict.statusReason(decision),
         });
       }
       await updateModerationState(tx, version, patch, at);
-      await this.count(
-        tx,
-        current,
-        { classified: 1, [MODERATION_CATEGORY_KEYS[result.category]]: 1 },
-        at,
-      );
+      await this.count(tx, current, verdict.counters, at);
       return { current, decision, metaSkip };
     });
 
     this.logger.log(
-      `Comment ${comment.id} (workspace ${comment.workspaceId}): classified ${result.category} (${result.confidence}, ${result.contextLevel}, counted ${counted ? 1 : 0})${stored ? ` → ${stored.decision.action}` : ' → newer version, not applied'}`,
+      `Comment ${comment.id} (workspace ${comment.workspaceId}): ${verdict.label}, counted ${run.counted ? 1 : 0})${stored ? ` → ${stored.decision.action}` : ' → newer version, not applied'}`,
     );
     if (!stored) return { kind: 'skipped', reason: 'stale_version' };
     const { current, decision, metaSkip } = stored;
     if (metaSkip !== null || !needsMeta(decision)) {
       return {
         kind: 'moderated',
-        classified: true,
-        counted,
+        ...run,
         action: metaSkip === null ? decision.action : 'NONE',
         status:
           metaSkip === null
@@ -469,13 +600,11 @@ export class CommentModerationService {
     }
     return this.act(
       { ...current, moderationStage: 'act' },
-      policy,
-      result,
-      counted,
-      true,
+      decision,
+      verdict.statusReason(decision),
+      run,
       attempt,
       now,
-      decision,
     );
   }
 
@@ -485,31 +614,13 @@ export class CommentModerationService {
    */
   private async act(
     comment: ModerationComment,
-    policy: ModerationPolicy,
-    classification: DecisionClassification,
-    counted: boolean,
-    classified: boolean,
+    decision: ModerationDecision,
+    /** `status_reason` once finished: `decisionStatusReason`, or `rule_<kind>` (M6-T2). */
+    statusReason: string | null,
+    run: RunFacts,
     attempt: ModerationAttempt,
     now: () => Date,
-    decided?: ModerationDecision,
   ): Promise<ModerationResult> {
-    const decision =
-      decided ??
-      decideAction(
-        policy,
-        classification,
-        await workspacePlanFeatures(this.db, comment.workspaceId),
-        {
-          status: comment.status,
-          overriddenAt: comment.overriddenAt,
-          deletedAt: comment.deletedAt,
-          ...(await findAutoActionFlags(
-            this.db,
-            comment.workspaceId,
-            comment.id,
-          )),
-        },
-      );
     const version = {
       workspaceId: comment.workspaceId,
       commentRowId: comment.id,
@@ -532,8 +643,7 @@ export class CommentModerationService {
       if (error) throw error;
       return {
         kind: 'moderated',
-        classified,
-        counted,
+        ...run,
         action: decision.action,
         status,
         replied,
@@ -630,7 +740,7 @@ export class CommentModerationService {
     return finish({
       stage: null,
       ...(decision.action === 'NONE' && { status: decision.status }),
-      statusReason: decisionStatusReason(decision),
+      statusReason,
     });
   }
 

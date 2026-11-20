@@ -56,6 +56,8 @@ export interface ModerationComment {
   category: ModerationCategory | null;
   confidence: number | null;
   language: CommentLanguage | null;
+  /** M6-T2: the static-rule value that decided this version (`null` = AI-decided or none). */
+  ruleMatch: string | null;
   socialPageId: string | null;
   /** The Page (scoped to the workspace); `null` = orphaned or not this workspace's. */
   page: { metaPageId: string; isActive: boolean } | null;
@@ -88,6 +90,7 @@ export async function lockModerationComment(
       category: comments.category,
       confidence: comments.confidence,
       language: comments.language,
+      ruleMatch: comments.ruleMatch,
       socialPageId: comments.socialPageId,
       metaPageId: socialPages.pageId,
       pageIsActive: socialPages.isActive,
@@ -194,6 +197,8 @@ export interface ModerationStatePatch {
   status?: CommentStatus;
   statusReason?: string | null;
   classification?: StoredClassification;
+  /** M6-T2: the matched rule value (`null` clears it: an AI classification replaces it). */
+  ruleMatch?: string | null;
 }
 
 /**
@@ -221,6 +226,7 @@ export async function updateModerationState(
   if (patch.status !== undefined) set.status = patch.status;
   if (patch.statusReason !== undefined) set.statusReason = patch.statusReason;
   if (patch.classification) Object.assign(set, patch.classification);
+  if (patch.ruleMatch !== undefined) set.ruleMatch = patch.ruleMatch;
   const rows = await tx
     .update(comments)
     .set(set)

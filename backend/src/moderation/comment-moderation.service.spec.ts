@@ -9,6 +9,7 @@ import type {
 } from './comment-classifier.js';
 import {
   clearCommentCounted,
+  findAutoActionFlags,
   findWorkspaceBillingAccountId,
   lockModerationComment,
   markCommentCounted,
@@ -21,7 +22,11 @@ import {
 } from './comment-moderation.service.js';
 import type { ModerationActionExecutor } from './moderation-action.executor.js';
 import type { ModerationPolicyService } from './moderation-policy.service.js';
-import { defaultModerationPolicy } from './moderation.queries.js';
+import {
+  defaultModerationPolicy,
+  type ModerationPolicy,
+  recordDailyAiUsage,
+} from './moderation.queries.js';
 import type { PostContextService } from './post-context.service.js';
 
 vi.mock('./comment-moderation.queries.js', () => ({
@@ -68,6 +73,7 @@ function comment(patch: Partial<ModerationComment> = {}): ModerationComment {
     category: null,
     confidence: null,
     language: null,
+    ruleMatch: null,
     socialPageId: 'sp_1',
     page: { metaPageId: 'page_1', isActive: true },
     connectionStatus: 'ACTIVE',
@@ -278,5 +284,195 @@ describe('CommentModerationService usage counting (PW-T4)', () => {
     expect(wallet.consume).not.toHaveBeenCalled();
     expect(wallet.refund).not.toHaveBeenCalled();
     expect(clearCommentCounted).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * M6-T2 gate test (1): the static rules run after the usage step and before the post context +
+ * classifier. A keyword / URL / BD-phone match never reaches the LLM; no match → the AI path.
+ */
+describe('CommentModerationService static rules (M6-T2)', () => {
+  let classify: ReturnType<typeof vi.fn<CommentClassifier['classify']>>;
+  let forComment: ReturnType<typeof vi.fn<PostContextService['forComment']>>;
+  let execute: ReturnType<typeof vi.fn<ModerationActionExecutor['execute']>>;
+  let consume: ReturnType<typeof vi.fn<WalletService['consume']>>;
+  let policy: ModerationPolicy;
+  let service: CommentModerationService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    classify = vi.fn(async () => success);
+    forComment = vi.fn(async () => ({ pageName: null, postCaption: null }));
+    execute = vi.fn(async ({ action }) => ({
+      outcome: 'succeeded' as const,
+      actionId: 'a_1',
+      commentStatus:
+        action === 'DELETE' ? ('DELETED' as const) : ('HIDDEN' as const),
+      replyCommentId: null,
+      alreadyGone: false,
+    }));
+    consume = vi.fn(async () => 'ok' as const);
+    policy = defaultModerationPolicy(WS);
+    policy.rules = {
+      ...policy.rules,
+      blockedKeywords: ['cashback'],
+      blockUrls: true,
+      blockPhoneNumbers: true,
+    };
+    service = new CommentModerationService(
+      {
+        transaction: async <T>(fn: (tx: object) => Promise<T>) => fn({}),
+      } as unknown as Database,
+      { policy: async () => policy } as unknown as ModerationPolicyService,
+      { forComment } as unknown as PostContextService,
+      { consume, refund: vi.fn() } as unknown as WalletService,
+      { classify } as unknown as CommentClassifier,
+      { execute } as unknown as ModerationActionExecutor,
+    );
+    vi.mocked(updateModerationState).mockResolvedValue(true);
+    vi.mocked(markCommentCounted).mockResolvedValue(true);
+    vi.mocked(findAutoActionFlags).mockResolvedValue({
+      hiddenByAi: false,
+      autoReplied: false,
+    });
+    vi.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  const withMessage = (
+    message: string,
+    patch: Partial<ModerationComment> = {},
+  ) =>
+    vi
+      .mocked(lockModerationComment)
+      .mockResolvedValue(comment({ message, ...patch }));
+  const run = () =>
+    service.moderate(target, { finalAttempt: false }, () => NOW);
+  const patches = () =>
+    vi.mocked(updateModerationState).mock.calls.map((c) => c[2]);
+
+  it.each([
+    ['keyword', 'Free CASHBACK pete inbox korun', 'cashback'],
+    ['url', 'claim here bit.ly/x', 'bit.ly/x'],
+    ['phone', 'bKash korun +880 1712-345678', '+880 1712-345678'],
+  ] as const)(
+    '%s match → no post context, no LLM, counted, HIDE via the executor',
+    async (kind, message, value) => {
+      withMessage(message);
+      expect(await run()).toEqual({
+        kind: 'moderated',
+        classified: false,
+        counted: true,
+        rule: kind,
+        action: 'HIDE',
+        status: 'HIDDEN',
+        replied: false,
+      });
+      expect(classify).not.toHaveBeenCalled();
+      expect(forComment).not.toHaveBeenCalled();
+      // D3: the usage step runs before the rule check.
+      expect(consume).toHaveBeenCalledWith(WS, 'monthlyComments', 1, NOW);
+      expect(execute).toHaveBeenCalledWith(
+        { workspaceId: WS, commentId: ROW, source: 'AUTO', action: 'HIDE' },
+        expect.any(Function),
+      );
+      expect(patches()).toEqual([
+        { ruleMatch: value, stage: 'act' },
+        { stage: null, statusReason: `rule_${kind}` },
+      ]);
+      expect(recordDailyAiUsage).not.toHaveBeenCalled();
+    },
+  );
+
+  it('no match → post context + LLM are called, rule_match cleared', async () => {
+    withMessage('price koto? 1,250 taka');
+    expect(await run()).toMatchObject({ classified: true, status: 'VISIBLE' });
+    expect(forComment).toHaveBeenCalledTimes(1);
+    expect(classify).toHaveBeenCalledTimes(1);
+    expect(patches()[0]).toMatchObject({
+      ruleMatch: null,
+      classification: expect.objectContaining({ category: 'SAFE_INQUIRY' }),
+    });
+  });
+
+  it('rules switched off / empty → the AI decides', async () => {
+    policy.rules = {
+      ...policy.rules,
+      blockedKeywords: [],
+      blockUrls: false,
+      blockPhoneNumbers: false,
+    };
+    withMessage('cashback bit.ly/x 01712345678');
+    await run();
+    expect(classify).toHaveBeenCalledTimes(1);
+  });
+
+  it('DELETE per kind → DELETE through the executor', async () => {
+    policy.rules.actions = { keyword: 'HIDE', url: 'HIDE', phone: 'DELETE' };
+    withMessage('call 01712345678');
+    expect(await run()).toMatchObject({
+      rule: 'phone',
+      action: 'DELETE',
+      status: 'DELETED',
+    });
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'DELETE' }),
+      expect.any(Function),
+    );
+  });
+
+  it('REVIEW mode → NEEDS_REVIEW with rule_<kind>, no Meta call, no LLM', async () => {
+    policy.mode = 'REVIEW';
+    withMessage('cashback offer');
+    expect(await run()).toMatchObject({
+      rule: 'keyword',
+      action: 'NONE',
+      status: 'NEEDS_REVIEW',
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(classify).not.toHaveBeenCalled();
+    expect(patches()).toEqual([
+      {
+        ruleMatch: 'cashback',
+        stage: null,
+        status: 'NEEDS_REVIEW',
+        statusReason: 'rule_keyword',
+      },
+    ]);
+  });
+
+  it('limit reached → SKIPPED before the rules (no executor, no LLM)', async () => {
+    consume.mockResolvedValue('limit_reached');
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    vi.mocked(findWorkspaceBillingAccountId).mockResolvedValue(ACCOUNT);
+    withMessage('cashback');
+    expect(await run()).toEqual({
+      kind: 'skipped',
+      reason: 'comment_limit_reached',
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(classify).not.toHaveBeenCalled();
+  });
+
+  it('retry of a rule-decided version (stage act) re-runs the rules and only acts', async () => {
+    withMessage('cashback', {
+      moderationStage: 'act',
+      ruleMatch: 'cashback',
+      usageCountedAt: NOW,
+      // A classification of an older version must not decide this one.
+      category: 'SAFE_INQUIRY',
+      confidence: 0.99,
+      language: 'en',
+    });
+    expect(await run()).toMatchObject({
+      classified: false,
+      counted: false,
+      rule: 'keyword',
+      action: 'HIDE',
+    });
+    expect(consume).not.toHaveBeenCalled();
+    expect(classify).not.toHaveBeenCalled();
+    expect(patches()).toEqual([{ stage: null, statusReason: 'rule_keyword' }]);
   });
 });

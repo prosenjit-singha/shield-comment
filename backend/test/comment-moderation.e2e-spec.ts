@@ -954,6 +954,166 @@ describe('Comment moderation worker (e2e)', () => {
     await run(job);
   });
 
+  describe('M6-T2: static rules run before the AI', () => {
+    const rulesOn = {
+      blockedKeywords: ['cashback'],
+      blockUrls: true,
+      blockPhoneNumbers: true,
+    };
+    const rulesOff = {
+      blockedKeywords: [],
+      blockUrls: false,
+      blockPhoneNumbers: false,
+      keywordRuleAction: 'HIDE' as const,
+      urlRuleAction: 'HIDE' as const,
+      phoneRuleAction: 'HIDE' as const,
+    };
+    beforeAll(async () => {
+      await app.get(ModerationPolicyService).policy(b.workspaceId);
+    });
+    beforeEach(async () => {
+      await setPolicy(a.workspaceId, rulesOn);
+      await setPolicy(b.workspaceId, rulesOn);
+    });
+    afterEach(async () => {
+      await setPolicy(a.workspaceId, rulesOff);
+      await setPolicy(b.workspaceId, rulesOff);
+    });
+
+    it('keyword match → HIDDEN via Graph, rule_keyword + rule_match, counted, no AI request', async () => {
+      const before = await todayStats(a.workspaceId, pageA.pageId);
+      const usedBefore = await used(a.workspaceId);
+      const { rowId, metaId, job } = await newComment(
+        pageA,
+        'bKash e 500 taka CASHBACK pete inbox korun',
+      );
+      expect(await run(job)).toEqual({
+        kind: 'moderated',
+        classified: false,
+        counted: true,
+        rule: 'keyword',
+        action: 'HIDE',
+        status: 'HIDDEN',
+        replied: false,
+      });
+      expect(ai.chat).not.toHaveBeenCalled();
+      expect(graph.getPostCaption).not.toHaveBeenCalled();
+      expect(graph.hideComment).toHaveBeenCalledWith(
+        'FACEBOOK',
+        metaId,
+        pageA.token,
+      );
+      expect(await row(rowId)).toMatchObject({
+        status: 'HIDDEN',
+        statusReason: 'rule_keyword',
+        ruleMatch: 'cashback',
+        category: null,
+        model: null,
+        moderationStage: null,
+        usageCountedAt: expect.any(Date),
+      });
+      // D3: a rule match counts 1 like any moderated comment.
+      expect(await used(a.workspaceId)).toBe(usedBefore + 1);
+      expect(await actionsOf(rowId)).toEqual([
+        expect.objectContaining({
+          action: 'HIDE',
+          source: 'AUTO',
+          state: 'SUCCEEDED',
+        }),
+      ]);
+      const after = await todayStats(a.workspaceId, pageA.pageId);
+      expect(after!.ruleMatchedCount - (before?.ruleMatchedCount ?? 0)).toBe(1);
+      expect(after!.hiddenCount - (before?.hiddenCount ?? 0)).toBe(1);
+      expect(after!.classifiedCount - (before?.classifiedCount ?? 0)).toBe(0);
+    });
+
+    it('phone match with Delete → DELETED; a BD number in Bangla digits', async () => {
+      await setPolicy(a.workspaceId, { phoneRuleAction: 'DELETE' });
+      const { rowId, metaId, job } = await newComment(
+        pageA,
+        'অর্ডার করতে কল করুন ০১৭১২-৩৪৫৬৭৮',
+      );
+      expect(await run(job)).toMatchObject({
+        rule: 'phone',
+        action: 'DELETE',
+        status: 'DELETED',
+      });
+      expect(graph.deleteComment).toHaveBeenCalledWith(metaId, pageA.token);
+      expect(await row(rowId)).toMatchObject({
+        status: 'DELETED',
+        statusReason: 'rule_phone',
+        ruleMatch: '০১৭১২-৩৪৫৬৭৮',
+      });
+    });
+
+    it('REVIEW mode: URL match → NEEDS_REVIEW, no Graph call, no AI', async () => {
+      await setPolicy(a.workspaceId, { mode: 'REVIEW' });
+      try {
+        const { rowId, job } = await newComment(pageA, 'offer: bit.ly/abc');
+        expect(await run(job)).toMatchObject({
+          rule: 'url',
+          action: 'NONE',
+          status: 'NEEDS_REVIEW',
+        });
+        expect(graphCalls()).toBe(0);
+        expect(await row(rowId)).toMatchObject({
+          status: 'NEEDS_REVIEW',
+          statusReason: 'rule_url',
+          ruleMatch: 'bit.ly/abc',
+        });
+      } finally {
+        await setPolicy(a.workspaceId, { mode: 'AUTO' });
+      }
+    });
+
+    it('no match → the AI path as before; an edit to safe text un-hides (D11) and clears rule_match', async () => {
+      const { rowId, metaId, job } = await newComment(pageA, 'cashback chai?');
+      await run(job);
+      expect((await row(rowId)).ruleMatch).toBe('cashback');
+
+      const edit = await editComment(pageA, metaId, 'price koto vai?');
+      llm('SAFE_INQUIRY');
+      expect(await run(edit)).toMatchObject({
+        classified: true,
+        counted: false,
+        action: 'UNHIDE',
+        status: 'VISIBLE',
+      });
+      expect(ai.chat).toHaveBeenCalledTimes(1);
+      expect(graph.unhideComment).toHaveBeenCalledTimes(1);
+      expect(await row(rowId)).toMatchObject({
+        status: 'VISIBLE',
+        statusReason: null,
+        ruleMatch: null,
+        category: 'SAFE_INQUIRY',
+      });
+    });
+
+    it('limit reached → SKIPPED before the rules (no Graph, no AI)', async () => {
+      const usedB = await used(b.workspaceId);
+      await setUsed(b.workspaceId, await included(b.workspaceId));
+      const warn = vi
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => {});
+      try {
+        const { rowId, job } = await newComment(pageB, 'cashback 01712345678');
+        expect(await run(job)).toEqual({
+          kind: 'skipped',
+          reason: 'comment_limit_reached',
+        });
+        expect(graphCalls()).toBe(0);
+        expect(await row(rowId)).toMatchObject({
+          status: 'SKIPPED',
+          statusReason: 'comment_limit_reached',
+          ruleMatch: null,
+        });
+      } finally {
+        warn.mockRestore();
+        await setUsed(b.workspaceId, usedB);
+      }
+    });
+  });
+
   describe('D2 sweeper', () => {
     const insert = async (
       patch: Partial<typeof comments.$inferInsert>,
