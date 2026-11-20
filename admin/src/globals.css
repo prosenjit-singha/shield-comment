@@ -100,7 +100,7 @@
     --secondary-foreground: oklch(0.985 0 0);
     --accent: oklch(0.82 0.13 192);
     --accent-foreground: oklch(0.232 0.004 286);
-    --muted: oklch(0.227 0.004 286);          /* #1C1C1E */
+    --muted: oklch(0.294 0.004 286);          /* #2C2C2E: one step above --card so fills show on cards */
     --muted-foreground: oklch(0.711 0.007 286);/* #A1A1A6 */
     --destructive: oklch(0.66 0.22 14);
     --border: oklch(1 0 0 / 10%);

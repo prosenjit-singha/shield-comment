@@ -1016,7 +1016,7 @@ describe('/admin/settings AI provider', () => {
 
     const text = select(card, 'Text model')
     expect(text.value).toBe('typesafeai-jev-1-14-0')
-    expect(text.className).toContain('rounded-full')
+    expect(text.className).toContain('rounded-xl')
     expect(optionLabels(text)).toEqual([
       'Gemini 4 Carbon · Google · Free · 1M context',
       'Jev 1.14 · TypeSafe AI · in $0.042 / out $0.00 per 1M · 66K context',
