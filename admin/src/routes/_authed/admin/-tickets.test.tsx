@@ -33,8 +33,8 @@ const bkash: TicketListItem = {
   status: 'OPEN',
   createdAt: '2026-11-17T04:00:00.000Z',
   updatedAt: '2026-11-17T05:00:00.000Z',
-  workspace: { id: 'w1', name: 'Acme Fashion' },
-  requester: rahim,
+  workspace: { id: 'w1', name: 'Acme Fashion', plan: { slug: 'pro', name: 'Pro', prioritySupport: true } },
+  requester: { ...rahim, role: 'owner' },
   lastMessageAt: '2026-11-17T05:00:00.000Z',
   messageCount: 2,
 }
@@ -46,8 +46,8 @@ const meta: TicketListItem = {
   status: 'RESOLVED',
   createdAt: '2026-11-10T04:00:00.000Z',
   updatedAt: '2026-11-11T04:00:00.000Z',
-  workspace: { id: 'w2', name: 'Bazaar BD' },
-  requester: { id: 'c2', name: 'Karim', email: 'karim@bazaar.bd' },
+  workspace: { id: 'w2', name: 'Bazaar BD', plan: null },
+  requester: { id: 'c2', name: 'Karim', email: 'karim@bazaar.bd', role: null },
   lastMessageAt: null,
   messageCount: 0,
 }
@@ -60,6 +60,7 @@ const clientMessage: TicketMessage = {
   body: 'I paid ৳1,500 by bKash but my plan is still Free.',
   isInternalNote: false,
   createdAt: '2026-11-17T04:00:00.000Z',
+  attachments: [],
 }
 const note: TicketMessage = {
   id: 'm2',
@@ -68,6 +69,7 @@ const note: TicketMessage = {
   body: 'Checked the gateway: payment is pending on their side.',
   isInternalNote: true,
   createdAt: '2026-11-17T05:00:00.000Z',
+  attachments: [],
 }
 const thread: TicketThread = { ...bkash, messages: [clientMessage, note] }
 
@@ -78,8 +80,8 @@ let handlers: Record<string, Handler>
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
-function apiError(status: number, message: string) {
-  return json({ statusCode: status, error: 'Error', message, path: '/api', timestamp: '' }, status)
+function apiError(status: number, message: string, code?: string) {
+  return json({ statusCode: status, error: 'Error', message, code, path: '/api', timestamp: '' }, status)
 }
 /** A response the test resolves by hand (to look at the optimistic state in between). */
 function deferred() {
@@ -334,6 +336,7 @@ describe('reply box', () => {
       body: 'We are checking with bKash now.',
       isInternalNote: false,
       createdAt: '2026-11-18T06:00:00.000Z',
+      attachments: [],
     }
     const ticket = { ...bkash, status: 'IN_PROGRESS', messageCount: 3, lastMessageAt: message.createdAt }
     post.resolve(json({ message, ticket }, 201))
@@ -365,6 +368,7 @@ describe('reply box', () => {
       body: 'Looking into it.',
       isInternalNote: false,
       createdAt: '2026-11-17T04:30:00.000Z',
+      attachments: [],
     }
     handlers[`GET /api/admin/tickets/${T1}`] = () =>
       json({ ...thread, messageCount: 3, messages: [clientMessage, earlier, note] })
@@ -525,5 +529,162 @@ describe('status menu', () => {
     expect(await screen.findByText(toastText)).toBeTruthy()
     expect(await conversation().findByRole('button', { name: 'Status: Open' })).toBeTruthy()
     expect(queueRow('bKash payment not reflected').getByTestId('ticket-status').textContent).toBe('Open')
+  })
+})
+
+describe('attachments, priority support, requester role + plan (M7-T10)', () => {
+  const image = (name: string, type = 'image/png', size = 2048) => {
+    const file = new File(['x'], name, { type })
+    Object.defineProperty(file, 'size', { value: size })
+    return file
+  }
+  const filesInput = () => conversation().getByTestId('reply-files') as HTMLInputElement
+  const pick = (...files: File[]) => fireEvent.change(filesInput(), { target: { files } })
+  const previews = () => within(conversation().getByRole('list', { name: 'Images to send' })).getAllByRole('img')
+  const pickerButton = () => conversation().getByRole('button', { name: /^Images \d\/3$/ }) as HTMLButtonElement
+
+  it('marks priority-support workspaces in the queue, apart from the priority', async () => {
+    renderAt('/admin/tickets')
+    await screen.findByText('bKash payment not reflected')
+    const pro = queueRow('bKash payment not reflected')
+    expect(pro.getByText('Priority support').closest('span')?.getAttribute('title')).toBe(
+      'Pro plan: priority support',
+    )
+    expect(pro.getByLabelText('Priority: High')).toBeTruthy()
+    expect(queueRow('Facebook page disconnected').queryByText('Priority support')).toBeNull()
+  })
+
+  it("shows the requester's role and the workspace's live plan in the thread header", async () => {
+    await renderThread()
+    const header = within(conversation().getByRole('banner'))
+    expect(header.getByText('Owner')).toBeTruthy()
+    expect(header.getByText('Pro plan')).toBeTruthy()
+    expect(header.getByText('Priority support')).toBeTruthy()
+    cleanup()
+
+    handlers[`GET /api/admin/tickets/${T2}`] = () => json({ ...meta, messages: [] })
+    renderAt(`/admin/tickets?ticket=${T2}`)
+    expect(await screen.findByText('No longer a member')).toBeTruthy()
+    const gone = within(conversation().getByRole('banner'))
+    expect(gone.getByText('No plan')).toBeTruthy()
+    expect(gone.queryByText('Priority support')).toBeNull()
+  })
+
+  it('shows thumbnails that open full size, and a placeholder when the URL is null', async () => {
+    const url = 'https://storage.test/tickets/a.png?sig=1'
+    handlers[`GET /api/admin/tickets/${T1}`] = () =>
+      json({
+        ...thread,
+        messages: [
+          {
+            ...clientMessage,
+            attachments: [
+              { id: 'a1', contentType: 'image/png', sizeBytes: 1000, url },
+              { id: 'a2', contentType: 'image/webp', sizeBytes: 2000, url: null },
+            ],
+          },
+          note,
+        ],
+      })
+    await renderThread()
+    const attachments = within(screen.getByRole('list', { name: 'Attachments' }))
+    const link = attachments.getByRole('link', { name: 'Image 1 (opens full size)' })
+    expect(link.getAttribute('href')).toBe(url)
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    // Fixed size: no layout jump while it loads.
+    const img = within(link).getByRole('img')
+    expect([img.getAttribute('width'), img.getAttribute('height')]).toEqual(['96', '96'])
+    expect(attachments.getByText('File unavailable')).toBeTruthy()
+    expect(attachments.getAllByRole('link')).toHaveLength(1)
+  })
+
+  it('checks picked images like the backend: type, 5 MB, at most 3; previews can be removed', async () => {
+    await renderThread()
+    pick(image('scam.gif', 'image/gif'))
+    expect(conversation().getByRole('alert').textContent).toBe('Only PNG, JPEG or WebP images can be attached')
+    expect(conversation().queryByRole('list', { name: 'Images to send' })).toBeNull()
+
+    pick(image('huge.png', 'image/png', 5 * 1024 * 1024 + 1))
+    expect(conversation().getByRole('alert').textContent).toBe('Each image must be 5 MB or smaller')
+
+    pick(image('1.png'), image('2.jpg', 'image/jpeg'), image('3.webp', 'image/webp'), image('4.png'))
+    expect(conversation().getByRole('alert').textContent).toBe('Attach at most 3 images per message')
+    expect(previews().map((img) => img.getAttribute('alt'))).toEqual(['1.png', '2.jpg', '3.webp'])
+    expect(pickerButton().disabled).toBe(true)
+    expect(pickerButton().textContent).toContain('Images 3/3')
+
+    fireEvent.click(conversation().getByRole('button', { name: 'Remove image 2 (2.jpg)' }))
+    expect(previews().map((img) => img.getAttribute('alt'))).toEqual(['1.png', '3.webp'])
+    expect(pickerButton().disabled).toBe(false)
+    expect(conversation().queryByRole('alert')).toBeNull()
+    expect(calls('POST', `/api/admin/tickets/${T1}/reply`)).toHaveLength(0)
+  })
+
+  it('sends multipart/form-data (files + body + isInternalNote) and clears the images', async () => {
+    const message: TicketMessage = {
+      id: 'm6',
+      senderRole: 'ADMIN',
+      sender: rootAdmin,
+      body: 'See the screenshots',
+      isInternalNote: true,
+      createdAt: '2026-11-18T06:00:00.000Z',
+      attachments: [{ id: 'a9', contentType: 'image/png', sizeBytes: 2048, url: 'https://storage.test/b.png' }],
+    }
+    handlers[`POST /api/admin/tickets/${T1}/reply`] = () => json({ message, ticket: { ...bkash, messageCount: 3 } }, 201)
+    await renderThread()
+    freezeRefetches() // the thumbnail below can only come from the reply response
+    const one = image('one.png')
+    const two = image('two.jpg', 'image/jpeg')
+    pick(one, two)
+    fireEvent.click(conversation().getByRole('switch'))
+    fireEvent.change(replyBox(), { target: { value: ' See the screenshots ' } })
+    fireEvent.click(sendButton())
+
+    await waitFor(() => expect(calls('POST', `/api/admin/tickets/${T1}/reply`)).toHaveLength(1))
+    const [, init] = fetchMock.mock.calls.find(([, i]) => i?.method === 'POST')!
+    const form = init?.body
+    expect(form).toBeInstanceOf(FormData)
+    const data = form as FormData
+    expect(data.get('body')).toBe('See the screenshots')
+    expect(data.get('isInternalNote')).toBe('true')
+    expect(data.getAll('files').map((f) => (f as File).name)).toEqual(['one.png', 'two.jpg'])
+    // The browser sets the multipart boundary; a JSON Content-Type would break it.
+    expect(new Headers(init?.headers).has('Content-Type')).toBe(false)
+
+    // The server's message brings its thumbnail; the box is emptied.
+    expect(await screen.findByRole('link', { name: 'Image 1 (opens full size)' })).toBeTruthy()
+    expect(conversation().queryByRole('list', { name: 'Images to send' })).toBeNull()
+  })
+
+  it('409 ATTACHMENTS_UNAVAILABLE hides the picker with a note and keeps the draft', async () => {
+    handlers[`POST /api/admin/tickets/${T1}/reply`] = () =>
+      apiError(409, 'Attachments are not available right now', 'ATTACHMENTS_UNAVAILABLE')
+    await renderThread()
+    pick(image('proof.png'))
+    fireEvent.change(replyBox(), { target: { value: 'Here is the proof' } })
+    fireEvent.click(sendButton())
+
+    const note409 = "Image uploads are off: file storage isn't set up. Send it without images."
+    expect(await screen.findByText('The reply was rejected.')).toBeTruthy()
+    await waitFor(() => expect(conversation().getByText(note409)).toBeTruthy())
+    expect(conversation().queryByRole('button', { name: /^Images/ })).toBeNull()
+    expect(conversation().queryByTestId('reply-files')).toBeNull()
+    expect(conversation().queryByRole('list', { name: 'Images to send' })).toBeNull()
+    expect((replyBox() as HTMLTextAreaElement).value).toBe('Here is the proof')
+  })
+
+  it.each([
+    ['ATTACHMENT_TOO_LARGE', 'Each image must be 5 MB or smaller'],
+    ['ATTACHMENT_TYPE_INVALID', 'Only PNG, JPEG or WebP images can be attached'],
+  ])('a 400 %s is toasted with its message and keeps the images', async (code, text) => {
+    handlers[`POST /api/admin/tickets/${T1}/reply`] = () => apiError(400, text, code)
+    await renderThread()
+    pick(image('a.png'))
+    fireEvent.change(replyBox(), { target: { value: `Retry ${code}` } })
+    fireEvent.click(sendButton())
+    await waitFor(() => expect(screen.getAllByText(text).length).toBeGreaterThan(0))
+    expect(previews()).toHaveLength(1)
+    expect(pickerButton()).toBeTruthy()
   })
 })

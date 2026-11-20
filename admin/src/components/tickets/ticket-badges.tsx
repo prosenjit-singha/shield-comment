@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Minus } from 'lucide-react'
+import { ArrowDown, ArrowUp, Minus, Star } from 'lucide-react'
 import { cn } from 'cn'
 import {
   priorityLabels,
@@ -48,6 +48,22 @@ export function TicketPriorityBadge({ priority }: { priority: TicketPriority }) 
     >
       <Icon className="size-3" aria-hidden />
       {priorityLabels[priority]}
+    </span>
+  )
+}
+
+/**
+ * D3 Pro marker: the workspace's live plan has `prioritySupportApi`. Separate from the ticket's
+ * priority, which support can still change.
+ */
+export function PrioritySupportBadge({ planName }: { planName: string }) {
+  return (
+    <span
+      title={`${planName} plan: priority support`}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-primary"
+    >
+      <Star className="size-3 fill-current" aria-hidden />
+      Priority support
     </span>
   )
 }

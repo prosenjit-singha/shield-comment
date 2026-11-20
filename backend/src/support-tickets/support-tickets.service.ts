@@ -17,18 +17,24 @@ import {
 } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
 import { escapeLike } from '../admin/client-list-query.js';
+import { normalizeFeatureConfig } from '../admin/plan-rules.js';
 import type { Database } from '../db/database.js';
 import {
+  plans,
+  subscriptions,
   ticketAttachments,
   ticketMessages,
   tickets,
   users,
+  workspaceMembers,
   workspaces,
   type TicketCategory,
   type TicketPriority,
   type TicketSenderRole,
   type TicketStatus,
+  type WorkspaceRole,
 } from '../db/schema/index.js';
+import { isLiveAt } from '../wallet/live-subscription.queries.js';
 import { UUID } from './dto/tickets.dto.js';
 import {
   type AttachmentView,
@@ -52,9 +58,20 @@ export interface TicketListItem {
   status: TicketStatus;
   createdAt: Date;
   updatedAt: Date;
-  workspace: { id: string; name: string };
-  /** The client user who opened the ticket. */
-  requester: TicketPerson;
+  workspace: {
+    id: string;
+    name: string;
+    /**
+     * The workspace's live plan now (M7-T10), `null` without one. `prioritySupport` = the plan has
+     * `prioritySupportApi` (D3: the Pro marker in the admin queue).
+     */
+    plan: { slug: string; name: string; prioritySupport: boolean } | null;
+  };
+  /**
+   * The client user who opened the ticket. `role` = their role in the ticket's workspace now,
+   * `null` when they are no longer a member (M7-T10).
+   */
+  requester: TicketPerson & { role: WorkspaceRole | null };
   /** Newest thread message (internal notes included), `null` for an empty thread. */
   lastMessageAt: Date | null;
   /** Every thread message, internal notes included. */
@@ -106,6 +123,10 @@ const ticketRow = {
   requesterId: users.id,
   requesterName: users.name,
   requesterEmail: users.email,
+  requesterRole: workspaceMembers.role,
+  planSlug: plans.slug,
+  planName: plans.name,
+  planFeatureConfig: plans.featureConfig,
 };
 
 const notFound = () => new NotFoundException('Ticket not found');
@@ -298,6 +319,23 @@ export class SupportTicketsService {
       .from(tickets)
       .innerJoin(workspaces, eq(workspaces.id, tickets.workspaceId))
       .innerJoin(users, eq(users.id, tickets.userId))
+      // Role in the ticket's own workspace (scoped by `workspace_id`); none = no longer a member.
+      .leftJoin(
+        workspaceMembers,
+        and(
+          eq(workspaceMembers.workspaceId, tickets.workspaceId),
+          eq(workspaceMembers.userId, tickets.userId),
+        ),
+      )
+      // The live plan: at most one live subscription per account (`subscriptions_one_live_per_account`).
+      .leftJoin(
+        subscriptions,
+        and(
+          eq(subscriptions.billingAccountId, workspaces.billingAccountId),
+          isLiveAt(new Date()),
+        ),
+      )
+      .leftJoin(plans, eq(plans.id, subscriptions.planId))
       .where(where)
       .orderBy(desc(tickets.createdAt), desc(tickets.id))
       .offset(skip)
@@ -326,11 +364,25 @@ export class SupportTicketsService {
       status: r.status,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
-      workspace: { id: r.workspaceId, name: r.workspaceName },
+      workspace: {
+        id: r.workspaceId,
+        name: r.workspaceName,
+        plan:
+          r.planSlug === null || r.planName === null
+            ? null
+            : {
+                slug: r.planSlug,
+                name: r.planName,
+                prioritySupport: normalizeFeatureConfig(r.planFeatureConfig)
+                  .features.prioritySupportApi,
+              },
+      },
       requester: {
         id: r.requesterId,
         name: r.requesterName,
         email: r.requesterEmail,
+        // The `workspace_members_role_check` constraint keeps this to `WorkspaceRole`.
+        role: r.requesterRole as WorkspaceRole | null,
       },
       lastMessageAt: statsOf.get(r.id)?.lastMessageAt ?? null,
       messageCount: statsOf.get(r.id)?.messageCount ?? 0,

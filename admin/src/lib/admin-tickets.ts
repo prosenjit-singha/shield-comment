@@ -16,6 +16,15 @@ export interface TicketPerson {
   email: string
 }
 
+export type WorkspaceRole = 'owner' | 'admin' | 'moderator'
+
+/** The workspace's live plan (M7-T10). `prioritySupport` = the plan has `prioritySupportApi` (D3). */
+export interface TicketPlan {
+  slug: string
+  name: string
+  prioritySupport: boolean
+}
+
 /** `GET /api/admin/tickets` item. Timestamps are ISO strings; counts include internal notes. */
 export interface TicketListItem {
   id: string
@@ -25,8 +34,9 @@ export interface TicketListItem {
   status: TicketStatus
   createdAt: string
   updatedAt: string
-  workspace: { id: string; name: string }
-  requester: TicketPerson
+  workspace: { id: string; name: string; plan: TicketPlan | null }
+  /** `role` in the ticket's workspace now; `null` = no longer a member. */
+  requester: TicketPerson & { role: WorkspaceRole | null }
   lastMessageAt: string | null
   messageCount: number
 }
@@ -38,6 +48,15 @@ export interface TicketMessage {
   body: string
   isInternalNote: boolean
   createdAt: string
+  attachments: TicketAttachment[]
+}
+
+/** D4 image (M7-T3): `url` is a 15-minute presigned GET, `null` when storage is off. */
+export interface TicketAttachment {
+  id: string
+  contentType: string
+  sizeBytes: number
+  url: string | null
 }
 
 /** `GET /api/admin/tickets/:id`: messages oldest first, internal notes included. */
@@ -61,6 +80,11 @@ export const priorityLabels: Record<TicketPriority, string> = {
   LOW: 'Low',
   MEDIUM: 'Medium',
   HIGH: 'High',
+}
+export const roleLabels: Record<WorkspaceRole, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  moderator: 'Moderator',
 }
 export const categoryLabels: Record<TicketCategory, string> = {
   BILLING: 'Billing',
@@ -145,11 +169,58 @@ export function ticketThreadQueryOptions(id: string) {
   })
 }
 
-export function replyToTicket(input: { id: string; body: string; isInternalNote: boolean }) {
+/** JSON, or `multipart/form-data` (`files` + `body` + `isInternalNote` as text) when images are attached. */
+export function replyToTicket(input: {
+  id: string
+  body: string
+  isInternalNote: boolean
+  files?: readonly File[]
+}) {
+  let body: string | FormData = JSON.stringify({ body: input.body, isInternalNote: input.isInternalNote })
+  if (input.files?.length) {
+    body = new FormData()
+    body.set('body', input.body)
+    body.set('isInternalNote', String(input.isInternalNote))
+    for (const file of input.files) body.append('files', file)
+  }
   return apiFetch<{ message: TicketMessage; ticket: TicketListItem }>(
     `/admin/tickets/${encodeURIComponent(input.id)}/reply`,
-    { method: 'POST', body: JSON.stringify({ body: input.body, isInternalNote: input.isInternalNote }) },
+    { method: 'POST', body },
   )
+}
+
+/** Backend limits (M7-T3, D4 b): up to 3 PNG/JPEG/WebP images per message, 5 MB each. */
+export const ATTACHMENTS_MAX = 3
+export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024
+export const ATTACHMENT_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const
+
+/** The backend's messages for its attachment error codes, plus a friendlier 409. */
+export const attachmentErrorMessages: Record<string, string> = {
+  ATTACHMENT_TOO_MANY: `Attach at most ${ATTACHMENTS_MAX} images per message`,
+  ATTACHMENT_TOO_LARGE: 'Each image must be 5 MB or smaller',
+  ATTACHMENT_TYPE_INVALID: 'Only PNG, JPEG or WebP images can be attached',
+  ATTACHMENTS_UNAVAILABLE: "Image uploads are off: file storage isn't set up. Send it without images.",
+}
+
+/**
+ * Adds picked files to the current ones, checked like the backend: the wrong type, over 5 MB or
+ * past the 3rd image are left out, and `error` explains the first one left out.
+ */
+export function addAttachments(current: readonly File[], picked: readonly File[]) {
+  const files = [...current]
+  let error: string | null = null
+  for (const file of picked) {
+    const problem = !(ATTACHMENT_TYPES as readonly string[]).includes(file.type)
+      ? 'ATTACHMENT_TYPE_INVALID'
+      : file.size > ATTACHMENT_MAX_BYTES
+        ? 'ATTACHMENT_TOO_LARGE'
+        : files.length >= ATTACHMENTS_MAX
+          ? 'ATTACHMENT_TOO_MANY'
+          : null
+    if (problem) error ??= attachmentErrorMessages[problem] ?? null
+    else files.push(file)
+  }
+  return { files, error }
 }
 
 export function updateTicketStatus(input: { id: string; status: TicketStatus }) {

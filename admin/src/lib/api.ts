@@ -51,7 +51,8 @@ function errorMessage(body: unknown, status: number): string {
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
-  if (init.body !== undefined) headers.set('Content-Type', 'application/json')
+  // FormData sets its own multipart boundary.
+  if (init.body !== undefined && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
 
   const res = await fetch(`/api${path}`, { ...init, headers, credentials: 'same-origin' })
   const text = await res.text()

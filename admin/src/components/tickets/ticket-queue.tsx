@@ -11,7 +11,11 @@ import {
   SearchX,
 } from 'lucide-react'
 import { SearchInput } from '@/components/search-input'
-import { TicketPriorityBadge, TicketStatusPill } from '@/components/tickets/ticket-badges'
+import {
+  PrioritySupportBadge,
+  TicketPriorityBadge,
+  TicketStatusPill,
+} from '@/components/tickets/ticket-badges'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -251,9 +255,12 @@ function QueueRow({ ticket, selected }: { ticket: TicketListItem; selected: bool
         <span className="truncate text-xs text-muted-foreground">
           {ticket.workspace.name} · {ticket.requester.name}
         </span>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <TicketStatusPill status={ticket.status} />
           <TicketPriorityBadge priority={ticket.priority} />
+          {ticket.workspace.plan?.prioritySupport && (
+            <PrioritySupportBadge planName={ticket.workspace.plan.name} />
+          )}
           <span
             className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums"
             aria-label={`${ticket.messageCount} ${ticket.messageCount === 1 ? 'message' : 'messages'}`}

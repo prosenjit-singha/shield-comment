@@ -1,9 +1,31 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { cn } from 'cn'
-import { ArrowLeft, ChevronDown, Lock, MessagesSquare, RotateCcw, SendHorizontal } from 'lucide-react'
-import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
-import { TicketPriorityBadge, TicketStatusPill } from '@/components/tickets/ticket-badges'
+import {
+  ArrowLeft,
+  ChevronDown,
+  ImageOff,
+  ImagePlus,
+  Lock,
+  MessagesSquare,
+  RotateCcw,
+  SendHorizontal,
+  X,
+} from 'lucide-react'
+import {
+  type ChangeEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react'
+import {
+  PrioritySupportBadge,
+  TicketPriorityBadge,
+  TicketStatusPill,
+} from '@/components/tickets/ticket-badges'
 import {
   OPTIMISTIC_PREFIX,
   useReplyMutation,
@@ -24,13 +46,19 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { ApiError } from '@/lib/api'
 import {
+  addAttachments,
+  ATTACHMENT_TYPES,
+  ATTACHMENTS_MAX,
+  attachmentErrorMessages,
   categoryLabels,
   firstReplyMovesToInProgress,
   formatDhakaDateTime,
   REPLY_MAX,
   replyError,
+  roleLabels,
   statusLabels,
   TICKET_STATUSES,
+  type TicketAttachment,
   type TicketMessage,
   type TicketPerson,
   type TicketStatus,
@@ -103,6 +131,8 @@ function BackToQueue({ className }: { className?: string }) {
 }
 
 function ThreadHeader({ ticket }: { ticket: Thread }) {
+  const { plan } = ticket.workspace
+  const { role } = ticket.requester
   return (
     <header className="flex flex-col gap-3 border-b p-4 md:p-5">
       <div className="lg:hidden">
@@ -127,8 +157,15 @@ function ThreadHeader({ ticket }: { ticket: Thread }) {
       </div>
       <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
         <TicketPriorityBadge priority={ticket.priority} />
+        {plan?.prioritySupport && <PrioritySupportBadge planName={plan.name} />}
         <span className="rounded-full border px-2 py-0.5 font-medium">
           {categoryLabels[ticket.category]}
+        </span>
+        <span className="rounded-full border px-2 py-0.5 font-medium" title="Requester's role in this workspace">
+          {role ? roleLabels[role] : 'No longer a member'}
+        </span>
+        <span className="rounded-full border px-2 py-0.5 font-medium" title="Workspace's current plan">
+          {plan ? `${plan.name} plan` : 'No plan'}
         </span>
         <span>
           Opened <time dateTime={ticket.createdAt}>{formatDhakaDateTime(ticket.createdAt)}</time>
@@ -242,8 +279,79 @@ function MessageItem({ message }: { message: TicketMessage }) {
         )}
         {message.body}
       </div>
+      {message.attachments.length > 0 && (
+        <ul aria-label="Attachments" className="flex flex-wrap gap-2">
+          {message.attachments.map((attachment, index) => (
+            <li key={attachment.id}>
+              <AttachmentThumb attachment={attachment} index={index} />
+            </li>
+          ))}
+        </ul>
+      )}
     </li>
   )
+}
+
+/** Fixed-size tile, so loading images never shift the thread; opens full size in a new tab. */
+function AttachmentThumb({ attachment, index }: { attachment: TicketAttachment; index: number }) {
+  const tile = 'size-24 overflow-hidden rounded-xl border bg-muted'
+  if (!attachment.url) {
+    return (
+      <div className={cn(tile, 'flex flex-col items-center justify-center gap-1 p-2 text-center text-xs text-muted-foreground')}>
+        <ImageOff className="size-4" aria-hidden />
+        File unavailable
+      </div>
+    )
+  }
+  return (
+    <a
+      href={attachment.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(tile, 'block outline-none focus-visible:ring-2 focus-visible:ring-ring/50')}
+    >
+      <img
+        src={attachment.url}
+        alt={`Image ${index + 1} (opens full size)`}
+        width={96}
+        height={96}
+        loading="lazy"
+        className="size-full object-cover"
+      />
+    </a>
+  )
+}
+
+interface PickedImage {
+  file: File
+  url: string
+}
+
+/** Images picked for the next reply, with preview object URLs (revoked on remove and unmount). */
+function usePickedImages() {
+  const [images, setImages] = useState<PickedImage[]>([])
+  const latest = useRef(images)
+  useEffect(() => {
+    latest.current = images
+  }, [images])
+  useEffect(() => () => latest.current.forEach((image) => URL.revokeObjectURL(image.url)), [])
+
+  const add = (files: File[]) => {
+    const kept = images.map((image) => image.file)
+    const result = addAttachments(kept, files)
+    const added = result.files.slice(kept.length).map((file) => ({ file, url: URL.createObjectURL(file) }))
+    setImages([...images, ...added])
+    return result.error
+  }
+  const remove = (url: string) => {
+    URL.revokeObjectURL(url)
+    setImages(images.filter((image) => image.url !== url))
+  }
+  const clear = () => {
+    images.forEach((image) => URL.revokeObjectURL(image.url))
+    setImages([])
+  }
+  return { images, add, remove, clear }
 }
 
 function ReplyBox({ ticket, me }: { ticket: Thread; me: TicketPerson }) {
@@ -252,6 +360,11 @@ function ReplyBox({ ticket, me }: { ticket: Thread; me: TicketPerson }) {
   const [body, setBody] = useState('')
   const [internal, setInternal] = useState(false)
   const [touched, setTouched] = useState(false)
+  const picked = usePickedImages()
+  const [pickError, setPickError] = useState<string | null>(null)
+  // 409 ATTACHMENTS_UNAVAILABLE: storage is off, so the picker goes away for this ticket.
+  const [uploadsOff, setUploadsOff] = useState(false)
+  const fileInput = useRef<HTMLInputElement>(null)
   const error = replyError(body)
   const length = body.trim().length
   const tooLong = length > REPLY_MAX
@@ -265,11 +378,28 @@ function ReplyBox({ ticket, me }: { ticket: Thread; me: TicketPerson }) {
     const isInternalNote = internal
     setBody('')
     setTouched(false)
+    setPickError(null)
     mutation.mutate(
-      { id: ticket.id, body: draft.trim(), isInternalNote },
-      // Give the draft back so nothing typed is lost.
-      { onError: () => setBody((current) => current || draft) },
+      { id: ticket.id, body: draft.trim(), isInternalNote, files: picked.images.map((image) => image.file) },
+      {
+        // Images stay in the box until the server has them.
+        onSuccess: () => picked.clear(),
+        // Give the draft back so nothing typed is lost.
+        onError: (err) => {
+          setBody((current) => current || draft)
+          if (err instanceof ApiError && err.code === 'ATTACHMENTS_UNAVAILABLE') {
+            setUploadsOff(true)
+            picked.clear()
+          }
+        },
+      },
     )
+  }
+
+  const onPick = (event: ChangeEvent<HTMLInputElement>) => {
+    setPickError(picked.add(Array.from(event.target.files ?? [])))
+    // Picking the same file again after removing it should fire `change` again.
+    event.target.value = ''
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -312,13 +442,72 @@ function ReplyBox({ ticket, me }: { ticket: Thread; me: TicketPerson }) {
           {length}/{REPLY_MAX}
         </span>
       </div>
+      {picked.images.length > 0 && (
+        <ul aria-label="Images to send" className="flex flex-wrap gap-2 px-1">
+          {picked.images.map((image, index) => (
+            <li key={image.url} className="relative size-16">
+              <img
+                src={image.url}
+                alt={image.file.name}
+                width={64}
+                height={64}
+                className="size-full rounded-xl border object-cover"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon-xs"
+                className="absolute -top-1.5 -right-1.5 shadow-sm"
+                aria-label={`Remove image ${index + 1} (${image.file.name})`}
+                disabled={mutation.isPending}
+                onClick={() => {
+                  picked.remove(image.url)
+                  setPickError(null)
+                }}
+              >
+                <X />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {(pickError || uploadsOff) && (
+        <p role={pickError ? 'alert' : undefined} className={cn('px-1 text-xs', pickError ? 'text-destructive' : 'text-muted-foreground')}>
+          {pickError ?? attachmentErrorMessages.ATTACHMENTS_UNAVAILABLE}
+        </p>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Switch id={`${fieldId}-internal`} checked={internal} onCheckedChange={setInternal} />
-          <Label htmlFor={`${fieldId}-internal`} className="flex items-center gap-1.5 text-sm">
-            <Lock className="size-3.5 text-muted-foreground" aria-hidden />
-            Internal note
-          </Label>
+        <div className="flex flex-wrap items-center gap-3">
+          {!uploadsOff && (
+            <>
+              <input
+                ref={fileInput}
+                type="file"
+                accept={ATTACHMENT_TYPES.join(',')}
+                multiple
+                hidden
+                data-testid="reply-files"
+                onChange={onPick}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={mutation.isPending || picked.images.length >= ATTACHMENTS_MAX}
+                onClick={() => fileInput.current?.click()}
+              >
+                <ImagePlus data-icon="inline-start" />
+                Images {picked.images.length}/{ATTACHMENTS_MAX}
+              </Button>
+            </>
+          )}
+          <div className="flex items-center gap-2">
+            <Switch id={`${fieldId}-internal`} checked={internal} onCheckedChange={setInternal} />
+            <Label htmlFor={`${fieldId}-internal`} className="flex items-center gap-1.5 text-sm">
+              <Lock className="size-3.5 text-muted-foreground" aria-hidden />
+              Internal note
+            </Label>
+          </div>
         </div>
         <Button type="submit" disabled={error !== null || mutation.isPending}>
           <SendHorizontal data-icon="inline-start" />

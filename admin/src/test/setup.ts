@@ -47,3 +47,8 @@ globalThis.IntersectionObserver ??= class {
     return []
   }
 } as unknown as typeof IntersectionObserver
+
+// Reply-box image previews (M7-T10). Unique URLs: previews are keyed by them.
+let objectUrls = 0
+URL.createObjectURL ??= () => `blob:http://admin.localhost/${(objectUrls += 1)}`
+URL.revokeObjectURL ??= () => {}

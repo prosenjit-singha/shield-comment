@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { count, eq, inArray } from 'drizzle-orm';
+import { and, count, eq, inArray } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
 import type { DashboardStatsResponse } from '../src/admin/dto/dashboard-stats.dto.js';
 import {
   ticketMessages,
   tickets,
+  workspaceMembers,
   UNRESOLVED_TICKET_STATUSES,
   type TicketCategory,
   type TicketPriority,
@@ -30,8 +31,17 @@ interface Item {
   status: TicketStatus;
   createdAt: string;
   updatedAt: string;
-  workspace: { id: string; name: string };
-  requester: { id: string; name: string; email: string };
+  workspace: {
+    id: string;
+    name: string;
+    plan: { slug: string; name: string; prioritySupport: boolean } | null;
+  };
+  requester: {
+    id: string;
+    name: string;
+    email: string;
+    role: 'owner' | 'admin' | 'moderator' | null;
+  };
   lastMessageAt: string | null;
   messageCount: number;
 }
@@ -299,8 +309,12 @@ describe('Admin support tickets (e2e)', () => {
         status: 'OPEN',
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
-        workspace: { id: a.workspaceId, name: expect.any(String) as string },
-        requester: { id: a.id, name: 'm2t7-a', email: a.email },
+        workspace: {
+          id: a.workspaceId,
+          name: expect.any(String) as string,
+          plan: null,
+        },
+        requester: { id: a.id, name: 'm2t7-a', email: a.email, role: 'owner' },
         lastMessageAt: '2026-01-01T03:00:00.000Z',
         messageCount: 3,
       });
@@ -619,6 +633,70 @@ describe('Admin support tickets (e2e)', () => {
       expect(await openTicketsKpi()).toBe(3);
       await setStatus(t.t5, { status: 'IN_PROGRESS' }).expect(200);
       expect(await openTicketsKpi()).toBe(4);
+    });
+  });
+
+  describe('requester role + live plan (M7-T10)', () => {
+    it('shows the live plan with prioritySupport and the requester role; null when gone', async () => {
+      const tag = `${T}m7t10`;
+      const member = await actors.signUp('m7t10-member');
+      await actors.addMember(a.workspaceId, member.id, 'moderator');
+      await actors.activatePlan(b, 'pro');
+      await actors.activatePlan(a, 'growth');
+      const seed = async (owner: Actor, userId: string, subject: string) => {
+        const [row] = await db()
+          .insert(tickets)
+          .values({
+            workspaceId: owner.workspaceId,
+            userId,
+            subject: `${tag} ${subject}`,
+            category: 'OTHER',
+            priority: 'LOW',
+            status: 'RESOLVED',
+          })
+          .returning({ id: tickets.id });
+        return row!.id;
+      };
+      const proTicket = await seed(b, b.id, 'pro');
+      const memberTicket = await seed(a, member.id, 'member');
+
+      const items = (await list(`q=${tag}`)).items;
+      const byId = (id: string) => items.find((i) => i.id === id)!;
+      expect(byId(proTicket)).toMatchObject({
+        workspace: {
+          id: b.workspaceId,
+          plan: { slug: 'pro', name: 'Pro', prioritySupport: true },
+        },
+        requester: { id: b.id, role: 'owner' },
+      });
+      expect(byId(memberTicket)).toMatchObject({
+        workspace: {
+          id: a.workspaceId,
+          plan: { slug: 'growth', name: 'Growth', prioritySupport: false },
+        },
+        requester: { id: member.id, role: 'moderator' },
+      });
+
+      // Role is per ticket workspace: the member owns their own workspace, but not this one.
+      await db()
+        .delete(workspaceMembers)
+        .where(
+          and(
+            eq(workspaceMembers.workspaceId, a.workspaceId),
+            eq(workspaceMembers.userId, member.id),
+          ),
+        );
+      await actors.expirePlan(b);
+      const detail = await http()
+        .get(`${TICKETS}/${memberTicket}`)
+        .set('Cookie', superAdmin.cookie)
+        .expect(200);
+      expect((detail.body as Item).requester.role).toBeNull();
+      const pro = await http()
+        .get(`${TICKETS}/${proTicket}`)
+        .set('Cookie', superAdmin.cookie)
+        .expect(200);
+      expect((pro.body as Item).workspace.plan).toBeNull();
     });
   });
 });

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  addAttachments,
+  ATTACHMENT_MAX_BYTES,
   firstReplyMovesToInProgress,
   formatQueueTime,
   replyError,
@@ -84,6 +86,7 @@ describe('firstReplyMovesToInProgress (M2-T14)', () => {
     body: 'x',
     isInternalNote,
     createdAt: '2026-11-18T00:00:00.000Z',
+    attachments: [],
   })
   const thread = (status: TicketThread['status'], messages: TicketMessage[]) =>
     ({ status, messages }) as TicketThread
@@ -103,5 +106,25 @@ describe('formatQueueTime', () => {
     expect(formatQueueTime('2026-11-17T19:30:00.000Z', now)).toBe('1:30 am') // 18 Nov in Dhaka
     expect(formatQueueTime('2026-11-17T17:59:00.000Z', now)).toBe('17 Nov')
     expect(formatQueueTime('2025-12-31T12:00:00.000Z', now)).toBe('31 Dec 2025')
+  })
+})
+
+describe('addAttachments', () => {
+  const image = (name: string, type = 'image/png', size = 1024) =>
+    new File([new Uint8Array(size)], name, { type })
+
+  it('keeps PNG/JPEG/WebP up to 3, with the backend messages for the rest', () => {
+    const three = [image('a.png'), image('b.jpg', 'image/jpeg'), image('c.webp', 'image/webp')]
+    expect(addAttachments([], three)).toEqual({ files: three, error: null })
+    expect(addAttachments(three, [image('d.png')])).toEqual({
+      files: three,
+      error: 'Attach at most 3 images per message',
+    })
+    expect(addAttachments([], [image('x.gif', 'image/gif'), image('ok.png')]).error).toBe(
+      'Only PNG, JPEG or WebP images can be attached',
+    )
+    const big = addAttachments([], [image('big.png', 'image/png', ATTACHMENT_MAX_BYTES + 1)])
+    expect(big).toEqual({ files: [], error: 'Each image must be 5 MB or smaller' })
+    expect(addAttachments([], [image('edge.png', 'image/png', ATTACHMENT_MAX_BYTES)]).error).toBeNull()
   })
 })

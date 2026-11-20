@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { ApiError } from '@/lib/api'
 import {
   adminTicketsKey,
+  attachmentErrorMessages,
   replyToTicket,
   statusLabels,
   type TicketList,
@@ -42,7 +43,10 @@ function refresh(queryClient: QueryClient) {
 }
 
 function errorToast(err: Error, fallback: string, rejected: string) {
-  if (err instanceof ApiError && err.status === 404) {
+  const attachmentMessage = err instanceof ApiError && err.code ? attachmentErrorMessages[err.code] : undefined
+  if (attachmentMessage) {
+    toast.error(rejected, { description: attachmentMessage })
+  } else if (err instanceof ApiError && err.status === 404) {
     toast.error('This ticket no longer exists.')
   } else if (err instanceof ApiError && err.status === 400) {
     toast.error(rejected, { description: err.message })
@@ -55,6 +59,8 @@ export interface ReplyInput {
   id: string
   body: string
   isInternalNote: boolean
+  /** Up to 3 images (D4); sent as `multipart/form-data`. */
+  files?: readonly File[]
 }
 
 /**
@@ -80,6 +86,8 @@ export function useReplyMutation(me: TicketPerson) {
         body: input.body,
         isInternalNote: input.isInternalNote,
         createdAt: now,
+        // The server's message brings the images (presigned URLs).
+        attachments: [],
       }
       if (previous) {
         queryClient.setQueryData<TicketThread>(key, {
