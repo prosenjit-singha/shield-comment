@@ -51,57 +51,57 @@
 }
 
 :root {
-    /* Tokens from docs/design/base.md (light) */
+    /* Brand hues from docs/design/base.md; neutrals, radius and type follow docs/design/DESIGN.md (Apple) */
     --background: oklch(1 0 0);               /* #FFFFFF */
-    --foreground: oklch(0.145 0.02 260);      /* #0F172A */
+    --foreground: oklch(0.232 0.004 286);     /* near black #1D1D1F */
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0.02 260);
+    --card-foreground: oklch(0.232 0.004 286);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0.02 260);
+    --popover-foreground: oklch(0.232 0.004 286);
     --primary: oklch(0.53 0.21 258);          /* Meta Blue #0668E1 */
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.62 0.24 14);         /* TikTok Fuchsia #FE2C55 */
     --secondary-foreground: oklch(0.985 0 0);
     --accent: oklch(0.88 0.14 192);           /* TikTok Cyan #25F4EE */
-    --accent-foreground: oklch(0.145 0.02 260);
-    --muted: oklch(0.968 0.007 247);          /* #F8FAFC */
-    --muted-foreground: oklch(0.45 0.03 257); /* #475569 */
+    --accent-foreground: oklch(0.232 0.004 286);
+    --muted: oklch(0.971 0.003 286);          /* light gray canvas #F5F5F7 */
+    --muted-foreground: oklch(0.54 0.008 286);/* #6E6E73 */
     --destructive: oklch(0.62 0.24 14);       /* #FE2C55 */
-    --border: oklch(0.929 0.013 255);         /* #E2E8F0 */
-    --input: oklch(0.929 0.013 255);
+    --border: oklch(0.932 0.007 286);         /* hairline #E8E8ED */
+    --input: oklch(0.865 0.007 286);          /* #D2D2D7 */
     --ring: oklch(0.53 0.21 258);
     --chart-1: oklch(0.53 0.21 258);
     --chart-2: oklch(0.62 0.24 14);
     --chart-3: oklch(0.72 0.13 192);
     --chart-4: oklch(0.75 0.15 75);
-    --chart-5: oklch(0.45 0.03 257);
-    --radius: 1rem;                           /* 16px base */
-    --sidebar: oklch(0.968 0.007 247);
-    --sidebar-foreground: oklch(0.145 0.02 260);
+    --chart-5: oklch(0.54 0.008 286);
+    --radius: 0.5rem;                         /* 8px Apple standard; xl ≈ 11px, pills via rounded-full */
+    --sidebar: oklch(0.971 0.003 286);
+    --sidebar-foreground: oklch(0.232 0.004 286);
     --sidebar-primary: oklch(0.53 0.21 258);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.929 0.013 255);
-    --sidebar-accent-foreground: oklch(0.145 0.02 260);
-    --sidebar-border: oklch(0.929 0.013 255);
+    --sidebar-accent: oklch(0.932 0.007 286);
+    --sidebar-accent-foreground: oklch(0.232 0.004 286);
+    --sidebar-border: oklch(0.932 0.007 286);
     --sidebar-ring: oklch(0.53 0.21 258);
 }
 
 .dark {
-    /* Dark counterparts (same hues, adjusted lightness) */
-    --background: oklch(0.145 0.02 260);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.2 0.025 260);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.2 0.025 260);
-    --popover-foreground: oklch(0.985 0 0);
+    /* Pure black canvas, Apple dark surfaces, brand hues lifted for contrast */
+    --background: oklch(0 0 0);               /* #000000 */
+    --foreground: oklch(0.971 0.003 286);     /* #F5F5F7 */
+    --card: oklch(0.227 0.004 286);           /* #1C1C1E */
+    --card-foreground: oklch(0.971 0.003 286);
+    --popover: oklch(0.274 0.004 286);        /* #272729 */
+    --popover-foreground: oklch(0.971 0.003 286);
     --primary: oklch(0.62 0.19 258);
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.66 0.22 14);
     --secondary-foreground: oklch(0.985 0 0);
     --accent: oklch(0.82 0.13 192);
-    --accent-foreground: oklch(0.145 0.02 260);
-    --muted: oklch(0.26 0.03 257);
-    --muted-foreground: oklch(0.71 0.02 257);
+    --accent-foreground: oklch(0.232 0.004 286);
+    --muted: oklch(0.227 0.004 286);          /* #1C1C1E */
+    --muted-foreground: oklch(0.711 0.007 286);/* #A1A1A6 */
     --destructive: oklch(0.66 0.22 14);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
@@ -110,13 +110,13 @@
     --chart-2: oklch(0.66 0.22 14);
     --chart-3: oklch(0.82 0.13 192);
     --chart-4: oklch(0.8 0.14 75);
-    --chart-5: oklch(0.71 0.02 257);
-    --sidebar: oklch(0.2 0.025 260);
-    --sidebar-foreground: oklch(0.985 0 0);
+    --chart-5: oklch(0.711 0.007 286);
+    --sidebar: oklch(0.227 0.004 286);
+    --sidebar-foreground: oklch(0.971 0.003 286);
     --sidebar-primary: oklch(0.62 0.19 258);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.26 0.03 257);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.294 0.004 286); /* #2C2C2E */
+    --sidebar-accent-foreground: oklch(0.971 0.003 286);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.62 0.19 258);
 }
@@ -126,7 +126,11 @@
     @apply border-border outline-ring/50;
     }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    letter-spacing: -0.011em; /* Apple tracks tight at every size */
+    }
+  h1, h2, h3 {
+    letter-spacing: -0.022em;
     }
   button:not(:disabled), [role="button"]:not(:disabled) {
     cursor: pointer;
