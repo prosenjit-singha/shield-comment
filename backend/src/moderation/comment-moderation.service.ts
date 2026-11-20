@@ -56,6 +56,7 @@ import {
   type RuleKind,
 } from './moderation.constants.js';
 import {
+  classificationUsageDelta,
   type ModerationPolicy,
   recordDailyAiUsage,
 } from './moderation.queries.js';
@@ -800,19 +801,10 @@ export class CommentModerationService {
     result: ClassificationSuccess | ClassificationFailure,
     at: Date,
   ): Promise<void> {
-    if (!result.provider || !result.model) return;
-    const calls = result.ok || result.attempts > 0 ? 1 : 0;
+    const delta = classificationUsageDelta(result, dhakaDayKey(at));
+    if (!delta) return;
     try {
-      await recordDailyAiUsage(this.db, {
-        day: dhakaDayKey(at),
-        provider: result.provider,
-        model: result.model,
-        calls,
-        inputTokens: result.usage?.promptTokens ?? 0,
-        outputTokens: result.usage?.completionTokens ?? 0,
-        latencyMs: result.latencyMs,
-        ...(!result.ok && calls > 0 && { failures: { [result.kind]: 1 } }),
-      });
+      await recordDailyAiUsage(this.db, delta);
     } catch (error) {
       this.logger.warn(
         `AI usage not recorded (${error instanceof Error ? error.name : 'unknown error'})`,

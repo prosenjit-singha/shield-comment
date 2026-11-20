@@ -1,6 +1,7 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { AiProvider } from '../ai-gateway/ai-provider.js';
 import type { Database } from '../db/database.js';
+import type { ClassificationResult } from './comment-classifier.js';
 import {
   AI_MODEL_MAX_LENGTH,
   comments,
@@ -358,6 +359,28 @@ export interface DailyAiUsageDelta {
   latencyMs?: number;
   /** Failed calls by machine-code kind (`ClassificationFailureKind`); counted in `failed_calls`. */
   failures?: Readonly<Record<string, number>>;
+}
+
+/**
+ * D14 usage delta of one classification (worker + M6-T7 playground); `null` when no provider was
+ * reached (`not_configured`, `empty_text`). A failure with no call made adds nothing.
+ */
+export function classificationUsageDelta(
+  result: ClassificationResult,
+  day: string,
+): DailyAiUsageDelta | null {
+  if (!result.provider || !result.model) return null;
+  const calls = result.ok || result.attempts > 0 ? 1 : 0;
+  return {
+    day,
+    provider: result.provider,
+    model: result.model,
+    calls,
+    inputTokens: result.usage?.promptTokens ?? 0,
+    outputTokens: result.usage?.completionTokens ?? 0,
+    latencyMs: result.latencyMs,
+    ...(!result.ok && calls > 0 && { failures: { [result.kind]: 1 } }),
+  };
 }
 
 export interface DailyAiUsageIncrements {

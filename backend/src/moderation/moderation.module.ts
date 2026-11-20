@@ -12,6 +12,12 @@ import {
 import { ModerationActionExecutor } from './moderation-action.executor.js';
 import { ModerationPolicyController } from './moderation-policy.controller.js';
 import { ModerationPolicyService } from './moderation-policy.service.js';
+import { PlaygroundController } from './playground.controller.js';
+import {
+  PlaygroundCounter,
+  PlaygroundService,
+  RedisPlaygroundCounter,
+} from './playground.js';
 import { PostContextService } from './post-context.service.js';
 import { WalletModule } from '../wallet/wallet.module.js';
 
@@ -23,11 +29,12 @@ import { WalletModule } from '../wallet/wallet.module.js';
  * (D8 Page name / cached post caption). M5-T12: the `comment-moderation` worker
  * (`CommentModerationProcessor` → `CommentModerationService`) + the D2 sweeper
  * (`ModerationSweeper`, scheduled by `ModerationJobSchedulers`). PW-T4: the worker counts each
- * comment once against the account wallet's `monthlyComments` meter (`WalletModule`).
+ * comment once against the account wallet's `monthlyComments` meter (`WalletModule`). M6-T7: the
+ * playground (`POST …/playground/test`, `PlaygroundService` + Redis daily counter).
  */
 @Module({
   imports: [AiGatewayModule, MetaGraphModule, TokenCipherModule, WalletModule],
-  controllers: [ModerationPolicyController],
+  controllers: [ModerationPolicyController, PlaygroundController],
   providers: [
     CommentClassifier,
     ModerationPolicyService,
@@ -37,6 +44,8 @@ import { WalletModule } from '../wallet/wallet.module.js';
     CommentModerationProcessor,
     ModerationSweeper,
     ModerationJobSchedulers,
+    PlaygroundService,
+    { provide: PlaygroundCounter, useClass: RedisPlaygroundCounter },
   ],
   exports: [
     CommentClassifier,
