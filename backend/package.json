@@ -33,12 +33,16 @@
     "create-super-admin": "node --env-file-if-exists=.env dist/scripts/create-super-admin.js",
     "meta:subscribe-pages": "node --env-file-if-exists=.env dist/scripts/subscribe-active-pages.js",
     "ai:golden": "node --env-file-if-exists=.env dist/scripts/golden-suite.js",
-    "ai:golden:neon": "node --env-file=.env --env-file=.env.neon dist/scripts/golden-suite.js"
+    "ai:golden:neon": "node --env-file=.env --env-file=.env.neon dist/scripts/golden-suite.js",
+    "ai:sdk-smoke": "node --env-file=.env dist/scripts/ai-sdk-smoke.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1170.0",
     "@aws-sdk/s3-request-presigner": "^3.1170.0",
     "@better-auth/core": "^1.7.25",
+    "@neon/ai-sdk-provider": "^1.4.0",
+    "@neon/config": "^1.14.5",
+    "@neon/env": "^2.1.8",
     "@nestjs/bullmq": "^12.0.2",
     "@nestjs/common": "^12.0.1",
     "@nestjs/config": "^12.1.1",
@@ -49,6 +53,7 @@
     "@node-rs/argon2": "^2.2.2",
     "@thallesp/nestjs-better-auth": "^2.8.0",
     "@typesafe-ai/sdk": "0.7.0",
+    "ai": "^7.0.177",
     "better-auth": "^1.7.25",
     "bullmq": "^6.7.7",
     "class-transformer": "^0.5.1",
