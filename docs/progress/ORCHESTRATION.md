@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 7 section + the row's decisions, `docs/project-documentation/modules/module-7-support-team.md`, the code the row names.
 - Standing approvals: none yet for client/ or admin/ in this run (asked at the first row that touches them). Live AI, Meta, email, Telegram or WhatsApp calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #15 (2026-11-20) · rows this session: 1 · estimate: 55k
+- Session: #15 (2026-11-20) · rows this session: 2 · estimate: 63k
 - Previous runs (Modules 3–6, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M7-T1 (2026-11-20) · commit: "feat(backend): add transactional email service (M7-T1)"
+verified M7-T1
 
 ## Resume
 `/orchestration --continue`
@@ -293,4 +293,4 @@ You are implementing exactly ONE task row, **M7-T2**, in the ShieldComment BD re
 - 2026-11-20 M6-T12 ✅ · `8f12cf3` · client 658/658 (was 630) · backend/admin untouched · C9 `/analytics`: From/To + Page filter in URL, history Line + stacked flagged Bar per API granularity (day/month), totals table + intents Donut, daily + per-comment CSV (fetch → blob; 409 Pro message + Plans link, > 92-day hint), en/bn errors 400/404/network/5xx + retry; nav Analytics (7 items); docker client rebuilt healthy
 - 2026-11-20 M6-GATE ✅ · `5fa6f19` · backend 2267 unit (was 2265) + e2e 1112 · admin 439 · client 658 · e2e suite 3/3 host + Docker (was 2) · Module 6 gate: rule-priority phone cases + Playwright dashboard KPIs/charts + Unhide via `backend-e2e` and an in-test Graph stub; DB back to baseline
 - 2026-11-20 M7-PLAN ✅ fbc5d9d · docs only · Module 7 split into M7-T1…T15 + GATE (backend T1–T9, admin T10, client T11–T15); 17 open decisions D1–D17 (tickets, invites/seats, alerts, nav, gate)
-- 2026-11-20 M7-T1 ✅ · backend 2315 unit (was 2275) + e2e 1112 · admin/client untouched · `EmailService` (Resend fetch, typed retryable errors, dev log fallback, prod `EmailNotConfiguredError`), `bilingualEmail`, `createEmailServiceFake`, env `RESEND_API_KEY` + `EMAIL_FROM`; D1–D17 recorded, D4/D11 rows re-planned (+ M7-T6b, M7-T13b)
+- 2026-11-20 M7-T1 ✅ 7c466f9 · backend 2315 unit (was 2275) + e2e 1112 · admin/client untouched · `EmailService` (Resend fetch, typed retryable errors, dev log fallback, prod `EmailNotConfiguredError`), `bilingualEmail`, `createEmailServiceFake`, env `RESEND_API_KEY` + `EMAIL_FROM`; D1–D17 recorded, D4/D11 rows re-planned (+ M7-T6b, M7-T13b)
