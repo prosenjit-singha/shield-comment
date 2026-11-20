@@ -287,7 +287,7 @@ describe('/admin/settings', () => {
     // 7 features + the highlight switch.
     expect(within(pro).getAllByRole('switch')).toHaveLength(8)
     expect(within(pro).getByRole('switch', { name: 'Priority Support & API Webhook Access' }).getAttribute('aria-checked')).toBe('true')
-    expect(input(pro, 'Monthly price').className).toContain('rounded-xl')
+    expect(input(pro, 'Monthly price').className).toContain('rounded-full')
 
     const growth = await card('Growth')
     expect(within(growth).getByText('Highlighted')).toBeTruthy()
@@ -632,7 +632,7 @@ describe('/admin/settings support WhatsApp number (PR-D18)', () => {
     await waitFor(() => expect(within(card).getByTestId('whatsapp-saved').textContent).toBe('Never saved.'))
     expect(save(card).disabled).toBe(true)
     expect(hintOf(field(card))).toBe('Country code + number, digits only, e.g. 8801712345678.')
-    expect(field(card).className).toContain('rounded-xl')
+    expect(field(card).className).toContain('rounded-full')
 
     type(field(card), ' 8801712345678 ')
     expect(save(card).disabled).toBe(false)
@@ -706,7 +706,7 @@ describe('/admin/settings playground limit (M6-T7b)', () => {
     const card = await region()
     await waitFor(() => expect(field(card).value).toBe('10'))
     expect(hintOf(field(card))).toBe('0 turns the playground off.')
-    expect(field(card).className).toContain('rounded-xl')
+    expect(field(card).className).toContain('rounded-full')
     expect(save(card).disabled).toBe(true)
 
     // A typed WhatsApp draft survives the limit save (each card re-keys on its own value).
@@ -1016,7 +1016,7 @@ describe('/admin/settings AI provider', () => {
 
     const text = select(card, 'Text model')
     expect(text.value).toBe('typesafeai-jev-1-14-0')
-    expect(text.className).toContain('rounded-xl')
+    expect(text.className).toContain('rounded-full')
     expect(optionLabels(text)).toEqual([
       'Gemini 4 Carbon · Google · Free · 1M context',
       'Jev 1.14 · TypeSafe AI · in $0.042 / out $0.00 per 1M · 66K context',
@@ -1035,7 +1035,7 @@ describe('/admin/settings AI provider', () => {
     expect(field.type).toBe('password')
     expect(field.autocomplete).toBe('off')
     expect(field.value).toBe('')
-    expect(field.className).toContain('rounded-xl')
+    expect(field.className).toContain('rounded-full')
     expect(within(neonKey(card)).getByTestId('key-status').textContent).toBe('Saved ••••1234 · database')
     expect(within(card).getAllByRole('button', { name: /^Clear the/ }).map((b) => b.getAttribute('aria-label'))).toEqual([
       'Clear the Neon AI gateway key',

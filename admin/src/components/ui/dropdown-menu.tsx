@@ -12,11 +12,11 @@ const ENTER = { duration: 0.15, ease: EASE_OUT }
 const EXIT = { duration: 0.1, ease: EASE_OUT }
 
 const SURFACE =
-  "z-50 min-w-44 origin-(--radix-dropdown-menu-content-transform-origin) rounded-[calc(var(--spacing)*1.5+var(--radius-lg))] bg-popover/90 p-1.5 text-popover-foreground shadow-[0_4px_24px_rgb(0_0_0/0.08)] ring-1 ring-foreground/5 backdrop-blur-xl backdrop-saturate-150 dark:ring-foreground/10"
+  "z-50 min-w-44 origin-(--radix-dropdown-menu-content-transform-origin) rounded-[calc(var(--spacing)*1.5+var(--radius-2xl))] bg-popover/90 p-1.5 text-popover-foreground shadow-[0_4px_24px_rgb(0_0_0/0.08)] ring-1 ring-foreground/5 backdrop-blur-xl backdrop-saturate-150 dark:ring-foreground/10"
 
 // Shared item recipe: muted icons that turn foreground on highlight.
 const ITEM =
-  "relative flex cursor-default items-center gap-2 rounded-lg py-1.5 text-sm outline-hidden select-none focus:bg-muted dark:focus:bg-foreground/10 data-inset:pl-8.5 data-disabled:pointer-events-none data-disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 not-data-[variant=destructive]:[&_svg:not([class*='text-'])]:text-muted-foreground not-data-[variant=destructive]:focus:[&_svg:not([class*='text-'])]:text-foreground"
+  "relative flex cursor-default items-center gap-2 rounded-2xl py-1.5 text-sm outline-hidden select-none focus:bg-muted dark:focus:bg-foreground/10 data-inset:pl-9 data-disabled:pointer-events-none data-disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 not-data-[variant=destructive]:[&_svg:not([class*='text-'])]:text-muted-foreground not-data-[variant=destructive]:focus:[&_svg:not([class*='text-'])]:text-foreground"
 
 function DropdownMenu({
   ...props
@@ -94,7 +94,7 @@ function DropdownMenuItem({
       data-variant={variant}
       className={cn(
         ITEM,
-        "group/dropdown-menu-item px-2.5 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:[&_svg]:text-destructive",
+        "group/dropdown-menu-item px-3 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:[&_svg]:text-destructive",
         className
       )}
       {...props}
@@ -191,7 +191,7 @@ function DropdownMenuLabel({
       data-slot="dropdown-menu-label"
       data-inset={inset}
       className={cn(
-        "px-2.5 pt-1.5 pb-1 text-xs font-medium text-muted-foreground data-inset:pl-8.5",
+        "px-3 pt-1.5 pb-1 text-xs font-medium text-muted-foreground data-inset:pl-9",
         className
       )}
       {...props}
@@ -248,7 +248,7 @@ function DropdownMenuSubTrigger({
       data-inset={inset}
       className={cn(
         ITEM,
-        "px-2.5 data-open:bg-muted dark:data-open:bg-foreground/10 data-open:[&_svg:not([class*='text-'])]:text-foreground",
+        "px-3 data-open:bg-muted dark:data-open:bg-foreground/10 data-open:[&_svg:not([class*='text-'])]:text-foreground",
         className
       )}
       {...props}

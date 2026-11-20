@@ -43,7 +43,7 @@ function AuthedLayout() {
       <SidebarProvider
         open={!collapsed}
         onOpenChange={(open) => setCollapsed(!open)}
-        className="bg-muted"
+        className="bg-muted dark:bg-background"
       >
         <AppSidebar user={session.user} />
         <SidebarInset className="min-w-0 bg-muted dark:bg-background">

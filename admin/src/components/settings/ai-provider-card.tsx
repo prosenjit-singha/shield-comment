@@ -77,8 +77,8 @@ export function AiProviderCard({
     return (
       <Shell>
         <div data-testid="ai-skeleton" aria-busy="true" aria-label="Loading AI settings" className="flex flex-col gap-4 border-t p-4 md:p-5">
-          <Skeleton className="h-9 rounded-xl" />
-          <Skeleton className="h-9 rounded-xl" />
+          <Skeleton className="h-9 rounded-full" />
+          <Skeleton className="h-9 rounded-full" />
           <Skeleton className="h-32 rounded-2xl" />
         </div>
       </Shell>
@@ -419,7 +419,7 @@ function ModelSelect({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-describedby={`${id}-hint`}
-        className="h-9 w-full min-w-0 truncate rounded-xl border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
+        className="h-9 w-full min-w-0 truncate rounded-full border border-input bg-background px-4 text-sm outline-none transition-[border-color,box-shadow] duration-150 ease-out motion-reduce:transition-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-40 dark:border-transparent dark:bg-muted dark:focus-visible:border-ring"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

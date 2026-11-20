@@ -171,7 +171,7 @@ function LoginPage() {
                     autoComplete="username"
                     autoFocus
                     required
-                    className="h-10 px-4"
+                    className="h-10"
                     aria-invalid={badCredentials || undefined}
                     value={email}
                     onChange={(e) => {
@@ -187,7 +187,7 @@ function LoginPage() {
                     type="password"
                     autoComplete="current-password"
                     required
-                    className="h-10 px-4"
+                    className="h-10"
                     aria-invalid={badCredentials || undefined}
                     aria-describedby={signIn.error ? 'sign-in-error' : undefined}
                     value={password}
