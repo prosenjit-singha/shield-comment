@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 7 section + the row's decisions, `docs/project-documentation/modules/module-7-support-team.md`, the code the row names.
 - Standing approvals: none yet for client/ or admin/ in this run (asked at the first row that touches them). Live AI, Meta, email, Telegram or WhatsApp calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #15 (2026-11-20) · rows this session: 8 · estimate: 124k
+- Session: #15 (2026-11-20) · rows this session: 9 · estimate: 134k
 - Previous runs (Modules 3–6, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M7-T7 (2026-11-20) · commit: "feat(backend): add workspace alert settings (M7-T7)"
+verified M7-T7
 
 ## Resume
 `/orchestration --continue`
@@ -309,4 +309,4 @@ You are implementing exactly ONE task row, **M7-T8**, in the ShieldComment BD re
 - 2026-11-20 M7-T5 ✅ f93cb6d · backend 2391 unit (was 2364) + e2e 1149 (was 1139) · admin/client untouched · workspace invites via Better Auth org plugin: 7-day links, re-invite cancels old, bilingual invite email `/invite/<id>`, D7 role rules + D2 impersonation 403 in before-middleware, pooled seats (members + pending invites) → 409 `SEAT_LIMIT_REACHED` / `NO_ACTIVE_PLAN`
 - 2026-11-20 M7-T6 ✅ 164e6d1 · backend 2424 unit (was 2391) + e2e 1158 (was 1149) · admin/client untouched · sign-up from an invite (no workspace/billing/trial), accept with seat re-check (`used > limit`) + active workspace + cookie-cache refresh, M7-D18 verification gate off, D7/D11 member matrix (`WORKSPACE_OWNER_PROTECTED`), `GET /api/workspaces/:id/team` · next M7-T6b needs M7-D19
 - 2026-11-20 M7-T6b ✅ 6a31326 · backend 2440 unit (was 2424) + e2e 1163 (was 1158) · admin/client untouched · ownership transfer: password twice or emailed 6-digit code (Redis, 10 min, 5 tries, 1/min resend), one tx swaps owner ↔ admin and moves the billing account per M7-D19 (a)
-- 2026-11-20 M7-T7 ✅ · backend 2449 unit (was 2440) + e2e 1170 (was 1163) · admin/client untouched · alert settings: migration 0036 `alert_settings` + `alert_deliveries`, `GET/PATCH …/alerts/settings` (threshold 1–1,000, member recipients ≤ 10 default owner, Telegram 409 without `messengerAlerts`, WhatsApp placeholder, last alert per channel)
+- 2026-11-20 M7-T7 ✅ f869aeb · backend 2449 unit (was 2440) + e2e 1170 (was 1163) · admin/client untouched · alert settings: migration 0036 `alert_settings` + `alert_deliveries`, `GET/PATCH …/alerts/settings` (threshold 1–1,000, member recipients ≤ 10 default owner, Telegram 409 without `messengerAlerts`, WhatsApp placeholder, last alert per channel)
