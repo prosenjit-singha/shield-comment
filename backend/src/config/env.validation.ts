@@ -1,5 +1,6 @@
 import { plainToInstance, Type } from 'class-transformer';
 import {
+  isEmail,
   IsEnum,
   IsIn,
   IsInt,
@@ -85,6 +86,28 @@ export class EnvironmentVariables {
     protocols: ['http', 'https'],
   })
   CLIENT_APP_URL?: string;
+
+  // --- Transactional email (Resend HTTP API, M7-T1, Module 7 D6). Optional; set both or neither.
+  // Unset: outside production emails are logged (to, subject); in production sends fail (logged at boot).
+  /** Resend API key (`re_…`, "Sending access" is enough). */
+  @ValidateIf((env: EnvironmentVariables) => hasEmailEnv(env))
+  @Matches(/^re_\S{8,}$/, {
+    message:
+      'RESEND_API_KEY must be a Resend API key (re_…) (set together with EMAIL_FROM)',
+  })
+  RESEND_API_KEY?: string;
+
+  /** Sender on a domain verified in Resend: `alerts@example.com` or `ShieldComment <alerts@example.com>`. */
+  @ValidateIf((env: EnvironmentVariables) => hasEmailEnv(env))
+  @ValidateBy({
+    name: 'isEmailFrom',
+    validator: {
+      validate: isEmailFrom,
+      defaultMessage: () =>
+        'EMAIL_FROM must be an email address or "Name <address>" (set together with RESEND_API_KEY)',
+    },
+  })
+  EMAIL_FROM?: string;
 
   // --- Neon Object Storage (S3-compatible). Optional: StorageService is disabled without them.
   // `neon deploy` / `neon env pull` writes the AWS_* names; STORAGE_BUCKET is the bucket key in neon.ts.
@@ -325,6 +348,15 @@ function hasMetaAppEnv(env: EnvironmentVariables): boolean {
     env.META_LOGIN_CONFIG_ID !== undefined ||
     env.META_OAUTH_REDIRECT_URI !== undefined
   );
+}
+
+function hasEmailEnv(env: EnvironmentVariables): boolean {
+  return env.RESEND_API_KEY !== undefined || env.EMAIL_FROM !== undefined;
+}
+
+/** `address@domain` or `Name <address@domain>`. */
+function isEmailFrom(value: unknown): boolean {
+  return isEmail(value, { allow_display_name: true });
 }
 
 function hasTokenCipherEnv(env: EnvironmentVariables): boolean {

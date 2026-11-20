@@ -79,6 +79,9 @@ services:
       META_OAUTH_REDIRECT_URI:
       META_GRAPH_API_VERSION:
       META_WEBHOOK_VERIFY_TOKEN:
+      # Transactional email (Module 7, Resend). Unset = sends fail and are logged (NODE_ENV=production).
+      RESEND_API_KEY:
+      EMAIL_FROM:
       # Neon AI Gateway (Module 5): the base URL is env-only; the token can also be saved in /admin/settings.
       NEON_AI_GATEWAY_BASE_URL:
       NEON_AI_GATEWAY_TOKEN:

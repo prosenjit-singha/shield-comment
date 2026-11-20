@@ -287,3 +287,58 @@ describe('validateEnv: AI cost estimate (M5-T13)', () => {
     expectInvalid({ AI_MODEL_PRICES: value }, reason);
   });
 });
+
+describe('validateEnv: transactional email (M7-T1)', () => {
+  const RESEND_KEY = 're_test_0123456789abcdef';
+
+  it('accepts no email env (dev log fallback)', () => {
+    const env = validateEnv(BASE);
+    expect(env.RESEND_API_KEY).toBeUndefined();
+    expect(env.EMAIL_FROM).toBeUndefined();
+  });
+
+  it.each(['alerts@example.com', 'ShieldComment BD <alerts@example.com>'])(
+    'accepts EMAIL_FROM=%j with a key',
+    (from) => {
+      const env = validateEnv({
+        ...BASE,
+        RESEND_API_KEY: RESEND_KEY,
+        EMAIL_FROM: from,
+      });
+      expect(env.EMAIL_FROM).toBe(from);
+    },
+  );
+
+  it.each([
+    'not-an-email',
+    'Name <bad>',
+    '<alerts@example.com>',
+    'a@example.com\nBcc: b@example.com',
+    '',
+  ])('rejects a bad from address %j at boot', (from) => {
+    expectInvalid(
+      { RESEND_API_KEY: RESEND_KEY, EMAIL_FROM: from },
+      '- EMAIL_FROM:',
+    );
+  });
+
+  it('needs both: a key without a from address, or the reverse, fails', () => {
+    expectInvalid({ RESEND_API_KEY: RESEND_KEY }, '- EMAIL_FROM:');
+    expectInvalid({ EMAIL_FROM: 'alerts@example.com' }, '- RESEND_API_KEY:');
+  });
+
+  it('rejects a key that is not a Resend key, without echoing it', () => {
+    let message = '';
+    try {
+      validateEnv({
+        ...BASE,
+        RESEND_API_KEY: 'sk-secret-value-123456',
+        EMAIL_FROM: 'alerts@example.com',
+      });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain('- RESEND_API_KEY:');
+    expect(message).not.toContain('sk-secret-value-123456');
+  });
+});
