@@ -31,6 +31,8 @@ export interface MetaAppConfig {
   loginConfigId: string;
   redirectUri: string;
   graphApiVersion: string;
+  /** Test/compose-only Graph host (`META_GRAPH_BASE_URL`, Module 6 D17); unset = `https://graph.facebook.com`. */
+  graphBaseUrl?: string;
 }
 
 /** DI token for the Meta app config (`null` when the META_* app vars are unset). */
@@ -53,5 +55,8 @@ export function createMetaAppConfig(
     graphApiVersion:
       config.get('META_GRAPH_API_VERSION', { infer: true }) ||
       DEFAULT_GRAPH_API_VERSION,
+    graphBaseUrl: config
+      .get('META_GRAPH_BASE_URL', { infer: true })
+      ?.replace(/\/+$/, ''),
   };
 }

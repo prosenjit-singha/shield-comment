@@ -15,6 +15,7 @@ import {
   type ActionTarget,
   applyActionToComment,
   findActionTarget,
+  keepCommentVisible,
   stampCommentOverride,
   statusAfterAction,
 } from './moderation-action.queries.js';
@@ -37,12 +38,24 @@ export type ModerationActionRequest =
   | { action: 'HIDE' | 'UNHIDE' | 'DELETE' }
   | { action: 'REPLY'; replyText: string };
 
+/** Module 6 D8 "Keep visible": a member's action only, never sent to Meta. */
+export type KeepVisibleRequest = { action: 'KEEP' };
+
 export type ExecuteModerationActionInput = {
   workspaceId: string;
   /** `comments.id` (not the Meta comment id). */
   commentId: string;
-} & ModerationActor &
-  ModerationActionRequest;
+} & (
+  | (ModerationActor & ModerationActionRequest)
+  | ({ source: 'USER'; userId: string } & KeepVisibleRequest)
+);
+
+/** The actions that call Graph (everything but KEEP). */
+type GraphActionInput = Exclude<
+  ExecuteModerationActionInput,
+  KeepVisibleRequest
+>;
+type KeepInput = Extract<ExecuteModerationActionInput, KeepVisibleRequest>;
 
 /** Why nothing was sent to Meta (no `moderation_actions` row was written either). */
 export const MODERATION_SKIP_REASONS = [
@@ -66,6 +79,8 @@ export const MODERATION_SKIP_REASONS = [
   'page_token_undecryptable',
   /** AUTO reply: one is already sent or in flight (D6: never twice). */
   'already_replied',
+  /** KEEP on a comment hidden on Meta (M6-T4): "Keep visible" never unhides, UNHIDE does. */
+  'comment_hidden',
 ] as const;
 export type ModerationSkipReason = (typeof MODERATION_SKIP_REASONS)[number];
 
@@ -132,6 +147,7 @@ export class ModerationActionExecutor {
     input: ExecuteModerationActionInput,
     now: () => Date = () => new Date(),
   ): Promise<ModerationActionResult> {
+    if (input.action === 'KEEP') return this.keep(input, now());
     if (input.action === 'REPLY' && input.replyText.trim().length === 0) {
       throw new Error('replyText must not be empty');
     }
@@ -230,9 +246,71 @@ export class ModerationActionExecutor {
     };
   }
 
+  /**
+   * D8 "Keep visible": `VISIBLE` + the D10 stamp + a `KEEP` row logged `SUCCEEDED` (the member's
+   * audit trail), in one transaction. Nothing goes to Meta, so the Page, connection and token
+   * are not needed.
+   */
+  private async keep(
+    input: KeepInput,
+    at: Date,
+  ): Promise<ModerationActionResult> {
+    const target = await findActionTarget(
+      this.db,
+      input.workspaceId,
+      input.commentId,
+    );
+    const skip = keepSkipReason(target);
+    if (skip !== null) return this.skipped(input, skip);
+    const actionId = await this.db.transaction(async (tx) => {
+      const kept = await keepCommentVisible(
+        tx,
+        input.workspaceId,
+        input.commentId,
+        at,
+      );
+      if (!kept) return null;
+      // The update above proved the comment is in the workspace, so the insert returns a row.
+      const row = (await insertModerationAction(tx, {
+        workspaceId: input.workspaceId,
+        commentId: input.commentId,
+        action: 'KEEP',
+        source: 'USER',
+        userId: input.userId,
+      }))!;
+      await completeModerationAction(
+        tx,
+        input.workspaceId,
+        row.id,
+        { state: 'SUCCEEDED' },
+        at,
+      );
+      return row.id;
+    });
+    if (actionId === null) {
+      // Deleted or hidden between the read and the update.
+      const now = await findActionTarget(
+        this.db,
+        input.workspaceId,
+        input.commentId,
+      );
+      return this.skipped(input, keepSkipReason(now) ?? 'comment_not_found');
+    }
+    this.logger.log(
+      `Comment ${input.commentId} (workspace ${input.workspaceId}): USER KEEP succeeded (action ${actionId})`,
+    );
+    return {
+      outcome: 'succeeded',
+      actionId,
+      commentStatus: 'VISIBLE',
+      replyCommentId: null,
+      alreadyGone: false,
+    };
+  }
+
   /** `null` = act. Order: comment → human stamp → Page → connection → config → token. */
   private skipReason(
-    input: ExecuteModerationActionInput,
+    input: GraphActionInput,
     target: ActionTarget | undefined,
   ): ModerationSkipReason | null {
     if (!target) return 'comment_not_found';
@@ -276,10 +354,7 @@ export class ModerationActionExecutor {
    * One short transaction: the `PENDING` log row (an AUTO reply reuses its FAILED row, never a
    * PENDING/SUCCEEDED one) and, for a member's action, the D10 stamp.
    */
-  private async open(
-    input: ExecuteModerationActionInput,
-    at: Date,
-  ): Promise<Opened> {
+  private async open(input: GraphActionInput, at: Date): Promise<Opened> {
     try {
       return await this.db.transaction(async (tx): Promise<Opened> => {
         let row: ModerationActionRow | undefined;
@@ -354,7 +429,7 @@ export class ModerationActionExecutor {
 
   /** The Graph call (no transaction is open here). Returns the reply id for REPLY. */
   private async callGraph(
-    input: ExecuteModerationActionInput,
+    input: GraphActionInput,
     target: ActionTarget,
     token: string,
   ): Promise<string | undefined> {
@@ -390,7 +465,7 @@ export class ModerationActionExecutor {
 
   /** One short transaction: finish the log row and mirror a success on the comment. */
   private async complete(
-    input: ExecuteModerationActionInput,
+    input: GraphActionInput,
     actionId: string,
     outcome: ModerationActionOutcome,
     at: Date,
@@ -424,4 +499,16 @@ export class ModerationActionExecutor {
     );
     return { outcome: 'skipped', reason };
   }
+}
+
+/** KEEP: the comment must exist, not be deleted and not be hidden on Meta. */
+function keepSkipReason(
+  target: ActionTarget | undefined,
+): ModerationSkipReason | null {
+  if (!target) return 'comment_not_found';
+  if (target.deletedAt !== null || target.status === 'DELETED') {
+    return 'comment_deleted';
+  }
+  if (target.status === 'HIDDEN') return 'comment_hidden';
+  return null;
 }

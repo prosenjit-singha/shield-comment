@@ -281,6 +281,31 @@ export class EnvironmentVariables {
   META_GRAPH_API_VERSION?: string;
 
   /**
+   * Test/compose-only Graph host (Module 6 D17): the gate's Playwright run points the backend at a
+   * Graph stub. Unset = `https://graph.facebook.com`. Refused when `NODE_ENV=production`.
+   */
+  @IsOptional()
+  @IsUrl(
+    {
+      require_tld: false,
+      require_protocol: true,
+      protocols: ['http', 'https'],
+    },
+    { message: 'META_GRAPH_BASE_URL must be an absolute http(s) URL' },
+  )
+  @ValidateBy({
+    name: 'isNotProduction',
+    validator: {
+      validate: (_value: unknown, args) =>
+        (args?.object as EnvironmentVariables | undefined)?.NODE_ENV !==
+        NodeEnv.Production,
+      defaultMessage: () =>
+        'META_GRAPH_BASE_URL is a test-only override and must not be set when NODE_ENV=production',
+    },
+  })
+  META_GRAPH_BASE_URL?: string;
+
+  /**
    * Meta webhook subscription handshake (`GET /api/webhooks/meta`, Module 4 D1): Meta echoes it as
    * `hub.verify_token`. Optional and independent of the app group: unset → the handshake answers 503.
    * 16–256 printable ASCII characters, no spaces (`openssl rand -hex 24`).

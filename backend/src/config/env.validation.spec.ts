@@ -148,6 +148,46 @@ describe('validateEnv: Meta app', () => {
   });
 });
 
+describe('validateEnv: META_GRAPH_BASE_URL (M6-T4, D17)', () => {
+  const error = (env: Record<string, unknown>) => {
+    try {
+      validateEnv({ ...BASE, ...env });
+    } catch (e) {
+      return (e as Error).message;
+    }
+    return '';
+  };
+
+  it('is optional and accepts an http(s) URL outside production', () => {
+    expect(validateEnv(BASE).META_GRAPH_BASE_URL).toBeUndefined();
+    expect(
+      validateEnv({ ...BASE, META_GRAPH_BASE_URL: 'http://graph-stub:4010' })
+        .META_GRAPH_BASE_URL,
+    ).toBe('http://graph-stub:4010');
+  });
+
+  it.each(['graph-stub:4010', 'ftp://graph-stub', '/v26.0'])(
+    'rejects %s',
+    (value) => {
+      expect(error({ META_GRAPH_BASE_URL: value })).toContain(
+        '- META_GRAPH_BASE_URL:',
+      );
+    },
+  );
+
+  it('is refused when NODE_ENV=production', () => {
+    expect(
+      error({
+        NODE_ENV: 'production',
+        META_GRAPH_BASE_URL: 'http://graph-stub:4010',
+      }),
+    ).toContain('must not be set when NODE_ENV=production');
+    expect(validateEnv({ ...BASE, NODE_ENV: 'production' }).NODE_ENV).toBe(
+      'production',
+    );
+  });
+});
+
 describe('validateEnv: Meta webhook verify token', () => {
   const TOKEN = 'verify-token-0123456789abcdef';
 

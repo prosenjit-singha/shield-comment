@@ -1,0 +1,2 @@
+ALTER TABLE "moderation_actions" DROP CONSTRAINT "moderation_actions_action_check";--> statement-breakpoint
+ALTER TABLE "moderation_actions" ADD CONSTRAINT "moderation_actions_action_check" CHECK (action in ('HIDE', 'UNHIDE', 'DELETE', 'REPLY', 'KEEP'));

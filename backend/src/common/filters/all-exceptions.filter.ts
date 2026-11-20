@@ -26,18 +26,26 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 
 /**
  * 5xx `code`s a client may see (opt-in, each one deliberate): the toggle's 502 when Graph
- * `subscribed_apps` fails (M4-T8, D10); the AI key save 503 without a token cipher (M5-T3). Other
- * 5xx never carry `code`; `details` stay 4xx-only.
+ * `subscribed_apps` fails (M4-T8, D10); the AI key save 503 without a token cipher (M5-T3); the
+ * comment override's 502 / 503 (M6-T4). Other 5xx never carry `code`.
  */
 export const PUBLIC_SERVER_ERROR_CODES: ReadonlySet<string> = new Set([
   'META_SUBSCRIBE_FAILED',
   'KEY_ENCRYPTION_NOT_CONFIGURED',
+  'META_ACTION_FAILED',
+  'META_NOT_CONFIGURED',
+]);
+
+/** 5xx `code`s that also keep `details` (M6-T4 override 502: `{ errorKind, retryable }`). */
+export const SERVER_ERROR_CODES_WITH_DETAILS: ReadonlySet<string> = new Set([
+  'META_ACTION_FAILED',
 ]);
 
 /**
  * Normalises every error into one JSON shape; never leaks internals on 5xx. A 4xx `HttpException`
  * whose body carries `code` (string) and/or `details` (object) keeps them (M3-T6 page limit 409);
- * a 5xx keeps only a `code` listed in `PUBLIC_SERVER_ERROR_CODES`.
+ * a 5xx keeps only a `code` listed in `PUBLIC_SERVER_ERROR_CODES` (+ `details` for the codes in
+ * `SERVER_ERROR_CODES_WITH_DETAILS`).
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -78,6 +86,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
           PUBLIC_SERVER_ERROR_CODES.has(b.code)
         ) {
           code = b.code;
+          if (
+            SERVER_ERROR_CODES_WITH_DETAILS.has(b.code) &&
+            isPlainObject(b.details)
+          ) {
+            details = b.details;
+          }
         }
       }
     }

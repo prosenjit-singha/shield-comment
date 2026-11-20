@@ -124,12 +124,16 @@ export const DEFAULT_CONFIDENCE_THRESHOLD = 0.8;
 /** D6: auto-reply texts (one en + one bn per category), 1–500 characters each. */
 export const AUTO_REPLY_TEXT_MAX_CHARS = 500;
 
-/** Meta actions the executor logs in `moderation_actions` (D10). */
+/**
+ * Actions the executor logs in `moderation_actions` (D10). `KEEP` (M6-T4, Module 6 D8) = a member's
+ * "Keep visible": no Graph call, logged `SUCCEEDED` at once.
+ */
 export const MODERATION_ACTION_TYPES = [
   'HIDE',
   'UNHIDE',
   'DELETE',
   'REPLY',
+  'KEEP',
 ] as const;
 export type ModerationActionType = (typeof MODERATION_ACTION_TYPES)[number];
 

@@ -108,6 +108,25 @@ describe('AllExceptionsFilter', () => {
     expect(body).not.toHaveProperty('details');
   });
 
+  it('keeps code + details on the override 502 META_ACTION_FAILED (M6-T4)', () => {
+    const { status, body } = run(
+      new HttpException(
+        {
+          message: 'Meta did not accept the action',
+          error: 'Bad Gateway',
+          code: 'META_ACTION_FAILED',
+          details: { errorKind: 'transient', retryable: true },
+        },
+        502,
+      ),
+    );
+    expect(status).toBe(502);
+    expect(body).toMatchObject({
+      code: 'META_ACTION_FAILED',
+      details: { errorKind: 'transient', retryable: true },
+    });
+  });
+
   it('hides internals of unknown errors', () => {
     const { status, body } = run(new Error('db password in message'));
     expect(status).toBe(500);

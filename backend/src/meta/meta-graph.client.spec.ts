@@ -1128,4 +1128,34 @@ describe('createMetaAppConfig', () => {
       )?.graphApiVersion,
     ).toBe('v27.0');
   });
+
+  it('META_GRAPH_BASE_URL (D17) is unset by default and loses a trailing slash', () => {
+    expect(createMetaAppConfig(fakeConfig(full))?.graphBaseUrl).toBeUndefined();
+    expect(
+      createMetaAppConfig(
+        fakeConfig({ ...full, META_GRAPH_BASE_URL: 'http://graph-stub:4010/' }),
+      )?.graphBaseUrl,
+    ).toBe('http://graph-stub:4010');
+  });
+});
+
+describe('MetaGraphClient graph host', () => {
+  const debug = vi
+    .spyOn(Logger.prototype, 'debug')
+    .mockImplementation(() => undefined);
+  afterEach(() => vi.unstubAllGlobals());
+  afterAll(() => debug.mockRestore());
+
+  it.each([
+    [undefined, 'https://graph.facebook.com/v26.0/me'],
+    ['http://graph-stub:4010', 'http://graph-stub:4010/v26.0/me'],
+  ])('base %s → %s', async (graphBaseUrl, expected) => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      jsonResponse(200, { id: '1', name: 'x' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await new MetaGraphClient({ ...CONFIG, graphBaseUrl }).getMe(USER_TOKEN);
+    const url = fetchMock.mock.calls[0]![0] as URL;
+    expect(`${url.origin}${url.pathname}`).toBe(expected);
+  });
 });

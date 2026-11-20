@@ -29,6 +29,8 @@ export interface FeedCursor {
 }
 
 export interface CommentsFeedFilter {
+  /** One comment (`comments.id`): the override answer (M6-T4). */
+  commentId?: string;
   status?: CommentStatus;
   category?: ModerationCategory;
   platform?: CommentPlatform;
@@ -92,6 +94,7 @@ export async function listCommentsFeed(
   filter: CommentsFeedFilter,
 ): Promise<CommentsFeedResponse> {
   const conditions = [eq(comments.workspaceId, workspaceId)];
+  if (filter.commentId) conditions.push(eq(comments.id, filter.commentId));
   if (filter.status) conditions.push(eq(comments.status, filter.status));
   if (filter.category) conditions.push(eq(comments.category, filter.category));
   if (filter.platform) conditions.push(eq(comments.platform, filter.platform));

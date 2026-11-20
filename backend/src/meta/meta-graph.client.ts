@@ -552,7 +552,9 @@ export class MetaGraphClient {
     secrets: readonly string[],
   ): Promise<unknown> {
     const config = this.requireConfig();
-    const url = new URL(`${GRAPH_HOST}/${config.graphApiVersion}/${path}`);
+    const url = new URL(
+      `${config.graphBaseUrl ?? GRAPH_HOST}/${config.graphApiVersion}/${path}`,
+    );
     const encoded = new URLSearchParams(params).toString();
     const init: RequestInit = {
       method,

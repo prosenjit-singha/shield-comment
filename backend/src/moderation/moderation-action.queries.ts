@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import {
   type CommentPlatform,
@@ -133,6 +133,35 @@ export async function stampCommentOverride(
   return rows.length > 0;
 }
 
+/**
+ * "Keep visible" (Module 6 D8): `VISIBLE` + the D10 stamp, no Graph call. Only while the comment is
+ * neither deleted nor hidden on Meta (a hidden one needs UNHIDE). `true` = the row changed.
+ */
+export async function keepCommentVisible(
+  executor: ActionQueryExecutor,
+  workspaceId: string,
+  commentId: string,
+  at: Date,
+): Promise<boolean> {
+  const rows = await executor
+    .update(comments)
+    .set({
+      status: 'VISIBLE',
+      overriddenAt: sql`coalesce(${comments.overriddenAt}, ${at})`,
+      updatedAt: at,
+    })
+    .where(
+      and(
+        eq(comments.workspaceId, workspaceId),
+        eq(comments.id, commentId),
+        isNull(comments.deletedAt),
+        notInArray(comments.status, ['HIDDEN', 'DELETED']),
+      ),
+    )
+    .returning({ id: comments.id });
+  return rows.length > 0;
+}
+
 /** The comment status a succeeded action leaves (REPLY changes nothing). */
 export function statusAfterAction(
   action: ModerationActionType,
@@ -146,6 +175,8 @@ export function statusAfterAction(
       return 'DELETED';
     case 'REPLY':
       return null;
+    case 'KEEP':
+      return 'VISIBLE';
   }
 }
 
