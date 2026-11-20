@@ -114,7 +114,7 @@ function DashboardError({
   return (
     <section
       role="alert"
-      className="flex flex-col items-center gap-3 rounded-3xl border bg-card px-6 py-16 text-center"
+      className="flex flex-col items-center gap-3 rounded-xl bg-card px-6 py-16 text-center"
     >
       <span className="flex size-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
         <TriangleAlert className="size-6" aria-hidden />

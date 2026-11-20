@@ -62,7 +62,7 @@ function PromotionsPage() {
         </Button>
       </div>
 
-      <section aria-label="Promotions" className="flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-card">
+      <section aria-label="Promotions" className="flex min-w-0 flex-col overflow-hidden rounded-xl bg-card">
         <div className="flex flex-wrap items-center gap-2 p-4 md:p-5">
           <Tabs
             value={search.kind ?? ALL}

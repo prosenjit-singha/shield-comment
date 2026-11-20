@@ -46,8 +46,8 @@ function AuthedLayout() {
         className="bg-muted"
       >
         <AppSidebar user={session.user} />
-        <SidebarInset className="min-w-0 bg-muted">
-          <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 bg-muted/85 px-4 backdrop-blur md:px-6">
+        <SidebarInset className="min-w-0 bg-muted dark:bg-background">
+          <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 bg-muted/85 px-4 backdrop-blur dark:bg-background/80 md:px-6">
             <SidebarTrigger className="-ml-1" />
             <span className="truncate text-sm font-medium">{section ?? 'Admin'}</span>
           </header>

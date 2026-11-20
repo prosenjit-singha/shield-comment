@@ -27,7 +27,7 @@ export function AppSidebar({ user }: { user: { name: string; email: string } }) 
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild className="rounded-full hover:bg-transparent">
+            <SidebarMenuButton size="lg" asChild className="hover:bg-transparent">
               <Link to="/admin/dashboard" onClick={() => isMobile && setOpenMobile(false)}>
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
                   <ShieldCheck className="size-4" aria-hidden />
@@ -56,7 +56,7 @@ export function AppSidebar({ user }: { user: { name: string; email: string } }) 
                         asChild
                         isActive={isActive}
                         tooltip={item.label}
-                        className="rounded-full data-active:bg-primary/10 data-active:text-primary"
+                       
                       >
                         <Link
                           to={item.to}

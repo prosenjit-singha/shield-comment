@@ -5,7 +5,8 @@
 ## 1. Layout & Navigation
 - Vite SPA with TanStack Router file routes (`src/routes/`). The sidebar shell is the `_authed` layout route (`beforeLoad` requires a Better Auth session with `role === 'super_admin'`).
 - Built **FIRST** using [Animate UI](https://animate-ui.com/docs) `Sidebar`, `Button` (`rounded-full`), `Tabs`, `Dialog`, and `DropdownMenu`.
-- Clean light-first minimalist admin shell (`--muted` canvas `#F8FAFC`, `--card` white panels with 1px `--border` and `rounded-2xl`).
+- Clean light-first minimalist admin shell (`--muted` canvas `#F5F5F7`, borderless white `--card` panels).
+- **Admin follows strict Apple geometry (`DESIGN.md`), overriding `base.md` §2:** `--radius` is 8px; pills (`rounded-full`) only for buttons, badges, switches, avatars, segmented tabs; cards, dialogs, inputs and menus `rounded-xl` (≈11px), never larger. Brand hues stay; neutrals are Apple grays, dark canvas is pure black. One soft shadow on floating layers only.
 
 ## 2. Super Admin Dashboard (`/admin/dashboard`) — Required Charts
 Use Recharts paired with shadcn/ui `--chart-*` / `--primary` (`#0668E1`) / `--secondary` (`#FE2C55`) / `--accent` (`#25F4EE`) tokens:

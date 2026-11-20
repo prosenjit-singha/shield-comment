@@ -54,7 +54,7 @@ function TicketsPage() {
         <section
           aria-label="Conversation"
           className={cn(
-            'flex min-h-[28rem] min-w-0 flex-col overflow-hidden rounded-2xl border bg-card lg:min-h-0',
+            'flex min-h-[28rem] min-w-0 flex-col overflow-hidden rounded-xl bg-card lg:min-h-0',
             !selected && 'max-lg:hidden',
           )}
         >

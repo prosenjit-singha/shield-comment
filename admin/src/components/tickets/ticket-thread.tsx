@@ -262,7 +262,7 @@ function MessageItem({ message }: { message: TicketMessage }) {
       </div>
       <div
         className={cn(
-          'rounded-2xl px-4 py-2.5 text-sm break-words whitespace-pre-wrap',
+          'rounded-xl px-4 py-2.5 text-sm break-words whitespace-pre-wrap',
           note
             ? 'border border-dashed border-chart-4 bg-chart-4/10 text-foreground'
             : fromAdmin
@@ -530,9 +530,9 @@ function ThreadSkeleton() {
         </div>
       </div>
       <div className="flex flex-1 flex-col gap-4 p-5">
-        <Skeleton className="h-16 w-3/5 rounded-2xl" />
-        <Skeleton className="h-12 w-1/2 self-end rounded-2xl" />
-        <Skeleton className="h-20 w-3/5 rounded-2xl" />
+        <Skeleton className="h-16 w-3/5 rounded-xl" />
+        <Skeleton className="h-12 w-1/2 self-end rounded-xl" />
+        <Skeleton className="h-20 w-3/5 rounded-xl" />
       </div>
     </div>
   )

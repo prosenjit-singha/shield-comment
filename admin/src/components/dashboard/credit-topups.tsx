@@ -51,7 +51,7 @@ export function CreditTopups() {
   const items = query.data?.items
 
   return (
-    <section aria-label="Credit top-ups" className="min-w-0 rounded-3xl border bg-card">
+    <section aria-label="Credit top-ups" className="min-w-0 rounded-xl bg-card">
       <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-5 pb-3">
         <div>
           <h2 className="text-base font-semibold">Credit top-ups</h2>
@@ -164,7 +164,7 @@ function AddTopupForm({ onClose }: { onClose: () => void }) {
 
   const noteLength = note.trim().length
   return (
-    <DialogContent className="rounded-2xl sm:max-w-md">
+    <DialogContent className="rounded-xl sm:max-w-md">
       <form onSubmit={submit} className="grid gap-5" noValidate>
         <DialogHeader>
           <DialogTitle>Add a credit top-up</DialogTitle>
@@ -222,12 +222,12 @@ function AddTopupForm({ onClose }: { onClose: () => void }) {
         </div>
 
         {serverError && (
-          <p role="alert" className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <p role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {serverError}
           </p>
         )}
 
-        <DialogFooter className="rounded-b-2xl">
+        <DialogFooter className="rounded-b-xl">
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
           </Button>
@@ -287,7 +287,7 @@ function DeleteTopupDialog({ topup, onClose }: { topup: AiCreditTopup | null; on
   return (
     <Dialog open={topup !== null} onOpenChange={(open) => !open && onClose()}>
       {topup && (
-        <DialogContent className="rounded-2xl sm:max-w-md">
+        <DialogContent className="rounded-xl sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Delete this top-up?</DialogTitle>
             <DialogDescription>
@@ -295,7 +295,7 @@ function DeleteTopupDialog({ topup, onClose }: { topup: AiCreditTopup | null; on
               for a mistaken entry; the deletion is audit-logged.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="rounded-b-2xl">
+          <DialogFooter className="rounded-b-xl">
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>

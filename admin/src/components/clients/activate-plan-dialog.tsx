@@ -153,7 +153,7 @@ function ActivateForm({ client, onClose }: { client: AdminClient; onClose: () =>
   const reasonLength = reason.trim().length
 
   return (
-    <DialogContent className="rounded-2xl sm:max-w-lg">
+    <DialogContent className="rounded-xl sm:max-w-lg">
       <form onSubmit={submit} className="grid gap-5" noValidate>
         <DialogHeader>
           <DialogTitle>Activate a plan for {client.name}</DialogTitle>
@@ -220,7 +220,7 @@ function ActivateForm({ client, onClose }: { client: AdminClient; onClose: () =>
         </div>
 
         {selected && preview && (
-          <div className="rounded-2xl border bg-muted/50 px-4 py-3" aria-live="polite">
+          <div className="rounded-xl bg-muted/50 px-4 py-3" aria-live="polite">
             <p className="text-sm">
               <span className="text-muted-foreground">List price </span>
               <span className="font-medium tabular-nums" data-testid="activation-price">
@@ -289,12 +289,12 @@ function ActivateForm({ client, onClose }: { client: AdminClient; onClose: () =>
         </div>
 
         {serverError && (
-          <p role="alert" className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <p role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {serverError}
           </p>
         )}
 
-        <DialogFooter className="rounded-b-2xl">
+        <DialogFooter className="rounded-b-xl">
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
           </Button>
@@ -323,7 +323,7 @@ function ActivationResult({
   const { subscription, price } = result
   const yearly = subscription.interval === 'year'
   return (
-    <DialogContent className="rounded-2xl sm:max-w-lg">
+    <DialogContent className="rounded-xl sm:max-w-lg">
       <DialogHeader>
         <DialogTitle>Plan activated</DialogTitle>
         <DialogDescription>
@@ -331,7 +331,7 @@ function ActivationResult({
           {formatDhakaDate(subscription.termEndsAt)}.
         </DialogDescription>
       </DialogHeader>
-      <dl data-testid="activation-result" className="grid gap-2 rounded-2xl border bg-muted/50 px-4 py-3 text-sm">
+      <dl data-testid="activation-result" className="grid gap-2 rounded-xl bg-muted/50 px-4 py-3 text-sm">
         <PriceRow label="List price" value={formatPlanPrice(price.listChargedBdt)} />
         {price.discount && <PromotionRow promotion={price.discount} />}
         {price.coupon && <PromotionRow promotion={price.coupon} />}
@@ -348,7 +348,7 @@ function ActivationResult({
         </div>
       </dl>
       {!price.discount && !price.coupon && <p className="text-xs text-muted-foreground">No promotion applied.</p>}
-      <DialogFooter className="rounded-b-2xl">
+      <DialogFooter className="rounded-b-xl">
         <Button type="button" onClick={onClose}>
           Done
         </Button>
