@@ -55,7 +55,7 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
             <SidebarMenuButton
               size="lg"
               aria-label="Account menu"
-              className="rounded-full data-[state=open]:bg-sidebar-accent"
+              className="data-[state=open]:bg-sidebar-accent"
             >
               <Avatar>
                 <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
