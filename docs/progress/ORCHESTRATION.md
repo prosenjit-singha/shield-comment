@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 7 section + the row's decisions, `docs/project-documentation/modules/module-7-support-team.md`, the code the row names.
 - Standing approvals: none yet for client/ or admin/ in this run (asked at the first row that touches them). Live AI, Meta, email, Telegram or WhatsApp calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #16 (2026-11-20) · rows this session: 0 · estimate: 40k
+- Session: #16 (2026-11-20) · rows this session: 1 · estimate: 60k
 - Previous runs (Modules 3–6, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M7-T9 (2026-11-20) · commit: "feat(backend): add scam spike alerts dispatcher (M7-T9)"
+verified M7-T9
 
 ## Resume
 `/orchestration --continue` (dispatches M7-T9; no open decisions)
@@ -312,4 +312,4 @@ You are implementing exactly ONE task row, **M7-T10**, in the ShieldComment BD r
 - 2026-11-20 M7-T6b ✅ 6a31326 · backend 2440 unit (was 2424) + e2e 1163 (was 1158) · admin/client untouched · ownership transfer: password twice or emailed 6-digit code (Redis, 10 min, 5 tries, 1/min resend), one tx swaps owner ↔ admin and moves the billing account per M7-D19 (a)
 - 2026-11-20 M7-T7 ✅ f869aeb · backend 2449 unit (was 2440) + e2e 1170 (was 1163) · admin/client untouched · alert settings: migration 0036 `alert_settings` + `alert_deliveries`, `GET/PATCH …/alerts/settings` (threshold 1–1,000, member recipients ≤ 10 default owner, Telegram 409 without `messengerAlerts`, WhatsApp placeholder, last alert per channel)
 - 2026-11-20 M7-T8 ✅ 3730c8f · backend 2490 unit (was 2449) + e2e 1177 (was 1170) · admin/client untouched · Telegram platform bot: migration 0037 `telegram_chats` (≤ 3/workspace), `TelegramClient.sendMessage` (fetch, error kinds), one-time 15-min `t.me` link codes (Redis GETDEL), `POST /api/telegram/webhook` (secret header, `/start <code>`, en + bn replies), remove chat, settings view `telegram.configured/chats`
-- 2026-11-20 M7-T9 ✅ · backend 2503 unit (was 2490) + e2e 1184 (was 1177) · admin/client untouched · scam-spike alerts: queue `alerts` + job `scam-spike`, detector after each moderated outcome (60-min window, threshold, Redis cool-down 1 h), dispatcher email + Telegram with `alert_deliveries` rows (retries never re-send), `POST …/alerts/test` (5/h, rows `is_test`, migration 0038)
+- 2026-11-20 M7-T9 ✅ 2c9a8c0 · backend 2503 unit (was 2490) + e2e 1184 (was 1177) · admin/client untouched · scam-spike alerts: queue `alerts` + job `scam-spike`, detector after each moderated outcome (60-min window, threshold, Redis cool-down 1 h), dispatcher email + Telegram with `alert_deliveries` rows (retries never re-send), `POST …/alerts/test` (5/h, rows `is_test`, migration 0038)
