@@ -79,6 +79,9 @@ services:
       META_OAUTH_REDIRECT_URI:
       META_GRAPH_API_VERSION:
       META_WEBHOOK_VERIFY_TOKEN:
+      # Neon AI Gateway (Module 5): the base URL is env-only; the token can also be saved in /admin/settings.
+      NEON_AI_GATEWAY_BASE_URL:
+      NEON_AI_GATEWAY_TOKEN:
     ports:
       - "${BACKEND_HOST_PORT:-3000}:3000"
     depends_on:
