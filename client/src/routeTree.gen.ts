@@ -27,6 +27,7 @@ import { Route as AppRulesRouteImport } from './routes/_app/rules'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSupportRouteImport } from './routes/_app/support'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
+import { Route as InviteInvitationIdRouteImport } from './routes/invite.$invitationId'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
 import { Route as AppSettingsAlertsRouteImport } from './routes/_app/settings/alerts'
 import { Route as AppSettingsTeamRouteImport } from './routes/_app/settings/team'
@@ -120,6 +121,11 @@ const ApiSplatRoute = ApiSplatRouteImport.update({
   path: '/api/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InviteInvitationIdRoute = InviteInvitationIdRouteImport.update({
+  id: '/invite/$invitationId',
+  path: '/invite/$invitationId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -154,6 +160,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRouteWithChildren
   '/support': typeof AppSupportRoute
   '/api/$': typeof ApiSplatRoute
+  '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/settings/alerts': typeof AppSettingsAlertsRoute
   '/settings/team': typeof AppSettingsTeamRoute
   '/settings/': typeof AppSettingsIndexRoute
@@ -175,6 +182,7 @@ export interface FileRoutesByTo {
   '/rules': typeof AppRulesRoute
   '/support': typeof AppSupportRoute
   '/api/$': typeof ApiSplatRoute
+  '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/settings/alerts': typeof AppSettingsAlertsRoute
   '/settings/team': typeof AppSettingsTeamRoute
   '/settings': typeof AppSettingsIndexRoute
@@ -199,6 +207,7 @@ export interface FileRoutesById {
   '/_app/settings': typeof AppSettingsRouteWithChildren
   '/_app/support': typeof AppSupportRoute
   '/api/$': typeof ApiSplatRoute
+  '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/_app/settings/alerts': typeof AppSettingsAlertsRoute
   '/_app/settings/team': typeof AppSettingsTeamRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
@@ -223,6 +232,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/support'
     | '/api/$'
+    | '/invite/$invitationId'
     | '/settings/alerts'
     | '/settings/team'
     | '/settings/'
@@ -244,6 +254,7 @@ export interface FileRouteTypes {
     | '/rules'
     | '/support'
     | '/api/$'
+    | '/invite/$invitationId'
     | '/settings/alerts'
     | '/settings/team'
     | '/settings'
@@ -267,6 +278,7 @@ export interface FileRouteTypes {
     | '/_app/settings'
     | '/_app/support'
     | '/api/$'
+    | '/invite/$invitationId'
     | '/_app/settings/alerts'
     | '/_app/settings/team'
     | '/_app/settings/'
@@ -281,6 +293,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
   ApiSplatRoute: typeof ApiSplatRoute
+  InviteInvitationIdRoute: typeof InviteInvitationIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -411,6 +424,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invite/$invitationId': {
+      id: '/invite/$invitationId'
+      path: '/invite/$invitationId'
+      fullPath: '/invite/$invitationId'
+      preLoaderRoute: typeof InviteInvitationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/settings/': {
       id: '/_app/settings/'
       path: '/'
@@ -488,6 +508,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
   ApiSplatRoute: ApiSplatRoute,
+  InviteInvitationIdRoute: InviteInvitationIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
