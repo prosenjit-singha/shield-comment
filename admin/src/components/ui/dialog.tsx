@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { cn } from "cn"
-import { Dialog as DialogPrimitive } from "@animate-ui/react/primitives/radix-ui"
+import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
@@ -38,10 +38,8 @@ function DialogOverlay({
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
-      transition={{ duration: 0.2, ease: "easeOut" }}
-      exitTransition={{ duration: 0.15, ease: "easeIn" }}
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/40 supports-backdrop-filter:backdrop-blur-sm",
+        "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] fixed inset-0 isolate z-50 bg-black/40 supports-backdrop-filter:backdrop-blur-sm",
         className
       )}
       {...props}
@@ -62,10 +60,8 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
-        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        exitTransition={{ duration: 0.15, ease: [0.4, 0, 1, 1] }}
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-4xl bg-popover p-6 text-sm text-popover-foreground shadow-[0_12px_40px_rgb(0_0_0/0.16)] ring-1 ring-border-solid outline-none sm:max-w-md",
+          "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-80 data-[state=open]:duration-250 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:zoom-in-100 motion-reduce:zoom-out-100 fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-4xl bg-popover p-6 text-sm text-popover-foreground shadow-[0_12px_40px_rgb(0_0_0/0.16)] ring-1 ring-border-solid outline-none sm:max-w-md",
           className
         )}
         {...props}
