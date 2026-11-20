@@ -7,14 +7,14 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 6 section + the row's decisions, `docs/project-documentation/modules/module-6-client-dashboard.md`, the code the row names.
 - Standing approvals: **client/ + admin/ approved for every Module 6 row in this run** (user, 2026-11-20, "Both, rest of run (Recommended)"). Live AI or Meta calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #14 (2026-11-20) · rows this session: 4 · estimate: 88k
+- Session: #14 (2026-11-20) · rows this session: 5 · estimate: 100k
 - Previous runs (Modules 3–5, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M6-GATE (2026-11-20) · commit: "test(e2e): pass module 6 gate (M6-GATE)"
+done: Module 6 (M6-PLAN … M6-GATE; M6-T13 boosted posts moved to backlog per D15) (2026-11-20)
 
 ## Resume
-`/orchestration --continue`
+Run finished. Start the next run with new instructions, e.g. `/orchestration Module 7 from M7-PLAN until M7-GATE`.
 
 ## Next prompt
 
@@ -250,4 +250,4 @@ RUN COMPLETE
 - 2026-11-20 M6-T10 ✅ · `e796d33` · client 596/596 (was 546) · backend/admin untouched · C7 `/rules`: category cards (description + example, Show/Hide/Delete, auto-reply + en/bn texts), mode + threshold, keyword chips, link/phone switches + allowed domains, Hide/Delete per rule kind, plan notes (D4/D14), PATCH of changed fields only, `useBlocker` leave guard, moderator 403 note; nav Rules after Pages.
 - 2026-11-20 M6-T11 ✅ · `1103c2f` · backend 2265 unit (was 2263) + e2e 1112 (was 1111) · client 630/630 (was 596) · admin untouched · C8 `/playground`: text + platform, tests-left pill from new read-only `GET …/playground/usage`, result card (rule hit or category + confidence + reasoning, decision line, reply preview, latency), en/bn errors 429/503/502/400/403/404/network; nav Playground; docker backend + client rebuilt healthy
 - 2026-11-20 M6-T12 ✅ · `8f12cf3` · client 658/658 (was 630) · backend/admin untouched · C9 `/analytics`: From/To + Page filter in URL, history Line + stacked flagged Bar per API granularity (day/month), totals table + intents Donut, daily + per-comment CSV (fetch → blob; 409 Pro message + Plans link, > 92-day hint), en/bn errors 400/404/network/5xx + retry; nav Analytics (7 items); docker client rebuilt healthy
-- 2026-11-20 M6-GATE ✅ · backend 2267 unit (was 2265) + e2e 1112 · admin 439 · client 658 · e2e suite 3/3 host + Docker (was 2) · Module 6 gate: rule-priority phone cases + Playwright dashboard KPIs/charts + Unhide via `backend-e2e` and an in-test Graph stub; DB back to baseline
+- 2026-11-20 M6-GATE ✅ · `5fa6f19` · backend 2267 unit (was 2265) + e2e 1112 · admin 439 · client 658 · e2e suite 3/3 host + Docker (was 2) · Module 6 gate: rule-priority phone cases + Playwright dashboard KPIs/charts + Unhide via `backend-e2e` and an in-test Graph stub; DB back to baseline
