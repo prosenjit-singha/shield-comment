@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 7 section + the row's decisions, `docs/project-documentation/modules/module-7-support-team.md`, the code the row names.
 - Standing approvals: **admin/** for the rest of the run (user, 2026-11-20, asked at M7-T10). **client/** for the rest of the run (user, 2026-11-20, asked at M7-T11). Live AI, Meta, email, Telegram or WhatsApp calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #16 (2026-11-20) · rows this session: 6 · estimate: 190k
+- Session: #16 (2026-11-20) · rows this session: 7 · estimate: 215k
 - Previous runs (Modules 3–6, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M7-T14 (2026-11-20) · commit: "feat(client): add invite acceptance screen (M7-T14)"
+verified M7-T14
 
 ## Resume
 `/orchestration --continue` (dispatches M7-T9; no open decisions)
@@ -338,4 +338,4 @@ You are implementing exactly ONE task row, **M7-T15**, in the ShieldComment BD r
 - 2026-11-20 M7-T12 ✅ cf6a378 · client 731 (was 676) · backend/admin untouched · client C13 `/support`: ticket list (status pills, New reply badge), new ticket (category/subject/message + up to 3 screenshots, multipart only with images), thread + reply box, polling 15 s/60 s, impersonated read-only, every error code en + bn
 - 2026-11-20 M7-T13 ✅ 7846baa · client 777 (was 731) · backend/admin untouched · client C11 `/settings/team`: members table + role pills, invite dialog (role per viewer, D7), pending invites resend/cancel, Make admin/moderator + Remove with confirm (D7/D11), seats meter + full/over/no-plan notes (D9/D10), moderator + impersonated read-only (D2), Leave workspace; compose client rebuilt, health 200
 - 2026-11-20 M7-T13b ✅ c10d039 · client 827 (was 777) · backend/admin untouched · client transfer ownership on `/settings/team`: owner-only button → member picker + billing warning, password twice or emailed 6-digit code with resend countdown, every `TRANSFER_*` code en + bn, success → team cache + workspace data reload; compose client rebuilt, `/api/health/live` 200
-- 2026-11-20 M7-T14 ✅ · client 859 (was 827) · backend/admin untouched · client invite link `/invite/$invitationId`: signed-out generic page with sign-up (`invitationId`, no `workspaceName`) → auto-accept, log-in link back to the invite; signed-in invite details + Accept → session refetch → `/dashboard`; en/bn errors (gone, wrong email + log out, seats, no plan, already member, generic)
+- 2026-11-20 M7-T14 ✅ a4c8916 · client 859 (was 827) · backend/admin untouched · client invite link `/invite/$invitationId`: signed-out generic page with sign-up (`invitationId`, no `workspaceName`) → auto-accept, log-in link back to the invite; signed-in invite details + Accept → session refetch → `/dashboard`; en/bn errors (gone, wrong email + log out, seats, no plan, already member, generic)
