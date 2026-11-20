@@ -73,7 +73,7 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
             side={isMobile ? 'top' : 'right'}
             align="end"
             sideOffset={8}
-            className="w-60 rounded-2xl"
+            className="w-60 rounded-xl"
           >
             <DropdownMenuLabel className="flex flex-col gap-0.5 py-2">
               <span className="truncate text-sm font-medium text-foreground">{user.name}</span>

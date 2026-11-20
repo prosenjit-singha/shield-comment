@@ -86,7 +86,7 @@ function StatusForm({ change, onClose }: { change: StatusChange; onClose: () => 
   const length = reason.trim().length
 
   return (
-    <DialogContent className="rounded-2xl sm:max-w-md">
+    <DialogContent className="rounded-xl sm:max-w-md">
       <form onSubmit={submit} className="grid gap-4" noValidate>
         <DialogHeader>
           <DialogTitle>{suspending ? `Suspend ${client.name}?` : `Activate ${client.name}?`}</DialogTitle>
@@ -118,7 +118,7 @@ function StatusForm({ change, onClose }: { change: StatusChange; onClose: () => 
             </span>
           </div>
         </div>
-        <DialogFooter className="rounded-b-2xl">
+        <DialogFooter className="rounded-b-xl">
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
           </Button>

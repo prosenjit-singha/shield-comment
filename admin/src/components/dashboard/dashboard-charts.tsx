@@ -50,7 +50,7 @@ const COLORS = {
   blocked: 'var(--secondary)',
 }
 
-/** A dashboard panel: `rounded-3xl` card with a title row and a fixed-height body. */
+/** A dashboard panel: `rounded-xl` card with a title row and a fixed-height body. */
 export function ChartCard({
   title,
   description,
@@ -67,7 +67,7 @@ export function ChartCard({
   return (
     <section
       aria-label={title}
-      className={`flex min-w-0 flex-col gap-4 rounded-3xl border bg-card p-4 md:p-6 ${className ?? ''}`}
+      className={`flex min-w-0 flex-col gap-4 rounded-xl bg-card p-4 md:p-6 ${className ?? ''}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="flex min-w-0 flex-col gap-0.5">
@@ -143,7 +143,7 @@ function ChartTooltip({
 }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="flex min-w-36 flex-col gap-1.5 rounded-2xl border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
+    <div className="flex min-w-36 flex-col gap-1.5 rounded-xl border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
       <p className="font-medium">{formatTitle(label, payload)}</p>
       {payload.map((row) => (
         <div key={String(row.dataKey ?? row.name)} className="flex items-center justify-between gap-4">

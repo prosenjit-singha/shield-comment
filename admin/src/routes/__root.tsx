@@ -44,7 +44,7 @@ function RootLayout() {
 
 function CenteredMessage({ title, body }: { title: string; body: string }) {
   return (
-    <main className="flex min-h-svh flex-col items-center justify-center gap-4 bg-muted p-6 text-center">
+    <main className="flex min-h-svh flex-col items-center justify-center gap-4 bg-muted p-6 text-center dark:bg-background">
       <h1 className="text-2xl font-semibold">{title}</h1>
       <p className="max-w-md text-sm text-muted-foreground">{body}</p>
       <Button asChild>

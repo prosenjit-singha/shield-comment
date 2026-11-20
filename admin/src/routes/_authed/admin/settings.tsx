@@ -85,7 +85,7 @@ function SettingsPage() {
           ))}
         </div>
       ) : items.length === 0 ? (
-        <section className="flex flex-col items-center gap-2 rounded-2xl border bg-card px-6 py-16 text-center">
+        <section className="flex flex-col items-center gap-2 rounded-xl bg-card px-6 py-16 text-center">
           <h2 className="text-base font-semibold">No plans</h2>
           <p className="max-w-md text-sm text-balance text-muted-foreground">
             Plans come from the database seed. Run the migrations to create Starter, Growth and Pro.
@@ -120,14 +120,14 @@ function SettingsPage() {
       <AiSettingsHistory />
 
       <Dialog open={blocker.status === 'blocked'} onOpenChange={(open) => !open && blocker.reset?.()}>
-        <DialogContent className="rounded-2xl sm:max-w-md">
+        <DialogContent className="rounded-xl sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Leave without saving?</DialogTitle>
             <DialogDescription>
               {unsavedMessage(dirtyCount, aiDirty)}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="rounded-b-2xl">
+          <DialogFooter className="rounded-b-xl">
             <Button type="button" variant="outline" onClick={() => blocker.reset?.()}>
               Stay
             </Button>
@@ -151,13 +151,13 @@ function unsavedMessage(plans: number, ai: boolean): string {
 
 function CardSkeleton() {
   return (
-    <div data-testid="plan-skeleton" className="flex flex-col gap-5 rounded-2xl border bg-card p-4 md:p-5" aria-hidden>
+    <div data-testid="plan-skeleton" className="flex flex-col gap-5 rounded-xl bg-card p-4 md:p-5" aria-hidden>
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-2">
           <Skeleton className="h-5 w-28 rounded-full" />
           <Skeleton className="h-4 w-16 rounded-full" />
         </div>
-        <Skeleton className="h-14 w-28 rounded-2xl" />
+        <Skeleton className="h-14 w-28 rounded-xl" />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Skeleton className="h-9 rounded-full" />
@@ -179,7 +179,7 @@ function CardSkeleton() {
 
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div role="alert" className="flex flex-col items-center gap-3 rounded-2xl border bg-card px-6 py-16 text-center">
+    <div role="alert" className="flex flex-col items-center gap-3 rounded-xl bg-card px-6 py-16 text-center">
       <h2 className="text-base font-semibold">Couldn't load plans</h2>
       <p className="max-w-md text-sm text-muted-foreground">{message}</p>
       <Button variant="outline" onClick={onRetry}>

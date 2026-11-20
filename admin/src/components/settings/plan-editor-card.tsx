@@ -137,7 +137,7 @@ export function PlanEditorCard({
       aria-labelledby={headingId}
       data-testid="plan-card"
       data-dirty={dirty || undefined}
-      className="flex min-w-0 flex-col rounded-2xl border bg-card"
+      className="flex min-w-0 flex-col rounded-xl bg-card"
     >
       <form onSubmit={submit} noValidate className="flex flex-1 flex-col">
         <fieldset disabled={mutation.isPending} className="flex min-w-0 flex-1 flex-col gap-5 p-4 md:p-5">
@@ -367,7 +367,7 @@ function PricePreviewBlock({ price, badge }: { price: number | null; badge: stri
       data-testid="price-preview"
       aria-label="Price preview"
       role="group"
-      className="flex shrink-0 flex-col items-end gap-1 rounded-2xl bg-muted px-3 py-2 text-right"
+      className="flex shrink-0 flex-col items-end gap-1 rounded-xl bg-muted px-3 py-2 text-right"
     >
       {badge && (
         <span
