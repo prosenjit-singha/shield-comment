@@ -28,6 +28,7 @@ import {
   socialPages,
   subscriptionAuditLogs,
   subscriptions,
+  ticketAttachments,
   ticketMessages,
   tickets,
   users,
@@ -311,7 +312,7 @@ export function createAuthActors(app: INestApplication<App>) {
   /**
    * Deletes every tracked workspace and user (members, sessions and accounts cascade). Their
    * billing children (wallet entries, balances, wallets, subscriptions), impersonation, status and
-   * plan audit rows, ticket messages and tickets go first: those FKs are `restrict`. Billing
+   * plan audit rows, ticket attachments, ticket messages and tickets go first: those FKs are `restrict`. Billing
    * accounts go after the workspaces and before the users.
    */
   async function cleanup() {
@@ -387,6 +388,25 @@ export function createAuthActors(app: INestApplication<App>) {
         .select({ id: tickets.id })
         .from(tickets)
         .where(or(...ticketRefs));
+      // Attachments (M7-T3) of those tickets or of messages the tracked users sent.
+      await db
+        .delete(ticketAttachments)
+        .where(
+          or(
+            inArray(ticketAttachments.ticketId, ticketIds),
+            ...(userIds.length
+              ? [
+                  inArray(
+                    ticketAttachments.messageId,
+                    db
+                      .select({ id: ticketMessages.id })
+                      .from(ticketMessages)
+                      .where(inArray(ticketMessages.senderId, userIds)),
+                  ),
+                ]
+              : []),
+          ),
+        );
       await db
         .delete(ticketMessages)
         .where(

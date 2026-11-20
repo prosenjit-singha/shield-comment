@@ -10,6 +10,7 @@ import {
   type TicketListItem,
   type TicketMessageItem,
 } from './support-tickets.service.js';
+import type { TicketAttachmentsService } from './ticket-attachments.js';
 import { TicketEvents, type TicketRepliedEvent } from './ticket-events.js';
 
 const TICKET = '019a0000-0000-7000-8000-000000000001';
@@ -92,7 +93,16 @@ function fakeDb(
 
 function service(fake: ReturnType<typeof fakeDb>) {
   const events = new TicketEvents();
-  const svc = new SupportTicketsService(fake.db, events);
+  // No images in these cases: `withUploads` just runs the write.
+  const attachments = {
+    withUploads: (
+      _t: string,
+      _m: string,
+      _images: unknown[],
+      write: (staged: []) => Promise<unknown>,
+    ) => write([]),
+  } as unknown as TicketAttachmentsService;
+  const svc = new SupportTicketsService(fake.db, events, attachments);
   const ticket = { id: TICKET } as TicketListItem;
   const message = { id: MESSAGE } as TicketMessageItem;
   vi.spyOn(svc, 'findItem').mockResolvedValue(ticket);

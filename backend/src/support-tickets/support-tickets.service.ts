@@ -15,9 +15,11 @@ import {
   max,
   type SQL,
 } from 'drizzle-orm';
+import { uuidv7 } from 'uuidv7';
 import { escapeLike } from '../admin/client-list-query.js';
 import type { Database } from '../db/database.js';
 import {
+  ticketAttachments,
   ticketMessages,
   tickets,
   users,
@@ -28,6 +30,11 @@ import {
   type TicketStatus,
 } from '../db/schema/index.js';
 import { UUID } from './dto/tickets.dto.js';
+import {
+  type AttachmentView,
+  TicketAttachmentsService,
+  type ValidImage,
+} from './ticket-attachments.js';
 import { TicketEvents, type TicketRepliedEvent } from './ticket-events.js';
 import { adminStatusChange, statusAfterReply } from './ticket-status.js';
 
@@ -61,6 +68,8 @@ export interface TicketMessageItem {
   body: string;
   isInternalNote: boolean;
   createdAt: Date;
+  /** D4 screenshots (M7-T3), presigned URLs. */
+  attachments: AttachmentView[];
 }
 
 export type TicketDetail = TicketListItem & { messages: TicketMessageItem[] };
@@ -80,6 +89,8 @@ export interface NewTicketMessage {
   senderRole: TicketSenderRole;
   body: string;
   isInternalNote: boolean;
+  /** Already validated (`validateAttachments()`); stored before the transaction (M7-T3). */
+  images?: readonly ValidImage[];
 }
 
 const ticketRow = {
@@ -109,6 +120,7 @@ export class SupportTicketsService {
   constructor(
     @InjectDrizzle() private readonly db: Database,
     private readonly events: TicketEvents,
+    private readonly attachments: TicketAttachmentsService,
   ) {}
 
   /** `{ items, total, skip, take }`, newest first; `total` counts every match of the filters. */
@@ -155,65 +167,81 @@ export class SupportTicketsService {
     if (!UUID.test(ticketId)) throw notFound();
     if (input.isInternalNote && input.senderRole !== 'ADMIN')
       throw new BadRequestException('Only admins can add internal notes');
+    const images = input.images ?? [];
+    // With images, 404 before anything is uploaded; the id is needed for the object keys.
+    const messageId = images.length ? uuidv7() : undefined;
+    if (images.length) {
+      const [exists] = await this.db
+        .select({ id: tickets.id })
+        .from(tickets)
+        .where(eq(tickets.id, ticketId));
+      if (!exists) throw notFound();
+    }
 
-    const event = await this.db.transaction(
-      async (tx): Promise<TicketRepliedEvent> => {
-        const [current] = await tx
-          .select({
-            id: tickets.id,
-            workspaceId: tickets.workspaceId,
-            status: tickets.status,
-          })
-          .from(tickets)
-          .where(eq(tickets.id, ticketId))
-          .for('update');
-        if (!current) throw notFound();
-        // Read before the insert and under the row lock, so concurrent first replies serialise:
-        // the second one sees the first one's committed message.
-        const hadPublicAdminReply =
-          input.senderRole === 'ADMIN' && !input.isInternalNote
-            ? (
-                await tx
-                  .select({ id: ticketMessages.id })
-                  .from(ticketMessages)
-                  .where(
-                    and(
-                      eq(ticketMessages.ticketId, current.id),
-                      eq(ticketMessages.senderRole, 'ADMIN'),
-                      eq(ticketMessages.isInternalNote, false),
-                    ),
-                  )
-                  .limit(1)
-              ).length > 0
-            : false;
-        const [message] = await tx
-          .insert(ticketMessages)
-          .values({
-            ticketId: current.id,
-            senderId: input.senderId,
+    const event = await this.attachments.withUploads(
+      ticketId,
+      messageId ?? '',
+      images,
+      (staged) =>
+        this.db.transaction(async (tx): Promise<TicketRepliedEvent> => {
+          const [current] = await tx
+            .select({
+              id: tickets.id,
+              workspaceId: tickets.workspaceId,
+              status: tickets.status,
+            })
+            .from(tickets)
+            .where(eq(tickets.id, ticketId))
+            .for('update');
+          if (!current) throw notFound();
+          // Read before the insert and under the row lock, so concurrent first replies serialise:
+          // the second one sees the first one's committed message.
+          const hadPublicAdminReply =
+            input.senderRole === 'ADMIN' && !input.isInternalNote
+              ? (
+                  await tx
+                    .select({ id: ticketMessages.id })
+                    .from(ticketMessages)
+                    .where(
+                      and(
+                        eq(ticketMessages.ticketId, current.id),
+                        eq(ticketMessages.senderRole, 'ADMIN'),
+                        eq(ticketMessages.isInternalNote, false),
+                      ),
+                    )
+                    .limit(1)
+                ).length > 0
+              : false;
+          const [message] = await tx
+            .insert(ticketMessages)
+            .values({
+              ...(messageId ? { id: messageId } : {}),
+              ticketId: current.id,
+              senderId: input.senderId,
+              senderRole: input.senderRole,
+              body: input.body,
+              isInternalNote: input.isInternalNote,
+            })
+            .returning({ id: ticketMessages.id });
+          if (staged.length) await tx.insert(ticketAttachments).values(staged);
+          const next = statusAfterReply(current.status, {
             senderRole: input.senderRole,
-            body: input.body,
             isInternalNote: input.isInternalNote,
-          })
-          .returning({ id: ticketMessages.id });
-        const next = statusAfterReply(current.status, {
-          senderRole: input.senderRole,
-          isInternalNote: input.isInternalNote,
-          hadPublicAdminReply,
-        });
-        if (next !== current.status)
-          await tx
-            .update(tickets)
-            .set({ status: next })
-            .where(eq(tickets.id, current.id));
-        return {
-          ticketId: current.id,
-          workspaceId: current.workspaceId,
-          messageId: message!.id,
-          senderRole: input.senderRole,
-          isInternalNote: input.isInternalNote,
-        };
-      },
+            hadPublicAdminReply,
+          });
+          if (next !== current.status)
+            await tx
+              .update(tickets)
+              .set({ status: next })
+              .where(eq(tickets.id, current.id));
+          return {
+            ticketId: current.id,
+            workspaceId: current.workspaceId,
+            messageId: message!.id,
+            senderRole: input.senderRole,
+            isInternalNote: input.isInternalNote,
+          };
+        }),
     );
     this.events.emitReplied(event);
 
@@ -325,9 +353,11 @@ export class SupportTicketsService {
       .innerJoin(users, eq(users.id, ticketMessages.senderId))
       .where(where)
       .orderBy(asc(ticketMessages.createdAt), asc(ticketMessages.id));
+    const attachments = await this.attachments.viewsFor(rows.map((r) => r.id));
     return rows.map(({ senderId, senderName, senderEmail, ...m }) => ({
       ...m,
       sender: { id: senderId, name: senderName, email: senderEmail },
+      attachments: attachments.get(m.id) ?? [],
     }));
   }
 }

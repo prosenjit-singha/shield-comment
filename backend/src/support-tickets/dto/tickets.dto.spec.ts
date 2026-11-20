@@ -98,13 +98,28 @@ describe('ReplyTicketDto', () => {
     expect(dto.isInternalNote).toBe(true);
   });
 
+  it('multipart strings "true"/"false" become booleans (M7-T3)', async () => {
+    for (const [raw, expected] of [
+      ['true', true],
+      ['false', false],
+    ] as const) {
+      const { dto, fields } = await check(ReplyTicketDto, {
+        body: 'ok',
+        isInternalNote: raw,
+      });
+      expect(fields).toEqual([]);
+      expect(dto.isInternalNote).toBe(expected);
+    }
+  });
+
   it.each([
     [{}, 'body'],
     [{ body: '' }, 'body'],
     [{ body: '   ' }, 'body'],
     [{ body: 42 }, 'body'],
     [{ body: 'x'.repeat(5001) }, 'body'],
-    [{ body: 'ok', isInternalNote: 'true' }, 'isInternalNote'],
+    [{ body: 'ok', isInternalNote: 'yes' }, 'isInternalNote'],
+    [{ body: 'ok', isInternalNote: 'TRUE' }, 'isInternalNote'],
     [{ body: 'ok', isInternalNote: 1 }, 'isInternalNote'],
     [{ body: 'ok', senderRole: 'CLIENT' }, 'senderRole'],
   ])('rejects %j', async (plain, field) => {

@@ -414,6 +414,7 @@ describe('Admin support tickets (e2e)', () => {
         body: 'Second (note)',
         isInternalNote: true,
         createdAt: '2026-01-01T02:00:00.000Z',
+        attachments: [],
       });
       expect(body.messages[0]).toMatchObject({
         senderRole: 'CLIENT',

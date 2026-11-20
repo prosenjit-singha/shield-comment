@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   index,
+  integer,
   pgTable,
   text,
   uuid,
@@ -112,6 +113,48 @@ export const ticketMessages = pgTable(
     check(
       'ticket_messages_internal_note_admin_only',
       sql.raw(`not is_internal_note or sender_role = 'ADMIN'`),
+    ),
+  ],
+);
+
+/** D4 (M7-PLAN, 2026-11-20): screenshot attachments, up to 3 per message (client and admin). */
+export const TICKET_ATTACHMENT_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+] as const;
+export type TicketAttachmentType = (typeof TICKET_ATTACHMENT_TYPES)[number];
+export const TICKET_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+export const TICKET_ATTACHMENTS_PER_MESSAGE = 3;
+
+/**
+ * Object-storage keys (`tickets/<ticketId>/<messageId>/<id>.<ext>`) of a message's images; the
+ * bytes live in `StorageService`. Written in the message's transaction, never updated.
+ */
+export const ticketAttachments = pgTable(
+  'ticket_attachments',
+  {
+    id: id(),
+    ticketId: uuid()
+      .notNull()
+      .references(() => tickets.id, { onDelete: 'restrict' }),
+    messageId: uuid()
+      .notNull()
+      .references(() => ticketMessages.id, { onDelete: 'restrict' }),
+    storageKey: text().notNull().unique(),
+    contentType: text().$type<TicketAttachmentType>().notNull(),
+    sizeBytes: integer().notNull(),
+    createdAt: timestamptz().notNull().defaultNow(),
+  },
+  (t) => [
+    index().on(t.messageId),
+    check(
+      'ticket_attachments_content_type_check',
+      inList('content_type', TICKET_ATTACHMENT_TYPES),
+    ),
+    check(
+      'ticket_attachments_size_bytes_check',
+      sql.raw(`size_bytes between 1 and ${TICKET_ATTACHMENT_MAX_BYTES}`),
     ),
   ],
 );

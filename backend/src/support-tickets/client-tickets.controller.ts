@@ -6,7 +6,9 @@ import {
   Param,
   Post,
   Query,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { AuthSession, WorkspaceContext } from '../auth/auth-session.js';
@@ -23,6 +25,8 @@ import {
   CreateTicketDto,
   TicketsPageQueryDto,
 } from './dto/tickets.dto.js';
+import type { UploadedImage } from './ticket-attachments.js';
+import { TicketFilesInterceptor } from './ticket-files.interceptor.js';
 
 const viewerOf = (
   workspace: WorkspaceContext,
@@ -64,15 +68,20 @@ export class ClientTicketsController {
     return this.tickets.list(viewerOf(workspace, session), query);
   }
 
-  /** 201 `ClientTicketDetail`. 409 `TICKET_LIMIT_REACHED` at 20 unresolved tickets. */
+  /**
+   * 201 `ClientTicketDetail`. 409 `TICKET_LIMIT_REACHED` at 20 unresolved tickets. JSON, or
+   * `multipart/form-data` with up to 3 images in `files` (D4, M7-T3; `ATTACHMENT_*` codes).
+   */
   @Post()
+  @UseInterceptors(TicketFilesInterceptor)
   create(
     @CurrentWorkspace() workspace: WorkspaceContext,
     @Session() session: AuthSession,
     @Body() body: CreateTicketDto,
+    @UploadedFiles() files: UploadedImage[] | undefined,
   ) {
     assertNotImpersonated(session);
-    return this.tickets.create(viewerOf(workspace, session), body);
+    return this.tickets.create(viewerOf(workspace, session), body, files);
   }
 
   /** The ticket + its public thread (never internal notes; support shown as "Support"). */
@@ -85,19 +94,22 @@ export class ClientTicketsController {
     return this.tickets.detail(viewerOf(workspace, session), ticketId);
   }
 
-  /** 201 `{ message, ticket }`; a reply on a RESOLVED ticket reopens it. */
+  /** 201 `{ message, ticket }`; a reply on a RESOLVED ticket reopens it. JSON or multipart (`files`). */
   @Post(':ticketId/reply')
+  @UseInterceptors(TicketFilesInterceptor)
   reply(
     @CurrentWorkspace() workspace: WorkspaceContext,
     @Session() session: AuthSession,
     @Param('ticketId') ticketId: string,
     @Body() body: ClientReplyTicketDto,
+    @UploadedFiles() files: UploadedImage[] | undefined,
   ) {
     assertNotImpersonated(session);
     return this.tickets.reply(
       viewerOf(workspace, session),
       ticketId,
       body.body,
+      files,
     );
   }
 }

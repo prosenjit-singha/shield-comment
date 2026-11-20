@@ -73,9 +73,17 @@ describe('toClientMessages', () => {
     body: `body ${id}`,
     isInternalNote,
     createdAt: at,
+    attachments: [
+      {
+        id: `a-${id}`,
+        contentType: 'image/png' as const,
+        sizeBytes: 10,
+        url: `https://storage.test/${id}.png`,
+      },
+    ],
   });
 
-  it('drops internal notes', () => {
+  it('drops internal notes and their attachments, keeps public attachments', () => {
     const out = toClientMessages([
       row('m1', 'CLIENT'),
       row('m2', 'ADMIN', true),
@@ -83,6 +91,15 @@ describe('toClientMessages', () => {
     ]);
     expect(out.map((m) => m.id)).toEqual(['m1', 'm3']);
     expect(JSON.stringify(out)).not.toContain('body m2');
+    expect(JSON.stringify(out)).not.toContain('a-m2');
+    expect(out[0]!.attachments).toEqual([
+      {
+        id: 'a-m1',
+        contentType: 'image/png',
+        sizeBytes: 10,
+        url: 'https://storage.test/m1.png',
+      },
+    ]);
   });
 
   it('shows support as "Support" without the admin id, keeps the client sender', () => {

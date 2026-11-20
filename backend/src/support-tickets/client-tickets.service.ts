@@ -5,8 +5,10 @@ import {
 } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
 import { and, asc, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { uuidv7 } from 'uuidv7';
 import type { Database } from '../db/database.js';
 import {
+  ticketAttachments,
   ticketMessages,
   tickets,
   UNRESOLVED_TICKET_STATUSES,
@@ -21,6 +23,12 @@ import {
 import { findLiveSubscription } from '../wallet/live-subscription.queries.js';
 import { UUID } from './dto/tickets.dto.js';
 import { SupportTicketsService } from './support-tickets.service.js';
+import {
+  type AttachmentView,
+  TicketAttachmentsService,
+  validateAttachments,
+  type UploadedImage,
+} from './ticket-attachments.js';
 
 /** Reading 4 (M7-PLAN): unresolved (`OPEN` + `IN_PROGRESS`) tickets one workspace may have. */
 export const MAX_UNRESOLVED_TICKETS = 20;
@@ -58,6 +66,8 @@ export interface ClientTicketMessage {
   sender: { id: string | null; name: string };
   body: string;
   createdAt: Date;
+  /** D4 screenshots (M7-T3); notes (and so their images) never reach the client. */
+  attachments: AttachmentView[];
 }
 
 export type ClientTicketDetail = ClientTicketItem & {
@@ -108,6 +118,7 @@ interface MessageRow {
   body: string;
   isInternalNote: boolean;
   createdAt: Date;
+  attachments: AttachmentView[];
 }
 
 /** Drops internal notes and hides who in support wrote a message. */
@@ -123,6 +134,7 @@ export function toClientMessages(rows: MessageRow[]): ClientTicketMessage[] {
           : { id: m.senderId, name: m.senderName },
       body: m.body,
       createdAt: m.createdAt,
+      attachments: m.attachments,
     }));
 }
 
@@ -174,6 +186,7 @@ export class ClientTicketsService {
   constructor(
     @InjectDrizzle() private readonly db: Database,
     private readonly tickets: SupportTicketsService,
+    private readonly attachments: TicketAttachmentsService,
   ) {}
 
   /** `{ items, total, skip, take }`, newest activity (public message or creation) first. */
@@ -222,38 +235,42 @@ export class ClientTicketsService {
         ),
       )
       .orderBy(asc(ticketMessages.createdAt), asc(ticketMessages.id));
-    return { ...ticket, messages: toClientMessages(rows) };
+    const attachments = await this.attachments.viewsFor(rows.map((r) => r.id));
+    return {
+      ...ticket,
+      messages: toClientMessages(
+        rows.map((r) => ({ ...r, attachments: attachments.get(r.id) ?? [] })),
+      ),
+    };
   }
 
   /**
    * One transaction: lock the workspace row (concurrent creates serialise on the cap), count the
    * unresolved tickets (409 at 20), priority from the live plan (D3), insert the ticket + its first
-   * CLIENT message. No `ticket.replied` event (that is for replies).
+   * CLIENT message (+ its D4 images, stored first; the cap is also checked before any upload). No
+   * `ticket.replied` event (that is for replies).
    */
   async create(
     viewer: TicketViewer,
     input: NewClientTicket,
+    files?: readonly UploadedImage[],
   ): Promise<ClientTicketDetail> {
-    const ticketId = await this.db.transaction(async (tx) => {
-      await tx
-        .select({ id: workspaces.id })
-        .from(workspaces)
-        .where(eq(workspaces.id, viewer.workspaceId))
-        .for('no key update');
-      const [open] = await tx
-        .select({ n: count() })
-        .from(tickets)
-        .where(
-          and(
-            eq(tickets.workspaceId, viewer.workspaceId),
-            inArray(tickets.status, [...UNRESOLVED_TICKET_STATUSES]),
-          ),
-        );
-      assertUnderTicketCap(open?.n ?? 0);
-      const live = await findLiveSubscription(tx, viewer.workspaceId);
-      const [ticket] = await tx
-        .insert(tickets)
-        .values({
+    const images = validateAttachments(files);
+    const ticketId = uuidv7();
+    const messageId = uuidv7();
+    if (images.length)
+      assertUnderTicketCap(await this.unresolved(this.db, viewer));
+    await this.attachments.withUploads(ticketId, messageId, images, (staged) =>
+      this.db.transaction(async (tx) => {
+        await tx
+          .select({ id: workspaces.id })
+          .from(workspaces)
+          .where(eq(workspaces.id, viewer.workspaceId))
+          .for('no key update');
+        assertUnderTicketCap(await this.unresolved(tx, viewer));
+        const live = await findLiveSubscription(tx, viewer.workspaceId);
+        await tx.insert(tickets).values({
+          id: ticketId,
           workspaceId: viewer.workspaceId,
           userId: viewer.userId,
           subject: input.subject,
@@ -261,17 +278,18 @@ export class ClientTicketsService {
           priority: initialTicketPriority(
             live?.plan.featureConfig.features.prioritySupportApi ?? false,
           ),
-        })
-        .returning({ id: tickets.id });
-      await tx.insert(ticketMessages).values({
-        ticketId: ticket!.id,
-        senderId: viewer.userId,
-        senderRole: 'CLIENT',
-        body: input.body,
-        isInternalNote: false,
-      });
-      return ticket!.id;
-    });
+        });
+        await tx.insert(ticketMessages).values({
+          id: messageId,
+          ticketId,
+          senderId: viewer.userId,
+          senderRole: 'CLIENT',
+          body: input.body,
+          isInternalNote: false,
+        });
+        if (staged.length) await tx.insert(ticketAttachments).values(staged);
+      }),
+    );
     return this.detail(viewer, ticketId);
   }
 
@@ -280,13 +298,16 @@ export class ClientTicketsService {
     viewer: TicketViewer,
     ticketId: string,
     body: string,
+    files?: readonly UploadedImage[],
   ): Promise<{ message: ClientTicketMessage; ticket: ClientTicketItem }> {
+    const images = validateAttachments(files);
     await this.findVisible(viewer, ticketId);
     const { message } = await this.tickets.addMessage(ticketId, {
       senderId: viewer.userId,
       senderRole: 'CLIENT',
       body,
       isInternalNote: false,
+      images,
     });
     const ticket = await this.findVisible(viewer, ticketId);
     const [clientMessage] = toClientMessages([
@@ -298,9 +319,27 @@ export class ClientTicketsService {
         body: message.body,
         isInternalNote: message.isInternalNote,
         createdAt: message.createdAt,
+        attachments: message.attachments,
       },
     ]);
     return { message: clientMessage!, ticket };
+  }
+
+  /** OPEN + IN_PROGRESS tickets of the workspace (reading 4 cap). */
+  private async unresolved(
+    db: Pick<Database, 'select'>,
+    viewer: TicketViewer,
+  ): Promise<number> {
+    const [open] = await db
+      .select({ n: count() })
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.workspaceId, viewer.workspaceId),
+          inArray(tickets.status, [...UNRESOLVED_TICKET_STATUSES]),
+        ),
+      );
+    return open?.n ?? 0;
   }
 
   private scope(viewer: TicketViewer, ticketId?: string): SQL | undefined {

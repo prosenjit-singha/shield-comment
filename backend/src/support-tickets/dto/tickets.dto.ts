@@ -31,6 +31,10 @@ export const UUID =
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 
+/** Multipart fields are strings: `"true"`/`"false"` → boolean; anything else is left for `@IsBoolean`. */
+const formBoolean = ({ value }: { value: unknown }) =>
+  value === 'true' ? true : value === 'false' ? false : value;
+
 const trimToUndefined = ({ value }: { value: unknown }) => {
   if (typeof value !== 'string') return value;
   const trimmed = value.trim();
@@ -116,6 +120,7 @@ export class CreateTicketDto extends ClientReplyTicketDto {
 export class ReplyTicketDto extends ClientReplyTicketDto {
   /** Admin-only note, hidden from the client later. Default `false`. */
   @IsOptional()
+  @Transform(formBoolean)
   @IsBoolean()
   isInternalNote: boolean = false;
 }
