@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 7 section + the row's decisions, `docs/project-documentation/modules/module-7-support-team.md`, the code the row names.
 - Standing approvals: none yet for client/ or admin/ in this run (asked at the first row that touches them). Live AI, Meta, email, Telegram or WhatsApp calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #15 (2026-11-20) · rows this session: 3 · estimate: 72k
+- Session: #15 (2026-11-20) · rows this session: 4 · estimate: 82k
 - Previous runs (Modules 3–6, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M7-T3 (2026-11-20) · commit: "feat(backend): add ticket screenshot attachments (M7-T3)"
+verified M7-T3
 
 ## Resume
 `/orchestration --continue`
@@ -294,4 +294,4 @@ You are implementing exactly ONE task row, **M7-T4**, in the ShieldComment BD re
 - 2026-11-20 M7-PLAN ✅ fbc5d9d · docs only · Module 7 split into M7-T1…T15 + GATE (backend T1–T9, admin T10, client T11–T15); 17 open decisions D1–D17 (tickets, invites/seats, alerts, nav, gate)
 - 2026-11-20 M7-T1 ✅ 7c466f9 · backend 2315 unit (was 2275) + e2e 1112 · admin/client untouched · `EmailService` (Resend fetch, typed retryable errors, dev log fallback, prod `EmailNotConfiguredError`), `bilingualEmail`, `createEmailServiceFake`, env `RESEND_API_KEY` + `EMAIL_FROM`; D1–D17 recorded, D4/D11 rows re-planned (+ M7-T6b, M7-T13b)
 - 2026-11-20 M7-T2 ✅ 2f629c3 · backend 2328 unit (was 2315) + e2e 1124 (was 1112) · admin/client untouched · client ticket API `/api/workspaces/:workspaceId/support/tickets` (list/create/thread/reply): D1 moderator-own visibility, D2 impersonated POST 403 `IMPERSONATION_READ_ONLY`, D3 Pro → HIGH, cap 20 → 409 `TICKET_LIMIT_REACHED`, notes never returned
-- 2026-11-20 M7-T3 ✅ · backend 2350 unit (was 2328) + e2e 1135 (was 1124) · admin/client untouched · ticket screenshots: `ticket_attachments` (0035), multipart `files` (≤ 3 PNG/JPEG/WebP ≤ 5 MB, magic bytes) on client create/reply + admin reply/note, `ATTACHMENT_*` 400s + 409 `ATTACHMENTS_UNAVAILABLE`, presigned `attachments[]` on every thread message (notes hidden from clients), strict storage fake
+- 2026-11-20 M7-T3 ✅ 105d7d5 · backend 2350 unit (was 2328) + e2e 1135 (was 1124) · admin/client untouched · ticket screenshots: `ticket_attachments` (0035), multipart `files` (≤ 3 PNG/JPEG/WebP ≤ 5 MB, magic bytes) on client create/reply + admin reply/note, `ATTACHMENT_*` 400s + 409 `ATTACHMENTS_UNAVAILABLE`, presigned `attachments[]` on every thread message (notes hidden from clients), strict storage fake
