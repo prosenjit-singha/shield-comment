@@ -143,7 +143,7 @@ function ClientsPage() {
                   <TableHead>Comments</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
-                  <TableHead className={`${stickyActions} pr-4 text-right`}>
+                  <TableHead className={`${stickyActions} pr-5 text-right`}>
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -351,7 +351,7 @@ function ClientRow({
       : 'This client has no owner to log in as.'
 
   return (
-    <TableRow className="group/row hover:bg-muted">
+    <TableRow className="group/row">
       <TableCell className="pl-4">
         <div className="flex max-w-44 flex-col">
           <span className="truncate font-medium" title={client.name}>
@@ -386,7 +386,7 @@ function ClientRow({
       <TableCell className="whitespace-nowrap text-muted-foreground">
         <time dateTime={client.createdAt}>{formatDhakaDate(client.createdAt)}</time>
       </TableCell>
-      <TableCell className={`${stickyActions} pr-4 transition-colors group-hover/row:bg-muted`}>
+      <TableCell className={`${stickyActions} pr-5 transition-colors group-hover/row:bg-[color-mix(in_oklch,var(--color-primary)_5%,var(--color-card))]`}>
         <div className="flex items-center justify-end gap-2">
           <Button
             variant="outline"
@@ -539,7 +539,7 @@ function SkeletonRow() {
       <TableCell>
         <Skeleton className="h-4 w-20 rounded-full" />
       </TableCell>
-      <TableCell className={`${stickyActions} pr-4`}>
+      <TableCell className={`${stickyActions} pr-5`}>
         <div className="flex justify-end gap-2">
           <Skeleton className="h-7 w-16 rounded-full" />
           <Skeleton className="h-8 w-32 rounded-full" />

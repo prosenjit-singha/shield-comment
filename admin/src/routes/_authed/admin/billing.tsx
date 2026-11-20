@@ -83,7 +83,7 @@ function BillingPage() {
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead>Gateway</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="pr-4">Transaction ID</TableHead>
+                    <TableHead className="pr-5">Transaction ID</TableHead>
                   </TableRow>
                 </TableHeader>
                 {!empty && (
@@ -116,7 +116,7 @@ function BillingPage() {
 
 function TransactionRow({ tx }: { tx: AdminTransaction }) {
   return (
-    <TableRow className="hover:bg-muted">
+    <TableRow>
       <TableCell className="pl-4 whitespace-nowrap">
         <time dateTime={tx.createdAt} className="flex flex-col">
           <span>{formatDhakaDate(tx.createdAt)}</span>
@@ -140,7 +140,7 @@ function TransactionRow({ tx }: { tx: AdminTransaction }) {
       <TableCell>
         <StatusPill status={tx.status} />
       </TableCell>
-      <TableCell className="pr-4">
+      <TableCell className="pr-5">
         <code
           className="block max-w-48 truncate font-mono text-xs text-muted-foreground"
           title={tx.tranId}
@@ -194,7 +194,7 @@ function SkeletonRow() {
       <TableCell>
         <Skeleton className="h-5 w-16 rounded-full" />
       </TableCell>
-      <TableCell className="pr-4">
+      <TableCell className="pr-5">
         <Skeleton className="h-4 w-36 rounded-full" />
       </TableCell>
     </TableRow>

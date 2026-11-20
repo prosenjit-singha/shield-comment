@@ -119,7 +119,7 @@ function PromotionsPage() {
                   <TableHead>Ends</TableHead>
                   <TableHead>Used</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="pr-4 text-right">
+                  <TableHead className="pr-5 text-right">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -177,7 +177,7 @@ function PromotionRow({
 }) {
   const value = promotionValue(p)
   return (
-    <TableRow className="hover:bg-muted">
+    <TableRow>
       <TableCell className="pl-4">
         <span className="inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium">{kindLabels[p.kind]}</span>
       </TableCell>
@@ -209,7 +209,7 @@ function PromotionRow({
           {statusLabels[p.status]}
         </span>
       </TableCell>
-      <TableCell className="pr-4">
+      <TableCell className="pr-5">
         <div className="flex items-center justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onClaims} aria-label={`Claims: ${p.name}`}>
             Claims
