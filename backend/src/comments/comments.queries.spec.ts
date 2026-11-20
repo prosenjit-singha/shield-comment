@@ -104,6 +104,7 @@ describe('daily counters (M5-T7)', () => {
       'scamPhishing',
       'spamIrrelevant',
       'abusiveToxic',
+      'ruleMatched',
       'hidden',
       'unhidden',
       'deleted',

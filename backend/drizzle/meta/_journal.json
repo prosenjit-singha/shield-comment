@@ -225,6 +225,13 @@
       "when": 1795153046730,
       "tag": "0031_ai_usage_and_credit_topups",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1795161676430,
+      "tag": "0032_module6_rules",
+      "breakpoints": true
     }
   ]
 }

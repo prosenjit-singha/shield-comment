@@ -6,7 +6,9 @@ import { UpdateModerationPolicyDto } from './dto/moderation-policy.dto.js';
 import {
   applyPolicyPatch,
   assertPolicyPatchAllowed,
+  assertRulesPatchAllowed,
   isEmptyPolicyPatch,
+  normalizeRulesPatch,
   policyColumns,
   samePolicy,
 } from './moderation-policy.rules.js';
@@ -289,6 +291,240 @@ describe('policy patch rules', () => {
       competitorPoachReplyEn: null,
       spamIrrelevantReplyBn: null,
     });
-    expect(Object.keys(columns)).toHaveLength(3 + 5 * 4);
+    expect(columns).toMatchObject({
+      blockedKeywords: [],
+      blockUrls: false,
+      blockPhoneNumbers: false,
+      allowedDomains: [],
+      keywordRuleAction: 'HIDE',
+      urlRuleAction: 'HIDE',
+      phoneRuleAction: 'HIDE',
+    });
+    expect(Object.keys(columns)).toHaveLength(3 + 5 * 4 + 7);
+  });
+});
+
+describe('static rules (M6-T1, D2/D4/D5/D6)', () => {
+  const base = () => defaultModerationPolicy(WS);
+  const codeOf = (fn: () => unknown) => {
+    try {
+      fn();
+    } catch (e) {
+      const error = e as BadRequestException;
+      return { status: error.getStatus(), ...(error.getResponse() as object) };
+    }
+    throw new Error('did not throw');
+  };
+
+  it('DTO accepts a full rules body', async () => {
+    const { fields } = await check({
+      rules: {
+        blockedKeywords: ['bkash', 'বিকাশ নম্বর'],
+        blockUrls: true,
+        blockPhoneNumbers: false,
+        allowedDomains: ['shop.example.com'],
+        actions: { keyword: 'DELETE', url: 'HIDE', phone: 'HIDE' },
+      },
+    });
+    expect(fields).toEqual([]);
+  });
+
+  it.each([
+    [{ rules: [] }, 'rules'],
+    [{ rules: null }, 'rules'],
+    [{ rules: { blockedKeywords: 'bkash' } }, 'rules.blockedKeywords'],
+    [{ rules: { blockedKeywords: ['ok', 5] } }, 'rules.blockedKeywords'],
+    [{ rules: { blockedKeywords: null } }, 'rules.blockedKeywords'],
+    [{ rules: { blockUrls: 'true' } }, 'rules.blockUrls'],
+    [{ rules: { blockPhoneNumbers: null } }, 'rules.blockPhoneNumbers'],
+    [{ rules: { allowedDomains: [null] } }, 'rules.allowedDomains'],
+    [{ rules: { actions: { keyword: 'NONE' } } }, 'rules.actions.keyword'],
+    [{ rules: { actions: { email: 'HIDE' } } }, 'rules.actions.email'],
+    [{ rules: { regex: ['.*'] } }, 'rules.regex'],
+  ])('%j → 400 on %s', async (body, field) => {
+    expect((await check(body)).fields).toContain(field);
+  });
+
+  it('isEmptyPolicyPatch looks inside rules and rules.actions', () => {
+    expect(isEmptyPolicyPatch({ rules: {} })).toBe(true);
+    expect(isEmptyPolicyPatch({ rules: { actions: {} } })).toBe(true);
+    expect(isEmptyPolicyPatch({ rules: { blockedKeywords: [] } })).toBe(false);
+    expect(isEmptyPolicyPatch({ rules: { actions: { url: 'DELETE' } } })).toBe(
+      false,
+    );
+  });
+
+  it('normalizeRulesPatch: NFKC + lower-case + whitespace, de-duplicated, Bangla as typed', () => {
+    expect(
+      normalizeRulesPatch({
+        blockedKeywords: [
+          '  Free   BKASH ',
+          'free bkash',
+          'ＢＫＡＳＨ',
+          'বিকাশ  নম্বর',
+          'bkash',
+        ],
+        allowedDomains: ['WWW.Shop.com', 'shop.com', 'daraz.com.bd'],
+        blockUrls: true,
+      }),
+    ).toEqual({
+      blockedKeywords: ['free bkash', 'bkash', 'বিকাশ নম্বর'],
+      allowedDomains: ['shop.com', 'daraz.com.bd'],
+      blockUrls: true,
+    });
+    expect(normalizeRulesPatch({ blockedKeywords: [] })).toEqual({
+      blockedKeywords: [],
+    });
+  });
+
+  it.each([
+    [
+      { blockedKeywords: ['ok', '   '] },
+      'BLOCKED_KEYWORD_INVALID',
+      { keyword: '   ' },
+    ],
+    [
+      { blockedKeywords: ['x'.repeat(51)] },
+      'BLOCKED_KEYWORD_INVALID',
+      { keyword: 'x'.repeat(51) },
+    ],
+    [
+      { blockedKeywords: Array.from({ length: 201 }, (_, i) => `k${i}`) },
+      'BLOCKED_KEYWORDS_LIMIT',
+      { max: 200 },
+    ],
+    [
+      { allowedDomains: ['https://x.com'] },
+      'ALLOWED_DOMAIN_INVALID',
+      { domain: 'https://x.com' },
+    ],
+    [
+      { allowedDomains: Array.from({ length: 21 }, (_, i) => `d${i}.com`) },
+      'ALLOWED_DOMAINS_LIMIT',
+      { max: 20 },
+    ],
+  ])('case %#: 400 with a code', (rules, code, details) => {
+    expect(codeOf(() => normalizeRulesPatch(rules))).toMatchObject({
+      status: 400,
+      code,
+      details,
+    });
+  });
+
+  it('limits count after de-duplication and code points (50 Bangla code points ok)', () => {
+    // 200 distinct + a case variant of one of them = 200 after de-duplication.
+    const keywords = [...Array.from({ length: 200 }, (_, i) => `k${i}`), 'K0'];
+    expect(
+      normalizeRulesPatch({ blockedKeywords: keywords }).blockedKeywords,
+    ).toHaveLength(200);
+    expect(
+      normalizeRulesPatch({ blockedKeywords: ['ক'.repeat(50)] })
+        .blockedKeywords,
+    ).toEqual(['ক'.repeat(50)]);
+  });
+
+  it('applyPolicyPatch replaces lists, merges actions; samePolicy compares rules', () => {
+    const current = base();
+    const next = applyPolicyPatch(current, {
+      rules: {
+        blockedKeywords: ['bkash'],
+        blockPhoneNumbers: true,
+        actions: { phone: 'DELETE' },
+      },
+    });
+    expect(next.rules).toEqual({
+      blockedKeywords: ['bkash'],
+      blockUrls: false,
+      blockPhoneNumbers: true,
+      allowedDomains: [],
+      actions: { keyword: 'HIDE', url: 'HIDE', phone: 'DELETE' },
+    });
+    expect(samePolicy(current, next)).toBe(false);
+    expect(
+      samePolicy(
+        next,
+        applyPolicyPatch(next, { rules: { blockedKeywords: ['bkash'] } }),
+      ),
+    ).toBe(true);
+    expect(
+      samePolicy(
+        next,
+        applyPolicyPatch(next, { rules: { actions: { url: 'DELETE' } } }),
+      ),
+    ).toBe(false);
+    expect(
+      samePolicy(
+        next,
+        applyPolicyPatch(next, { rules: { allowedDomains: ['a.com'] } }),
+      ),
+    ).toBe(false);
+  });
+
+  describe('assertRulesPatchAllowed (D4)', () => {
+    const starter = {
+      autoReplyTemplates: false,
+      customBlocklist: false,
+      autoHideScams: true,
+    };
+    const none = { ...starter, autoHideScams: false };
+    const growth = { ...starter, customBlocklist: true };
+    const run =
+      (
+        current: ReturnType<typeof base>,
+        rules: Parameters<typeof applyPolicyPatch>[1]['rules'],
+        features: typeof starter,
+      ) =>
+      () =>
+        assertRulesPatchAllowed(
+          current,
+          applyPolicyPatch(current, { rules }),
+          features,
+        );
+
+    it('adding a keyword needs customBlocklist', () => {
+      expect(
+        codeOf(run(base(), { blockedKeywords: ['bkash'] }, starter)),
+      ).toMatchObject({
+        status: 409,
+        code: 'PLAN_FEATURE_UNAVAILABLE',
+        details: { feature: 'customBlocklist' },
+      });
+      expect(run(base(), { blockedKeywords: ['bkash'] }, growth)).not.toThrow();
+    });
+
+    it('a downgraded workspace may remove keywords and keep the rest', () => {
+      const current = applyPolicyPatch(base(), {
+        rules: { blockedKeywords: ['a', 'b'] },
+      });
+      expect(run(current, { blockedKeywords: ['b'] }, none)).not.toThrow();
+      expect(run(current, { blockedKeywords: [] }, none)).not.toThrow();
+      expect(run(current, { blockedKeywords: ['b', 'c'] }, none)).toThrow(
+        ConflictException,
+      );
+    });
+
+    it('URL / phone on needs autoHideScams (every live plan); off, domains, actions never gated', () => {
+      for (const rules of [{ blockUrls: true }, { blockPhoneNumbers: true }]) {
+        expect(codeOf(run(base(), rules, none))).toMatchObject({
+          code: 'PLAN_FEATURE_UNAVAILABLE',
+          details: { feature: 'autoHideScams' },
+        });
+        expect(run(base(), rules, starter)).not.toThrow();
+      }
+      const on = applyPolicyPatch(base(), {
+        rules: { blockUrls: true, blockPhoneNumbers: true },
+      });
+      expect(run(on, { blockUrls: true }, none)).not.toThrow();
+      expect(
+        run(on, { blockUrls: false, blockPhoneNumbers: false }, none),
+      ).not.toThrow();
+      expect(
+        run(
+          base(),
+          { allowedDomains: ['a.com'], actions: { url: 'DELETE' } },
+          none,
+        ),
+      ).not.toThrow();
+    });
   });
 });

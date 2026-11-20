@@ -154,3 +154,31 @@ export const MODERATION_CATEGORY_KEYS = {
 } as const satisfies Record<ModerationCategory, string>;
 export type ModerationCategoryKey =
   (typeof MODERATION_CATEGORY_KEYS)[ModerationCategory];
+
+/**
+ * Static rules (Module 6, decisions 2026-11-20 D2/D4/D5/D6). Rule kinds in match order; each kind
+ * has its own action (D2 b, default `HIDE`). A match sets `status_reason` `rule_<kind>` and keeps
+ * the matched value in `comments.rule_match`.
+ */
+export const RULE_KINDS = ['keyword', 'url', 'phone'] as const;
+export type RuleKind = (typeof RULE_KINDS)[number];
+
+export const RULE_ACTIONS = ['HIDE', 'DELETE'] as const;
+export type RuleAction = (typeof RULE_ACTIONS)[number];
+export const DEFAULT_RULE_ACTION: RuleAction = 'HIDE';
+
+/** `comments.status_reason` of a rule match (`rule_keyword`, `rule_url`, `rule_phone`). */
+export const RULE_STATUS_REASONS = {
+  keyword: 'rule_keyword',
+  url: 'rule_url',
+  phone: 'rule_phone',
+} as const satisfies Record<RuleKind, string>;
+
+/** D5: at most 200 blocked keywords per workspace, 1–50 characters (code points) each. */
+export const MAX_BLOCKED_KEYWORDS = 200;
+export const MAX_KEYWORD_CHARS = 50;
+/** D6 own-domain allow-list of the URL rule. */
+export const MAX_ALLOWED_DOMAINS = 20;
+export const MAX_DOMAIN_CHARS = 253;
+/** Longest `comments.rule_match` (a matched URL is cut to this). */
+export const MAX_RULE_MATCH_CHARS = 200;

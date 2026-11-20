@@ -21,6 +21,7 @@ import {
   type ContextLevel,
   MACHINE_CODE_PATTERN,
   MAX_REASONING_CHARS,
+  MAX_RULE_MATCH_CHARS,
   MODERATION_CATEGORIES,
   MODERATION_CATEGORY_KEYS,
   MODERATION_STAGES,
@@ -189,6 +190,12 @@ export const comments = pgTable(
     aiLatencyMs: integer(),
     /** Machine code explaining `SKIPPED` / `FAILED` / `NEEDS_REVIEW` (e.g. `comment_limit_reached`). */
     statusReason: text(),
+    /**
+     * The value a static rule matched (M6-T2; D2 answered 2026-11-20): keyword, URL (cut to 200)
+     * or phone number, with `status_reason` `rule_keyword` / `rule_url` / `rule_phone`. `null` when
+     * the latest outcome came from the AI. Deleted with the comment.
+     */
+    ruleMatch: text(),
     /** First human moderation action (D10): from then on the AI never changes the comment. */
     overriddenAt: timestamptz(),
     /**
@@ -297,6 +304,10 @@ export const comments = pgTable(
       'comments_status_reason_format',
       sql.raw(patternSql('status_reason', MACHINE_CODE_PATTERN, true)),
     ),
+    check(
+      'comments_rule_match_length',
+      sql.raw(lengthSql('rule_match', 1, MAX_RULE_MATCH_CHARS, true)),
+    ),
   ],
 );
 
@@ -310,6 +321,8 @@ export const DAILY_COMMENT_COUNTERS = [
   'removed',
   'classified',
   ...Object.values(MODERATION_CATEGORY_KEYS),
+  /** M6-T2: comments a static rule matched (no AI call). */
+  'ruleMatched',
   'hidden',
   'unhidden',
   'deleted',
@@ -342,6 +355,7 @@ export const dailyCommentStats = pgTable(
     scamPhishingCount: integer().notNull().default(0),
     spamIrrelevantCount: integer().notNull().default(0),
     abusiveToxicCount: integer().notNull().default(0),
+    ruleMatchedCount: integer().notNull().default(0),
     hiddenCount: integer().notNull().default(0),
     unhiddenCount: integer().notNull().default(0),
     deletedCount: integer().notNull().default(0),

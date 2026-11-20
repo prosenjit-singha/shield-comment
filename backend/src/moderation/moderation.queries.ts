@@ -14,6 +14,7 @@ import {
   DEFAULT_CONFIDENCE_THRESHOLD,
   DEFAULT_CONTEXT_LEVEL,
   DEFAULT_MODERATION_MODE,
+  DEFAULT_RULE_ACTION,
   isMachineCode,
   MODERATION_CATEGORIES,
   MODERATION_CATEGORY_KEYS,
@@ -21,6 +22,8 @@ import {
   type ModerationCategory,
   type ModerationMode,
   type PolicyAction,
+  type RuleAction,
+  type RuleKind,
 } from './moderation.constants.js';
 
 /**
@@ -44,13 +47,26 @@ export interface CategoryRule {
   replyBn: string | null;
 }
 
-/** A policy as the decision code reads it (M5-T8). */
+/** Static rules of a policy (M6-T1; D2/D5/D6 answered 2026-11-20). */
+export interface StaticRules {
+  /** Normalised (`normalizeRuleText`), de-duplicated, ≤ 200 × 1–50 chars (D5). */
+  blockedKeywords: string[];
+  blockUrls: boolean;
+  blockPhoneNumbers: boolean;
+  /** Own domains the URL rule lets through (`normalizeDomain` form, D6). */
+  allowedDomains: string[];
+  /** What a match of each kind does in `AUTO` mode (D2 b). */
+  actions: Record<RuleKind, RuleAction>;
+}
+
+/** A policy as the decision code reads it (M5-T8, + `rules` M6-T1). */
 export interface ModerationPolicy {
   workspaceId: string;
   mode: ModerationMode;
   confidenceThreshold: number;
   aiContextLevel: ContextLevel;
   categories: Record<ModerationCategory, CategoryRule>;
+  rules: StaticRules;
 }
 
 /** The D3/D4/D6/D8 defaults a lazily created policy row has (= the column defaults). */
@@ -70,6 +86,17 @@ export function defaultModerationPolicy(workspaceId: string): ModerationPolicy {
     confidenceThreshold: DEFAULT_CONFIDENCE_THRESHOLD,
     aiContextLevel: DEFAULT_CONTEXT_LEVEL,
     categories,
+    rules: {
+      blockedKeywords: [],
+      blockUrls: false,
+      blockPhoneNumbers: false,
+      allowedDomains: [],
+      actions: {
+        keyword: DEFAULT_RULE_ACTION,
+        url: DEFAULT_RULE_ACTION,
+        phone: DEFAULT_RULE_ACTION,
+      },
+    },
   };
 }
 
@@ -91,6 +118,17 @@ export function toModerationPolicy(row: ModerationPolicyRow): ModerationPolicy {
     confidenceThreshold: row.confidenceThreshold,
     aiContextLevel: row.aiContextLevel,
     categories,
+    rules: {
+      blockedKeywords: row.blockedKeywords,
+      blockUrls: row.blockUrls,
+      blockPhoneNumbers: row.blockPhoneNumbers,
+      allowedDomains: row.allowedDomains,
+      actions: {
+        keyword: row.keywordRuleAction,
+        url: row.urlRuleAction,
+        phone: row.phoneRuleAction,
+      },
+    },
   };
 }
 

@@ -110,6 +110,16 @@ describe('Moderation policy API (e2e)', () => {
           },
         },
         autoReplyAvailable: false,
+        rules: {
+          blockedKeywords: [],
+          blockUrls: false,
+          blockPhoneNumbers: false,
+          allowedDomains: [],
+          actions: { keyword: 'HIDE', url: 'HIDE', phone: 'HIDE' },
+        },
+        // Sign-up starts no plan (PR-T3): every flag off.
+        keywordRulesAvailable: false,
+        urlPhoneRulesAvailable: false,
         updatedAt: expect.any(String),
       });
       expect(await storedRow(owner.workspaceId)).toBeDefined();
@@ -337,6 +347,196 @@ describe('Moderation policy API (e2e)', () => {
         replyBn: BN,
       });
       await resetPolicy(owner.workspaceId);
+    });
+  });
+
+  describe('static rules (M6-T1; D2/D4/D5/D6 answered 2026-11-20)', () => {
+    afterAll(async () => {
+      await resetPolicy(growth.workspaceId);
+      await resetPolicy(owner.workspaceId);
+    });
+
+    it('round trip: normalised + de-duplicated keywords, domains, switches, actions', async () => {
+      const res = await patch(growth.cookie, growth.workspaceId, {
+        rules: {
+          blockedKeywords: [
+            '  Free   BKASH ',
+            'free bkash',
+            'ＢＫＡＳＨ',
+            'বিকাশ  নম্বর',
+          ],
+          blockUrls: true,
+          blockPhoneNumbers: true,
+          allowedDomains: ['WWW.Shop.Example.com', 'shop.example.com'],
+          actions: { phone: 'DELETE' },
+        },
+      }).expect(200);
+      expect(res.body).toMatchObject({
+        changed: true,
+        keywordRulesAvailable: true,
+        urlPhoneRulesAvailable: true,
+        rules: {
+          blockedKeywords: ['free bkash', 'bkash', 'বিকাশ নম্বর'],
+          blockUrls: true,
+          blockPhoneNumbers: true,
+          allowedDomains: ['shop.example.com'],
+          actions: { keyword: 'HIDE', url: 'HIDE', phone: 'DELETE' },
+        },
+      });
+      const { changed: _changed, ...saved } = res.body;
+      expect(
+        (await get(growth.cookie, growth.workspaceId).expect(200)).body,
+      ).toEqual(saved);
+      expect(await storedRow(growth.workspaceId)).toMatchObject({
+        blockedKeywords: ['free bkash', 'bkash', 'বিকাশ নম্বর'],
+        phoneRuleAction: 'DELETE',
+      });
+    });
+
+    it('the same lists in another spelling = no-op (updated_at kept)', async () => {
+      const before = await storedRow(growth.workspaceId);
+      const res = await patch(growth.cookie, growth.workspaceId, {
+        rules: {
+          blockedKeywords: ['FREE BKASH', 'bkash', 'বিকাশ নম্বর'],
+          allowedDomains: ['shop.example.com.'],
+        },
+      }).expect(200);
+      expect(res.body.changed).toBe(false);
+      expect((await storedRow(growth.workspaceId))!.updatedAt).toEqual(
+        before!.updatedAt,
+      );
+    });
+
+    it.each([
+      [
+        'blank keyword',
+        { blockedKeywords: ['ok', '  '] },
+        'BLOCKED_KEYWORD_INVALID',
+      ],
+      [
+        'keyword > 50',
+        { blockedKeywords: ['ক'.repeat(51)] },
+        'BLOCKED_KEYWORD_INVALID',
+      ],
+      [
+        '201 keywords',
+        { blockedKeywords: Array.from({ length: 201 }, (_, i) => `k${i}`) },
+        'BLOCKED_KEYWORDS_LIMIT',
+      ],
+      [
+        'URL as a domain',
+        { allowedDomains: ['https://shop.com/x'] },
+        'ALLOWED_DOMAIN_INVALID',
+      ],
+      [
+        '21 domains',
+        { allowedDomains: Array.from({ length: 21 }, (_, i) => `d${i}.com`) },
+        'ALLOWED_DOMAINS_LIMIT',
+      ],
+    ])('400 %s → code %s', async (_name, rules, code) => {
+      const before = await storedRow(growth.workspaceId);
+      const res = await patch(growth.cookie, growth.workspaceId, {
+        rules,
+      }).expect(400);
+      expect(res.body.code).toBe(code);
+      expect(await storedRow(growth.workspaceId)).toEqual(before);
+    });
+
+    it.each([
+      ['keywords as a string', { blockedKeywords: 'bkash' }],
+      ['a number keyword', { blockedKeywords: [5] }],
+      ['null switch', { blockUrls: null }],
+      ['action NONE', { actions: { url: 'NONE' } }],
+      ['unknown rule field', { regex: ['.*'] }],
+      ['empty rules', {}],
+    ])('400 %s', async (_name, rules) => {
+      await patch(growth.cookie, growth.workspaceId, { rules }).expect(400);
+    });
+
+    it('Starter: keywords → 409 customBlocklist; URL / phone, domains and actions allowed', async () => {
+      const starter = await actors.signUp('m6t1-starter');
+      await actors.activatePlan(starter, 'starter');
+      const res = await patch(starter.cookie, starter.workspaceId, {
+        rules: { blockedKeywords: ['bkash'] },
+      }).expect(409);
+      expect(res.body).toMatchObject({
+        code: 'PLAN_FEATURE_UNAVAILABLE',
+        details: { feature: 'customBlocklist' },
+      });
+      const ok = await patch(starter.cookie, starter.workspaceId, {
+        rules: {
+          blockUrls: true,
+          blockPhoneNumbers: true,
+          allowedDomains: ['myshop.com.bd'],
+          actions: { url: 'DELETE' },
+        },
+      }).expect(200);
+      expect(ok.body.rules).toMatchObject({
+        blockedKeywords: [],
+        blockUrls: true,
+        blockPhoneNumbers: true,
+        allowedDomains: ['myshop.com.bd'],
+        actions: { url: 'DELETE' },
+      });
+      expect(ok.body).toMatchObject({
+        keywordRulesAvailable: false,
+        urlPhoneRulesAvailable: true,
+      });
+      await resetPolicy(starter.workspaceId);
+    });
+
+    it('no live plan: switching URL / phone on → 409 autoHideScams; downgraded keywords can be removed', async () => {
+      const lapsed = await actors.signUp('m6t1-lapsed');
+      await actors.activatePlan(lapsed, 'growth');
+      await patch(lapsed.cookie, lapsed.workspaceId, {
+        rules: { blockedKeywords: ['a', 'b'] },
+      }).expect(200);
+      await actors.expirePlan(lapsed);
+      const read = await get(lapsed.cookie, lapsed.workspaceId).expect(200);
+      expect(read.body).toMatchObject({
+        keywordRulesAvailable: false,
+        urlPhoneRulesAvailable: false,
+      });
+      const res = await patch(lapsed.cookie, lapsed.workspaceId, {
+        rules: { blockPhoneNumbers: true },
+      }).expect(409);
+      expect(res.body.details).toEqual({ feature: 'autoHideScams' });
+      await patch(lapsed.cookie, lapsed.workspaceId, {
+        rules: { blockedKeywords: ['b', 'c'] },
+      }).expect(409);
+      const removed = await patch(lapsed.cookie, lapsed.workspaceId, {
+        rules: { blockedKeywords: ['b'] },
+      }).expect(200);
+      expect(removed.body.rules.blockedKeywords).toEqual(['b']);
+      await resetPolicy(lapsed.workspaceId);
+    });
+
+    it('moderator 403; impersonated owner may edit rules; other workspaces untouched', async () => {
+      const modCookie = await actors.signIn(moderator.email);
+      await actors.patchStoredSession(modCookie, {
+        activeOrganizationId: owner.workspaceId,
+      });
+      await patch(modCookie, owner.workspaceId, {
+        rules: { blockUrls: false },
+      }).expect(403);
+      const cookie = await actors.signIn(owner.email);
+      await actors.patchStoredSession(cookie, {
+        impersonatedBy: superAdmin.id,
+        activeOrganizationId: owner.workspaceId,
+      });
+      const res = await patch(cookie, owner.workspaceId, {
+        rules: { blockUrls: false, actions: { keyword: 'DELETE' } },
+      }).expect(200);
+      expect(res.body.rules).toMatchObject({
+        blockUrls: false,
+        actions: { keyword: 'DELETE' },
+      });
+      await patch(growth.cookie, owner.workspaceId, {
+        rules: { blockPhoneNumbers: false },
+      }).expect(404);
+      expect((await storedRow(growth.workspaceId))!.blockPhoneNumbers).toBe(
+        true,
+      );
     });
   });
 

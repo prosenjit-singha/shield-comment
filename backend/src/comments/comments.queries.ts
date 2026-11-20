@@ -201,6 +201,7 @@ const workspaceCommentColumns = {
   promptVersion: comments.promptVersion,
   contextLevel: comments.contextLevel,
   statusReason: comments.statusReason,
+  ruleMatch: comments.ruleMatch,
   overriddenAt: comments.overriddenAt,
   createdAt: comments.createdAt,
   updatedAt: comments.updatedAt,

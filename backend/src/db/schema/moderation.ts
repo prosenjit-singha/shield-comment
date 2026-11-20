@@ -20,10 +20,15 @@ import {
   CONTEXT_LEVELS,
   type ContextLevel,
   DEFAULT_CATEGORY_ACTIONS,
+  DEFAULT_RULE_ACTION,
   DEFAULT_CONFIDENCE_THRESHOLD,
   DEFAULT_CONTEXT_LEVEL,
   DEFAULT_MODERATION_MODE,
   MACHINE_CODE_PATTERN,
+  MAX_ALLOWED_DOMAINS,
+  MAX_BLOCKED_KEYWORDS,
+  MAX_DOMAIN_CHARS,
+  MAX_KEYWORD_CHARS,
   MODERATION_ACTION_SOURCES,
   MODERATION_ACTION_STATES,
   MODERATION_ACTION_TYPES,
@@ -36,6 +41,9 @@ import {
   type ModerationMode,
   POLICY_ACTIONS,
   type PolicyAction,
+  RULE_ACTIONS,
+  RULE_KINDS,
+  type RuleAction,
 } from '../../moderation/moderation.constants.js';
 import { AI_MODEL_MAX_LENGTH } from './ai-settings.js';
 import { users } from './auth.js';
@@ -166,6 +174,20 @@ const actionColumn = (category: keyof typeof DEFAULT_CATEGORY_ACTIONS) =>
     .notNull()
     .default(DEFAULT_CATEGORY_ACTIONS[category]);
 const autoReplyColumn = () => boolean().notNull().default(false);
+const ruleActionColumn = () =>
+  text().$type<RuleAction>().notNull().default(DEFAULT_RULE_ACTION);
+
+/**
+ * `text[]` list check (M6-T1): at most `max` entries, no null, each `pattern`-char run of 1–`maxChars`
+ * (the entries are joined with a newline, which normalised entries never contain).
+ */
+const listCheckSql = (
+  column: string,
+  max: number,
+  chars: string,
+  maxChars: number,
+) =>
+  `cardinality(${column}) <= ${max} and array_position(${column}, null) is null and (cardinality(${column}) = 0 or array_to_string(${column}, E'\\n') ~ '^${chars}{1,${maxChars}}(\\n${chars}{1,${maxChars}})*$')`;
 
 export const moderationPolicies = pgTable(
   'moderation_policies',
@@ -209,6 +231,16 @@ export const moderationPolicies = pgTable(
     abusiveToxicAutoReply: autoReplyColumn(),
     abusiveToxicReplyEn: text(),
     abusiveToxicReplyBn: text(),
+    // Static rules (Module 6, M6-T1; D2/D4/D5/D6 answered 2026-11-20). Keywords are stored
+    // normalised (NFKC, lower-case, whitespace collapsed) and de-duplicated; domains are lower-case
+    // ASCII hostnames. URL + phone rules are off by default (D6); each kind has its action (D2 b).
+    blockedKeywords: text().array().notNull().default([]),
+    blockUrls: boolean().notNull().default(false),
+    blockPhoneNumbers: boolean().notNull().default(false),
+    allowedDomains: text().array().notNull().default([]),
+    keywordRuleAction: ruleActionColumn(),
+    urlRuleAction: ruleActionColumn(),
+    phoneRuleAction: ruleActionColumn(),
     ...timestamps,
   },
   (t) => [
@@ -225,6 +257,34 @@ export const moderationPolicies = pgTable(
       sql.raw(inListSql('ai_context_level', CONTEXT_LEVELS)),
     ),
     ...categoryChecks,
+    check(
+      'moderation_policies_blocked_keywords_check',
+      sql.raw(
+        listCheckSql(
+          'blocked_keywords',
+          MAX_BLOCKED_KEYWORDS,
+          '[^\\n]',
+          MAX_KEYWORD_CHARS,
+        ),
+      ),
+    ),
+    check(
+      'moderation_policies_allowed_domains_check',
+      sql.raw(
+        listCheckSql(
+          'allowed_domains',
+          MAX_ALLOWED_DOMAINS,
+          '[a-z0-9.-]',
+          MAX_DOMAIN_CHARS,
+        ),
+      ),
+    ),
+    ...RULE_KINDS.map((kind) =>
+      check(
+        `moderation_policies_${kind}_rule_action_check`,
+        sql.raw(inListSql(`${kind}_rule_action`, RULE_ACTIONS)),
+      ),
+    ),
   ],
 );
 

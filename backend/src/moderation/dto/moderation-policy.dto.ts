@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsIn,
   IsNumber,
@@ -22,8 +23,10 @@ import {
   type ModerationMode,
   POLICY_ACTIONS,
   type PolicyAction,
+  RULE_ACTIONS,
+  type RuleAction,
 } from '../moderation.constants.js';
-import type { CategoryRule } from '../moderation.queries.js';
+import type { CategoryRule, StaticRules } from '../moderation.queries.js';
 
 /**
  * Workspace moderation policy API (M5-T8, D5 answered 2026-11-19):
@@ -36,6 +39,14 @@ import type { CategoryRule } from '../moderation.queries.js';
  *   (`code: AUTO_REPLY_TEXTS_REQUIRED`, `details { category }`); 409
  *   `code: PLAN_FEATURE_UNAVAILABLE` (`details { feature: 'autoReplyTemplates' }`) when the body
  *   sends `autoReply: true` on a plan without auto-reply templates (no plan = Free plan).
+ *
+ * Static rules (M6-T1; D2/D4/D5/D6 answered 2026-11-20): `rules` in both. `blockedKeywords` /
+ * `allowedDomains` replace the whole list; entries are normalised and de-duplicated. 400 codes:
+ * `BLOCKED_KEYWORD_INVALID` (`details { keyword }`, blank or > 50 chars), `BLOCKED_KEYWORDS_LIMIT`
+ * / `ALLOWED_DOMAINS_LIMIT` (`details { max }`), `ALLOWED_DOMAIN_INVALID` (`details { domain }`).
+ * 409 `PLAN_FEATURE_UNAVAILABLE` when the body adds a keyword without `customBlocklist`
+ * (`details { feature: 'customBlocklist' }`) or switches the URL / phone rule on without
+ * `autoHideScams` (D4). Removing keywords, switching off, domains and actions are never gated.
  */
 
 /** D4 threshold range the API accepts (the DB allows 0–1): below 0.5 the AI would act on guesses. */
@@ -47,6 +58,14 @@ export const MODERATION_POLICY_ERROR_CODES = {
   planFeatureUnavailable: 'PLAN_FEATURE_UNAVAILABLE',
   /** 400: an auto-reply would be on without both an en and a bn text; `details { category }`. */
   autoReplyTextsRequired: 'AUTO_REPLY_TEXTS_REQUIRED',
+  /** 400: a keyword is blank or longer than 50 chars once normalised; `details { keyword }`. */
+  blockedKeywordInvalid: 'BLOCKED_KEYWORD_INVALID',
+  /** 400: more than 200 distinct keywords; `details { max }`. */
+  blockedKeywordsLimit: 'BLOCKED_KEYWORDS_LIMIT',
+  /** 400: an allow-list entry is not a domain name; `details { domain }`. */
+  allowedDomainInvalid: 'ALLOWED_DOMAIN_INVALID',
+  /** 400: more than 20 distinct domains; `details { max }`. */
+  allowedDomainsLimit: 'ALLOWED_DOMAINS_LIMIT',
 } as const;
 
 /** Policy as the API returns it (flat; `categories` keyed by category). */
@@ -58,6 +77,12 @@ export interface ModerationPolicyResponse {
   categories: Record<ModerationCategory, CategoryRule>;
   /** The workspace's plan has `autoReplyTemplates` (D6): the UI enables the auto-reply switches. */
   autoReplyAvailable: boolean;
+  /** Static rules (M6-T1). */
+  rules: StaticRules;
+  /** Plan has `customBlocklist` (D4): keywords may be added. */
+  keywordRulesAvailable: boolean;
+  /** Plan has `autoHideScams` (D4, every live plan): the URL / phone rules may be switched on. */
+  urlPhoneRulesAvailable: boolean;
   updatedAt: Date;
 }
 
@@ -131,6 +156,48 @@ export class CategoriesPatchDto {
   ABUSIVE_TOXIC?: CategoryRulePatchDto;
 }
 
+/** Action per rule kind (D2 b). */
+export class RuleActionsPatchDto {
+  @unlessAbsent<RuleActionsPatchDto>('keyword')
+  @IsIn(RULE_ACTIONS)
+  keyword?: RuleAction;
+
+  @unlessAbsent<RuleActionsPatchDto>('url')
+  @IsIn(RULE_ACTIONS)
+  url?: RuleAction;
+
+  @unlessAbsent<RuleActionsPatchDto>('phone')
+  @IsIn(RULE_ACTIONS)
+  phone?: RuleAction;
+}
+
+/** Static rule changes (M6-T1). Lists replace the stored list; limits are checked after normalising. */
+export class RulesPatchDto {
+  @unlessAbsent<RulesPatchDto>('blockedKeywords')
+  @IsArray()
+  @IsString({ each: true })
+  blockedKeywords?: string[];
+
+  @unlessAbsent<RulesPatchDto>('blockUrls')
+  @IsBoolean()
+  blockUrls?: boolean;
+
+  @unlessAbsent<RulesPatchDto>('blockPhoneNumbers')
+  @IsBoolean()
+  blockPhoneNumbers?: boolean;
+
+  @unlessAbsent<RulesPatchDto>('allowedDomains')
+  @IsArray()
+  @IsString({ each: true })
+  allowedDomains?: string[];
+
+  @unlessAbsent<RulesPatchDto>('actions')
+  @IsObject()
+  @ValidateNested()
+  @Type(() => RuleActionsPatchDto)
+  actions?: RuleActionsPatchDto;
+}
+
 /**
  * `PATCH …/moderation/policy` body. Every field optional, at least one must change something
  * (else 400). Unknown fields → 400; strings are never coerced to numbers/booleans.
@@ -156,4 +223,10 @@ export class UpdateModerationPolicyDto {
   @ValidateNested()
   @Type(() => CategoriesPatchDto)
   categories?: CategoriesPatchDto;
+
+  @unlessAbsent<UpdateModerationPolicyDto>('rules')
+  @IsObject()
+  @ValidateNested()
+  @Type(() => RulesPatchDto)
+  rules?: RulesPatchDto;
 }

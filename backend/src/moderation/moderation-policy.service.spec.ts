@@ -39,6 +39,13 @@ function row(
     mode: 'AUTO',
     confidenceThreshold: 0.8,
     aiContextLevel: 'comment_only',
+    blockedKeywords: [],
+    blockUrls: false,
+    blockPhoneNumbers: false,
+    allowedDomains: [],
+    keywordRuleAction: 'HIDE',
+    urlRuleAction: 'HIDE',
+    phoneRuleAction: 'HIDE',
     createdAt: UPDATED_AT,
     updatedAt: UPDATED_AT,
   };
@@ -57,14 +64,19 @@ function row(
   return { ...(base as queries.ModerationPolicyRow), ...patch };
 }
 
-const features = (autoReplyTemplates: boolean) => ({
+/** Growth-like (`true`: auto-reply + custom blocklist) or Starter-like plan flags. */
+const features = (growth: boolean) => ({
   limits: {
     connectedPages: 1,
     monthlyComments: 500,
     teamSeats: 1,
     workspaces: 1,
   },
-  features: { autoReplyTemplates },
+  features: {
+    autoReplyTemplates: growth,
+    customBlocklist: growth,
+    autoHideScams: true,
+  },
 });
 
 /** A live subscription of the workspace's account whose plan has `autoReplyTemplates`. */
@@ -114,6 +126,8 @@ describe('workspacePlanFeatures (PW-T5: live plan)', () => {
     lq.findLiveSubscription.mockResolvedValue(live(true));
     expect(await workspacePlanFeatures(db, WS, now)).toEqual({
       autoReplyTemplates: true,
+      customBlocklist: true,
+      autoHideScams: true,
     });
     expect(lq.findLiveSubscription).toHaveBeenCalledWith(db, WS, now);
   });
@@ -121,6 +135,8 @@ describe('workspacePlanFeatures (PW-T5: live plan)', () => {
   it('a live plan without the feature → off', async () => {
     expect(await workspacePlanFeatures({} as Database, WS)).toEqual({
       autoReplyTemplates: false,
+      customBlocklist: false,
+      autoHideScams: true,
     });
   });
 
@@ -128,6 +144,8 @@ describe('workspacePlanFeatures (PW-T5: live plan)', () => {
     lq.findLiveSubscription.mockResolvedValue(null);
     expect(await workspacePlanFeatures({} as Database, WS)).toEqual({
       autoReplyTemplates: false,
+      customBlocklist: false,
+      autoHideScams: false,
     });
   });
 });
@@ -239,6 +257,52 @@ describe('ModerationPolicyService', () => {
         categories: { SAFE_INQUIRY: { autoReply: true, replyEn: 'Hi' } },
       }),
     ).rejects.toThrow(BadRequestException);
+    expect(q.updateModerationPolicy).not.toHaveBeenCalled();
+  });
+
+  it('update: rule lists are normalised before the tx; bad lists → 400 code, no query', async () => {
+    const { service, transactions } = setup();
+    await expect(
+      service.update(WS, { rules: { blockedKeywords: ['  '] } }),
+    ).rejects.toMatchObject({
+      response: { code: 'BLOCKED_KEYWORD_INVALID' },
+    });
+    expect(transactions()).toBe(0);
+
+    lq.findLiveSubscription.mockResolvedValue(live(true));
+    q.updateModerationPolicy.mockResolvedValue(
+      row({ blockedKeywords: ['free bkash'] }),
+    );
+    const res = await service.update(WS, {
+      rules: { blockedKeywords: ['FREE  bKash', 'free bkash'] },
+    });
+    expect(res.rules.blockedKeywords).toEqual(['free bkash']);
+    expect(q.updateModerationPolicy).toHaveBeenCalledWith(
+      expect.anything(),
+      WS,
+      expect.objectContaining({ blockedKeywords: ['free bkash'] }),
+    );
+  });
+
+  it('update: keywords on Starter → 409 customBlocklist; same list again → no-op', async () => {
+    const { service } = setup();
+    await expect(
+      service.update(WS, { rules: { blockedKeywords: ['scam'] } }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'PLAN_FEATURE_UNAVAILABLE',
+        details: { feature: 'customBlocklist' },
+      },
+    });
+    q.lockModerationPolicy.mockResolvedValue(
+      row({ blockedKeywords: ['scam'] }),
+    );
+    const res = await service.update(WS, {
+      rules: { blockedKeywords: ['Scam'] },
+    });
+    expect(res.changed).toBe(false);
+    expect(res.keywordRulesAvailable).toBe(false);
+    expect(res.urlPhoneRulesAvailable).toBe(true);
     expect(q.updateModerationPolicy).not.toHaveBeenCalled();
   });
 });

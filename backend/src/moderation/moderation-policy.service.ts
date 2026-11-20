@@ -14,11 +14,13 @@ import type {
   ModerationPolicyUpdateResponse,
   UpdateModerationPolicyDto,
 } from './dto/moderation-policy.dto.js';
-import type { DecisionPlanFeatures } from './moderation-decision.js';
 import {
   applyPolicyPatch,
   assertPolicyPatchAllowed,
+  assertRulesPatchAllowed,
   isEmptyPolicyPatch,
+  normalizeRulesPatch,
+  type PolicyPlanFeatures,
   policyColumns,
   samePolicy,
   toPolicyResponse,
@@ -32,7 +34,7 @@ import {
 } from './moderation.queries.js';
 
 /**
- * The plan flags moderation reads (D6), from the live subscription's plan of the workspace's
+ * The plan flags moderation reads (D6 auto-reply; M6 D4 rules), from the live subscription's plan of the workspace's
  * billing account (PW-T5, `findLiveSubscription`). No live plan (no account, trial/term over) =
  * every flag off (PW-D7: no Free fallback).
  */
@@ -40,11 +42,13 @@ export async function workspacePlanFeatures(
   executor: LiveSubscriptionExecutor,
   workspaceId: string,
   now: Date = new Date(),
-): Promise<DecisionPlanFeatures> {
+): Promise<PolicyPlanFeatures> {
   const live = await findLiveSubscription(executor, workspaceId, now);
+  const features = live?.plan.featureConfig.features;
   return {
-    autoReplyTemplates:
-      live?.plan.featureConfig.features.autoReplyTemplates ?? false,
+    autoReplyTemplates: features?.autoReplyTemplates ?? false,
+    customBlocklist: features?.customBlocklist ?? false,
+    autoHideScams: features?.autoHideScams ?? false,
   };
 }
 
@@ -76,8 +80,9 @@ export class ModerationPolicyService {
   /**
    * `PATCH`, one transaction: get-or-create the row, `FOR UPDATE` on it (concurrent PATCHes of a
    * workspace run one at a time), read the plan flags, merge, check (409 plan feature, 400 texts
-   * missing), then write only when something changed (same values = no UPDATE, `updatedAt` kept,
-   * `changed: false`). An empty body → 400 before any query.
+   * missing, 409 rule gating), then write only when something changed (same values = no UPDATE,
+   * `updatedAt` kept, `changed: false`). An empty body or bad rule lists (400 codes, normalised
+   * first, M6-T1) → 400 before any query.
    */
   async update(
     workspaceId: string,
@@ -86,6 +91,8 @@ export class ModerationPolicyService {
     if (isEmptyPolicyPatch(patch)) {
       throw new BadRequestException('Nothing to update');
     }
+    // The request's own DTO: its rule lists are replaced by their normalised form.
+    if (patch.rules) patch.rules = normalizeRulesPatch(patch.rules);
     return this.db.transaction(async (tx) => {
       await getOrCreateModerationPolicy(tx, workspaceId);
       const row = await lockModerationPolicy(tx, workspaceId);
@@ -94,6 +101,7 @@ export class ModerationPolicyService {
       const current = toModerationPolicy(row);
       const next = applyPolicyPatch(current, patch);
       assertPolicyPatchAllowed(patch, next, features);
+      assertRulesPatchAllowed(current, next, features);
       if (samePolicy(current, next)) {
         return { ...toPolicyResponse(row, features), changed: false };
       }

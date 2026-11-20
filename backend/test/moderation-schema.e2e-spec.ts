@@ -188,6 +188,8 @@ describe('Moderation schema (e2e)', () => {
       ['bad prompt version', { ...classified, promptVersion: 'V 2' }],
       ['unknown context level', { ...classified, contextLevel: 'everything' }],
       ['free-text status reason', { statusReason: 'The LLM said: no' }],
+      ['M6-T1: empty rule match', { ruleMatch: '' }],
+      ['M6-T1: rule match > 200', { ruleMatch: 'x'.repeat(201) }],
     ])('rejects %s', async (_label, values) => {
       expect(
         await pgCode(
@@ -207,6 +209,11 @@ describe('Moderation schema (e2e)', () => {
           statusReason: 'comment_limit_reached',
           overriddenAt: new Date(),
         })
+        .where(eq(comments.id, commentA2));
+      // M6-T1: a rule match keeps its reason code + the matched value.
+      await db()
+        .update(comments)
+        .set({ statusReason: 'rule_phone', ruleMatch: '+8801712345678' })
         .where(eq(comments.id, commentA2));
     });
 
@@ -356,6 +363,20 @@ describe('Moderation schema (e2e)', () => {
       ],
       ['empty reply text', { competitorPoachReplyEn: '' }],
       ['reply text > 500', { competitorPoachReplyBn: 'ক'.repeat(501) }],
+      [
+        'M6-T1: 201 keywords',
+        { blockedKeywords: Array.from({ length: 201 }, (_, i) => `k${i}`) },
+      ],
+      ['M6-T1: empty keyword', { blockedKeywords: ['ok', ''] }],
+      ['M6-T1: keyword > 50', { blockedKeywords: ['ক'.repeat(51)] }],
+      ['M6-T1: null keyword', { blockedKeywords: ['ok', null] }],
+      ['M6-T1: upper-case domain', { allowedDomains: ['Shop.com'] }],
+      [
+        'M6-T1: 21 domains',
+        { allowedDomains: Array.from({ length: 21 }, (_, i) => `d${i}.com`) },
+      ],
+      ['M6-T1: rule action NONE', { keywordRuleAction: 'NONE' }],
+      ['M6-T1: unknown rule action', { phoneRuleAction: 'BAN' }],
     ])('rejects %s', async (_label, values) => {
       expect(
         await pgCode(
@@ -365,6 +386,51 @@ describe('Moderation schema (e2e)', () => {
             .where(eq(moderationPolicies.workspaceId, b.workspaceId)),
         ),
       ).toBe(CHECK_VIOLATION);
+    });
+
+    it('M6-T1: rule defaults (off, empty, HIDE) and the list limits are accepted', async () => {
+      const [row] = await db()
+        .select()
+        .from(moderationPolicies)
+        .where(eq(moderationPolicies.workspaceId, b.workspaceId));
+      expect(row).toMatchObject({
+        blockedKeywords: [],
+        blockUrls: false,
+        blockPhoneNumbers: false,
+        allowedDomains: [],
+        keywordRuleAction: 'HIDE',
+        urlRuleAction: 'HIDE',
+        phoneRuleAction: 'HIDE',
+      });
+      const keywords = Array.from(
+        { length: 200 },
+        (_, i) => `${'ক'.repeat(47)}${String(i).padStart(3, '0')}`,
+      );
+      const domains = Array.from({ length: 20 }, (_, i) => `shop-${i}.com.bd`);
+      await db()
+        .update(moderationPolicies)
+        .set({
+          blockedKeywords: keywords,
+          allowedDomains: domains,
+          blockUrls: true,
+          phoneRuleAction: 'DELETE',
+        })
+        .where(eq(moderationPolicies.workspaceId, b.workspaceId));
+      const [saved] = await db()
+        .select()
+        .from(moderationPolicies)
+        .where(eq(moderationPolicies.workspaceId, b.workspaceId));
+      expect(saved!.blockedKeywords).toEqual(keywords);
+      expect(saved!.allowedDomains).toEqual(domains);
+      await db()
+        .update(moderationPolicies)
+        .set({
+          blockedKeywords: [],
+          allowedDomains: [],
+          blockUrls: false,
+          phoneRuleAction: 'HIDE',
+        })
+        .where(eq(moderationPolicies.workspaceId, b.workspaceId));
     });
 
     it('a policy needs an existing workspace', async () => {
