@@ -395,3 +395,59 @@ describe('validateEnv: Telegram bot (M7-T8, D13)', () => {
     );
   });
 });
+
+describe('validateEnv: SSLCommerz (M8-T1, D1)', () => {
+  const STORE = {
+    SSLCOMMERZ_STORE_ID: 'shiel6abc0123',
+    SSLCOMMERZ_STORE_PASSWORD: 'shiel6abc0123@ssl',
+  };
+
+  it('all optional; sandbox defaults to true; store id + password together', () => {
+    const env = validateEnv(BASE);
+    expect(env.SSLCOMMERZ_STORE_ID).toBeUndefined();
+    expect(env.SSLCOMMERZ_SANDBOX).toBe('true');
+    expect(
+      validateEnv({ ...BASE, ...STORE, SSLCOMMERZ_SANDBOX: 'false' })
+        .SSLCOMMERZ_SANDBOX,
+    ).toBe('false');
+    expectInvalid(
+      { SSLCOMMERZ_STORE_ID: STORE.SSLCOMMERZ_STORE_ID },
+      '- SSLCOMMERZ_STORE_PASSWORD:',
+    );
+    expectInvalid(
+      { SSLCOMMERZ_STORE_PASSWORD: STORE.SSLCOMMERZ_STORE_PASSWORD },
+      '- SSLCOMMERZ_STORE_ID:',
+    );
+    expectInvalid({ SSLCOMMERZ_SANDBOX: 'yes' }, '- SSLCOMMERZ_SANDBOX:');
+  });
+
+  it('never echoes the store password', () => {
+    let message = '';
+    try {
+      validateEnv({
+        ...BASE,
+        SSLCOMMERZ_STORE_ID: 'bad id',
+        SSLCOMMERZ_STORE_PASSWORD: 'secret pass',
+      });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain('- SSLCOMMERZ_STORE_PASSWORD:');
+    expect(message).not.toContain('secret pass');
+  });
+
+  it('SSLCOMMERZ_BASE_URL: test-only absolute URL, refused in production', () => {
+    expect(
+      validateEnv({ ...BASE, SSLCOMMERZ_BASE_URL: 'http://127.0.0.1:4012' })
+        .SSLCOMMERZ_BASE_URL,
+    ).toBe('http://127.0.0.1:4012');
+    expectInvalid(
+      { SSLCOMMERZ_BASE_URL: 'not a url' },
+      '- SSLCOMMERZ_BASE_URL:',
+    );
+    expectInvalid(
+      { NODE_ENV: 'production', SSLCOMMERZ_BASE_URL: 'http://stub:4012' },
+      'SSLCOMMERZ_BASE_URL is a test-only override and must not be set when NODE_ENV=production',
+    );
+  });
+});

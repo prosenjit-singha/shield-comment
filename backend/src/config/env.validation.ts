@@ -146,17 +146,46 @@ export class EnvironmentVariables {
     },
     { message: 'TELEGRAM_API_BASE_URL must be an absolute http(s) URL' },
   )
-  @ValidateBy({
-    name: 'isNotProduction',
-    validator: {
-      validate: (_value: unknown, args) =>
-        (args?.object as EnvironmentVariables | undefined)?.NODE_ENV !==
-        NodeEnv.Production,
-      defaultMessage: () =>
-        'TELEGRAM_API_BASE_URL is a test-only override and must not be set when NODE_ENV=production',
-    },
-  })
+  @NotInProduction('TELEGRAM_API_BASE_URL')
   TELEGRAM_API_BASE_URL?: string;
+
+  // --- SSLCommerz V4 payments (Module 8 D1). Optional: unset → checkout answers 503
+  // PAYMENTS_NOT_CONFIGURED. Store id + password both or neither. Sandbox by default; production
+  // with sandbox on logs a startup warning.
+  /** SSLCommerz store id (sandbox: from developer.sslcommerz.com registration). */
+  @ValidateIf((env: EnvironmentVariables) => hasSslcommerzEnv(env))
+  @Matches(/^[A-Za-z0-9_-]{3,64}$/, {
+    message:
+      'SSLCOMMERZ_STORE_ID must be the SSLCommerz store id (set together with SSLCOMMERZ_STORE_PASSWORD)',
+  })
+  SSLCOMMERZ_STORE_ID?: string;
+
+  /** Store password (API key), server-side only. */
+  @ValidateIf((env: EnvironmentVariables) => hasSslcommerzEnv(env))
+  @Matches(/^\S{3,128}$/, {
+    message:
+      'SSLCOMMERZ_STORE_PASSWORD must be the store password, no spaces (set together with SSLCOMMERZ_STORE_ID)',
+  })
+  SSLCOMMERZ_STORE_PASSWORD?: string;
+
+  /** `true` (default) = sandbox.sslcommerz.com, `false` = securepay.sslcommerz.com (live). */
+  @IsIn(['true', 'false'], {
+    message: 'SSLCOMMERZ_SANDBOX must be true or false',
+  })
+  SSLCOMMERZ_SANDBOX: 'true' | 'false' = 'true';
+
+  /** Test/compose-only SSLCommerz host (a stub). Refused when `NODE_ENV=production`. */
+  @IsOptional()
+  @IsUrl(
+    {
+      require_tld: false,
+      require_protocol: true,
+      protocols: ['http', 'https'],
+    },
+    { message: 'SSLCOMMERZ_BASE_URL must be an absolute http(s) URL' },
+  )
+  @NotInProduction('SSLCOMMERZ_BASE_URL')
+  SSLCOMMERZ_BASE_URL?: string;
 
   // --- Neon Object Storage (S3-compatible). Optional: StorageService is disabled without them.
   // `neon deploy` / `neon env pull` writes the AWS_* names; STORAGE_BUCKET is the bucket key in neon.ts.
@@ -365,16 +394,7 @@ export class EnvironmentVariables {
     },
     { message: 'META_GRAPH_BASE_URL must be an absolute http(s) URL' },
   )
-  @ValidateBy({
-    name: 'isNotProduction',
-    validator: {
-      validate: (_value: unknown, args) =>
-        (args?.object as EnvironmentVariables | undefined)?.NODE_ENV !==
-        NodeEnv.Production,
-      defaultMessage: () =>
-        'META_GRAPH_BASE_URL is a test-only override and must not be set when NODE_ENV=production',
-    },
-  })
+  @NotInProduction('META_GRAPH_BASE_URL')
   META_GRAPH_BASE_URL?: string;
 
   /**
@@ -388,6 +408,27 @@ export class EnvironmentVariables {
       'META_WEBHOOK_VERIFY_TOKEN must be 16-256 printable ASCII characters without spaces',
   })
   META_WEBHOOK_VERIFY_TOKEN?: string;
+}
+
+/** Test-only env overrides (stub hosts): boot fails when set with `NODE_ENV=production`. */
+function NotInProduction(name: string): PropertyDecorator {
+  return ValidateBy({
+    name: 'isNotProduction',
+    validator: {
+      validate: (_value: unknown, args) =>
+        (args?.object as EnvironmentVariables | undefined)?.NODE_ENV !==
+        NodeEnv.Production,
+      defaultMessage: () =>
+        `${name} is a test-only override and must not be set when NODE_ENV=production`,
+    },
+  });
+}
+
+function hasSslcommerzEnv(env: EnvironmentVariables): boolean {
+  return (
+    env.SSLCOMMERZ_STORE_ID !== undefined ||
+    env.SSLCOMMERZ_STORE_PASSWORD !== undefined
+  );
 }
 
 function hasMetaAppEnv(env: EnvironmentVariables): boolean {

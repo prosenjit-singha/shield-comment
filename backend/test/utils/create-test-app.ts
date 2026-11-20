@@ -4,6 +4,7 @@ import type { App } from 'supertest/types.js';
 import { AppModule } from '../../src/app.module.js';
 import { TELEGRAM_CONFIG } from '../../src/alerts/telegram.client.js';
 import { EMAIL_SETTINGS } from '../../src/email/email.service.js';
+import { SSLCOMMERZ_CONFIG } from '../../src/payments/sslcommerz.client.js';
 import { configureApp } from '../../src/app.setup.js';
 import { AUTH_SECONDARY_STORAGE } from '../../src/redis/redis-secondary-storage.js';
 import { RedisService } from '../../src/redis/redis.service.js';
@@ -45,6 +46,9 @@ export async function createTestApp(
     // Never the real Bot API either, even if a local .env sets TELEGRAM_*: unconfigured by default.
     // Telegram specs override `TELEGRAM_CONFIG` again with the local stub (the later override wins).
     .overrideProvider(TELEGRAM_CONFIG)
+    .useValue(null)
+    // Never real SSLCommerz: unconfigured by default; payment specs override it with a fake (Module 8).
+    .overrideProvider(SSLCOMMERZ_CONFIG)
     .useValue(null);
   builder = overrideQueues(builder);
   if (override) builder = override(builder);

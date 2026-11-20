@@ -86,6 +86,10 @@ services:
       TELEGRAM_BOT_TOKEN:
       TELEGRAM_BOT_USERNAME:
       TELEGRAM_WEBHOOK_SECRET:
+      # SSLCommerz payments (Module 8 D1): store id + password both or none. Unset = checkout answers 503.
+      SSLCOMMERZ_STORE_ID:
+      SSLCOMMERZ_STORE_PASSWORD:
+      SSLCOMMERZ_SANDBOX:
       # Neon AI Gateway (Module 5): the base URL is env-only; the token can also be saved in /admin/settings.
       NEON_AI_GATEWAY_BASE_URL:
       NEON_AI_GATEWAY_TOKEN:

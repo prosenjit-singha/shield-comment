@@ -28,6 +28,7 @@ import { AlertsModule } from './alerts/alerts.module.js';
 import { WalletModule } from './wallet/wallet.module.js';
 import { BillingModule } from './billing/billing.module.js';
 import { PlansModule } from './plans/plans.module.js';
+import { PaymentsModule } from './payments/payments.module.js';
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { PlansModule } from './plans/plans.module.js';
     WalletModule,
     BillingModule,
     PlansModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}
