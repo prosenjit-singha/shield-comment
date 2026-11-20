@@ -7,14 +7,14 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 7 section + the row's decisions, `docs/project-documentation/modules/module-7-support-team.md`, the code the row names.
 - Standing approvals: **admin/** for the rest of the run (user, 2026-11-20, asked at M7-T10). **client/** for the rest of the run (user, 2026-11-20, asked at M7-T11). Live AI, Meta, email, Telegram or WhatsApp calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #16 (2026-11-20) · rows this session: 8 · estimate: 240k
+- Session: #16 (2026-11-20) · rows this session: 9 · estimate: 260k
 - Previous runs (Modules 3–6, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M7-GATE (2026-11-21) · commit: "test(e2e): add support round-trip gate spec (M7-GATE)"
+done: Module 7 M7-PLAN…M7-GATE (2026-11-21) · Module 7 gate passed
 
 ## Resume
-`/orchestration --continue` (dispatches M7-T9; no open decisions)
+Run finished. Start a new run with `/orchestration <instructions>` (e.g. `/orchestration Module 8 from M8-PLAN until M8-GATE`).
 
 ## Next prompt
 
@@ -297,4 +297,4 @@ RUN COMPLETE
 - 2026-11-20 M7-T13b ✅ c10d039 · client 827 (was 777) · backend/admin untouched · client transfer ownership on `/settings/team`: owner-only button → member picker + billing warning, password twice or emailed 6-digit code with resend countdown, every `TRANSFER_*` code en + bn, success → team cache + workspace data reload; compose client rebuilt, `/api/health/live` 200
 - 2026-11-20 M7-T14 ✅ a4c8916 · client 859 (was 827) · backend/admin untouched · client invite link `/invite/$invitationId`: signed-out generic page with sign-up (`invitationId`, no `workspaceName`) → auto-accept, log-in link back to the invite; signed-in invite details + Accept → session refetch → `/dashboard`; en/bn errors (gone, wrong email + log out, seats, no plan, already member, generic)
 - 2026-11-21 M7-T15 ✅ 82fa3e9 · client 930 (was 859) · backend/admin untouched · client C12 `/settings/alerts`: threshold, email switch + member tick list (≤ 10), Telegram switch (plan-gated) + connect links with Dhaka expiry + linked chats with Remove (≤ 3), WhatsApp coming soon, last alert per channel, save only changed fields, test alert results, moderator read-only, impersonated edit, every code en + bn
-- 2026-11-21 M7-GATE ✅ · backend 2503 unit + 1185 e2e, admin 448, client 930, Playwright 4/4 host + docker · support round-trip Playwright spec + ticket cleanup; D17 mocked alert verified; Module 7 gate passed
+- 2026-11-21 M7-GATE ✅ 9ceafe2 · backend 2503 unit + 1185 e2e, admin 448, client 930, Playwright 4/4 host + docker · support round-trip Playwright spec + ticket cleanup; D17 mocked alert verified; Module 7 gate passed
