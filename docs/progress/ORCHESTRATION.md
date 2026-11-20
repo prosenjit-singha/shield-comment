@@ -5,13 +5,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 ## Run
 - Scope: **Module 7 from M7-PLAN until M7-GATE** (user, 2026-11-20). M7-PLAN is docs only (adds the Module 7 section to TASKS.md: rows + open decisions); its decisions are asked at the pre-check of the first M7 row; then M7-T1… in order until M7-GATE.
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 7 section + the row's decisions, `docs/project-documentation/modules/module-7-support-team.md`, the code the row names.
-- Standing approvals: **admin/** for the rest of the run (user, 2026-11-20, asked at M7-T10). client/: none yet (asked at the first row that touches it). Live AI, Meta, email, Telegram or WhatsApp calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
+- Standing approvals: **admin/** for the rest of the run (user, 2026-11-20, asked at M7-T10). **client/** for the rest of the run (user, 2026-11-20, asked at M7-T11). Live AI, Meta, email, Telegram or WhatsApp calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
 - Session: #16 (2026-11-20) · rows this session: 2 · estimate: 85k
 - Previous runs (Modules 3–6, PW, PR): see `## Log` and git history.
 
 ## State
-verified M7-T10
+dispatched M7-T11 (2026-11-20) · commit: "feat(client): add support and settings nav and workspace switcher (M7-T11)"
 
 ## Resume
 `/orchestration --continue` (dispatches M7-T9; no open decisions)
@@ -59,6 +59,8 @@ You are implementing exactly ONE task row, **M7-T11**, in the ShieldComment BD r
 
 ### Decisions added by orchestrator
 - M7-T10 admin/ approval (user, 2026-11-20): "Rest of the run" → admin/ changes are approved for this row and every later row until M7-GATE.
+- M7-T11 client/ approval (user, 2026-11-20): "Rest of the run" → client/ changes are approved for this row and every later row until M7-GATE.
+- M7-T11 admin redesign (user, 2026-11-20): "Keep admin redesign (Recommended)" → an admin "apple redesign" was merged into master (16be7bb, restyled `admin/src/components/ui/*`, `globals.css`, `docs/design/admin.md`). **Don't touch admin/ in M7-T11.** Add any new shadcn component (Sheet/Drawer) in client/ only and never re-run `shadcn add`/`animate all` over existing admin components; this overrides the "both apps" rule for this row (admin parity waits for a later row). `git diff --stat HEAD~ -- admin/` must be empty in your commit. Record this in the M7-T11 row notes.
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -218,6 +220,8 @@ You are implementing exactly ONE task row, **M7-T11**, in the ShieldComment BD r
 - 2026-11-20 M7-T6 pre-check: M7-D18 accepting an invite with an unverified email → "Turn the check off (Recommended)"
 - 2026-11-20 Module 7 pre-check (M7-T1), user answers verbatim: D1 "All open; mods see own (Recommended)" · D2 "Read all, edit alerts only (Recommended)" · D3 "Support sets; Pro = HIGH (Recommended)" · D4 "Up to 3, admin too" · D5 "In-app badge + email (Recommended)" · D6 "Resend API (Recommended)" · D7 "Owner→admin/mod, admin→mod, 7d (Recommended)" · D8 "Invite page + switcher (Recommended)" · D9 "Members + owner + pending (Recommended)" · D10 "Keep everyone, block new (Recommended)" · D11 "Add transfer ownership but with verification step like password or otp system" → follow-up "Set dynamic verification, like if they have password set, verify with their current password twice. If the are signed in with google account show otp." → billing "Billing moves, old→admin (Recommended)" · D12 "Email all, Telegram plan, WA soon (Recommended)" · D13 "Platform bot + link (Recommended)" · D14 "Rolling 60 min, 10, cool-down (Recommended)" · D15 "Ticked members + Telegram (Recommended)" · D16 "Sidebar + mobile 'More' (Recommended)" · D17 "Playwright + backend e2e (Recommended)"
 - 2026-11-20 M7-T10 pre-check: "How far should the approval to change admin/ go?" → "Rest of the run".
+- 2026-11-20 M7-T11 pre-check: "How far should the approval to change client/ go?" → "Rest of the run".
+- 2026-11-20 M7-T11 pre-check (admin apple-redesign merge 16be7bb landed on master at 21:42, outside the run): "How should the sub-agent handle admin/?" → "Keep admin redesign (Recommended)".
 
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body

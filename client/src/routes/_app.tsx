@@ -1,17 +1,19 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, Outlet, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Outlet, redirect, useNavigate, useRouter } from '@tanstack/react-router'
 import { CircleAlert } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { AppBottomBar, AppSidebar } from '@/components/app-shell/app-nav'
 import { AppTopBar } from '@/components/app-shell/app-top-bar'
 import { ImpersonationBanner } from '@/components/app-shell/impersonation-banner'
 import { ImpersonationEnded } from '@/components/app-shell/impersonation-ended'
 import { PlanStatusBanner } from '@/components/app-shell/plan-banner'
+import { WorkspaceSwitcher } from '@/components/app-shell/workspace-switcher'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useLanguage } from '@/hooks/use-language'
 import { authErrorMessage, type AuthError } from '@/lib/auth-errors'
 import { signOutCurrentSession } from '@/lib/auth-forms'
 import { sessionQueryOptions } from '@/lib/session'
+import { setActiveWorkspace } from '@/lib/workspaces'
 
 /**
  * Pathless layout for every logged-in page.
@@ -46,6 +48,7 @@ function AppLayout() {
   const { session } = Route.useRouteContext()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const router = useRouter()
   const { content } = useLanguage()
   const impersonated = Boolean(session.session.impersonatedBy)
   const workspaceId = session.session.activeOrganizationId
@@ -69,6 +72,17 @@ function AppLayout() {
     },
   })
 
+  // M7-T11 (D8 a): set the active workspace, refetch the session, drop every `['workspace', …]` query and
+  // re-run the guards. Every `_app` route reads the workspace from the session, so the user stays put.
+  const switchWorkspace = useMutation<void, AuthError, string>({
+    mutationFn: setActiveWorkspace,
+    onSuccess: async () => {
+      await queryClient.fetchQuery({ ...sessionQueryOptions, staleTime: 0 })
+      queryClient.removeQueries({ queryKey: ['workspace'] })
+      await router.invalidate()
+    },
+  })
+
   if (impersonationEnded) return <ImpersonationEnded />
 
   return (
@@ -85,22 +99,28 @@ function AppLayout() {
         email={session.user.email}
         onSignOut={impersonated ? undefined : () => signOut.mutate()}
         signingOut={signOut.isPending}
+        // Impersonated sessions are locked to one workspace (the backend 403s set-active), so no switcher.
+        switcher={
+          impersonated ? null : (
+            <WorkspaceSwitcher
+              activeId={workspaceId ?? null}
+              onSwitch={(id) => switchWorkspace.mutate(id)}
+              switching={switchWorkspace.isPending}
+            />
+          )
+        }
       />
       {/* PW-T8: trial / paused / limit banner from the billing summary (none while loading or on failure). */}
       {workspaceId ? <PlanStatusBanner workspaceId={workspaceId} /> : null}
       {signOut.error && !signOut.isPending ? (
-        <div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6">
-          <div
-            role="alert"
-            data-kind={signOut.error.kind}
-            className="flex items-start gap-2.5 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-foreground"
-          >
-            <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
-            <p>
-              {content('Couldn’t log you out.', 'লগ আউট করা যায়নি।')} {authErrorMessage(signOut.error, content)}
-            </p>
-          </div>
-        </div>
+        <ShellAlert kind={signOut.error.kind}>
+          {content('Couldn’t log you out.', 'লগ আউট করা যায়নি।')} {authErrorMessage(signOut.error, content)}
+        </ShellAlert>
+      ) : null}
+      {switchWorkspace.error && !switchWorkspace.isPending ? (
+        <ShellAlert kind={switchWorkspace.error.kind}>
+          {content('Couldn’t switch the workspace.', 'ওয়ার্কস্পেস বদলানো যায়নি।')} {authErrorMessage(switchWorkspace.error, content)}
+        </ShellAlert>
       ) : null}
       {/* M6-T8 (D16 c): sidebar from md up, bottom bar below (pb-24 keeps content clear of it). */}
       <div className="mx-auto flex w-full max-w-6xl flex-1 gap-6 p-4 pb-24 sm:p-6 sm:pb-24 md:pb-6">
@@ -110,6 +130,21 @@ function AppLayout() {
         </main>
       </div>
       <AppBottomBar />
+    </div>
+  )
+}
+
+function ShellAlert({ kind, children }: { kind: string; children: ReactNode }) {
+  return (
+    <div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6">
+      <div
+        role="alert"
+        data-kind={kind}
+        className="flex items-start gap-2.5 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-foreground"
+      >
+        <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+        <p>{children}</p>
+      </div>
     </div>
   )
 }

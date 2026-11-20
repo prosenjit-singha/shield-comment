@@ -54,7 +54,7 @@ export function RangePicker({
           onChange(presetSearch(value as DashboardPreset))
         }}
       >
-        <TabsList aria-label="Date range" className="rounded-full">
+        <TabsList aria-label="Date range" className="rounded-full border">
           {DASHBOARD_PRESETS.map((preset) => (
             <TabsTrigger
               key={preset}

@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import type { ReactNode } from 'react'
 import { Languages, LogOut, Moon, ShieldCheck, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useLanguage } from '@/hooks/use-language'
@@ -8,15 +9,18 @@ import { resolveTheme, useUiStore } from '@/stores/ui-store'
  * `_app` top bar (M3-T9): logo, EN/BN switch (per-router store → `shield-lang` cookie), theme toggle,
  * the signed-in email and log-out. Navigation lives in `app-nav.tsx` (M6-T8).
  * `onSignOut` is omitted while impersonating: the banner's "Exit" is the only way out then.
+ * `switcher` = the workspace switcher (M7-T11), next to the logo.
  */
 export function AppTopBar({
   email,
   onSignOut,
   signingOut = false,
+  switcher,
 }: {
   email: string
   onSignOut?: () => void
   signingOut?: boolean
+  switcher?: ReactNode
 }) {
   const { language, toggleLanguage, content } = useLanguage()
   const theme = useUiStore((s) => s.theme)
@@ -30,6 +34,7 @@ export function AppTopBar({
           <ShieldCheck className="size-6 text-primary" aria-hidden />
           <span className="hidden min-[400px]:inline">ShieldComment BD</span>
         </Link>
+        {switcher}
         <span className="ml-auto hidden max-w-[16rem] truncate text-sm text-muted-foreground md:inline" title={email}>
           {email}
         </span>
