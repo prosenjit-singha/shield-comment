@@ -2,6 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AiAnalysis, AiCreditTopup, AiSpendSummary } from '@/lib/admin-ai'
 import { addDays, type DashboardStatsResponse } from '@/lib/admin-dashboard'
 import { createQueryClient } from '@/lib/query-client'
 import { createAppRouter } from '@/router'
@@ -105,6 +106,68 @@ function fullFixture(): DashboardStatsResponse {
 const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>()
 let respond: (url: URL) => Response
 
+// AI blocks (M5-T15e): handlers by `METHOD /path`; anything else fails the test in afterEach.
+type AiHandler = (url: URL, init?: RequestInit) => Response | Promise<Response>
+let ai: Record<string, AiHandler>
+let unexpected: string[]
+
+function summaryFixture(over: Partial<AiSpendSummary> = {}): AiSpendSummary {
+  return {
+    asOf: NOW.toISOString(),
+    timezone: 'Asia/Dhaka',
+    creditAddedUsd: 0,
+    estimatedSpendUsd: 0,
+    estimatedRemainingUsd: 0,
+    unpricedCalls: 0,
+    commentsAnalyzed: { total: 0, today: 0, last7Days: 0 },
+    tokens: { input: 0, output: 0 },
+    spendByModel: [],
+    spendByDecision: (['NONE', 'HIDE', 'DELETE'] as const).map((decision) => ({
+      decision,
+      comments: 0,
+      costUsd: 0,
+      unpricedComments: 0,
+    })),
+    ...over,
+  }
+}
+
+function analysis(over: Partial<AiAnalysis> = {}): AiAnalysis {
+  return {
+    id: 'c1',
+    classifiedAt: '2026-11-18T05:30:00.000Z',
+    workspace: { id: 'w1', name: 'Dhaka Fashion' },
+    page: { id: 'p1', pageId: '1001', name: 'Dhaka Fashion Page' },
+    platform: 'FACEBOOK',
+    message: 'দাম কত?',
+    category: 'SAFE_INQUIRY',
+    confidence: 0.97,
+    decision: 'NONE',
+    actionState: null,
+    status: 'VISIBLE',
+    statusReason: null,
+    provider: 'neon',
+    model: 'gpt-oss-20b',
+    inputTokens: 412,
+    outputTokens: 96,
+    latencyMs: 850,
+    estimatedCostUsd: 0.000123,
+    ...over,
+  }
+}
+
+function topup(over: Partial<AiCreditTopup> = {}): AiCreditTopup {
+  return {
+    id: 't1',
+    amountUsd: 25,
+    toppedUpOn: '2026-11-15',
+    note: 'Card 4242',
+    createdAt: '2026-11-15T04:00:00.000Z',
+    createdBy: { id: 'u1', name: 'Root Admin' },
+    ...over,
+  }
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
@@ -150,14 +213,25 @@ beforeEach(() => {
   vi.setSystemTime(NOW)
   auth.getSession.mockReset().mockResolvedValue(superAdmin)
   respond = () => json(zeroFixture())
-  fetchMock.mockReset().mockImplementation(async (input) => {
+  unexpected = []
+  ai = {
+    'GET /api/admin/ai/summary': () => json(summaryFixture()),
+    'GET /api/admin/ai/analyses': () => json({ items: [] }),
+    'GET /api/admin/ai/credit-topups': () => json({ items: [] }),
+  }
+  fetchMock.mockReset().mockImplementation(async (input, init) => {
     const url = new URL(input, 'http://admin.localhost')
-    if (url.pathname !== '/api/admin/dashboard/stats') throw new Error(`unexpected fetch ${url.pathname}`)
-    return respond(url)
+    if (url.pathname === '/api/admin/dashboard/stats') return respond(url)
+    const key = `${init?.method ?? 'GET'} ${url.pathname}`
+    const handler = ai[key]
+    if (handler) return handler(url, init)
+    unexpected.push(key)
+    throw new Error(`unexpected fetch ${key}`)
   })
   vi.stubGlobal('fetch', fetchMock)
 })
 afterEach(() => {
+  expect(unexpected).toEqual([])
   cleanup()
   vi.useRealTimers()
   vi.unstubAllGlobals()
@@ -423,5 +497,237 @@ describe('/admin/dashboard errors', () => {
     await screen.findByTestId('resolved-range')
     expect(screen.queryByRole('alert')).toBeNull()
     expect(kpiValue('activeClients')).toBe('12')
+  })
+})
+
+describe('/admin/dashboard AI spend (M5-T15e)', () => {
+  const aiSection = () => within(screen.getByRole('region', { name: 'AI spend' }))
+  const card = (label: string) => within(screen.getByRole('region', { name: label }))
+  const aiCalls = (method: string, path: string) =>
+    fetchMock.mock.calls.filter(
+      ([input, init]) => new URL(input, 'http://admin.localhost').pathname === path && (init?.method ?? 'GET') === method,
+    )
+
+  it('shows the spend cards, a negative remaining and the estimate note', async () => {
+    ai['GET /api/admin/ai/summary'] = () =>
+      json(
+        summaryFixture({
+          creditAddedUsd: 10,
+          estimatedSpendUsd: 12.345678,
+          estimatedRemainingUsd: -2.345678,
+          unpricedCalls: 3,
+          commentsAnalyzed: { total: 1234, today: 12, last7Days: 80 },
+          tokens: { input: 1_500_000, output: 120_000 },
+        }),
+      )
+    await renderDashboard()
+    await screen.findByText('$12.35')
+    expect(card('Credit added').getByText('$10.00')).toBeTruthy()
+    expect(card('Estimated spend').getByText('1.5M in / 120k out tokens')).toBeTruthy()
+    const remaining = card('Estimated remaining').getByText('-$2.35')
+    expect(remaining.className).toContain('text-destructive')
+    expect(card('Estimated remaining').getByText(/Spend is above the credit added/)).toBeTruthy()
+    expect(card('Comments analyzed').getByText('12')).toBeTruthy()
+    expect(card('Comments analyzed').getByText('today · 80 in 7 days · 1,234 total')).toBeTruthy()
+    expect(
+      aiSection().getByText(
+        'Estimate from our token counts; exact balance: Neon Console → Billing. 3 calls on models without a price are not counted.',
+      ),
+    ).toBeTruthy()
+  })
+
+  it('leaves the unpriced line out when every call is priced', async () => {
+    await renderDashboard()
+    const note = await screen.findByText(/Estimate from our token counts/)
+    expect(note.textContent).toBe('Estimate from our token counts; exact balance: Neon Console → Billing.')
+    expect(card('Estimated remaining').getByText('Credit added − estimated spend')).toBeTruthy()
+  })
+
+  it('lists the recent analyses with pills, n/a cost and plain-text comments', async () => {
+    const long = `<b>bold</b> ${'বিকাশে টাকা পাঠান '.repeat(8)}`
+    ai['GET /api/admin/ai/analyses'] = (url) => {
+      expect(url.searchParams.get('limit')).toBe('20')
+      return json({
+        items: [
+          analysis(),
+          analysis({
+            id: 'c2',
+            message: long,
+            category: 'SCAM_PHISHING',
+            confidence: 0.91,
+            decision: 'HIDE',
+            actionState: 'FAILED',
+            status: 'FAILED',
+            statusReason: 'token_invalid',
+            page: null,
+            model: 'mystery-model',
+            inputTokens: null,
+            outputTokens: null,
+            latencyMs: null,
+            estimatedCostUsd: null,
+          }),
+          analysis({ id: 'c3', decision: 'DELETE', category: 'ABUSIVE_TOXIC', status: 'DELETED', message: null }),
+        ],
+      })
+    }
+    await renderDashboard()
+    const rows = await screen.findAllByTestId('analysis-row')
+    expect(rows).toHaveLength(3)
+
+    const first = within(rows[0]!)
+    expect(first.getByText('18 Nov 2026, 11:30')).toBeTruthy()
+    expect(first.getByText('Dhaka Fashion')).toBeTruthy()
+    expect(first.getByText('Dhaka Fashion Page')).toBeTruthy()
+    expect(first.getByText('দাম কত?')).toBeTruthy()
+    expect(first.getByText('Allowed').className).toContain('rounded-full')
+    expect(first.getByText('Safe inquiry')).toBeTruthy()
+    expect(first.getByText('97%')).toBeTruthy()
+    expect(first.getByText('0.4k in / 96 out')).toBeTruthy()
+    expect(first.getByText('$0.000123')).toBeTruthy()
+    expect(first.getByText('850 ms')).toBeTruthy()
+
+    const second = within(rows[1]!)
+    expect(second.getByText('Hidden')).toBeTruthy()
+    expect(second.getByText('Action failed · Failed: token invalid')).toBeTruthy()
+    expect(second.getByText('Disconnected Page')).toBeTruthy()
+    expect(second.getAllByText('n/a')).toHaveLength(2) // tokens + cost
+    // Untrusted text: never parsed as HTML, truncated with the full text on hover + expand.
+    const text = second.getByTestId('comment-text')
+    expect(rows[1]!.querySelector('b')).toBeNull()
+    expect(text.textContent!.startsWith('<b>bold</b>')).toBe(true)
+    expect(text.textContent!.endsWith('…')).toBe(true)
+    expect(text.getAttribute('title')).toBe(long)
+    fireEvent.click(second.getByRole('button', { name: 'Show full comment' }))
+    expect(text.textContent).toBe(long)
+    expect(second.getByRole('button', { name: 'Show less' }).getAttribute('aria-expanded')).toBe('true')
+
+    const third = within(rows[2]!)
+    expect(third.getByText('Deleted').className).toContain('text-destructive')
+    expect(third.getByText('No text')).toBeTruthy()
+  })
+
+  it('shows the empty states', async () => {
+    await renderDashboard()
+    expect(await screen.findByText('No comments analyzed yet.')).toBeTruthy()
+    expect(await screen.findByText(/No top-ups yet/)).toBeTruthy()
+  })
+
+  it('keeps the rest of the dashboard when every AI endpoint fails', async () => {
+    for (const key of Object.keys(ai)) ai[key] = () => apiError(500, 'Internal server error')
+    await renderDashboard()
+    expect(await screen.findByText('Couldn’t load AI spend')).toBeTruthy()
+    expect(await screen.findByText('Couldn’t load the analyses')).toBeTruthy()
+    expect(await screen.findByText('Couldn’t load the top-ups')).toBeTruthy()
+    expect(kpiValue('activeClients')).toBe('0')
+    expect(screen.getByTestId('growth-chart')).toBeTruthy()
+    expect(screen.queryByText('Couldn’t load the dashboard')).toBeNull()
+
+    ai['GET /api/admin/ai/summary'] = () => json(summaryFixture({ creditAddedUsd: 5 }))
+    const alert = screen.getByText('Couldn’t load AI spend').closest<HTMLElement>('[role=alert]')!
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
+    expect(within(await screen.findByRole('region', { name: 'Credit added' })).getByText('$5.00')).toBeTruthy()
+  })
+
+  it('keeps the AI blocks when the stats fail', async () => {
+    respond = () => apiError(500, 'Internal server error')
+    ai['GET /api/admin/ai/credit-topups'] = () => json({ items: [topup()] })
+    renderAt('/admin/dashboard')
+    expect(await screen.findByText('Couldn’t load the dashboard')).toBeTruthy()
+    expect(await screen.findByTestId('topup-row')).toBeTruthy()
+  })
+
+  it('adds a top-up, then refetches the list and the summary', async () => {
+    let topups: AiCreditTopup[] = []
+    ai['GET /api/admin/ai/credit-topups'] = () => json({ items: topups })
+    ai['POST /api/admin/ai/credit-topups'] = (_url, init) => {
+      const body = JSON.parse(init!.body as string) as { amountUsd: number; toppedUpOn: string; note?: string }
+      topups = [topup({ id: 't9', ...body, note: body.note ?? null })]
+      return json({ topup: topups[0] }, 201)
+    }
+    await renderDashboard()
+    await screen.findByText(/No top-ups yet/)
+    const summaryBefore = aiCalls('GET', '/api/admin/ai/summary').length
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add top-up' }))
+    const dialog = within(await screen.findByRole('dialog'))
+    expect((dialog.getByLabelText('Top-up date') as HTMLInputElement).value).toBe(TODAY)
+    expect((dialog.getByLabelText('Top-up date') as HTMLInputElement).max).toBe(TODAY)
+    fireEvent.change(dialog.getByLabelText('Amount (USD)'), { target: { value: '12.50' } })
+    fireEvent.change(dialog.getByLabelText('Top-up date'), { target: { value: '2026-11-16' } })
+    fireEvent.change(dialog.getByLabelText('Note (optional)'), { target: { value: '  Card 4242  ' } })
+    fireEvent.click(dialog.getByRole('button', { name: 'Add top-up' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const init = aiCalls('POST', '/api/admin/ai/credit-topups')[0]?.[1]
+    expect(JSON.parse(init!.body as string)).toEqual({ amountUsd: 12.5, toppedUpOn: '2026-11-16', note: 'Card 4242' })
+    const row = within(await screen.findByTestId('topup-row'))
+    expect(row.getByText('16 Nov 2026')).toBeTruthy()
+    expect(row.getByText('$12.50')).toBeTruthy()
+    expect(row.getByText('Card 4242')).toBeTruthy()
+    expect(row.getByText('Root Admin')).toBeTruthy()
+    await waitFor(() => expect(aiCalls('GET', '/api/admin/ai/summary').length).toBeGreaterThan(summaryBefore))
+  })
+
+  it('blocks invalid top-ups client-side', async () => {
+    await renderDashboard()
+    fireEvent.click(await screen.findByRole('button', { name: 'Add top-up' }))
+    const dialog = within(await screen.findByRole('dialog'))
+    const submit = () => fireEvent.click(dialog.getByRole('button', { name: 'Add top-up' }))
+
+    submit()
+    expect(dialog.getByText('Enter the amount in USD.')).toBeTruthy()
+    fireEvent.change(dialog.getByLabelText('Amount (USD)'), { target: { value: '0' } })
+    expect(dialog.getByText('The amount must be more than $0.')).toBeTruthy()
+    fireEvent.change(dialog.getByLabelText('Amount (USD)'), { target: { value: '1.234' } })
+    expect(dialog.getByText(/at most 2 decimals/)).toBeTruthy()
+    fireEvent.change(dialog.getByLabelText('Amount (USD)'), { target: { value: '5' } })
+    fireEvent.change(dialog.getByLabelText('Top-up date'), { target: { value: '2026-11-19' } })
+    expect(dialog.getByText(/can’t be in the future/)).toBeTruthy()
+    fireEvent.change(dialog.getByLabelText('Top-up date'), { target: { value: TODAY } })
+    fireEvent.change(dialog.getByLabelText('Note (optional)'), { target: { value: 'x'.repeat(201) } })
+    expect(dialog.getByText('The note can be at most 200 characters.')).toBeTruthy()
+    expect(dialog.getByText('201/200')).toBeTruthy()
+    submit()
+    expect(aiCalls('POST', '/api/admin/ai/credit-topups')).toHaveLength(0)
+  })
+
+  it('shows the API 400 messages in the dialog', async () => {
+    let answer = () => json({ statusCode: 400, message: 'Top-up date is in the future', code: 'TOPUP_DATE_IN_FUTURE' }, 400)
+    ai['POST /api/admin/ai/credit-topups'] = () => answer()
+    await renderDashboard()
+    fireEvent.click(await screen.findByRole('button', { name: 'Add top-up' }))
+    const dialog = within(await screen.findByRole('dialog'))
+    fireEvent.change(dialog.getByLabelText('Amount (USD)'), { target: { value: '5' } })
+    fireEvent.click(dialog.getByRole('button', { name: 'Add top-up' }))
+    expect(await dialog.findByText('The top-up date can’t be after today (Bangladesh time).')).toBeTruthy()
+
+    answer = () => apiError(400, 'amountUsd must not be greater than 1000000')
+    fireEvent.click(dialog.getByRole('button', { name: 'Add top-up' }))
+    expect(await dialog.findByText('amountUsd must not be greater than 1000000')).toBeTruthy()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('deletes a top-up after confirming', async () => {
+    let topups = [topup(), topup({ id: 't2', amountUsd: 50, toppedUpOn: '2026-11-01', note: null })]
+    ai['GET /api/admin/ai/credit-topups'] = () => json({ items: topups })
+    ai['DELETE /api/admin/ai/credit-topups/t2'] = () => {
+      topups = topups.filter((t) => t.id !== 't2')
+      return new Response(null, { status: 204 })
+    }
+    await renderDashboard()
+    expect(await screen.findAllByTestId('topup-row')).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete the $50.00 top-up of 1 Nov 2026' }))
+    let dialog = within(await screen.findByRole('dialog'))
+    fireEvent.click(dialog.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(aiCalls('DELETE', '/api/admin/ai/credit-topups/t2')).toHaveLength(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete the $50.00 top-up of 1 Nov 2026' }))
+    dialog = within(await screen.findByRole('dialog'))
+    expect(dialog.getByText(/\$50\.00 on 1 Nov 2026 comes off the credit added/)).toBeTruthy()
+    fireEvent.click(dialog.getByRole('button', { name: 'Delete top-up' }))
+    await waitFor(() => expect(screen.getAllByTestId('topup-row')).toHaveLength(1))
+    expect(aiCalls('DELETE', '/api/admin/ai/credit-topups/t2')).toHaveLength(1)
   })
 })

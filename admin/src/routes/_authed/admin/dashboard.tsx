@@ -7,6 +7,8 @@ import {
   GrowthChart,
   PlanTiersChart,
 } from '@/components/dashboard/dashboard-charts'
+import { AiSpendCards, RecentAnalyses } from '@/components/dashboard/ai-spend'
+import { CreditTopups } from '@/components/dashboard/credit-topups'
 import { KpiCards } from '@/components/dashboard/kpi-cards'
 import { RangePicker } from '@/components/dashboard/range-picker'
 import { PageHeader } from '@/components/placeholder-page'
@@ -82,6 +84,19 @@ function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* D25/D26: own queries, so an AI failure never hides the stats above (and vice versa). */}
+      <section aria-labelledby="ai-spend-heading" className="flex flex-col gap-4">
+        <div>
+          <h2 id="ai-spend-heading" className="text-lg font-semibold tracking-tight">
+            AI spend
+          </h2>
+          <p className="text-sm text-muted-foreground">Neon AI Gateway credit and what the AI decided, all time.</p>
+        </div>
+        <AiSpendCards />
+        <RecentAnalyses />
+        <CreditTopups />
+      </section>
     </div>
   )
 }
