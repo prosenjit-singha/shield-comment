@@ -60,8 +60,9 @@ export async function apiFetch<T>(path: string, options: { method?: 'GET' | 'POS
     response = await fetch(path, {
       method,
       credentials: 'same-origin',
-      headers: body === undefined ? { accept: 'application/json' } : { accept: 'application/json', 'content-type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      // FormData sets its own multipart boundary header.
+      headers: body === undefined || body instanceof FormData ? { accept: 'application/json' } : { accept: 'application/json', 'content-type': 'application/json' },
+      body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
     })
   } catch {
     throw new ApiError(0, 'Network error')

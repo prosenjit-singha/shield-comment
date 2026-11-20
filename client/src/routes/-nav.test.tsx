@@ -1,12 +1,12 @@
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { billingSummary, IMPERSONATED, renderAppRoute, SESSION, stubAppGlobals, SUMMARY, summaryApi } from '@/test/app-routes'
+import { billingSummary, IMPERSONATED, renderAppRoute, SESSION, stubAppGlobals, SUMMARY, summaryApi, ticketsApi } from '@/test/app-routes'
 import { apiCalls, callsTo, fetchMock, json, mockApi } from '@/test/auth-routes'
 
 // The server-render session function needs the Start compiler; the browser path never calls it.
 vi.mock('@/server/session', () => ({ getServerSession: vi.fn() }))
 
-// M7-T11: the "More" sheet (D16 a), `/support` + `/settings` placeholders, the workspace switcher (D8 a).
+// M7-T11: the "More" sheet (D16 a), `/support` (tickets since M7-T12) + `/settings` placeholders, the workspace switcher (D8 a).
 
 const LIST = '/api/auth/organization/list'
 const SET_ACTIVE = '/api/auth/organization/set-active'
@@ -21,7 +21,7 @@ const copy = {
     more: 'More',
     moreItems: ['Pages', 'Playground', 'Plans', 'Support', 'Settings'],
     support: 'Support',
-    supportSoon: 'Support tickets are coming soon.',
+    supportEmpty: 'No tickets yet. Open one when you need help.',
     settings: 'Settings',
     team: 'Team',
     alerts: 'Alerts',
@@ -35,7 +35,7 @@ const copy = {
     more: 'আরও',
     moreItems: ['পেজ', 'প্লেগ্রাউন্ড', 'প্ল্যান', 'সাপোর্ট', 'সেটিংস'],
     support: 'সাপোর্ট',
-    supportSoon: 'সাপোর্ট টিকিট শিগগিরই আসছে।',
+    supportEmpty: 'এখনো কোনো টিকিট নেই। সাহায্য দরকার হলে একটি টিকিট খুলুন।',
     settings: 'সেটিংস',
     team: 'টিম',
     alerts: 'অ্যালার্ট',
@@ -68,9 +68,9 @@ describe.each(['en', 'bn'] as const)('M7-T11 navigation (%s)', (language) => {
   const t = copy[language]
 
   it('"More" opens a sheet with the other five pages; picking one navigates, closes it and marks More active', async () => {
-    mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi() })
+    mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi(), ...ticketsApi() })
     const { history } = renderAppRoute('/support', language)
-    expect(await screen.findByText(t.supportSoon)).toBeTruthy()
+    expect(await screen.findByText(t.supportEmpty)).toBeTruthy()
     expect(within(bottomBar()).getByRole('button', { name: t.more }).dataset.status).toBe('active')
 
     fireEvent.click(within(bottomBar()).getByRole('button', { name: t.more }))
@@ -93,15 +93,15 @@ describe.each(['en', 'bn'] as const)('M7-T11 navigation (%s)', (language) => {
     expect(within(bottomBar()).getByRole('button', { name: t.more }).dataset.status).toBeUndefined()
   })
 
-  it('/support shows the placeholder with Support active', async () => {
-    mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi() })
+  it('/support shows the tickets screen with Support active', async () => {
+    mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi(), ...ticketsApi() })
     renderAppRoute('/support', language)
     expect(await screen.findByRole('heading', { name: t.support })).toBeTruthy()
     expect(sidebarCurrent()).toEqual(['/support'])
   })
 
   it('/settings redirects to /settings/team; the tabs switch to Alerts and Settings stays active', async () => {
-    mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi() })
+    mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi(), ...ticketsApi() })
     const { history } = renderAppRoute('/settings', language)
 
     expect(await screen.findByText(t.teamSoon)).toBeTruthy()
@@ -125,18 +125,18 @@ describe.each(['en', 'bn'] as const)('M7-T11 navigation (%s)', (language) => {
 
   describe('workspace switcher (D8)', () => {
     it('is hidden for someone in one workspace', async () => {
-      mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi() }) // list default: one workspace
+      mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi(), ...ticketsApi() }) // list default: one workspace
       renderAppRoute('/support', language)
-      expect(await screen.findByText(t.supportSoon)).toBeTruthy()
+      expect(await screen.findByText(t.supportEmpty)).toBeTruthy()
       await waitFor(() => expect(callsTo(LIST)).toHaveLength(1))
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(screen.queryByRole('button', { name: t.switcher('Rahim Fashion') })).toBeNull()
     })
 
     it('is hidden (and the list never loaded) while impersonated', async () => {
-      mockApi({ '/api/auth/get-session': () => json(200, IMPERSONATED), ...summaryApi(), [LIST]: () => json(200, TWO_WORKSPACES) })
+      mockApi({ '/api/auth/get-session': () => json(200, IMPERSONATED), ...summaryApi(), ...ticketsApi(), [LIST]: () => json(200, TWO_WORKSPACES) })
       renderAppRoute('/support', language)
-      expect(await screen.findByText(t.supportSoon)).toBeTruthy()
+      expect(await screen.findByText(t.supportEmpty)).toBeTruthy()
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(screen.queryByRole('button', { name: t.switcher('Rahim Fashion') })).toBeNull()
       expect(callsTo(LIST)).toHaveLength(0)
@@ -173,7 +173,7 @@ describe.each(['en', 'bn'] as const)('M7-T11 navigation (%s)', (language) => {
     })
 
     it('choosing the active workspace again sends nothing', async () => {
-      mockApi({ '/api/auth/get-session': () => json(200, SESSION), [LIST]: () => json(200, TWO_WORKSPACES), ...summaryApi() })
+      mockApi({ '/api/auth/get-session': () => json(200, SESSION), [LIST]: () => json(200, TWO_WORKSPACES), ...summaryApi(), ...ticketsApi() })
       renderAppRoute('/support', language)
       fireEvent.keyDown(await screen.findByRole('button', { name: t.switcher('Rahim Fashion') }), { key: 'Enter' })
       fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Rahim Fashion' }))
@@ -186,6 +186,7 @@ describe.each(['en', 'bn'] as const)('M7-T11 navigation (%s)', (language) => {
         '/api/auth/get-session': () => json(200, SESSION),
         [LIST]: () => json(200, TWO_WORKSPACES),
         ...summaryApi(),
+        ...ticketsApi(),
         [SET_ACTIVE]: () => json(500, { message: 'boom' }),
       })
       const { queryClient } = renderAppRoute('/support', language)

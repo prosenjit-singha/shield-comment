@@ -17,6 +17,7 @@ import type { Language } from '@/lib/language'
 import type { WorkspaceMetaConnection, WorkspacePage } from '@/lib/meta-pages'
 import type { AiContextLevel, ModerationPolicy, PolicyPatch } from '@/lib/moderation-policy'
 import type { PlaygroundResult, PlaygroundUsage } from '@/lib/playground'
+import type { TicketDetail, TicketItem, TicketMessage } from '@/lib/support-tickets'
 import { createQueryClient } from '@/lib/query-client'
 import { Route as AppRoute } from '@/routes/_app'
 import { Route as AnalyticsRoute } from '@/routes/_app/analytics'
@@ -494,6 +495,134 @@ export function analyticsApi(
     [ANALYTICS_COMMENTS_CSV]: get(ANALYTICS_COMMENTS_CSV, csv('comments')),
     [PAGES]: get(PAGES, () => json(200, { items, pageLimit: { limit: 3, activeCount: items.length }, connection: connection() })),
   }
+}
+
+export const TICKETS = '/api/workspaces/w1/support/tickets'
+export const ticketUrl = (id: string) => `${TICKETS}/${id}`
+export const replyUrl = (id: string) => `${ticketUrl(id)}/reply`
+/** The id `ticketsApi` gives a created ticket (its GET/reply handlers exist up front). */
+export const NEW_TICKET_ID = '9a6c1d2e-0000-4000-8000-0000000000ff'
+
+/** A client ticket (M7-T2 contract) with one message from the requester; ids are UUIDs (`?ticket=` drops anything else). */
+export function ticket(overrides: Partial<TicketDetail> = {}): TicketDetail {
+  const id = overrides.id ?? '9a6c1d2e-0000-4000-8000-000000000001'
+  return {
+    id,
+    subject: 'Page not hiding scams',
+    category: 'TECHNICAL',
+    status: 'OPEN',
+    createdAt: '2026-11-20T08:00:00.000Z',
+    updatedAt: '2026-11-20T08:00:00.000Z',
+    requester: { id: 'u1', name: 'Rahim' },
+    lastMessageAt: '2026-11-20T08:00:00.000Z',
+    hasNewReply: false,
+    messages: [ticketMessage({ id: `${id}-m1`, body: 'Scam comments stay visible on my Page.' })],
+    ...overrides,
+  }
+}
+
+export function ticketMessage(overrides: Partial<TicketMessage> = {}): TicketMessage {
+  return {
+    id: 'm1',
+    senderRole: 'CLIENT',
+    sender: { id: 'u1', name: 'Rahim' },
+    body: 'Hello',
+    createdAt: '2026-11-20T08:00:00.000Z',
+    attachments: [],
+    ...overrides,
+  }
+}
+
+/** A message body as sent: JSON fields, or multipart text fields + `files`. */
+export interface SentMessage {
+  fields: Record<string, string>
+  files: File[]
+}
+
+function sentMessage(init?: RequestInit): SentMessage {
+  const body = init?.body
+  if (body instanceof FormData) {
+    const fields: Record<string, string> = {}
+    const files: File[] = []
+    body.forEach((value, key) => {
+      if (typeof value === 'string') fields[key] = value
+      else if (key === 'files') files.push(value)
+    })
+    return { fields, files }
+  }
+  if (typeof body !== 'string') throw new Error('Expected a JSON or FormData body')
+  return { fields: JSON.parse(body) as Record<string, string>, files: [] }
+}
+
+export interface TicketsApiOptions {
+  /** Answers `GET …/support/tickets` (default: the stored tickets without messages). */
+  onList?: () => Response | Promise<Response>
+  /** Answers `POST …/support/tickets` (default: stores a ticket with id `NEW_TICKET_ID`, 201). */
+  onCreate?: (sent: SentMessage) => Response | Promise<Response>
+  /** Answers `GET …/:id` (default: the stored ticket). */
+  onDetail?: (id: string) => Response | Promise<Response>
+  /** Answers `POST …/:id/reply` (default: appends the message, reopens RESOLVED, clears `hasNewReply`, 201). */
+  onReply?: (id: string, sent: SentMessage) => Response | Promise<Response>
+}
+
+/**
+ * `/support` (M7-T12): a stateful client tickets API (list, create, detail, reply) for `items` +
+ * `NEW_TICKET_ID`. Any other method fails the test.
+ */
+export function ticketsApi(items: TicketDetail[] = [], options: TicketsApiOptions = {}) {
+  const state = new Map(items.map((item) => [item.id, structuredClone(item)]))
+  const summary = (detail: TicketDetail): TicketItem => {
+    const item: Partial<TicketDetail> = { ...detail }
+    delete item.messages
+    return item as TicketItem
+  }
+  const only = (method: string, path: string, init?: RequestInit) => {
+    const actual = (init?.method ?? 'GET').toUpperCase()
+    if (actual !== method) throw new Error(`Unexpected ${actual} ${path}`)
+  }
+  const handlers: Record<string, (init?: RequestInit) => Response | Promise<Response>> = {
+    [TICKETS]: (init) => {
+      if ((init?.method ?? 'GET').toUpperCase() === 'GET') {
+        if (options.onList) return options.onList()
+        const list = [...state.values()].map(summary)
+        return json(200, { items: list, total: list.length, skip: 0, take: 100 })
+      }
+      only('POST', TICKETS, init)
+      const sent = sentMessage(init)
+      if (options.onCreate) return options.onCreate(sent)
+      const created = ticket({
+        id: NEW_TICKET_ID,
+        subject: sent.fields.subject,
+        category: sent.fields.category as TicketDetail['category'],
+        createdAt: '2026-11-20T10:00:00.000Z',
+        lastMessageAt: '2026-11-20T10:00:00.000Z',
+        messages: [ticketMessage({ id: 'new-m1', body: sent.fields.body, createdAt: '2026-11-20T10:00:00.000Z' })],
+      })
+      state.set(created.id, created)
+      return json(201, created)
+    },
+  }
+  for (const id of [...state.keys(), NEW_TICKET_ID]) {
+    handlers[ticketUrl(id)] = (init) => {
+      only('GET', ticketUrl(id), init)
+      if (options.onDetail) return options.onDetail(id)
+      const found = state.get(id)
+      return found ? json(200, found) : json(404, { message: 'Ticket not found' })
+    }
+    handlers[replyUrl(id)] = (init) => {
+      only('POST', replyUrl(id), init)
+      const sent = sentMessage(init)
+      if (options.onReply) return options.onReply(id, sent)
+      const found = state.get(id)
+      if (!found) return json(404, { message: 'Ticket not found' })
+      const message = ticketMessage({ id: `reply-${found.messages.length}`, body: sent.fields.body ?? '', createdAt: '2026-11-20T11:00:00.000Z' })
+      found.messages.push(message)
+      found.status = found.status === 'RESOLVED' ? 'OPEN' : found.status
+      found.hasNewReply = false
+      return json(201, { message, ticket: summary(found) })
+    }
+  }
+  return handlers
 }
 
 /** jsdom gaps the `_app` shell needs (top-bar theme toggle reads matchMedia; the router scrolls; Recharts observes size). */

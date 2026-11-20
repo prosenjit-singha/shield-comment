@@ -29,6 +29,16 @@ describe('apiFetch', () => {
     expect(init?.headers).toMatchObject({ 'content-type': 'application/json' })
   })
 
+  it('sends FormData as-is, without a JSON content type (multipart boundary set by the browser)', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: 1 }), { status: 201 }))
+    const form = new FormData()
+    form.set('body', 'hi')
+    await apiFetch('/api/x', { method: 'POST', body: form })
+    const [, init] = fetchMock.mock.calls[0]!
+    expect(init?.body).toBe(form)
+    expect(init?.headers).toEqual({ accept: 'application/json' })
+  })
+
   it('keeps status, code and details from the backend error body', async () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ statusCode: 409, message: 'Limit', code: 'PAGE_LIMIT_REACHED', details: { limit: 1 } }), {
