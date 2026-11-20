@@ -7,9 +7,14 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
+import { eq } from 'drizzle-orm';
 import { addDays, dhakaMidnight } from '../admin/dashboard-range.js';
 import { dhakaDayKey } from '../comments/comments.queries.js';
 import type { Database } from '../db/database.js';
+import {
+  PLAYGROUND_DAILY_LIMIT_DEFAULT,
+  platformSettings,
+} from '../db/schema/index.js';
 import { RedisService } from '../redis/redis.service.js';
 import {
   type ClassificationFailure,
@@ -35,12 +40,16 @@ import {
 } from './moderation.queries.js';
 import { matchStaticRules } from './static-rules.js';
 
-/** D9 default: free tests per workspace per Dhaka day. */
-export const DEFAULT_PLAYGROUND_DAILY_LIMIT = 10;
-
-/** The daily limit. M6-T7b: read the admin platform setting `playgroundDailyLimit` here. */
-export function playgroundDailyLimit(): number {
-  return DEFAULT_PLAYGROUND_DAILY_LIMIT;
+/**
+ * The daily limit (D9): admin platform setting `playgroundDailyLimit` (M6-T7b), 10 without a row,
+ * 0 = playground off. One primary-key read per test; no cache, so an admin change applies at once.
+ */
+export async function playgroundDailyLimit(db: Database): Promise<number> {
+  const [row] = await db
+    .select({ limit: platformSettings.playgroundDailyLimit })
+    .from(platformSettings)
+    .where(eq(platformSettings.id, 1));
+  return row?.limit ?? PLAYGROUND_DAILY_LIMIT_DEFAULT;
 }
 
 /** Counter key per workspace per Dhaka day; kept ~2 days so it outlives the day it counts. */
@@ -111,7 +120,7 @@ export class PlaygroundService {
     dto: PlaygroundTestDto,
     now = new Date(),
   ): Promise<PlaygroundTestResponse> {
-    const limit = playgroundDailyLimit();
+    const limit = await playgroundDailyLimit(this.db);
     const day = dhakaDayKey(now);
     const key = playgroundCounterKey(workspaceId, day);
     const used = await this.counter.hit(key);
@@ -120,7 +129,9 @@ export class PlaygroundService {
       await giveBack();
       throw new HttpException(
         {
-          message: `You have used today's ${limit} playground tests. Try again tomorrow.`,
+          message: limit
+            ? `You have used today's ${limit} playground tests. Try again tomorrow.`
+            : 'The playground is turned off right now.',
           error: 'Too Many Requests',
           code: PLAYGROUND_ERROR_CODES.limitReached,
           details: {

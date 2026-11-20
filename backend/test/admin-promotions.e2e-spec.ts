@@ -560,6 +560,7 @@ describe('Admin promotions API (e2e)', () => {
     it('GET is all null before the first save; PATCH stores, validates and clears', async () => {
       expect((await admin().get(PLATFORM).expect(200)).body).toEqual({
         supportWhatsappNumber: null,
+        playgroundDailyLimit: 10,
         updatedAt: null,
       });
       const saved = (
@@ -569,6 +570,7 @@ describe('Admin promotions API (e2e)', () => {
       ).body as PlatformSettings;
       expect(saved).toEqual({
         supportWhatsappNumber: '8801712345678',
+        playgroundDailyLimit: 10,
         updatedAt: expect.any(String) as string,
       });
       expect((await admin().get(PLATFORM).expect(200)).body).toEqual(saved);

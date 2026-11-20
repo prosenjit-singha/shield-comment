@@ -43,7 +43,8 @@ export function SupportWhatsappCard() {
       ) : !query.data ? (
         <Skeleton data-testid="whatsapp-skeleton" className="h-9 w-72 rounded-full" />
       ) : (
-        <WhatsappForm key={query.data.updatedAt ?? 'never'} settings={query.data} />
+        // Re-keyed by the stored number only, so a playground limit save never resets this draft.
+        <WhatsappForm key={query.data.supportWhatsappNumber ?? ''} settings={query.data} />
       )}
     </section>
   )
@@ -61,7 +62,7 @@ function WhatsappForm({ settings }: { settings: PlatformSettings }) {
   const mutation = useMutation({
     mutationFn: updatePlatformSettings,
     onSuccess: (saved) => {
-      // A new `updatedAt` re-keys the form, so it starts again from the saved value.
+      // A new stored number re-keys the form, so it starts again from the saved value.
       queryClient.setQueryData(platformSettingsKey, saved)
       toast.success(saved.supportWhatsappNumber ? 'WhatsApp number saved.' : 'WhatsApp number cleared.')
     },

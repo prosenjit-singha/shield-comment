@@ -1,0 +1,2 @@
+ALTER TABLE "platform_settings" ADD COLUMN "playground_daily_limit" integer DEFAULT 10 NOT NULL;--> statement-breakpoint
+ALTER TABLE "platform_settings" ADD CONSTRAINT "platform_settings_playground_daily_limit_check" CHECK ("playground_daily_limit" BETWEEN 0 AND 1000);

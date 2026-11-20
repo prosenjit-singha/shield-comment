@@ -279,6 +279,10 @@ export const promotionRedemptionsRelations = relations(
 /** Support WhatsApp number (PR-D18): BD mobile, digits only with the 880 country code (for `wa.me`). */
 export const SUPPORT_WHATSAPP_PATTERN = '^8801[3-9][0-9]{8}$';
 
+/** Playground tests per workspace per Dhaka day (M6-T7b, D9): default 10, 0 = playground off. */
+export const PLAYGROUND_DAILY_LIMIT_DEFAULT = 10;
+export const PLAYGROUND_DAILY_LIMIT_MAX = 1000;
+
 /**
  * Platform settings shown to clients (PR-T1, PR-D18). At most one row (`id = 1`), created by the
  * first admin save (PR-T4); no row or a `null` number = "Contact us" is hidden. Not tenant data.
@@ -288,6 +292,9 @@ export const platformSettings = pgTable(
   {
     id: integer().primaryKey().default(1),
     supportWhatsappNumber: text(),
+    playgroundDailyLimit: integer()
+      .notNull()
+      .default(PLAYGROUND_DAILY_LIMIT_DEFAULT),
     /** Super admin who saved last; `set null` so deleting a user never blocks on settings. */
     updatedById: uuid().references(() => users.id, { onDelete: 'set null' }),
     ...timestamps,
@@ -298,6 +305,12 @@ export const platformSettings = pgTable(
       'platform_settings_support_whatsapp_number_check',
       sql.raw(
         patternSql('support_whatsapp_number', SUPPORT_WHATSAPP_PATTERN, true),
+      ),
+    ),
+    check(
+      'platform_settings_playground_daily_limit_check',
+      sql.raw(
+        `"playground_daily_limit" BETWEEN 0 AND ${PLAYGROUND_DAILY_LIMIT_MAX}`,
       ),
     ),
   ],

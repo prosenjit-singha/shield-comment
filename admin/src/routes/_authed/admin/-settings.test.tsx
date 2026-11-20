@@ -202,7 +202,7 @@ beforeEach(() => {
   aiPatchHandler = () => json({ statusCode: 500, message: 'unexpected AI PATCH' }, 500)
   aiTestHandler = () => json({ statusCode: 500, message: 'unexpected AI test' }, 500)
   aiAuditHandler = (url) => json({ items: [], total: 0, skip: Number(url.searchParams.get('skip')), take: 20 })
-  platformGetHandler = () => json({ supportWhatsappNumber: null, updatedAt: null })
+  platformGetHandler = () => json({ supportWhatsappNumber: null, playgroundDailyLimit: 10, updatedAt: null })
   platformPatchHandler = () => json({ statusCode: 500, message: 'unexpected platform PATCH' }, 500)
   fetchMock.mockReset().mockImplementation(async (input, init = {}) => {
     const url = new URL(input, 'http://admin.localhost')
@@ -626,7 +626,7 @@ describe('/admin/settings support WhatsApp number (PR-D18)', () => {
 
   it('saves a valid number (trimmed) and shows when it was saved', async () => {
     platformPatchHandler = (body) =>
-      json({ ...(body as object), updatedAt: '2026-11-20T04:00:00.000Z' })
+      json({ playgroundDailyLimit: 10, ...(body as object), updatedAt: '2026-11-20T04:00:00.000Z' })
     renderSettings()
     const card = await region()
     await waitFor(() => expect(within(card).getByTestId('whatsapp-saved').textContent).toBe('Never saved.'))
@@ -661,8 +661,10 @@ describe('/admin/settings support WhatsApp number (PR-D18)', () => {
   )
 
   it('emptying a saved number clears it with null', async () => {
-    platformGetHandler = () => json({ supportWhatsappNumber: '8801912345678', updatedAt: '2026-11-19T04:00:00.000Z' })
-    platformPatchHandler = () => json({ supportWhatsappNumber: null, updatedAt: '2026-11-20T04:00:00.000Z' })
+    platformGetHandler = () =>
+      json({ supportWhatsappNumber: '8801912345678', playgroundDailyLimit: 10, updatedAt: '2026-11-19T04:00:00.000Z' })
+    platformPatchHandler = () =>
+      json({ supportWhatsappNumber: null, playgroundDailyLimit: 10, updatedAt: '2026-11-20T04:00:00.000Z' })
     renderSettings()
     const card = await region()
     await waitFor(() => expect(field(card).value).toBe('8801912345678'))
@@ -685,6 +687,74 @@ describe('/admin/settings support WhatsApp number (PR-D18)', () => {
     fireEvent.click(save(card))
     expect((await within(card).findByRole('alert')).textContent).toMatch(/Bangladesh mobile number/)
     expect(field(card).value).toBe('8801712345678')
+  })
+})
+
+describe('/admin/settings playground limit (M6-T7b)', () => {
+  const region = () => screen.findByRole('region', { name: 'Playground' })
+  const field = (el: HTMLElement) =>
+    within(el).getByLabelText('Playground tests per workspace per day') as HTMLInputElement
+  const save = (el: HTMLElement) => within(el).getByRole('button', { name: 'Save' }) as HTMLButtonElement
+  const platformPatches = () => calls('PATCH', PLATFORM).map(([, init]) => JSON.parse(String(init?.body)) as unknown)
+
+  it('shows the stored limit and saves only playgroundDailyLimit', async () => {
+    platformGetHandler = () =>
+      json({ supportWhatsappNumber: '8801912345678', playgroundDailyLimit: 10, updatedAt: '2026-11-19T04:00:00.000Z' })
+    platformPatchHandler = (body) =>
+      json({ supportWhatsappNumber: '8801912345678', ...(body as object), updatedAt: '2026-11-20T04:00:00.000Z' })
+    renderSettings()
+    const card = await region()
+    await waitFor(() => expect(field(card).value).toBe('10'))
+    expect(hintOf(field(card))).toBe('0 turns the playground off.')
+    expect(field(card).className).toContain('rounded-full')
+    expect(save(card).disabled).toBe(true)
+
+    // A typed WhatsApp draft survives the limit save (each card re-keys on its own value).
+    const whatsapp = await screen.findByRole('region', { name: 'Support WhatsApp number' })
+    type(within(whatsapp).getByLabelText('WhatsApp number'), '8801712345678')
+
+    type(field(card), '25')
+    fireEvent.click(save(card))
+    await waitFor(() => expect(platformPatches()).toEqual([{ playgroundDailyLimit: 25 }]))
+    expect(await screen.findByText('Playground limit saved.')).toBeTruthy()
+    await waitFor(() => expect(save(card).disabled).toBe(true))
+    expect(field(card).value).toBe('25')
+    expect((within(whatsapp).getByLabelText('WhatsApp number') as HTMLInputElement).value).toBe('8801712345678')
+  })
+
+  it('0 is allowed (turns the playground off)', async () => {
+    platformPatchHandler = (body) => json({ supportWhatsappNumber: null, ...(body as object), updatedAt: '2026-11-20T04:00:00.000Z' })
+    renderSettings()
+    const card = await region()
+    await waitFor(() => expect(field(card).value).toBe('10'))
+    type(field(card), '0')
+    expect(within(card).queryByRole('alert')).toBeNull()
+    fireEvent.click(save(card))
+    await waitFor(() => expect(platformPatches()).toEqual([{ playgroundDailyLimit: 0 }]))
+  })
+
+  it.each(['1001', '-1', '2.5', ''])('flags %j inline and sends nothing', async (value) => {
+    renderSettings()
+    const card = await region()
+    await waitFor(() => expect(field(card).value).toBe('10'))
+    type(field(card), value)
+    expect(within(card).getByRole('alert').textContent).toBe('Enter a whole number from 0 to 1,000.')
+    expect(field(card).getAttribute('aria-invalid')).toBe('true')
+    expect(save(card).disabled).toBe(true)
+    fireEvent.submit(save(card).closest('form') as HTMLFormElement)
+    expect(platformPatches()).toHaveLength(0)
+  })
+
+  it('shows a 400 message from the backend and keeps the edit', async () => {
+    platformPatchHandler = () =>
+      json({ statusCode: 400, message: 'playgroundDailyLimit must not be greater than 1000' }, 400)
+    renderSettings()
+    const card = await region()
+    await waitFor(() => expect(field(card).value).toBe('10'))
+    type(field(card), '30')
+    fireEvent.click(save(card))
+    expect((await within(card).findByRole('alert')).textContent).toBe('playgroundDailyLimit must not be greater than 1000')
+    expect(field(card).value).toBe('30')
   })
 })
 

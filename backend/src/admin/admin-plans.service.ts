@@ -7,12 +7,16 @@ import { InjectDrizzle } from '@nestjs/drizzle';
 import { and, asc, count, desc, eq, ne } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import {
+  PLAYGROUND_DAILY_LIMIT_DEFAULT,
   planAuditLogs,
   platformSettings,
   plans,
   users,
 } from '../db/schema/index.js';
-import type { PlatformSettings } from './dto/platform-settings.dto.js';
+import type {
+  PlatformSettings,
+  UpdatePlatformSettingsDto,
+} from './dto/platform-settings.dto.js';
 import type {
   ListPlanAuditQueryDto,
   PlanAuditList,
@@ -183,24 +187,34 @@ export class AdminPlansService {
     };
   }
 
-  /** Platform settings (PR-D18); all `null` until the first save. */
+  /** Platform settings (PR-D18, M6-T7b); defaults until the first save. */
   async platformSettings(): Promise<PlatformSettings> {
     const [row] = await this.db
       .select()
       .from(platformSettings)
       .where(eq(platformSettings.id, 1));
-    return {
-      supportWhatsappNumber: row?.supportWhatsappNumber ?? null,
-      updatedAt: row?.updatedAt.toISOString() ?? null,
-    };
+    return toPlatformSettings(row);
   }
 
-  /** Upserts row `id = 1` (DB check `platform_settings_support_whatsapp_number_check` is the backstop). */
+  /**
+   * Upserts row `id = 1` with the keys sent; absent keys keep their value (DB checks are the
+   * backstop). Empty body → 400.
+   */
   async updatePlatformSettings(
-    supportWhatsappNumber: string | null,
+    patch: UpdatePlatformSettingsDto,
     adminId: string,
   ): Promise<PlatformSettings> {
-    const values = { supportWhatsappNumber, updatedById: adminId };
+    const { supportWhatsappNumber, playgroundDailyLimit } = patch;
+    if (
+      supportWhatsappNumber === undefined &&
+      playgroundDailyLimit === undefined
+    )
+      throw new BadRequestException('Nothing to update');
+    const values = {
+      ...(supportWhatsappNumber !== undefined && { supportWhatsappNumber }),
+      ...(playgroundDailyLimit !== undefined && { playgroundDailyLimit }),
+      updatedById: adminId,
+    };
     const [row] = await this.db
       .insert(platformSettings)
       .values({ id: 1, ...values })
@@ -209,9 +223,17 @@ export class AdminPlansService {
         set: { ...values, updatedAt: new Date() },
       })
       .returning();
-    return {
-      supportWhatsappNumber: row!.supportWhatsappNumber,
-      updatedAt: row!.updatedAt.toISOString(),
-    };
+    return toPlatformSettings(row);
   }
+}
+
+function toPlatformSettings(
+  row: typeof platformSettings.$inferSelect | undefined,
+): PlatformSettings {
+  return {
+    supportWhatsappNumber: row?.supportWhatsappNumber ?? null,
+    playgroundDailyLimit:
+      row?.playgroundDailyLimit ?? PLAYGROUND_DAILY_LIMIT_DEFAULT,
+    updatedAt: row?.updatedAt.toISOString() ?? null,
+  };
 }

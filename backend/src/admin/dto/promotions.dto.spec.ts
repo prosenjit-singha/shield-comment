@@ -170,7 +170,6 @@ describe('UpdatePlatformSettingsDto (PR-D18)', () => {
   });
 
   it.each([
-    [{}],
     [{ supportWhatsappNumber: '01712345678' }],
     [{ supportWhatsappNumber: '+8801712345678' }],
     [{ supportWhatsappNumber: '8801212345678' }],
@@ -181,4 +180,32 @@ describe('UpdatePlatformSettingsDto (PR-D18)', () => {
       'supportWhatsappNumber',
     ]);
   });
+
+  // M6-T7b: partial body; the empty-body 400 is the service's (AdminPlansService spec).
+  it.each([
+    [{}],
+    [{ playgroundDailyLimit: 0 }],
+    [{ playgroundDailyLimit: 25 }],
+    [{ playgroundDailyLimit: 1000 }],
+    [{ supportWhatsappNumber: null, playgroundDailyLimit: 10 }],
+  ])('partial: accepts %j', async (body) => {
+    const { dto, fields } = await check(UpdatePlatformSettingsDto, body);
+    expect(fields).toEqual([]);
+    expect(dto.supportWhatsappNumber).toBe(
+      (body as { supportWhatsappNumber?: null }).supportWhatsappNumber,
+    );
+  });
+
+  it.each([-1, 1001, 2.5, '5', null, true, Number.NaN])(
+    'rejects playgroundDailyLimit %j',
+    async (value) => {
+      expect(
+        (
+          await check(UpdatePlatformSettingsDto, {
+            playgroundDailyLimit: value,
+          })
+        ).fields,
+      ).toEqual(['playgroundDailyLimit']);
+    },
+  );
 });

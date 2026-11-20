@@ -10,6 +10,7 @@ import {
   dailyCommentStats,
   moderationActions,
   moderationPolicies,
+  platformSettings,
 } from '../src/db/schema/index.js';
 import type { PlaygroundTestResponse } from '../src/moderation/dto/playground.dto.js';
 import { ModerationPolicyService } from '../src/moderation/moderation-policy.service.js';
@@ -320,6 +321,101 @@ describe('Playground API (e2e)', () => {
         kind: 'keyword',
         value: 'offer',
       });
+    });
+  });
+
+  describe('admin limit setting (M6-T7b, D9)', () => {
+    const PLATFORM = '/api/admin/settings/platform';
+    const as = (cookie: string) => ({
+      get: () => actors.http().get(PLATFORM).set('Cookie', cookie),
+      patch: (body: object) =>
+        actors.http().patch(PLATFORM).set('Cookie', cookie).send(body),
+    });
+    let before: (typeof platformSettings.$inferSelect)[];
+
+    beforeAll(async () => {
+      before = await actors.db.select().from(platformSettings);
+      await actors.db.delete(platformSettings);
+    });
+
+    // Back to the baseline row (or none).
+    afterAll(async () => {
+      if (!actors) return;
+      await actors.db.delete(platformSettings);
+      if (before.length)
+        await actors.db.insert(platformSettings).values(before);
+    });
+
+    it('GET defaults to 10; PATCH 25 alone keeps the WhatsApp number; bad values → 400', async () => {
+      const admin = as(superAdmin.cookie);
+      expect((await admin.get().expect(200)).body).toEqual({
+        supportWhatsappNumber: null,
+        playgroundDailyLimit: 10,
+        updatedAt: null,
+      });
+      await admin.patch({ supportWhatsappNumber: '8801712345678' }).expect(200);
+      const saved = await admin.patch({ playgroundDailyLimit: 25 }).expect(200);
+      expect(saved.body).toMatchObject({
+        supportWhatsappNumber: '8801712345678',
+        playgroundDailyLimit: 25,
+      });
+      expect((await admin.get().expect(200)).body).toEqual(saved.body);
+
+      for (const body of [
+        {},
+        { playgroundDailyLimit: 1001 },
+        { playgroundDailyLimit: -1 },
+        { playgroundDailyLimit: '5' },
+        { playgroundDailyLimit: 2.5 },
+        { playgroundDailyLimit: null },
+      ])
+        await admin.patch(body).expect(400);
+      const [row] = await actors.db.select().from(platformSettings);
+      expect(row).toMatchObject({
+        playgroundDailyLimit: 25,
+        supportWhatsappNumber: '8801712345678',
+        updatedById: superAdmin.id,
+      });
+    });
+
+    it('non-admins get 403 and change nothing', async () => {
+      for (const actor of [owner, moderator]) {
+        await as(actor.cookie).get().expect(403);
+        await as(actor.cookie).patch({ playgroundDailyLimit: 1 }).expect(403);
+      }
+      const [row] = await actors.db.select().from(platformSettings);
+      expect(row?.playgroundDailyLimit).toBe(25);
+    });
+
+    it('a lowered limit applies at once: 429 with details.limit = the setting; 0 = off', async () => {
+      await as(superAdmin.cookie)
+        .patch({ playgroundDailyLimit: 2 })
+        .expect(200);
+      counter.counts.set(key(owner.workspaceId), 1);
+      llm('SAFE_INQUIRY');
+      const last = await post(owner.cookie, owner.workspaceId, {
+        text: 'dam koto?',
+      }).expect(200);
+      expect(last.body.testsLeft).toBe(0);
+      const res = await post(owner.cookie, owner.workspaceId, {
+        text: 'dam koto?',
+      }).expect(429);
+      expect(res.body).toMatchObject({
+        code: 'PLAYGROUND_LIMIT_REACHED',
+        details: { limit: 2 },
+      });
+
+      await as(superAdmin.cookie)
+        .patch({ playgroundDailyLimit: 0 })
+        .expect(200);
+      const off = await post(other.cookie, other.workspaceId, {
+        text: 'hi',
+      }).expect(429);
+      expect(off.body).toMatchObject({
+        message: 'The playground is turned off right now.',
+        details: { limit: 0 },
+      });
+      expect(counter.counts.get(key(other.workspaceId))).toBe(0);
     });
   });
 });

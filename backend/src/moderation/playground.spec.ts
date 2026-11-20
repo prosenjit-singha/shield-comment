@@ -21,6 +21,7 @@ import {
 import {
   PLAYGROUND_COUNTER_TTL_SECONDS,
   PlaygroundCounter,
+  playgroundDailyLimit,
   playgroundCounterKey,
   PlaygroundService,
   RedisPlaygroundCounter,
@@ -85,11 +86,21 @@ const failure = (
   ...patch,
 });
 
-function setup(policy: ModerationPolicy = defaultModerationPolicy(WS)) {
+/** Only `playgroundDailyLimit()` reads the db here: `platform_settings` row `id = 1`, or none. */
+function settingsDb(limit?: number) {
+  const where = vi.fn(async () => (limit === undefined ? [] : [{ limit }]));
+  const db = { select: () => ({ from: () => ({ where }) }) };
+  return { db: db as unknown as Database, where };
+}
+
+function setup(
+  policy: ModerationPolicy = defaultModerationPolicy(WS),
+  limit?: number,
+) {
   const counter = new MemoryCounter();
   const classify = vi.fn<CommentClassifier['classify']>(async () => success());
   const service = new PlaygroundService(
-    {} as Database,
+    settingsDb(limit).db,
     { policy: vi.fn(async () => policy) } as unknown as ModerationPolicyService,
     { classify } as unknown as CommentClassifier,
     counter,
@@ -163,18 +174,15 @@ describe('PlaygroundService', () => {
       latencyMs: expect.any(Number),
       testsLeft: 9,
     });
-    expect(recordDailyAiUsage).toHaveBeenCalledWith(
-      {},
-      {
-        day: '2026-11-20',
-        provider: 'neon',
-        model: 'gpt-oss-20b',
-        calls: 1,
-        inputTokens: 100,
-        outputTokens: 20,
-        latencyMs: 40,
-      },
-    );
+    expect(recordDailyAiUsage).toHaveBeenCalledWith(expect.anything(), {
+      day: '2026-11-20',
+      provider: 'neon',
+      model: 'gpt-oss-20b',
+      calls: 1,
+      inputTokens: 100,
+      outputTokens: 20,
+      latencyMs: 40,
+    });
   });
 
   it('platform defaults to FACEBOOK; reply preview needs the plan flag', async () => {
@@ -223,7 +231,7 @@ describe('PlaygroundService', () => {
       details: { errorKind: 'transient', retryable: true },
     });
     expect(recordDailyAiUsage).toHaveBeenCalledWith(
-      {},
+      expect.anything(),
       expect.objectContaining({ calls: 1, failures: { transient: 1 } }),
     );
     expect(counter.counts.get(KEY)).toBe(0);
@@ -270,9 +278,40 @@ describe('PlaygroundService', () => {
     expect(classify).toHaveBeenCalledTimes(10);
     expect([...counter.counts]).toEqual([[KEY, 10]]);
   });
+
+  it('cap = the admin setting (M6-T7b): 2 → the 3rd test is 429 with limit 2', async () => {
+    const { counter, run } = setup(undefined, 2);
+    expect((await run('hello')).testsLeft).toBe(1);
+    expect((await run('hello')).testsLeft).toBe(0);
+    const error = await rejected(run('hello'));
+    expect(error.getResponse()).toMatchObject({
+      code: 'PLAYGROUND_LIMIT_REACHED',
+      details: { limit: 2 },
+    });
+    expect(counter.counts.get(KEY)).toBe(2);
+  });
+
+  it('setting 0 = playground off: every test → 429, nothing counted, no AI', async () => {
+    const { counter, classify, run } = setup(undefined, 0);
+    const error = await rejected(run('hello'));
+    expect(error.getStatus()).toBe(429);
+    expect(error.getResponse()).toMatchObject({
+      message: 'The playground is turned off right now.',
+      code: 'PLAYGROUND_LIMIT_REACHED',
+      details: { limit: 0 },
+    });
+    expect(classify).not.toHaveBeenCalled();
+    expect(counter.counts.get(KEY)).toBe(0);
+  });
 });
 
 describe('playground helpers', () => {
+  it('playgroundDailyLimit: the setting, or 10 without a row', async () => {
+    await expect(playgroundDailyLimit(settingsDb().db)).resolves.toBe(10);
+    await expect(playgroundDailyLimit(settingsDb(25).db)).resolves.toBe(25);
+    await expect(playgroundDailyLimit(settingsDb(0).db)).resolves.toBe(0);
+  });
+
   it('counter key', () => {
     expect(playgroundCounterKey(WS, '2026-11-20')).toBe(KEY);
   });

@@ -76,20 +76,18 @@ export class AdminSettingsController {
     });
   }
 
-  /** Support WhatsApp number etc. (PR-T4, PR-D18): `PlatformSettings`. */
+  /** Support WhatsApp number (PR-T4, PR-D18) + playground daily limit (M6-T7b): `PlatformSettings`. */
   @Get('platform')
   platformSettings(): Promise<PlatformSettings> {
     return this.plans.platformSettings();
   }
 
+  /** Partial body, at least one key (400 otherwise); absent keys keep their value. */
   @Patch('platform')
   updatePlatformSettings(
     @Body() body: UpdatePlatformSettingsDto,
     @Session() session: AuthSession,
   ): Promise<PlatformSettings> {
-    return this.plans.updatePlatformSettings(
-      body.supportWhatsappNumber,
-      session.user.id,
-    );
+    return this.plans.updatePlatformSettings(body, session.user.id);
   }
 }

@@ -833,6 +833,24 @@ describe('Promotions schema (e2e)', () => {
       ).toBe(CHECK_VIOLATION);
     });
 
+    it('playground_daily_limit: default 10, 0–1,000 (M6-T7b)', async () => {
+      const [row] = await db()
+        .insert(platformSettings)
+        .values({ id: 1 })
+        .returning();
+      expect(row!.playgroundDailyLimit).toBe(10);
+      for (const limit of [0, 1000])
+        await db()
+          .update(platformSettings)
+          .set({ playgroundDailyLimit: limit });
+      for (const limit of [-1, 1001])
+        expect(
+          await pgCode(
+            db().update(platformSettings).set({ playgroundDailyLimit: limit }),
+          ),
+        ).toBe(CHECK_VIOLATION);
+    });
+
     it.each([
       '01712345678',
       '+8801712345678',

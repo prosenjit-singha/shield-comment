@@ -7,6 +7,7 @@ import { AiProviderCard } from '@/components/settings/ai-provider-card'
 import { AiSettingsHistory } from '@/components/settings/ai-settings-history'
 import { PlanAuditHistory } from '@/components/settings/plan-audit-history'
 import { PlanEditorCard } from '@/components/settings/plan-editor-card'
+import { PlaygroundLimitCard } from '@/components/settings/playground-limit-card'
 import { SupportWhatsappCard } from '@/components/settings/support-whatsapp-card'
 import { Button } from '@/components/ui/button'
 import {
@@ -40,8 +41,8 @@ export const Route = createFileRoute('/_authed/admin/settings')({
  * Drafts live here, keyed by plan id, so leaving the page with unsaved changes can be blocked.
  * Below the cards, the plan audit history (M2-T16); a save invalidates `['admin','plans']`, which
  * covers the history queries too, so the new entry shows up.
- * Then the "Support WhatsApp number" card (PR-T5, PR-D18; its own save, not part of the leave
- * guard), the "AI provider" section (M5-T4, D16) + its history. One blocker covers the plan drafts and
+ * Then the "Support WhatsApp number" card (PR-T5, PR-D18) and the "Playground" daily limit card
+ * (M6-T7b; each its own save, not part of the leave guard), the "AI provider" section (M5-T4, D16) + its history. One blocker covers the plan drafts and
  * the AI draft (a typed key counts as a change).
  */
 function SettingsPage() {
@@ -72,7 +73,7 @@ function SettingsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Settings"
-        description="Plan prices in ৳ (monthly and yearly), pricing card text, the highlighted plan, limits and features, the support WhatsApp number and the AI provider. Each plan saves on its own."
+        description="Plan prices in ৳ (monthly and yearly), pricing card text, the highlighted plan, limits and features, the support WhatsApp number, the playground limit and the AI provider. Each plan saves on its own."
       />
 
       {query.isError && !query.data ? (
@@ -111,6 +112,8 @@ function SettingsPage() {
       <PlanAuditHistory plans={items ?? []} />
 
       <SupportWhatsappCard />
+
+      <PlaygroundLimitCard />
 
       <AiProviderCard draft={aiDraft} onDraftChange={setAiDraft} />
 
