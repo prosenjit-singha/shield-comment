@@ -12,13 +12,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Standing approvals: **admin/ + client/ approved for every Module 5 row in this run** (user, 2026-11-19, "Both, rest of run"). Live AI runs: **pause when a row needs one** and ask the user for Neon credits / a provider key; the live golden bake-off is M5-T16; M5-T17 (live Meta smoke) stays pending (no Meta test app). Golden-suite labels (D12) are **reviewed by the user**: pause for that review when M5-T6 asks for it. (Row IDs renumbered by the M5-PLAN decisions step: M5-T1…T17 + GATE.) **PW run: admin/ + client/ approved for every PW row** (user, 2026-11-19, "Both, whole PW run (Recommended)"). **PR run: admin/ + client/ approved for every PR row** (user, 2026-11-20, "Both, whole PR run (Recommended)").
 - Keep Docker current (user, 2026-11-20: "First make sure our docker runs the latest code"): a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (recreates compose containers only; never the user's own processes). Orchestrator rebuilt the backend after PR-T1 (0027 had made the old image read a renamed column).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #12 (2026-11-20) · rows this session: 1 · estimate: 52k
+- Session: #12 (2026-11-20) · rows this session: 2 · estimate: 62k
 
 ## State
-dispatched M5-GATE (2026-11-20) · commit: "test(backend): pass module 5 verification gate (M5-GATE)"
+done: Module 5 (M5-T1 … M5-GATE; M5-T17 live Meta smoke pending until the Meta test app exists) (2026-11-20)
 
 ## Resume
-`/orchestration --continue` → dispatches M5-T16 (live golden bake-off of the five Neon models, US$2 cap; credentials in `backend/.env.neon`), then M5-GATE (M5-T17 live Meta smoke stays pending).
+Run finished. Start the next run with new instructions, e.g. `/orchestration Module 6 from M6-PLAN until M6-GATE`.
 
 ## Next prompt
 RUN COMPLETE
@@ -223,4 +223,4 @@ Module 5 run scope (M5-T1 … M5-GATE) is finished. M5-T17 (live Meta smoke) sta
 - 2026-11-20 M5-T15d ✅ · `6f4254e` · backend 2026 unit (+1 skipped; was 2018) + e2e 983 (was 974) · admin/client untouched · migration 0031: per-comment AI tokens/latency, `ai_credit_topups` + audit; `/api/admin/ai/analyses|summary|credit-topups` (SuperAdminGuard); docker backend rebuilt, healthy, `/api/plans` 200
 - 2026-11-20 M5-T15e ✅ · `cc5581b` · admin 432/432 (was 400; +22 lib, +10 dashboard) · backend/client untouched · `/admin/dashboard` AI spend cards (credit added, estimated spend, negative remaining, comments analyzed, Neon note + unpriced calls), recent 20 analyses table, credit top-ups add/delete; docker admin rebuilt + healthy
 - 2026-11-20 M5-T16 ✅ · `cb9bcbc` · backend 2031 unit (was 2026 + 1 skipped) + e2e 983/983 · live bake-off: jev 93.8 % $0.034/1k (winner, Text + Text + Image), gpt-oss-20b 95.8 % (recorded replay), claude-haiku 100 %, gpt-oss-120b 89.6 % / gemini 16.7 % (timeouts); temperature + structured-output + credits_required gateway fixes
-- 2026-11-20 M5-GATE ✅ · backend 2031 unit + 983 e2e (unchanged) · Module 5 gate passed: live jev golden 93.8 % (45/48; bn 100 / banglish 83.3 / en 100), Graph payload e2e 8/8 FB+IG; no code change, M5-T17 skipped
+- 2026-11-20 M5-GATE ✅ · `179f9db` · backend 2031 unit + 983 e2e (unchanged) · Module 5 gate passed: live jev golden 93.8 % (45/48; bn 100 / banglish 83.3 / en 100), Graph payload e2e 8/8 FB+IG; no code change, M5-T17 skipped
