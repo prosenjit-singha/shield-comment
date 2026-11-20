@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 6 section + the row's decisions, `docs/project-documentation/modules/module-6-client-dashboard.md`, the code the row names.
 - Standing approvals: **client/ + admin/ approved for every Module 6 row in this run** (user, 2026-11-20, "Both, rest of run (Recommended)"). Live AI or Meta calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #14 (2026-11-20) · rows this session: 1 · estimate: 52k
+- Session: #14 (2026-11-20) · rows this session: 2 · estimate: 64k
 - Previous runs (Modules 3–5, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M6-T10 (2026-11-20) · commit: "feat(client): add moderation rules screen (M6-T10)"
+dispatched M6-T11 (2026-11-20) · commit: "feat(client): add ai playground screen (M6-T11)"
 
 ## Resume
 `/orchestration --continue`
@@ -53,6 +53,9 @@ You are implementing exactly ONE task row, **M6-T11**, in the ShieldComment BD r
 2. Journal `docs/progress/ORCHESTRATION.md`: append one `## Log` line; append choices under `## Choices to confirm` as `- M6-T11: …`; **replace** `## Next prompt` with the M6-T12 prompt in the format of `.claude/skills/orchestration/subagent-prompt.md`.
 3. Commit everything with `feat(client): add ai playground screen (M6-T11)` (+ 2–4 bullet body) and the Co-Authored-By trailer from your dispatch message.
 4. Return the report in the contract format.
+
+### Decisions added by orchestrator
+- **Tests left on load (user, 2026-11-20, "Show from the start (Recommended)"):** add a small backend `GET /api/workspaces/:workspaceId/playground/usage` (same guards/roles as the POST) returning `{ limit, used, testsLeft, resetsAt }` from `playgroundDailyLimit()` + the PlaygroundCounter (read only, never increments), with unit + e2e tests; `/playground` shows e.g. "8 of 10 left today" on load (en + bn) and updates from each test's answer. Backend verify steps apply too (build, tsc, unit, e2e, lint, prettier, test DB baseline, `docker compose up -d --build backend client`). Commit subject stays `feat(client): add ai playground screen (M6-T11)`.
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -191,6 +194,7 @@ You are implementing exactly ONE task row, **M6-T11**, in the ShieldComment BD r
 - 2026-11-20 orchestrator check (web docs): Neon documents **no API** for the AI Gateway credit balance or dollar spend (Console → Billing → "AI gateway credits" card only); chat responses carry no cost field; exhaustion shows as HTTP 429 with `unavailable_reason: "credits_required"`. The consumption API gives token counts only (Neon API key, paid plan). Our app already stores input/output tokens per AI call (`moderation.ts` schema) and has `/admin/system` "AI moderation" usage card (M5-T14). Actions today: NONE (allowed) / HIDE / DELETE.
 - 2026-11-20 credit display (user answer to "How should the admin dashboard show remaining credit?", verbatim): "Admin will enter topup info with amount and topup date." → admin records each top-up (amount USD + date); dashboard shows credit added, estimated spend (stored tokens × catalog prices), estimated remaining (with a "check Neon Billing for the exact figure" note).
 - 2026-11-20 Module 6 pre-check (M6-T1), user answers verbatim: D1 "Poll every 15 s (Recommended)" · D2 "Client picks per rule" · D3 "Counts 1 (Recommended)" · D4 "Link+phone all, keywords Growth/Pro (Recommended)" · D5 "Substring, ignore case (Recommended)" · D6 "Both off by default (Recommended)" · D7 "Every member (Recommended)" · D8 "Add \"Keep visible\" (Recommended)" · D9 "Free 10/day. And make sure admin can configure this from its setting page." · D10 "7d/30d/90d + 4 KPIs (Recommended)" · D11 "Per workspace, 12 months (Recommended)" · D12 "+ per-comment CSV on Pro" · D13 "Not in Module 6 (Recommended)" · D14 "Keep one en+bn per category (Recommended)" · D15 "Not in Module 6 (Recommended)" · D16 "Mobile bottom bar + sidebar" · D17 "Graph stub for tests (Recommended)" · app approval "Both, rest of run (Recommended)"
+- 2026-11-20 M6-T11 pre-check: "tests left before the first test?" → "Show from the start (Recommended)"
 
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
@@ -277,4 +281,4 @@ You are implementing exactly ONE task row, **M6-T11**, in the ShieldComment BD r
 - 2026-11-20 M6-T7b ✅ · `37620a5` · backend 2263 unit (was 2246) + e2e 1111 (was 1107) · admin 439 (was 432) · platform setting `playgroundDailyLimit` (migration 0034, default 10, 0–1,000, 0 = off) in the partial `PATCH /api/admin/settings/platform`; playground cap reads it; admin "Playground" card on `/admin/settings`
 - 2026-11-20 M6-T8 ✅ · `3793c9f` · client 506/506 (was 490) · backend/admin untouched · client nav (sidebar md+ / bottom bar mobile, existing routes only) + C4 `/dashboard`: range pills 7/30/90d in URL, 4 KPIs, Line/Bar/Donut (Recharts, `var(--token)`), skeletons, empty, error + retry, en + bn; docker client rebuilt + healthy
 - 2026-11-20 M6-T9 ✅ · `17e8128` · client 546/546 (was 506) · backend/admin untouched · C5 `/comments`: status/category/search filters in URL, cursor Load more, pills + confidence + reasoning, 15 s `since` poll + new-comments pill, Hide/Unhide/Delete/Reply/Keep with dialogs, per-row pending, en/bn error codes; nav Comments; docker client rebuilt healthy
-- 2026-11-20 M6-T10 ✅ · client 596/596 (was 546) · backend/admin untouched · C7 `/rules`: category cards (description + example, Show/Hide/Delete, auto-reply + en/bn texts), mode + threshold, keyword chips, link/phone switches + allowed domains, Hide/Delete per rule kind, plan notes (D4/D14), PATCH of changed fields only, `useBlocker` leave guard, moderator 403 note; nav Rules after Pages.
+- 2026-11-20 M6-T10 ✅ · `e796d33` · client 596/596 (was 546) · backend/admin untouched · C7 `/rules`: category cards (description + example, Show/Hide/Delete, auto-reply + en/bn texts), mode + threshold, keyword chips, link/phone switches + allowed domains, Hide/Delete per rule kind, plan notes (D4/D14), PATCH of changed fields only, `useBlocker` leave guard, moderator 403 note; nav Rules after Pages.
