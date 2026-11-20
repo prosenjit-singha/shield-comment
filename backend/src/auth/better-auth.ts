@@ -2,7 +2,7 @@ import { APIError, betterAuth, type SecondaryStorage } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { admin, organization } from 'better-auth/plugins';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, type SQL } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
 import type { LimitService } from '../billing/limit.service.js';
 import type { Database } from '../db/database.js';
@@ -19,13 +19,24 @@ import {
 import { impersonationExchange } from './impersonation-exchange.plugin.js';
 import type { PasswordService } from './password.service.js';
 import {
+  ACCEPT_INVITATION_PATH,
   assertInviteRole,
+  assertMemberChange,
   assertNotImpersonating,
   assertSeatAvailable,
+  assertSignUpInvite,
   createInvitationMailer,
   INVITATION_EXPIRES_IN_SEC,
   INVITE_MEMBER_PATH,
+  isUuid,
+  LEAVE_PATH,
+  MEMBER_CHANGE_CODES,
+  type MemberChange,
+  REMOVE_MEMBER_PATH,
+  roleList,
+  signUpInvitationId,
   TEAM_WRITE_PATHS,
+  UPDATE_MEMBER_ROLE_PATH,
 } from './workspace-invites.js';
 import { assertWorkspaceCreateAllowed } from './workspace-limit.js';
 import {
@@ -62,8 +73,11 @@ export interface BetterAuthSettings {
 /** The `SubscriptionService` calls Better Auth's hooks make (PW-T3). */
 export type AuthBilling = SessionBilling;
 
-/** The `LimitService` calls the organization hooks make (PW-T5, M7-T5). */
-export type AuthLimits = Pick<LimitService, 'canCreateWorkspace' | 'canInvite'>;
+/** The `LimitService` calls the organization hooks make (PW-T5, M7-T5, M7-T6). */
+export type AuthLimits = Pick<
+  LimitService,
+  'canCreateWorkspace' | 'canInvite' | 'canAccept'
+>;
 
 const SIGN_UP_PATH = '/sign-up/email';
 
@@ -172,13 +186,26 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
     },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
-        if (
-          ctx.path === SIGN_UP_PATH &&
-          parseWorkspaceName(ctx.body) === null
-        ) {
-          throw new APIError('BAD_REQUEST', {
-            message: `workspaceName must be 1-${WORKSPACE_NAME_MAX} characters`,
-          });
+        if (ctx.path === SIGN_UP_PATH) {
+          // D8 (M7-T6): a sign-up from an invite (`invitationId`, no `workspaceName`) gets no
+          // workspace, billing account or trial; the invite must be live and for this email.
+          const invitationId = signUpInvitationId(ctx.body);
+          if (invitationId) {
+            const [invite] = await db
+              .select({
+                status: schema.workspaceInvitations.status,
+                expiresAt: schema.workspaceInvitations.expiresAt,
+                email: schema.workspaceInvitations.email,
+              })
+              .from(schema.workspaceInvitations)
+              .where(eq(schema.workspaceInvitations.id, invitationId));
+            assertSignUpInvite(invite, (ctx.body as { email?: unknown }).email);
+          } else if (parseWorkspaceName(ctx.body) === null) {
+            throw new APIError('BAD_REQUEST', {
+              message: `workspaceName must be 1-${WORKSPACE_NAME_MAX} characters`,
+            });
+          }
+          return;
         }
         const teamWrite = TEAM_WRITE_PATHS.has(ctx.path);
         if (!teamWrite && !isBlockedWhileImpersonating(ctx.path)) return;
@@ -202,6 +229,31 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
             session?.activeOrganizationId,
           );
         }
+        // D7 + D11 (M7-T6): the plugin's member hooks don't see the caller, so the actor rules
+        // (and the owner protection, which must beat the plugin's own 400s) run here.
+        if (MEMBER_CHANGE_PATHS.has(ctx.path) && current) {
+          await checkMemberChange(
+            db,
+            current.user.id,
+            ctx.path,
+            ctx.body as MemberChangeBody | undefined,
+            session?.activeOrganizationId,
+          );
+        }
+      }),
+      // Accept (M7-T6, D8): the plugin moves the stored session to the invited workspace but not
+      // the 5-minute cookie cache; re-read the session so the response carries a fresh one.
+      after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== ACCEPT_INVITATION_PATH) return;
+        const returned = ctx.context.returned;
+        if (
+          !returned ||
+          typeof returned !== 'object' ||
+          !('member' in returned)
+        )
+          return;
+        ctx.context.session = null;
+        await getSessionFromCtx(ctx, { disableCookieCache: true });
       }),
     },
     databaseHooks: {
@@ -214,8 +266,10 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
               session as { activeOrganizationId?: string | null }
             ).activeOrganizationId;
             if (current) return;
+            // A sign-up from an invite (D8) starts with no workspace until it accepts.
             const createName =
-              ctx?.path === SIGN_UP_PATH
+              ctx?.path === SIGN_UP_PATH &&
+              signUpInvitationId(ctx.body) === undefined
                 ? firstWorkspaceName(ctx.body)
                 : undefined;
             const activeOrganizationId = await resolveActiveWorkspace(
@@ -256,6 +310,9 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
         // D7 (Module 7): 7-day links; re-inviting an email cancels its older pending invite.
         invitationExpiresIn: INVITATION_EXPIRES_IN_SEC,
         cancelPendingInvitationsOnReInvite: true,
+        // M7-D18 (user, 2026-11-20): our uuidv7 ids would turn on Better Auth's verified-email gate
+        // for accept/reject; the proof is the signed-in invited email + the emailed 7-day link.
+        requireEmailVerificationOnInvitation: false,
         sendInvitationEmail: createInvitationMailer(
           settings.invitations.email,
           settings.invitations.clientAppUrl,
@@ -282,6 +339,28 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
             assertSeatAvailable(
               await settings.limits.canInvite(organization.id),
             );
+          },
+          // D9/D10 (M7-T6): re-check at accept; the invite itself already holds a seat, so only an
+          // account over its limit (downgrade) or without a live plan is refused (409).
+          beforeAcceptInvitation: async ({ organization }) => {
+            assertSeatAvailable(
+              await settings.limits.canAccept(organization.id),
+            );
+          },
+          // D11 backstop (the before-middleware answers first for HTTP calls).
+          beforeUpdateMemberRole: async ({ member, newRole }) => {
+            if (member.role === 'owner' || roleList(newRole)?.includes('owner'))
+              throw new APIError('FORBIDDEN', {
+                code: MEMBER_CHANGE_CODES.ownerProtected,
+                message: 'The workspace owner can’t change.',
+              });
+          },
+          beforeRemoveMember: async ({ member }) => {
+            if (member.role === 'owner')
+              throw new APIError('FORBIDDEN', {
+                code: MEMBER_CHANGE_CODES.ownerProtected,
+                message: 'The workspace owner can’t be removed.',
+              });
           },
         },
         schema: {
@@ -338,11 +417,7 @@ async function checkInviteRole(
     typeof body?.organizationId === 'string'
       ? body.organizationId
       : activeWorkspaceId;
-  const roles = Array.isArray(body?.role)
-    ? body.role
-    : typeof body?.role === 'string'
-      ? body.role.split(',').map((r) => r.trim())
-      : null;
+  const roles = roleList(body?.role);
   if (!workspaceId || !roles?.length) return;
   const [member] = await db
     .select({ role: schema.workspaceMembers.role })
@@ -356,4 +431,69 @@ async function checkInviteRole(
   if (!member) return;
   // One role per invite (the DB role check allows a single value).
   assertInviteRole(member.role, roles.length === 1 ? String(roles[0]) : '');
+}
+
+const MEMBER_CHANGE_PATHS: ReadonlySet<string> = new Set([
+  UPDATE_MEMBER_ROLE_PATH,
+  REMOVE_MEMBER_PATH,
+  LEAVE_PATH,
+]);
+
+type MemberChangeBody = {
+  organizationId?: unknown;
+  memberId?: unknown;
+  memberIdOrEmail?: unknown;
+  role?: unknown;
+};
+
+/**
+ * D7 + D11 for `update-member-role`, `remove-member` and `leave`: the caller's and the target's
+ * roles in that workspace decide. Unknown workspace/member or a malformed body → the plugin answers.
+ */
+async function checkMemberChange(
+  db: Database,
+  userId: string,
+  path: string,
+  body: MemberChangeBody | undefined,
+  activeWorkspaceId: string | null | undefined,
+): Promise<void> {
+  const workspaceId =
+    typeof body?.organizationId === 'string'
+      ? body.organizationId
+      : activeWorkspaceId;
+  if (!isUuid(workspaceId)) return;
+  const roleWhere = async (where: SQL) =>
+    (
+      await db
+        .select({ role: schema.workspaceMembers.role })
+        .from(schema.workspaceMembers)
+        .innerJoin(
+          schema.users,
+          eq(schema.users.id, schema.workspaceMembers.userId),
+        )
+        .where(and(eq(schema.workspaceMembers.workspaceId, workspaceId), where))
+    )[0]?.role;
+
+  const actorRole = await roleWhere(eq(schema.workspaceMembers.userId, userId));
+  if (!actorRole) return;
+  let change: MemberChange;
+  if (path === LEAVE_PATH) change = { action: 'leave' };
+  else {
+    const ref =
+      path === UPDATE_MEMBER_ROLE_PATH ? body?.memberId : body?.memberIdOrEmail;
+    const targetRole =
+      typeof ref === 'string' && ref.includes('@')
+        ? await roleWhere(eq(schema.users.email, ref.toLowerCase()))
+        : isUuid(ref)
+          ? await roleWhere(eq(schema.workspaceMembers.id, ref))
+          : undefined;
+    if (!targetRole) return;
+    if (path === REMOVE_MEMBER_PATH) change = { action: 'remove', targetRole };
+    else {
+      const newRoles = roleList(body?.role);
+      if (!newRoles) return;
+      change = { action: 'update', targetRole, newRoles };
+    }
+  }
+  assertMemberChange(actorRole, change);
 }

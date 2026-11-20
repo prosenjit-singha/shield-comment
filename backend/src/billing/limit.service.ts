@@ -84,6 +84,28 @@ export function seatCheckOf(
 }
 
 /**
+ * Pure rule (D9/D10, M7-T6) at accept: the invite being accepted is already one of the `used` seats
+ * (pending, unexpired) and turns into a member with the same email, so only **over** the limit
+ * (e.g. after a downgrade) is refused.
+ */
+export function acceptSeatCheckOf(
+  live: Pick<AccountLiveSubscription, 'plan'> | null,
+  used: number,
+): SeatCheck {
+  if (!live) return { kind: 'no_active_plan', used };
+  const limit = live.plan.featureConfig.limits.teamSeats;
+  return used > limit
+    ? { kind: 'limit_reached', limit, used }
+    : { kind: 'ok', limit, used };
+}
+
+/** The team route's seat meter (M7-T6): `limit` null without a live plan. */
+export interface SeatUsage {
+  used: number;
+  limit: number | null;
+}
+
+/**
  * Plan limits pooled per billing account (PW-T5; user decisions 2026-11-19 PW-D10 workspaces,
  * PW-D11 one pool per client account). Pages are pooled in `SocialPagesService` and comments in
  * the wallet; this service holds the account-level ones:
@@ -93,7 +115,8 @@ export function seatCheckOf(
  *   workspace is linked to it by the after-hook); the first workspace at sign-up is created by
  *   `first-workspace.ts`, not through this check.
  * - `canInvite(workspaceId)`: the `/organization/invite-member` seat check (M7-T5, D9/D10);
- *   `seatsLeft(accountId)`: the same count as a number.
+ *   `canAccept(workspaceId)`: the `/organization/accept-invitation` re-check (M7-T6);
+ *   `seatUsage(workspaceId)`: the team route's `{ used, limit }`; `seatsLeft(accountId)`: a number.
  * - `workspaceCount(accountId)`: also read by `BillingSummaryService` (PW-T6).
  *
  * Read-only; every query is scoped by the account id (or the owner user id that finds it). Logs
@@ -150,22 +173,58 @@ export class LimitService {
     workspaceId: string,
     now: Date = new Date(),
   ): Promise<SeatCheck> {
+    return this.seatCheck('invite', workspaceId, now);
+  }
+
+  /**
+   * May a pending invite to `workspaceId` be accepted (M7-T6, D9/D10)? Refused only when the
+   * account is already **over** its seats (the invite is counted in `used`), or has no live plan.
+   */
+  async canAccept(
+    workspaceId: string,
+    now: Date = new Date(),
+  ): Promise<SeatCheck> {
+    return this.seatCheck('accept', workspaceId, now);
+  }
+
+  /** Seats used / limit of the workspace's billing account (team route, M7-T6). */
+  async seatUsage(
+    workspaceId: string,
+    now: Date = new Date(),
+  ): Promise<SeatUsage> {
+    const { live, used } = await this.seatState(workspaceId, now);
+    return { used, limit: live?.plan.featureConfig.limits.teamSeats ?? null };
+  }
+
+  private async seatCheck(
+    action: 'invite' | 'accept',
+    workspaceId: string,
+    now: Date,
+  ): Promise<SeatCheck> {
+    const { accountId, live, used } = await this.seatState(workspaceId, now);
+    const check = (action === 'invite' ? seatCheckOf : acceptSeatCheckOf)(
+      live,
+      used,
+    );
+    if (check.kind !== 'ok') {
+      this.logger.log(
+        `${action} refused account=${accountId} reason=${check.kind} used=${used}`,
+      );
+    }
+    return check;
+  }
+
+  private async seatState(workspaceId: string, now: Date) {
     const [ws] = await this.db
       .select({ accountId: workspaces.billingAccountId })
       .from(workspaces)
       .where(eq(workspaces.id, workspaceId));
-    if (!ws?.accountId) return seatCheckOf(null, 0);
+    if (!ws?.accountId) return { accountId: null, live: null, used: 0 };
     const [live, used] = await Promise.all([
       findAccountLiveSubscription(this.db, ws.accountId, now),
       this.countSeats(ws.accountId, now),
     ]);
-    const check = seatCheckOf(live, used);
-    if (check.kind !== 'ok') {
-      this.logger.log(
-        `invite refused account=${ws.accountId} reason=${check.kind} used=${used}`,
-      );
-    }
-    return check;
+    return { accountId: ws.accountId, live, used };
   }
 
   /**

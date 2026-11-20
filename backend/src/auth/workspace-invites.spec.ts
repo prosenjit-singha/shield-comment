@@ -2,6 +2,12 @@ import { APIError } from 'better-auth';
 import { EmailSendError } from '../email/email.service.js';
 import {
   assertInviteRole,
+  assertMemberChange,
+  assertSignUpInvite,
+  MEMBER_CHANGE_CODES,
+  memberChangeRefusal,
+  roleList,
+  signUpInvitationId,
   assertNotImpersonating,
   assertSeatAvailable,
   createInvitationMailer,
@@ -187,5 +193,124 @@ describe('createInvitationMailer', () => {
     const [ref, msg] = log.warn.mock.calls[0]!;
     expect(ref).toEqual({ invitationId: INVITE_ID, workspaceId: 'ws-1' });
     expect(JSON.stringify([ref, msg])).not.toContain('new@example.com');
+  });
+});
+
+describe('memberChangeRefusal (D7 + D11, M7-T6)', () => {
+  const OWNER = MEMBER_CHANGE_CODES.ownerProtected;
+  const UPD = MEMBER_CHANGE_CODES.update;
+  const DEL = MEMBER_CHANGE_CODES.remove;
+
+  it.each([
+    // actor, target, new role → refusal
+    ['owner', 'admin', 'moderator', null],
+    ['owner', 'moderator', 'admin', null],
+    ['owner', 'admin', 'owner', UPD],
+    ['owner', 'moderator', 'owner', UPD],
+    ['owner', 'owner', 'admin', OWNER],
+    ['owner', 'admin', 'admin,moderator', UPD],
+    ['owner', 'admin', 'member', UPD],
+    ['admin', 'moderator', 'moderator', null],
+    ['admin', 'moderator', 'admin', UPD],
+    ['admin', 'admin', 'moderator', UPD],
+    ['admin', 'owner', 'admin', OWNER],
+    ['admin', 'moderator', 'owner', UPD],
+    ['moderator', 'moderator', 'moderator', UPD],
+    ['moderator', 'admin', 'moderator', UPD],
+  ])('update: %s changes %s → %s = %s', (actor, target, role, code) => {
+    expect(
+      memberChangeRefusal(actor, {
+        action: 'update',
+        targetRole: target,
+        newRoles: roleList(role)!,
+      }),
+    ).toBe(code);
+  });
+
+  it.each([
+    ['owner', 'admin', null],
+    ['owner', 'moderator', null],
+    ['owner', 'owner', OWNER],
+    ['admin', 'moderator', null],
+    ['admin', 'admin', DEL],
+    ['admin', 'owner', OWNER],
+    ['moderator', 'moderator', DEL],
+    ['moderator', 'admin', DEL],
+  ])('remove: %s removes %s = %s', (actor, target, code) => {
+    expect(
+      memberChangeRefusal(actor, { action: 'remove', targetRole: target }),
+    ).toBe(code);
+  });
+
+  it.each([
+    ['owner', OWNER],
+    ['admin', null],
+    ['moderator', null],
+  ])('leave: %s = %s', (actor, code) => {
+    expect(memberChangeRefusal(actor, { action: 'leave' })).toBe(code);
+  });
+
+  it('assertMemberChange → 403 with the code', () => {
+    const error = thrown(() =>
+      assertMemberChange('owner', { action: 'leave' }),
+    );
+    expect(error.statusCode).toBe(403);
+    expect(error.body?.code).toBe('WORKSPACE_OWNER_PROTECTED');
+    expect(() =>
+      assertMemberChange('owner', { action: 'remove', targetRole: 'admin' }),
+    ).not.toThrow();
+  });
+});
+
+describe('sign-up from an invite (D8, M7-T6)', () => {
+  const ID = '019A0000-0000-7000-8000-0000000000B1';
+  const live = {
+    status: 'pending',
+    expiresAt: new Date(Date.now() + 60_000),
+    email: 'rina@example.com',
+  };
+
+  it('signUpInvitationId: absent → undefined; valid → lower-cased id', () => {
+    expect(signUpInvitationId({ email: 'a@b.c' })).toBeUndefined();
+    expect(signUpInvitationId({ workspaceName: 'Shop' })).toBeUndefined();
+    expect(signUpInvitationId(undefined)).toBeUndefined();
+    expect(signUpInvitationId({ invitationId: ID })).toBe(ID.toLowerCase());
+  });
+
+  it('signUpInvitationId: with workspaceName → 400; malformed → 400 INVITATION_NOT_FOUND', () => {
+    const both = thrown(() =>
+      signUpInvitationId({ invitationId: ID, workspaceName: 'Shop' }),
+    );
+    expect(both.statusCode).toBe(400);
+    expect(both.body?.code).toBe('WORKSPACE_NAME_WITH_INVITATION');
+    for (const invitationId of ['nope', 42, null, '']) {
+      const bad = thrown(() => signUpInvitationId({ invitationId }));
+      expect(bad.statusCode).toBe(400);
+      expect(bad.body?.code).toBe('INVITATION_NOT_FOUND');
+    }
+  });
+
+  it('assertSignUpInvite: live + same email (any case) passes', () => {
+    expect(() => assertSignUpInvite(live, 'Rina@Example.com')).not.toThrow();
+    // Malformed email: Better Auth's own 400 answers.
+    expect(() => assertSignUpInvite(live, undefined)).not.toThrow();
+  });
+
+  it('assertSignUpInvite: missing, cancelled, accepted or expired → 400; other email → 403', () => {
+    for (const invite of [
+      undefined,
+      { ...live, status: 'canceled' },
+      { ...live, status: 'accepted' },
+      { ...live, expiresAt: new Date(Date.now() - 1) },
+    ]) {
+      const e = thrown(() => assertSignUpInvite(invite, live.email));
+      expect(e.statusCode).toBe(400);
+      expect(e.body?.code).toBe('INVITATION_NOT_FOUND');
+    }
+    const wrong = thrown(() => assertSignUpInvite(live, 'other@example.com'));
+    expect(wrong.statusCode).toBe(403);
+    expect(wrong.body?.code).toBe(
+      'YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION',
+    );
   });
 });

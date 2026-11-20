@@ -1,6 +1,7 @@
 import { normalizeFeatureConfig } from '../admin/plan-rules.js';
 import type { AccountLiveSubscription } from '../wallet/live-subscription.queries.js';
 import {
+  acceptSeatCheckOf,
   SEAT_ERROR_CODES,
   seatCheckOf,
   seatsLeftOf,
@@ -118,6 +119,35 @@ describe('seatCheckOf (M7-T5, D9/D10)', () => {
     expect(SEAT_ERROR_CODES).toEqual({
       noActivePlan: 'NO_ACTIVE_PLAN',
       limitReached: 'SEAT_LIMIT_REACHED',
+    });
+  });
+});
+
+describe('acceptSeatCheckOf (M7-T6, D9/D10)', () => {
+  it('the invite being accepted already counts: at the limit → ok', () => {
+    // Growth: owner + admin + this pending invite = 3 of 3.
+    expect(acceptSeatCheckOf(plan({ teamSeats: 3 }), 3)).toEqual({
+      kind: 'ok',
+      limit: 3,
+      used: 3,
+    });
+  });
+
+  it('over the limit (downgrade) → limit_reached with { limit, used }', () => {
+    expect(acceptSeatCheckOf(plan({ teamSeats: 1 }), 3)).toEqual({
+      kind: 'limit_reached',
+      limit: 1,
+      used: 3,
+    });
+    expect(acceptSeatCheckOf(plan({ teamSeats: 3 }), 4).kind).toBe(
+      'limit_reached',
+    );
+  });
+
+  it('no live plan → no_active_plan', () => {
+    expect(acceptSeatCheckOf(null, 2)).toEqual({
+      kind: 'no_active_plan',
+      used: 2,
     });
   });
 });

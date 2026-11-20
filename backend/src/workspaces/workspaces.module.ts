@@ -1,10 +1,14 @@
 import { Module } from '@nestjs/common';
+import { BillingModule } from '../billing/billing.module.js';
+import { TeamController } from './team.controller.js';
+import { TeamService } from './team.service.js';
 import { WorkspacesController } from './workspaces.controller.js';
 import { WorkspacesService } from './workspaces.service.js';
 
 @Module({
-  controllers: [WorkspacesController],
-  providers: [WorkspacesService],
+  imports: [BillingModule],
+  controllers: [WorkspacesController, TeamController],
+  providers: [WorkspacesService, TeamService],
   exports: [WorkspacesService],
 })
 export class WorkspacesModule {}
