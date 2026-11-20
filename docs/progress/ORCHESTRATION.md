@@ -11,47 +11,44 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Previous runs (Modules 3–5, PW, PR): see `## Log` and git history.
 
 ## State
-verified M6-T4 (2026-11-20)
+dispatched M6-T5 (2026-11-20) · commit: "feat(backend): add workspace dashboard summary api (M6-T5)"
 
 ## Resume
 `/orchestration --continue`
 
 ## Next prompt
 
-**(M6-T5)**
+**(M6-T6)**
 
-You are implementing exactly ONE task row, **M6-T5**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
+You are implementing exactly ONE task row, **M6-T6**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
 
 **Read first (only these)**
 1. `AGENTS.md`.
-2. `docs/progress/MEMORY.md` (lines are long: focus on Dashboard stats M2-T5, Moderation schema M5-T7 (`daily_comment_stats`, `DAILY_COMMENT_COUNTERS`), Moderation worker M5-T12, **Module 6 decisions**, Comments feed M6-T3, Comment override M6-T4).
-3. From `docs/progress/TASKS.md` (use `grep -n`/`sed -n`; the file is large): the Module 6 header + readings (2) and (6), decision **D10** of Module 6 (ANSWERED 2026-11-20; other modules also have D10 lines — use the one under `## Module 6`), the M6-T4 row (done) and the **M6-T5** row.
-4. Spec: `docs/project-documentation/modules/module-6-client-dashboard.md` (Backend: `GET /dashboard/summary`).
-5. Code to read or reuse: `backend/src/admin/dashboard-range.ts` (Dhaka buckets, `dhakaMidnight`, `addDays`, `DATE_KEY`, range resolve) + `backend/src/admin/dashboard-stats.ts` + `backend/src/admin/admin-dashboard.service.ts` (zero-filled series pattern), `backend/src/db/schema/comments.ts` (`daily_comment_stats`, counters), `backend/src/comments/comments-feed.controller.ts` (`WorkspaceAccessGuard` + `@Roles('owner','admin','moderator')`, impersonated ok) and the harness of `backend/test/comments-feed.e2e-spec.ts` (actors, roles, impersonation, tenant isolation, `fetch` spy).
+2. `docs/progress/MEMORY.md` (lines are long: focus on Dashboard stats M2-T5, Comments schema M4-T2, Moderation schema M5-T7 (`daily_comment_stats`, `DAILY_COMMENT_COUNTERS`), Rules storage M6-T1 (`ruleMatched`), **Module 6 decisions**, Comments feed M6-T3, Dashboard summary M6-T5).
+3. From `docs/progress/TASKS.md` (use `grep -n`/`sed -n`; the file is large): the Module 6 header + readings (2), (5), (6), decisions **D11** and **D12** of Module 6 (ANSWERED 2026-11-20; other modules also have D11/D12 lines — use the ones under `## Module 6`), the M6-T5 row (done) and the **M6-T6** row.
+4. Spec: `docs/project-documentation/modules/module-6-client-dashboard.md` (Backend: `GET /analytics`, `GET /analytics/export.csv`).
+5. Code to read or reuse: `backend/src/comments/dashboard-summary.ts` + `dashboard-summary.controller.ts` + `dto/dashboard-summary.dto.ts` (M6-T5: workspace-scoped `daily_comment_stats` sums, pure builder, controller guard/roles) · `backend/src/admin/dashboard-range.ts` (`resolveDashboardRange` custom `from`/`to`, daily ≤ 92 days else monthly, `bucketKeys`; note it allows 24 months — D11 caps analytics at 12 months, CSV at 366 days) + `backend/src/admin/admin-dashboard.service.ts` (monthly `to_char` buckets) · `backend/src/comments/comments-feed.ts` (`pageId` = `social_pages.id`, latest action lookup, Dhaka day bounds) · `backend/src/moderation/moderation-policy.service.ts` (`workspacePlanFeatures`, `whiteLabelReports`, 409 `PLAN_FEATURE_UNAVAILABLE` pattern in `moderation-policy.rules.ts`) · `backend/src/db/schema/meta.ts` (`social_pages` Meta ids: `daily_comment_stats.page_id` is the Meta Page id text, no FK) · e2e harness `backend/test/dashboard-summary.e2e-spec.ts` (seeded stats, actors, moderator + impersonation, tenant isolation, `fetch` spy) + `test/comments-feed.e2e-spec.ts` (seeded comments + actions) + `test/utils/auth-actors.ts` (`activatePlan(owner, slug)` for Pro gating).
 
-**Recorded decisions** (user, 2026-11-20, Module 6): D10 (a) ranges 7d / 30d / 90d (default 30d, Dhaka days, zero-filled), 4 KPIs + Line / Bar / Donut — read the full D10 line for the exact KPI list. D7 (a) every member may read workspace data; impersonated sessions too. Reading (6): user overrides are not in the daily counters (AUTO only).
+**Recorded decisions** (user, 2026-11-20, Module 6): D11 (a) per workspace + Page filter, up to 12 months (daily ≤ 92 days, else monthly); no cross-workspace roll-up. D12 (b) daily aggregates CSV (day, Page, platform, every counter; ≤ 366 days, every plan, no comment text) **plus** a per-comment CSV (time, Page, platform, text, status, category, confidence, language, last action; no author ids), ≤ 92 days, Pro only (`whiteLabelReports`). D7 (a) every member may read; impersonated sessions too. Reading (6): daily counters are AUTO outcomes only.
 
-**Task (M6-T5): backend dashboard summary**
-- `GET /api/workspaces/:workspaceId/dashboard/summary?range=7d|30d|90d` (default 30d; other values → 400) for every member role, impersonated ok, non-member 404 → `{ range, kpis, daily [{ day, scanned, autoHidden }], intents [{ category, count }], flagged [{ category, count }] }` per D10, from `daily_comment_stats` summed over the workspace's Pages/platforms (scoped by `workspace_id`), Dhaka days, zero-filled (reuse `dashboard-range.ts`), plus the live `NEEDS_REVIEW` count from `comments`. Keep the series builder pure.
-- Tests: pure series builder unit (zero-fill, Dhaka day edges, range parsing) + e2e (seeded `daily_comment_stats` rows, empty workspace = zeros, moderator + impersonated read, tenant isolation, 400 bad range, 401/404).
+**Task (M6-T6): backend analytics + CSV**
+- `GET /api/workspaces/:workspaceId/analytics?from&to&pageId` (inclusive Dhaka `YYYY-MM-DD`, `from ≤ to ≤ today`, ≤ 12 months; daily ≤ 92 days, else monthly; zero-filled buckets; `pageId` = `social_pages.id` of this workspace → its Meta Page id (+ platform) in `daily_comment_stats`, unknown/foreign → 404 or 400, your call, record it) → series + totals (reuse the M6-T5 counter mapping: scanned = classified + ruleMatched, autoHidden = hidden + deleted, per-category counts).
+- `GET …/analytics/export.csv?from&to&pageId` (D12: one row per day × Page × platform with every `DAILY_COMMENT_COUNTERS` column, ≤ 366 days, every plan) and `GET …/analytics/comments.csv?from&to&pageId` (≤ 92 days, Pro only: no `whiteLabelReports` → 409 `PLAN_FEATURE_UNAVAILABLE`; no author ids, no raw payload). Both `text/csv; charset=utf-8` + UTF-8 BOM (Excel shows Bangla), `Content-Disposition: attachment; filename="…"`, CSV escaping (quotes, commas, newlines) and a formula-injection guard for cells starting with `= + - @` (and tab/CR). Every query scoped by `workspace_id`; every member role + impersonated; non-member 404.
+- Tests: pure CSV builder unit (escaping, BOM, Bangla text, injection guard, header order) + range/bucket unit (12-month cap, 366/92-day caps, monthly switch) + e2e (headers + rows, zero-filled series, Page filter, range 400s, Pro gating 409 vs 200, moderator + impersonated, tenant isolation, 401/404).
 
 **Rules:** TS strict, ESM, no `any`. Vitest. No live external calls in tests (Meta/AI mocked); tests must fail on unexpected requests. Every tenant query is scoped by `workspace_id`. Never `drizzle-kit push` (no migration expected; if an index is truly needed, review the SQL). Never commit `.env*` (except `.env.example`) or build/test output. **Never stop or kill the user's own processes** (local Postgres 5432, Redis 6379, dev servers); on a port clash use env overrides or stop and report.
 
 **Verify** (report real numbers):
 - backend: `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test`, `npm run test:e2e`, `npm run lint` (0 warnings), `npx prettier --check "src/**/*.ts" "test/**/*.ts"` (known exception `src/scripts/ai-sdk-smoke.ts`). The test DB must end at its baseline (4 `plans` + 4 promotions + 4 promotion_plans, 0 users).
 - Docker: `docker compose up -d --build backend` + `/api/health/live` check.
-- Current test counts: backend 2194 unit + 1068 e2e, admin 432, client 490.
+- Current test counts: backend 2208 unit + 1079 e2e, admin 432, client 490.
 
 **If a decision is missing:** D1–D17 are answered (TASKS.md Module 6). If something else this row needs is not recorded, STOP without coding that part. Report `STATUS: needs-decision` with the question and 2–4 options (recommended first).
 
 **Finish (in this order)**
-1. TASKS.md: M6-T5 → `✅ <date>` + concise notes. Verification log entry at the TOP. Short lasting facts in MEMORY.md; point its "Next" phrase at M6-T6.
-2. Journal `docs/progress/ORCHESTRATION.md`: append one `## Log` line; append choices under `## Choices to confirm` as `- M6-T5: …`; **replace** `## Next prompt` with the M6-T6 prompt in the format of `.claude/skills/orchestration/subagent-prompt.md`.
-3. Commit everything with `feat(backend): add workspace dashboard summary api (M6-T5)` (+ 2–4 bullet body) and the Co-Authored-By trailer from your dispatch message.
-4. Return the report in the contract format.
-
-## Choices to confirm` as `- M6-T4: …`; **replace** `## Next prompt` with the M6-T5 prompt in the format of `.claude/skills/orchestration/subagent-prompt.md`.
-3. Commit everything with `feat(backend): add manual comment override api (M6-T4)` (+ 2–4 bullet body) and the Co-Authored-By trailer from your dispatch message.
+1. TASKS.md: M6-T6 → `✅ <date>` + concise notes. Verification log entry at the TOP. Short lasting facts in MEMORY.md; point its "Next" phrase at M6-T7.
+2. Journal `docs/progress/ORCHESTRATION.md`: append one `## Log` line; append choices under `## Choices to confirm` as `- M6-T6: …`; **replace** `## Next prompt` with the M6-T7 prompt in the format of `.claude/skills/orchestration/subagent-prompt.md`.
+3. Commit everything with `feat(backend): add workspace analytics and csv export api (M6-T6)` (+ 2–4 bullet body) and the Co-Authored-By trailer from your dispatch message.
 4. Return the report in the contract format.
 
 ## Choices to confirm
@@ -128,6 +125,7 @@ You are implementing exactly ONE task row, **M6-T5**, in the ShieldComment BD re
 - M6-T2: (1) bare `host.tld` counts as a URL only with a path or a common TLD (`COMMON_TLDS`: com/net/org/info/biz/xyz/top/site/online/shop/store/live/link/click/io/co/me/ly/app/bd) so Banglish run-ons (`koto.ami`) are not URLs; e-mail addresses and Unicode-only hosts are not matched (2) phone separators = single space or dash between digits (no dots/brackets) (3) `rule_match` keeps URL/phone as typed (NFKC), keywords in stored normalised form (4) stored rules apply whatever the current plan (a downgrade keeps keywords working; gating only at PATCH) (5) a rule match on an edit keeps the previous version's AI classification columns (not written, D2) but a rule-decided `act` retry never uses them (6) `status_reason` stays `rule_<kind>` also on HIDDEN/DELETED (AI path writes null there)
 - M6-T3: (1) `pageId` filter = our `social_pages.id` (the item's `page.id`, UUID), not the Meta Page id · (2) `page.name` = `social_pages.page_name` for FB and IG (no `ig_username`) · (3) `since` must be a date-time with offset; strictly `created_at > since` (a same-millisecond comment after the newest seen one would be missed, acceptable for 15 s polling) · (4) cursor = base64url of `<created_at ISO>|<id>`, unknown/garbled → 400 `cursor is invalid`; `from > to` → 400 · (5) `lastAction.at` = `completed_at ?? created_at` · (6) `q` ≤ 100 chars, trimmed, blank = no search · (7) controller injects Drizzle directly and calls pure query functions (no service class) · (8) no index migration: existing `comments (workspace_id, created_at desc)` + `moderation_actions (comment_id, created_at)` cover the queries
 - M6-T4: (1) KEEP logs a `moderation_actions` row (new action type `KEEP`, migration 0033 = check constraint only, `SUCCEEDED` at once) so D7's "logged with the session user" also covers Keep visible; admin AI views map KEEP to `NONE` · (2) KEEP on a HIDDEN comment → 409 `COMMENT_HIDDEN` (Keep visible never unhides on Meta; use Unhide); KEEP needs no Page/connection/Meta config, works on disconnected Pages; `status_reason` left as is · (3) 409 `code` = executor skip reason upper-cased; unknown/foreign/malformed comment id → 404 (not 400) · (4) 5xx bodies: `META_ACTION_FAILED` + `META_NOT_CONFIGURED` added to the public 5xx codes, `details` kept only for `META_ACTION_FAILED` · (5) `META_GRAPH_BASE_URL` refused when `NODE_ENV=production` as decided, but compose's backend runs `NODE_ENV=production`: M6-GATE must start its stubbed backend with another `NODE_ENV` (e.g. a throwaway container) — no compose change made here · (6) PAGE_TOKEN_MISSING is unit-tested only (an active Page always has a token, DB check).
+- M6-T5: (1) KPI `scamsBlocked` = `SCAM_PHISHING` classifications in the range (counters have no per-category hide split; URL/phone scam rule matches are in `ruleMatched`, not here) · (2) `autoHidden` = AUTO hides + deletes (same as admin D14 "blocked"), later unhides not subtracted · (3) `needsReview` is the live count, not range-bound · (4) response has no `from`/`to`/`timezone` (days are in `daily[]`) · (5) `range` other than 7d/30d/90d and any `from`/`to` → 400 (whitelist)
 
 ## Decisions asked
 - 2026-11-18 M3-T10: D13 0-Pages redirect → entry points only (recorded in TASKS.md D13)
@@ -264,3 +262,4 @@ You are implementing exactly ONE task row, **M6-T5**, in the ShieldComment BD re
 - 2026-11-20 M6-T2 ✅ · `13a29fd` · backend 2130 unit (was 2076) + e2e 1015 (was 1010) · static rule engine before the AI: keyword → URL → BD phone, no LLM/post context on a match, Hide/Delete per kind, REVIEW → NEEDS_REVIEW, gate test (1) in the service spec
 - 2026-11-20 M6-T3 ✅ · `7f2ab4e` · backend 2157 unit (was 2130) + e2e 1041 (was 1015) · `GET /api/workspaces/:workspaceId/comments` feed: filters, Dhaka days, `q` escaped, `since`, keyset cursor, latest action; every member + impersonated
 - 2026-11-20 M6-T4 ✅ · `025b6c4` · backend 2194 unit (was 2157) + e2e 1068 (was 1041) · `POST …/comments/:commentId/override` (Hide/Unhide/Delete/Reply/Keep), 404/409/503/502 mapping, KEEP action type (migration 0033), `META_GRAPH_BASE_URL` test-only Graph host
+- 2026-11-20 M6-T5 ✅ · backend 2208 unit (was 2194) + e2e 1079 (was 1068) · `GET /api/workspaces/:workspaceId/dashboard/summary?range=7d|30d|90d`: KPIs, zero-filled Dhaka daily series, intents + flagged, live needs-review count; every member + impersonated
