@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 8 section + the row's decisions, `docs/project-documentation/modules/module-8-billing-sslcommerz.md`, the code the row names.
 - Standing approvals: none yet for admin/ or client/ (asked at the first row that touches each). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included): none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #17 (2026-11-21) · rows this session: 0 · estimate: 60k
+- Session: #17 (2026-11-21) · rows this session: 1 · estimate: 85k
 - Previous runs (Modules 3–7, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M8-PLAN (2026-11-21) · commit: "docs(progress): plan module 8 (M8-PLAN)"
+verified M8-PLAN · next M8-T1 needs decisions D1–D13 (pre-check)
 
 ## Resume
 `/orchestration --continue`
@@ -331,4 +331,4 @@ You are implementing exactly ONE task row, **M8-T1**, in the ShieldComment BD re
 - 2026-11-20 M7-T14 ✅ a4c8916 · client 859 (was 827) · backend/admin untouched · client invite link `/invite/$invitationId`: signed-out generic page with sign-up (`invitationId`, no `workspaceName`) → auto-accept, log-in link back to the invite; signed-in invite details + Accept → session refetch → `/dashboard`; en/bn errors (gone, wrong email + log out, seats, no plan, already member, generic)
 - 2026-11-21 M7-T15 ✅ 82fa3e9 · client 930 (was 859) · backend/admin untouched · client C12 `/settings/alerts`: threshold, email switch + member tick list (≤ 10), Telegram switch (plan-gated) + connect links with Dhaka expiry + linked chats with Remove (≤ 3), WhatsApp coming soon, last alert per channel, save only changed fields, test alert results, moderator read-only, impersonated edit, every code en + bn
 - 2026-11-21 M7-GATE ✅ 9ceafe2 · backend 2503 unit + 1185 e2e, admin 448, client 930, Playwright 4/4 host + docker · support round-trip Playwright spec + ticket cleanup; D17 mocked alert verified; Module 7 gate passed
-- 2026-11-21 M8-PLAN ✅ · docs only · Module 8 section in TASKS.md: readings 1–14, open decisions D1–D13, rows M8-T1…T13 + GATE; spec superseded notes; MEMORY next → M8-T1
+- 2026-11-21 M8-PLAN ✅ 0fcf2f1 · docs only · Module 8 section in TASKS.md: readings 1–14, open decisions D1–D13, rows M8-T1…T13 + GATE; spec superseded notes; MEMORY next → M8-T1
