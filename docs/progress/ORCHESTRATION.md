@@ -3,22 +3,52 @@
 Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committed. Resume with `/orchestration --continue`. No secrets here.
 
 ## Run
-- Scope: **Module 7 from M7-PLAN until M7-GATE** (user, 2026-11-20). M7-PLAN is docs only (adds the Module 7 section to TASKS.md: rows + open decisions); its decisions are asked at the pre-check of the first M7 row; then M7-T1… in order until M7-GATE.
-- Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 7 section + the row's decisions, `docs/project-documentation/modules/module-7-support-team.md`, the code the row names.
-- Standing approvals: **admin/** for the rest of the run (user, 2026-11-20, asked at M7-T10). **client/** for the rest of the run (user, 2026-11-20, asked at M7-T11). Live AI, Meta, email, Telegram or WhatsApp calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
+- Scope: **Module 8 from M8-PLAN until M8-GATE** (user, 2026-11-21). M8-PLAN is docs only (adds the Module 8 section to TASKS.md: rows + open decisions); its decisions are asked at the pre-check of the first M8 row; then M8-T1… in order until M8-GATE.
+- Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 8 section + the row's decisions, `docs/project-documentation/modules/module-8-billing-sslcommerz.md`, the code the row names.
+- Standing approvals: none yet for admin/ or client/ (asked at the first row that touches each). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included): none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #16 (2026-11-20) · rows this session: 9 · estimate: 260k
-- Previous runs (Modules 3–6, PW, PR): see `## Log` and git history.
+- Session: #17 (2026-11-21) · rows this session: 0 · estimate: 60k
+- Previous runs (Modules 3–7, PW, PR): see `## Log` and git history.
 
 ## State
-done: Module 7 M7-PLAN…M7-GATE (2026-11-21) · Module 7 gate passed
+dispatched M8-PLAN (2026-11-21) · commit: "docs(progress): plan module 8 (M8-PLAN)"
 
 ## Resume
-Run finished. Start a new run with `/orchestration <instructions>` (e.g. `/orchestration Module 8 from M8-PLAN until M8-GATE`).
+`/orchestration --continue`
 
-## Next prompt
+## Next prompt (M8-T1)
 
-RUN COMPLETE
+PRE-CHECK: needs user decisions D1–D13 (TASKS.md "Module 8") before dispatch. M8-T1 itself needs D1 (sandbox/live switch) and D3 (payment methods shown); ask all 13 at once so later rows don't stop. Also ask the standing approvals for this run: backend-only rows need none, but admin/ (M8-T9) and client/ (M8-T10…T13) do, and SSLCommerz sandbox calls stay "none" unless the user says otherwise (tests always mock).
+
+You are implementing exactly ONE task row, **M8-T1**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
+
+**Read first (only these)**
+1. `AGENTS.md` + `backend/AGENTS.md`.
+2. `docs/progress/MEMORY.md` (all; note the Module 8 line, and the M7-T1 Email + M7-T8 Telegram lines for the "optional env + not-configured error + test-only base URL refused in production" pattern).
+3. From `docs/progress/TASKS.md` (use `grep -n`/`sed -n`; the file is ~600 KB): the `## Module 8` header, the planner's readings (esp. 2, 4, 11), decisions **D1** and **D3** (with their recorded answers), the M8-PLAN row and the **M8-T1** row.
+4. Spec: `docs/project-documentation/modules/module-8-billing-sslcommerz.md` (Backend Implementation). SSLCommerz V4 facts (session init form fields, `GatewayPageURL`, Order Validation API params + response fields, `verify_sign`/`verify_key`) from https://developer.sslcommerz.com/doc/v4/ if needed (read the docs only; no API calls).
+5. Code to copy: `backend/src/email/` (optional env, `EmailNotConfiguredError`, fake in tests), `backend/src/telegram/` (client with a test-only base URL refused in production + its unit tests), the backend env validation, `backend/.env.example`, root `.env.example`, `docker-compose.yml` backend env.
+
+**Recorded decisions:** D1, D3: quote the user's answers from TASKS.md (filled in by the orchestrator at the pre-check).
+
+**Task (M8-T1): Backend SSLCommerz client + env**
+- `src/payments/` `PaymentsModule` (in AppModule) → `SslcommerzClient`: `createSession({ tranId, amountBdt, productName, customer { name, email }, urls { success, fail, cancel, ipn } })` → `{ gatewayUrl, sessionKey }` (form POST to the session API; status FAILED → typed `SslcommerzError` with the gateway reason, no secrets); `validate(valId)` → typed `{ status, tranId, amount, currency, valId, bankTranId, cardType, riskLevel }` (Order Validation API, JSON); pure `verifySign(body, storePassword)` (MD5 over the `verify_key` fields + md5 of the password, sorted keys). URLs built from `CLIENT_APP_URL` + `/api/billing/sslcommerz/{success,fail,cancel,ipn}` (reading 4). D3 per the answer (no filter, or `multi_card_name`).
+- Env (all optional): `SSLCOMMERZ_STORE_ID`, `SSLCOMMERZ_STORE_PASSWORD`, `SSLCOMMERZ_SANDBOX` per D1, test-only `SSLCOMMERZ_BASE_URL` (refused in production). Unset → `PaymentsNotConfiguredError` (later rows map it to 503 `PAYMENTS_NOT_CONFIGURED`). Timeouts. Logs ids/status only. Update `backend/.env.example`, root `.env.example`, compose backend env.
+- Tests to write (unit; fetch fake that fails the test on any unexpected request): session form fields (store id/password, amount, currency BDT, tran_id, the four URLs), gateway URL parsing, FAILED session, validator VALID / VALIDATED / INVALID_TRANSACTION, `verifySign` good / tampered / missing `verify_key`, timeout, not configured, production refuses the override, D1 base URL choice.
+
+**Rules:** TS strict, ESM, no `any`. Vitest. No live external calls in tests (SSLCommerz mocked); tests must fail on unexpected requests. No live SSLCommerz sandbox call without the user's approval. Every tenant query is scoped by `workspace_id`. Never commit `.env*` (except `.env.example`) or build/test output. **Never stop or kill the user's own processes** (local Postgres 5432, Redis 6379, dev servers); on a port clash use env overrides or stop and report. Backend change → end with `docker compose up -d --build backend` + a health check (compose containers only).
+
+**Verify** (run what applies; report real numbers):
+- backend: `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test`, `npm run test:e2e`, `npm run lint`, `npx prettier --check "src/**/*.ts" "test/**/*.ts"`. The test DB must end with only the baseline (4 `plans` + 4 promotions + 4 `promotion_plans`).
+- Current test counts: backend unit 2503, e2e 1185; admin 448; client 930; root `e2e/` 4 (so drops are visible).
+
+**If a decision is missing:** if D1 or D3 has no recorded answer, STOP without coding that part and report `STATUS: needs-decision` with the question and options (recommended first). If the next row (M8-T2) needs a decision that is still open (D8), list it under DECISION NEEDED.
+
+**Finish (in this order)**
+1. TASKS.md: the row → `✅ <date>` + concise notes (built + choices). Add a Verification log entry at the TOP of `## Verification log`. Add short lasting facts to MEMORY.md and point its "next" phrase at M8-T2.
+2. Journal `docs/progress/ORCHESTRATION.md`: append one `## Log` line (`- <date> M8-T1 ✅ · <tests> · <1-line summary>`); append your choices under `## Choices to confirm` as `- M8-T1: …`; **replace** the `## Next prompt` section with the M8-T2 prompt in the format of `.claude/skills/orchestration/subagent-prompt.md`.
+3. Commit everything, journal included, with `feat(backend): add sslcommerz client and env (M8-T1)` and an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
+4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -123,6 +153,7 @@ RUN COMPLETE
 - M7-T14: (1) signed-out page = the sign-up form itself with a "Log in" link (no separate chooser step); the email is typed and the backend checks it (M7-D22). (2) The inviter shows as an email: Better Auth's `get-invitation` returns `inviterEmail`, not a name, and no backend change was wanted. (3) "Already a member" is detected client-side (the invite's workspace is in `organization/list`) because accepting again would hit the member unique key; it shows a note + dashboard link instead of Accept. (4) After sign-up the page accepts automatically; if accept fails the user stays signed in and sees the invite + error with a retryable Accept (seats/plan/network) or no Accept (gone/wrong email). (5) A non-uuid invite id counts as not found without calling the API. (6) No expiry date shown on the invite.
 - M7-T15: (1) the screen reads the team list too (recipient tick list + viewer role; the settings GET has neither); a failed team load fails the screen. (2) Live validation (threshold whole number 1–1,000, recipients ≤ 10 / ≥ 1 with email on) disables Save instead of sending; the backend codes still have en/bn messages. (3) Telegram switch is locked on plans without `messengerAlerts` but can still be turned off (saved settings stay when a plan drops). (4) Telegram link = two `target=_blank` links (person + group) + Dhaka expiry + an "I've linked it, refresh chats" button (no polling); Connect hidden at 3 chats, when not configured or for moderators. (5) Remove has no confirm (re-linking is easy). (6) "Send test alert" is off while there are unsaved changes (a test uses saved settings). (7) `apiFetch` now resolves `undefined` on 204. (8) `rules-form.tsx` exports `Section`/`SwitchRow`/`PlanNote` for reuse.
 - M7-GATE: (1) no plan seeded (`/support` has no plan gate, ticket priority MEDIUM); (2) admin finds the ticket through `/admin/tickets?q=<subject>` (the queue is shared with other data on the stack); (3) reply email checked only via the compose backend warn log (`EmailNotConfiguredError`), the spec does not assert it; (4) D17 mocked alert left as built in M7-T9 (passes, nothing added).
+- M8-PLAN: (1) payments per billing account: client routes `/api/workspaces/:workspaceId/billing/{coupon,checkout,payments/:tranId,invoices}`, account-free `@Public()` SSLCommerz callbacks `/api/billing/sslcommerz/*` reached through the client proxy at `CLIENT_APP_URL` (no new public URL env; return handlers need no session); (2) `payment_transactions` (PAID row = invoice, price + PR-D12 promotion snapshot as jsonb) + `payment_events` for "failed IPNs", no separate invoices table; (3) one shared `activatePaidTerm()` for payments + manual activation; price fixed at checkout, coupon redeemed only on a validated payment, the paid price wins over a promotion stopped mid-checkout; (4) ৳0 after promotions activates without SSLCommerz, ৳10 minimum checked; PENDING expires after 60 min but a late valid IPN still pays; (5) a renewal moves the same subscription row's term; coupons apply on renewals only while their months last (PR-D19); (6) landing pricing SSR from `GET /api/plans` reusing the `/plans` card; Lighthouse via CLI + Playwright Chromium; (7) 13 rows + GATE; 13 decisions D1–D13 left open for the user.
 
 ## Decisions asked
 - 2026-11-18 M3-T10: D13 0-Pages redirect → entry points only (recorded in TASKS.md D13)
@@ -300,3 +331,4 @@ RUN COMPLETE
 - 2026-11-20 M7-T14 ✅ a4c8916 · client 859 (was 827) · backend/admin untouched · client invite link `/invite/$invitationId`: signed-out generic page with sign-up (`invitationId`, no `workspaceName`) → auto-accept, log-in link back to the invite; signed-in invite details + Accept → session refetch → `/dashboard`; en/bn errors (gone, wrong email + log out, seats, no plan, already member, generic)
 - 2026-11-21 M7-T15 ✅ 82fa3e9 · client 930 (was 859) · backend/admin untouched · client C12 `/settings/alerts`: threshold, email switch + member tick list (≤ 10), Telegram switch (plan-gated) + connect links with Dhaka expiry + linked chats with Remove (≤ 3), WhatsApp coming soon, last alert per channel, save only changed fields, test alert results, moderator read-only, impersonated edit, every code en + bn
 - 2026-11-21 M7-GATE ✅ 9ceafe2 · backend 2503 unit + 1185 e2e, admin 448, client 930, Playwright 4/4 host + docker · support round-trip Playwright spec + ticket cleanup; D17 mocked alert verified; Module 7 gate passed
+- 2026-11-21 M8-PLAN ✅ · docs only · Module 8 section in TASKS.md: readings 1–14, open decisions D1–D13, rows M8-T1…T13 + GATE; spec superseded notes; MEMORY next → M8-T1
