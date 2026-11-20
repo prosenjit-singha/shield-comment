@@ -26,6 +26,7 @@ vi.mock('@/server/session', () => ({ getServerSession: vi.fn() }))
 const copy = {
   en: {
     members: 'Members',
+    transfer: 'Transfer ownership',
     invite: 'Invite member',
     inviteTitle: 'Invite a member',
     email: 'Email',
@@ -77,6 +78,7 @@ const copy = {
   },
   bn: {
     members: 'সদস্য',
+    transfer: 'মালিকানা হস্তান্তর',
     invite: 'সদস্য আমন্ত্রণ',
     inviteTitle: 'সদস্য আমন্ত্রণ জানান',
     email: 'ইমেইল',
@@ -174,12 +176,12 @@ describe.each(['en', 'bn'] as const)('M7-T13 /settings/team (%s)', (language) =>
     expect(callsTo(TEAM)).toHaveLength(1)
   })
 
-  it('owner: re-roles and removes admins and moderators, never the owner row; invites admin or moderator', async () => {
+  it('owner: re-roles and removes admins and moderators, only Transfer ownership on the owner row; invites admin or moderator', async () => {
     setup()
     renderAppRoute('/settings/team', language)
     await ready(language)
 
-    expect(buttons(row('m-owner'))).toEqual([])
+    expect(buttons(row('m-owner'))).toEqual([t.transfer]) // M7-T13b
     expect(buttons(row('m-admin'))).toEqual([t.makeMod, t.remove])
     expect(buttons(row('m-mod'))).toEqual([t.makeAdmin, t.remove])
     expect(buttons(inviteRow('inv-1'))).toEqual([t.resend, t.cancelInvite])

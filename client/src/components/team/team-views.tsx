@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { LoaderCircle, LogOut, Mail, RotateCw, UserPlus, X } from 'lucide-react'
-import { useId, useState, type FormEvent, type ReactNode } from 'react'
+import { Crown, LoaderCircle, LogOut, Mail, RotateCw, UserPlus, X } from 'lucide-react'
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react'
 import { DashboardError } from '@/components/dashboard/dashboard-charts'
 import { MetaNotice } from '@/components/meta/meta-notice'
 import { Button } from '@/components/ui/button'
@@ -26,6 +26,7 @@ import {
   roleLabel,
   seatMessage,
   seatState,
+  sendTransferCode,
   type Team,
   type TeamInvitation,
   type TeamMember,
@@ -34,6 +35,11 @@ import {
   teamQueryOptions,
   teamRootKey,
   type TeamRole,
+  TRANSFER_CODE_PATTERN,
+  transferErrorMessage,
+  type TransferInput,
+  transferMethodQueryOptions,
+  transferOwnership,
   updateMemberRole,
 } from '@/lib/team'
 import { cn } from '@/lib/utils'
@@ -135,6 +141,8 @@ function TeamManager({
   // The last action stays while the dialog animates out, so its text doesn't change on close.
   const [confirm, setConfirm] = useState<MemberChange | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  // A new key per open resets the transfer form.
+  const [transfer, setTransfer] = useState({ open: false, key: 0 })
   const refresh = () => queryClient.invalidateQueries({ queryKey: teamRootKey(workspaceId) })
 
   const change = useMutation<unknown, ApiError, MemberChange>({
@@ -288,8 +296,21 @@ function TeamManager({
                     </td>
                     <td className="hidden py-3 pr-3 text-muted-foreground sm:table-cell">{formatCommentTime(member.joinedAt, language)}</td>
                     <td className="py-3">
-                      {/* M7-T13b adds "Transfer ownership" (owner only) to these actions. */}
                       <span className="flex flex-wrap justify-end gap-2">
+                        {viewer === 'owner' && self && team.members.length > 1 ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-3"
+                            onClick={() => {
+                              setNotice(null)
+                              setTransfer((state) => ({ open: true, key: state.key + 1 }))
+                            }}
+                          >
+                            <Crown aria-hidden />
+                            {content('Transfer ownership', 'মালিকানা হস্তান্তর')}
+                          </Button>
+                        ) : null}
                         {allowed.changeRole ? (
                           <Button variant="outline" size="sm" className="h-8 px-3" onClick={() => openConfirm({ kind: 'role', member, role: other })}>
                             {other === 'admin' ? content('Make admin', 'অ্যাডমিন করুন') : content('Make moderator', 'মডারেটর করুন')}
@@ -388,6 +409,24 @@ function TeamManager({
           onInvited={(email) => {
             setInviting(false)
             setNotice(content(`Invite sent to ${email}.`, `${email}-এ আমন্ত্রণ পাঠানো হয়েছে।`))
+          }}
+        />
+      ) : null}
+      {viewer === 'owner' ? (
+        <TransferDialog
+          key={transfer.key}
+          workspaceId={workspaceId}
+          candidates={team.members.filter((member) => member.role !== 'owner')}
+          open={transfer.open}
+          onOpenChange={(open) => setTransfer((state) => ({ ...state, open }))}
+          onTransferred={(name) => {
+            setTransfer((state) => ({ ...state, open: false }))
+            setNotice(
+              content(
+                `${name} is now the owner and has the billing account. You’re an admin of this workspace now.`,
+                `${name} এখন মালিক এবং বিলিং অ্যাকাউন্ট তাঁর কাছে গেছে। আপনি এখন এই ওয়ার্কস্পেসের অ্যাডমিন।`,
+              ),
+            )
           }}
         />
       ) : null}
@@ -610,6 +649,248 @@ function ConfirmChange({
             {text.confirm}
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Whole seconds until `iso` (0 once passed), ticking every second while set (the first tick corrects a stale `now`). */
+function useSecondsUntil(iso: string | null): number {
+  const [now, setNow] = useState(() => Date.now())
+  const target = iso ? Date.parse(iso) : 0
+  useEffect(() => {
+    if (!iso) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [iso])
+  return Math.max(0, Math.ceil((target - now) / 1000))
+}
+
+const FIELD_CLASS =
+  'h-10 w-full rounded-full border border-input bg-transparent px-4 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30'
+
+/**
+ * M7-T13b (D11 b with verification, M7-D19 a): the owner picks a member and confirms with the current
+ * password twice, or (Google-only owner) with an emailed 6-digit code. Success puts the returned team into
+ * the cache (the viewer is admin now) and reloads the workspace data that depends on role or billing.
+ */
+function TransferDialog({
+  workspaceId,
+  candidates,
+  open,
+  onOpenChange,
+  onTransferred,
+}: {
+  workspaceId: string
+  candidates: TeamMember[]
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onTransferred: (name: string) => void
+}) {
+  const { content, language } = useLanguage()
+  const queryClient = useQueryClient()
+  const id = useId()
+  const methodOptions = transferMethodQueryOptions(workspaceId)
+  const method = useQuery({ ...methodOptions, enabled: open })
+  const [memberId, setMemberId] = useState('')
+  const [password, setPassword] = useState('')
+  const [passwordConfirm, setPasswordConfirm] = useState('')
+  const [code, setCode] = useState('')
+  const [touched, setTouched] = useState(false)
+  const [resendAt, setResendAt] = useState<string | null>(null)
+  const wait = useSecondsUntil(resendAt)
+  const target = candidates.find((member) => member.memberId === memberId)
+  const targetName = target?.name ?? content('this member', 'এই সদস্য')
+
+  const send = useMutation<{ expiresAt: string; resendAt: string }, ApiError>({
+    mutationFn: () => sendTransferCode(workspaceId),
+    onMutate: (): void => transfer.reset(),
+    onSuccess: (sent) => setResendAt(sent.resendAt),
+    onError: (error) => {
+      if (error.code === 'TRANSFER_CODE_NOT_NEEDED') void queryClient.invalidateQueries({ queryKey: methodOptions.queryKey })
+    },
+  })
+
+  const transfer = useMutation<Team, ApiError, TransferInput>({
+    mutationFn: (input) => transferOwnership(workspaceId, input),
+    onMutate: (): void => send.reset(),
+    onSuccess: async (next) => {
+      queryClient.setQueryData(teamRootKey(workspaceId), next)
+      onTransferred(targetName)
+      // Role and billing moved: reload every other workspace query (billing summary, plans, …).
+      await queryClient.invalidateQueries({ queryKey: ['workspace', workspaceId], predicate: (query) => query.queryKey[2] !== 'team' })
+    },
+  })
+  const pending = transfer.isPending
+
+  const errors = {
+    member: !memberId ? content('Choose who becomes the owner.', 'কে মালিক হবেন তা বেছে নিন।') : null,
+    password: !password ? content('Enter your current password.', 'আপনার বর্তমান পাসওয়ার্ড লিখুন।') : null,
+    passwordConfirm: !passwordConfirm
+      ? content('Enter your password again.', 'পাসওয়ার্ডটি আবার লিখুন।')
+      : password && passwordConfirm !== password
+        ? content('The two passwords don’t match.', 'দুটি পাসওয়ার্ড মিলছে না।')
+        : null,
+    code: !TRANSFER_CODE_PATTERN.test(code.trim()) ? content('Enter the 6-digit code from the email.', 'ইমেইলে পাওয়া ৬ সংখ্যার কোডটি লিখুন।') : null,
+  }
+  const shown = (key: keyof typeof errors) => (touched ? errors[key] : null)
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (!method.data) return
+    setTouched(true)
+    if (errors.member) return
+    if (method.data.method === 'password') {
+      if (errors.password || errors.passwordConfirm) return
+      transfer.mutate({ memberId, password, passwordConfirm })
+    } else {
+      if (errors.code) return
+      transfer.mutate({ memberId, code: code.trim() })
+    }
+  }
+
+  const field = (key: keyof typeof errors, label: string, input: (props: { id: string; 'aria-invalid'?: true; 'aria-describedby'?: string }) => ReactNode) => {
+    const error = shown(key)
+    return (
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={`${id}-${key}`} className="text-sm font-medium">
+          {label}
+        </label>
+        {input({ id: `${id}-${key}`, 'aria-invalid': error ? true : undefined, 'aria-describedby': error ? `${id}-${key}-error` : undefined })}
+        {error ? (
+          <span id={`${id}-${key}-error`} className="text-xs text-destructive">
+            {error}
+          </span>
+        ) : null}
+      </div>
+    )
+  }
+
+  const failure = transfer.error ?? send.error
+  return (
+    <Dialog open={open} onOpenChange={(next) => (pending ? undefined : onOpenChange(next))}>
+      <DialogContent showCloseButton={false} className="gap-5 rounded-2xl p-5 sm:max-w-md">
+        <form onSubmit={submit} noValidate className="flex flex-col gap-5">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold">{content('Transfer ownership', 'মালিকানা হস্তান্তর')}</DialogTitle>
+            <DialogDescription className="text-pretty">
+              {content(
+                'The new owner controls the team and the billing for this workspace.',
+                'নতুন মালিক এই ওয়ার্কস্পেসের টিম ও বিলিং নিয়ন্ত্রণ করবেন।',
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {field('member', content('New owner', 'নতুন মালিক'), (props) => (
+            <select {...props} value={memberId} onChange={(event) => setMemberId(event.target.value)} className={FIELD_CLASS}>
+              <option value="">{content('Choose a member', 'একজন সদস্য বেছে নিন')}</option>
+              {candidates.map((member) => (
+                <option key={member.memberId} value={member.memberId}>
+                  {`${member.name} (${member.email}) · ${roleLabel(member.role, content)}`}
+                </option>
+              ))}
+            </select>
+          ))}
+          <MetaNotice tone="warning" kind="transfer-warning">
+            {content(
+              `The billing account (plan, wallet and payments) moves to ${targetName}, and you become an admin. Only the new owner can give ownership back.`,
+              `বিলিং অ্যাকাউন্ট (প্ল্যান, ওয়ালেট ও পেমেন্ট) ${targetName}-এর কাছে চলে যাবে, আর আপনি অ্যাডমিন হয়ে যাবেন। শুধু নতুন মালিকই মালিকানা আবার ফিরিয়ে দিতে পারবেন।`,
+            )}
+          </MetaNotice>
+
+          {method.isPending ? (
+            <Skeleton data-testid="transfer-method-skeleton" className="h-24 w-full rounded-2xl" />
+          ) : method.isError ? (
+            <MetaNotice
+              tone="error"
+              kind="transfer-method-error"
+              network={toApiError(method.error).isNetwork}
+              action={
+                <Button type="button" variant="outline" size="sm" className="h-9 shrink-0 px-4" disabled={method.isFetching} onClick={() => void method.refetch()}>
+                  <RotateCw aria-hidden />
+                  {content('Try again', 'আবার চেষ্টা করুন')}
+                </Button>
+              }
+            >
+              {transferErrorMessage(toApiError(method.error), content, language, targetName)}
+            </MetaNotice>
+          ) : method.data.method === 'password' ? (
+            <>
+              {field('password', content('Current password', 'বর্তমান পাসওয়ার্ড'), (props) => (
+                <Input {...props} type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="h-10 px-4" />
+              ))}
+              {field('passwordConfirm', content('Current password again', 'বর্তমান পাসওয়ার্ড আবার'), (props) => (
+                <Input
+                  {...props}
+                  type="password"
+                  autoComplete="current-password"
+                  value={passwordConfirm}
+                  onChange={(event) => setPasswordConfirm(event.target.value)}
+                  className="h-10 px-4"
+                />
+              ))}
+            </>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-pretty text-muted-foreground">
+                {resendAt
+                  ? content('We emailed you a 6-digit code. It works for 10 minutes.', 'আমরা আপনাকে একটি ৬ সংখ্যার কোড ইমেইল করেছি। এটি ১০ মিনিট কাজ করবে।')
+                  : content(
+                      'You sign in with Google, so we’ll email you a 6-digit code to confirm.',
+                      'আপনি Google দিয়ে লগ ইন করেন, তাই নিশ্চিত করতে আমরা আপনাকে একটি ৬ সংখ্যার কোড ইমেইল করব।',
+                    )}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 self-start px-5"
+                disabled={send.isPending || pending || wait > 0}
+                aria-busy={send.isPending || undefined}
+                onClick={() => send.mutate()}
+              >
+                {send.isPending ? <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden /> : <Mail aria-hidden />}
+                {!resendAt
+                  ? content('Send code', 'কোড পাঠান')
+                  : wait > 0
+                    ? content(`Send again in ${wait} s`, `${formatCount(wait, language)} সেকেন্ড পরে আবার পাঠান`)
+                    : content('Send a new code', 'নতুন কোড পাঠান')}
+              </Button>
+              {resendAt
+                ? field('code', content('Code from the email', 'ইমেইলের কোড'), (props) => (
+                    <Input
+                      {...props}
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={code}
+                      onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
+                      className="h-10 px-4 tracking-widest tabular-nums"
+                    />
+                  ))
+                : null}
+            </div>
+          )}
+
+          {failure && !transfer.isPending && !send.isPending ? (
+            <MetaNotice tone="error" kind="transfer-error" network={failure.isNetwork}>
+              {transferErrorMessage(failure, content, language, targetName)}
+            </MetaNotice>
+          ) : null}
+          <DialogFooter className="-mx-5 -mb-5 rounded-b-2xl p-5">
+            <Button type="button" variant="outline" className="h-10 px-5" disabled={pending} onClick={() => onOpenChange(false)}>
+              {content('Cancel', 'বাতিল')}
+            </Button>
+            <Button
+              type="submit"
+              variant="destructive"
+              className="h-10 px-5"
+              disabled={pending || !method.data || (method.data.method === 'code' && !resendAt)}
+              aria-busy={pending || undefined}
+            >
+              {pending ? <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden /> : null}
+              {content('Transfer ownership', 'মালিকানা হস্তান্তর')}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )

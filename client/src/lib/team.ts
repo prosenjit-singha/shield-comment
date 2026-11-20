@@ -204,3 +204,69 @@ export function teamLoadErrorMessage(error: ApiError, content: ContentFn): strin
   if (error.status === 404) return content('This workspace couldn’t be found.', 'এই ওয়ার্কস্পেসটি খুঁজে পাওয়া যায়নি।')
   return genericFailure(error, content)
 }
+
+/*
+ * Ownership transfer (M7-T13b; D11 b with verification, M7-D19 a). Owner only, never while impersonated (D2).
+ * `GET …/team/transfer-ownership` → `{ method }`: `password` = the current password twice; `code` (Google-only
+ * owner) = `POST …/code` emails a 6-digit code (10 min, resend 1/min). `POST …/transfer-ownership` answers the new
+ * team view. Wrong password is 403 (never 401), so the session stays.
+ */
+export type TransferMethod = 'password' | 'code'
+export type TransferInput = { memberId: string; password: string; passwordConfirm: string } | { memberId: string; code: string }
+
+const transferPath = (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/team/transfer-ownership`
+
+export function transferMethodQueryOptions(workspaceId: string) {
+  return queryOptions({
+    queryKey: [...teamRootKey(workspaceId), 'transfer-ownership'] as const,
+    queryFn: () => apiFetch<{ method: TransferMethod }>(transferPath(workspaceId)),
+  })
+}
+
+export const sendTransferCode = (workspaceId: string) =>
+  apiFetch<{ expiresAt: string; resendAt: string }>(`${transferPath(workspaceId)}/code`, { method: 'POST' })
+export const transferOwnership = (workspaceId: string, input: TransferInput) => apiFetch<Team>(transferPath(workspaceId), { method: 'POST', body: input })
+
+export const TRANSFER_CODE_PATTERN = /^\d{6}$/
+
+/** `TRANSFER_*` codes (backend `OWNERSHIP_TRANSFER_CODES`), then the shared team mapping. */
+export function transferErrorMessage(error: ApiError, content: ContentFn, language: Language, targetName: string): string {
+  switch (error.code) {
+    case 'TRANSFER_PASSWORD_REQUIRED':
+      return content('Enter your current password in both fields.', 'দুই ঘরেই আপনার বর্তমান পাসওয়ার্ড লিখুন।')
+    case 'TRANSFER_PASSWORD_MISMATCH':
+      return content('The two passwords don’t match.', 'দুটি পাসওয়ার্ড মিলছে না।')
+    case 'TRANSFER_PASSWORD_INVALID':
+      return content('That password isn’t right. Check it and try again.', 'পাসওয়ার্ডটি সঠিক নয়। দেখে আবার চেষ্টা করুন।')
+    case 'TRANSFER_CODE_REQUIRED':
+      return content('Enter the 6-digit code from the email.', 'ইমেইলে পাওয়া ৬ সংখ্যার কোডটি লিখুন।')
+    case 'TRANSFER_CODE_INVALID':
+      return content('That code isn’t right. Check the email and try again.', 'কোডটি সঠিক নয়। ইমেইল দেখে আবার চেষ্টা করুন।')
+    case 'TRANSFER_CODE_EXPIRED':
+      return content('This code has expired or was already used. Send a new code.', 'এই কোডের মেয়াদ শেষ বা এটি আগেই ব্যবহার হয়েছে। নতুন কোড পাঠান।')
+    case 'TRANSFER_TOO_MANY_ATTEMPTS':
+      return content('Too many tries. Wait 10 minutes, then try again.', 'অনেকবার চেষ্টা করা হয়েছে। ১০ মিনিট অপেক্ষা করে আবার চেষ্টা করুন।')
+    case 'TRANSFER_CODE_RESEND_TOO_SOON':
+      return content('A code was sent less than a minute ago. Wait a moment, then send again.', 'এক মিনিটের কম আগে একটি কোড পাঠানো হয়েছে। একটু অপেক্ষা করে আবার পাঠান।')
+    case 'TRANSFER_CODE_NOT_NEEDED':
+      return content('Your account has a password, so confirm with your password instead.', 'আপনার অ্যাকাউন্টে পাসওয়ার্ড আছে, তাই পাসওয়ার্ড দিয়ে নিশ্চিত করুন।')
+    case 'TRANSFER_CODE_EMAIL_FAILED':
+      return content('We couldn’t send the email. Try again in a moment.', 'ইমেইল পাঠানো যায়নি। একটু পরে আবার চেষ্টা করুন।')
+    case 'TRANSFER_TARGET_IS_SELF':
+      return content('You already own this workspace. Choose another member.', 'আপনি আগে থেকেই এই ওয়ার্কস্পেসের মালিক। অন্য একজন সদস্য বেছে নিন।')
+    case 'TRANSFER_TARGET_NOT_FOUND':
+      return content('This person is no longer a member of the workspace.', 'এই ব্যক্তি আর ওয়ার্কস্পেসের সদস্য নন।')
+    case 'TRANSFER_TARGET_HAS_ACCOUNT':
+      return content(
+        `${targetName} already has their own plan or billing history, so your billing account can’t move to them. Contact support to transfer this workspace.`,
+        `${targetName}-এর নিজের প্ল্যান বা বিলিং ইতিহাস আছে, তাই আপনার বিলিং অ্যাকাউন্ট তাঁর কাছে যাবে না। এই ওয়ার্কস্পেস হস্তান্তর করতে সাপোর্টে যোগাযোগ করুন।`,
+      )
+    case 'TRANSFER_ACCOUNT_HAS_OTHER_WORKSPACES':
+      return content(
+        'Your plan also pays for your other workspaces, so it can’t move with this one. Contact support to transfer this workspace.',
+        'আপনার প্ল্যান অন্য ওয়ার্কস্পেসগুলোর খরচও দেয়, তাই এটি এই ওয়ার্কস্পেসের সঙ্গে যাবে না। এই ওয়ার্কস্পেস হস্তান্তর করতে সাপোর্টে যোগাযোগ করুন।',
+      )
+  }
+  if (error.status === 403 && !error.code) return content('Only the workspace owner can transfer ownership.', 'শুধু ওয়ার্কস্পেসের মালিক মালিকানা হস্তান্তর করতে পারেন।')
+  return teamErrorMessage(error, content, language)
+}

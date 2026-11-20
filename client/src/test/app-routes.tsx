@@ -628,6 +628,8 @@ export function ticketsApi(items: TicketDetail[] = [], options: TicketsApiOption
 
 export const TEAM = '/api/workspaces/w1/team'
 export const ORG = (path: string) => `/api/auth/organization/${path}`
+export const TRANSFER = `${TEAM}/transfer-ownership`
+export const TRANSFER_CODE = `${TRANSFER}/code`
 
 export function member(overrides: Partial<TeamMember> = {}): TeamMember {
   return {
@@ -677,6 +679,12 @@ export interface TeamApiOptions {
   onUpdateRole?: OrgHandler
   onRemove?: OrgHandler
   onLeave?: OrgHandler
+  /** M7-T13b: `GET …/transfer-ownership` (default `{ method: 'password' }`). */
+  onMethod?: () => Response | Promise<Response>
+  /** `POST …/transfer-ownership/code` (default: expires in 10 min, resend in 60 s). */
+  onSendCode?: () => Response | Promise<Response>
+  /** `POST …/transfer-ownership` (default: target → owner, the owner → admin, answers the stored team). */
+  onTransfer?: OrgHandler
 }
 
 /**
@@ -737,6 +745,28 @@ export function teamApi(initial: Team = team(), options: TeamApiOptions = {}) {
     ),
     [ORG('leave')]: post('leave', options.onLeave ?? ok),
     [ORG('set-active')]: post('set-active', () => json(200, null)),
+    [TRANSFER]: (init?: RequestInit) => {
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method === 'GET') return options.onMethod ? options.onMethod() : json(200, { method: 'password' })
+      return post(
+        'transfer-ownership',
+        options.onTransfer ??
+          ((body) => {
+            for (const item of state.members) {
+              if (item.role === 'owner') item.role = 'admin'
+              if (item.memberId === body.memberId) item.role = 'owner'
+            }
+            state.members.sort((a, b) => Number(b.role === 'owner') - Number(a.role === 'owner'))
+            return json(200, state)
+          }),
+      )(init)
+    },
+    [TRANSFER_CODE]: (init?: RequestInit) => {
+      if ((init?.method ?? 'GET').toUpperCase() !== 'POST') throw new Error('Unexpected method on the transfer code route')
+      if (options.onSendCode) return options.onSendCode()
+      const now = Date.now()
+      return json(200, { expiresAt: new Date(now + 600_000).toISOString(), resendAt: new Date(now + 60_000).toISOString() })
+    },
   }
 }
 
