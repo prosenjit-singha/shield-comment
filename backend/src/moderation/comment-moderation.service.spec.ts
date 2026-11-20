@@ -356,6 +356,9 @@ describe('CommentModerationService static rules (M6-T2)', () => {
     ['keyword', 'Free CASHBACK pete inbox korun', 'cashback'],
     ['url', 'claim here bit.ly/x', 'bit.ly/x'],
     ['phone', 'bKash korun +880 1712-345678', '+880 1712-345678'],
+    // M6-GATE: the spec's plain BD number and Bangla digits (D6).
+    ['phone', 'Nagad e pathan 01812345678', '01812345678'],
+    ['phone', 'বিকাশ করুন ০১৯১২৩৪৫৬৭৮ নম্বরে', '০১৯১২৩৪৫৬৭৮'],
   ] as const)(
     '%s match → no post context, no LLM, counted, HIDE via the executor',
     async (kind, message, value) => {

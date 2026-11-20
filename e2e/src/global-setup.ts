@@ -1,9 +1,17 @@
 import type { FullConfig } from '@playwright/test';
 import { env, runIdentity } from './env.js';
-import { cleanupRun, seedSuperAdminViaCompose, signUpOwner, userExists } from './stack.js';
+import {
+  cleanupRun,
+  removeStubBackend,
+  seedSuperAdminViaCompose,
+  signUpOwner,
+  startStubBackend,
+  userExists,
+} from './stack.js';
 
 /**
- * Seeds one super admin + one client owner (with their workspace) for this run. The run id goes into
+ * Seeds one super admin + one client owner (with their workspace) for this run and, on host runs,
+ * starts the Module 6 gate's `backend-e2e` (Graph stub as Meta host). The run id goes into
  * `process.env.E2E_RUN_ID`, which the test workers and the global teardown inherit.
  * If seeding fails half-way, whatever was created is deleted before the error is rethrown.
  */
@@ -18,8 +26,16 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
       );
     }
     await signUpOwner(identity);
+    if (env.stubBackend === 'compose-up') startStubBackend();
   } catch (error) {
     await cleanupRun(identity).catch(() => undefined);
+    if (env.stubBackend === 'compose-up') {
+      try {
+        removeStubBackend();
+      } catch {
+        // The original error matters more.
+      }
+    }
     throw error;
   }
 }

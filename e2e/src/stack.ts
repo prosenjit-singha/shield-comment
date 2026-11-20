@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createCipheriv, randomBytes, randomInt } from 'node:crypto';
 import { Redis } from 'ioredis';
 import pg from 'pg';
 import { env, type RunIdentity } from './env.js';
@@ -86,6 +87,127 @@ export async function signUpOwner(identity: RunIdentity): Promise<void> {
   if (!response.ok) {
     throw new Error(`Owner sign-up failed: ${response.status} ${await response.text()}`);
   }
+}
+
+/** Module 6 gate: `backend-e2e` from the already built backend image (host runs; see docker-compose.yml). */
+export function startStubBackend(): void {
+  compose(['--profile', 'e2e', 'up', '-d', '--no-deps', '--wait', 'backend-e2e'], 180_000);
+}
+
+/** Stops + removes `backend-e2e` (a second API process must not outlive the run). */
+export function removeStubBackend(): void {
+  compose(['--profile', 'e2e', 'rm', '-sf', 'backend-e2e'], 60_000);
+}
+
+function compose(args: string[], timeout: number): void {
+  const result = spawnSync('docker', ['compose', ...args], { cwd: env.repoRoot, encoding: 'utf8', timeout });
+  if (result.status !== 0) {
+    const reason = result.error?.message ?? `${result.stdout}${result.stderr}`.trim();
+    throw new Error(`docker compose ${args.join(' ')} failed: ${reason}`);
+  }
+}
+
+/** The backend's token format (`TokenCipherService`): `v1:<keyId>:<iv>:<tag>:<ciphertext>`, AAD `v1:<keyId>:<context>`. */
+function encryptToken(plaintext: string, context: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', env.tokenKey, iv);
+  cipher.setAAD(Buffer.from(`v1:${env.tokenKeyId}:${context}`, 'utf8'));
+  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const parts = [iv, cipher.getAuthTag(), ciphertext].map((b) => b.toString('base64url'));
+  return ['v1', env.tokenKeyId, ...parts].join(':');
+}
+
+export interface ModerationFixture {
+  workspaceId: string;
+  /** `comments.id` (UUID) and the Graph comment id of the seeded HIDDEN comment. */
+  commentId: string;
+  graphCommentId: string;
+  message: string;
+  pageToken: string;
+}
+
+/** Seeded `daily_comment_stats` (two Dhaka days in the last 30) → dashboard KPIs (M6-T5 formulas). */
+export const SEEDED_STATS = [
+  { daysAgo: 1, classified: 40, ruleMatched: 2, safe: 30, competitor: 2, scam: 5, spam: 3, abusive: 0, hidden: 6, deleted: 1 },
+  { daysAgo: 3, classified: 20, ruleMatched: 0, safe: 15, competitor: 0, scam: 3, spam: 1, abusive: 1, hidden: 3, deleted: 0 },
+] as const;
+
+/**
+ * The owner's workspace gets an active Meta connection + Facebook Page (tokens encrypted with the
+ * `backend-e2e` key), the stats above and one HIDDEN comment. `cleanupRun` deletes all of it
+ * (workspace-scoped rows).
+ */
+export async function seedModerationFixture(identity: RunIdentity): Promise<ModerationFixture> {
+  // Page ids are globally unique: 15 random digits.
+  const pageId = `9${randomInt(10 ** 13, 10 ** 14)}`;
+  const graphCommentId = `${pageId}_${randomInt(10 ** 9, 10 ** 10)}`;
+  const message = `E2E gate comment ${identity.runId}`;
+  const pageToken = `e2e-page-token-${randomBytes(8).toString('hex')}`;
+  return withDb(async (db) => {
+    await db.query('begin');
+    try {
+      const ws = await db.query<{ id: string }>(
+        `select m.workspace_id as id from workspace_members m join users u on u.id = m.user_id
+          where u.email = $1 and m.role = 'owner'`,
+        [identity.owner.email],
+      );
+      const workspaceId = ws.rows[0]?.id;
+      if (!workspaceId || ws.rows.length !== 1) throw new Error('Expected exactly one owner workspace');
+      const fbUserId = String(randomInt(10 ** 9, 10 ** 10));
+      await db.query(
+        `insert into meta_connections (id, workspace_id, facebook_user_id, encrypted_user_access_token, status)
+         values (gen_random_uuid(), $1, $2, $3, 'ACTIVE')`,
+        [workspaceId, fbUserId, encryptToken('e2e-user-token', `meta_user_token:${workspaceId}:${fbUserId}`)],
+      );
+      const page = await db.query<{ id: string }>(
+        `insert into social_pages (id, workspace_id, page_id, page_name, encrypted_page_access_token, is_active)
+         values (gen_random_uuid(), $1, $2, 'E2E Gate Page', $3, true) returning id`,
+        [workspaceId, pageId, encryptToken(pageToken, `meta_page_token:${workspaceId}:${pageId}`)],
+      );
+      for (const s of SEEDED_STATS) {
+        await db.query(
+          `insert into daily_comment_stats (id, workspace_id, page_id, platform, day, received_count,
+             classified_count, rule_matched_count, safe_inquiry_count, competitor_poach_count,
+             scam_phishing_count, spam_irrelevant_count, abusive_toxic_count, hidden_count, deleted_count)
+           values (gen_random_uuid(), $1, $2, 'FACEBOOK', (now() at time zone 'Asia/Dhaka')::date - $3::int,
+             $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [workspaceId, pageId, s.daysAgo, s.classified + s.ruleMatched, s.classified, s.ruleMatched,
+            s.safe, s.competitor, s.scam, s.spam, s.abusive, s.hidden, s.deleted],
+        );
+      }
+      const comment = await db.query<{ id: string }>(
+        `insert into comments (id, comment_id, workspace_id, social_page_id, platform, post_id, author_name,
+           message, status, status_reason)
+         values (gen_random_uuid(), $1, $2, $3, 'FACEBOOK', $4, 'E2E Buyer', $5, 'HIDDEN', 'rule_keyword')
+         returning id`,
+        [graphCommentId, workspaceId, page.rows[0]?.id, `${pageId}_1`, message],
+      );
+      await db.query('commit');
+      const commentId = comment.rows[0]?.id;
+      if (!commentId) throw new Error('Comment insert returned no row');
+      return { workspaceId, commentId, graphCommentId, message, pageToken };
+    } catch (error) {
+      await db.query('rollback');
+      throw error;
+    }
+  });
+}
+
+/** The comment's status + its USER actions (newest first). */
+export async function commentState(workspaceId: string, commentId: string) {
+  return withDb(async (db) => {
+    const comment = await db.query<{ status: string; overridden: boolean }>(
+      'select status, overridden_at is not null as overridden from comments where workspace_id = $1 and id = $2',
+      [workspaceId, commentId],
+    );
+    const actions = await db.query<{ action: string; source: string; state: string; user_email: string }>(
+      `select a.action, a.source, a.state, u.email as user_email from moderation_actions a
+         left join users u on u.id = a.user_id
+        where a.workspace_id = $1 and a.comment_id = $2 order by a.created_at desc`,
+      [workspaceId, commentId],
+    );
+    return { ...comment.rows[0], actions: actions.rows };
+  });
 }
 
 export async function userExists(email: string): Promise<boolean> {

@@ -21,6 +21,7 @@ const COMPOSE_KEYS = [
   'BACKEND_HOST_PORT',
   'ADMIN_HOST_PORT',
   'CLIENT_HOST_PORT',
+  'E2E_BACKEND_HOST_PORT',
 ] as const;
 type ComposeKey = (typeof COMPOSE_KEYS)[number];
 
@@ -58,6 +59,18 @@ function superAdminSeed(): SuperAdminSeed {
   return value;
 }
 
+/** Module 6 gate backend (compose `backend-e2e`, Graph stub as Meta host): `compose-up` = global setup
+ *  starts it with `docker compose up` and teardown removes it (host runs); `external` = already up. */
+export type StubBackendStart = 'compose-up' | 'external';
+
+function stubBackendStart(): StubBackendStart {
+  const value = optional('E2E_STUB_BACKEND') ?? 'compose-up';
+  if (value !== 'compose-up' && value !== 'external') {
+    throw new Error(`E2E_STUB_BACKEND must be compose-up or external, got "${value}"`);
+  }
+  return value;
+}
+
 /** Lower-case letters, digits and dashes: it ends up in emails and workspace names. */
 function runId(): string {
   const raw = optional('E2E_RUN_ID') ?? `${Date.now().toString(36)}${process.pid.toString(36)}`;
@@ -80,6 +93,15 @@ export const env = {
   /** Use an already installed Chromium instead of Playwright's download (see docs/progress/MEMORY.md). */
   chromiumPath: optional('E2E_CHROMIUM_PATH'),
   superAdminSeed: superAdminSeed(),
+  stubBackend: stubBackendStart(),
+  /** `backend-e2e` origin: the override call goes there (it reaches the Graph stub). */
+  stubBackendUrl:
+    optional('E2E_STUB_BACKEND_URL') ?? `http://localhost:${compose.E2E_BACKEND_HOST_PORT ?? '3001'}`,
+  /** Graph stub port; `backend-e2e` reaches it at `META_GRAPH_BASE_URL` (docker-compose.yml). */
+  graphStubPort: 4010,
+  /** Same dev-only key + id as `backend-e2e` in docker-compose.yml (encrypts the seeded Page token). */
+  tokenKey: Buffer.from('e2e-dev-only-token-key-32-bytes!', 'utf8'),
+  tokenKeyId: 'e2e',
   /** Dev-only defaults: the stack under test is a local compose stack, never a shared one. */
   superAdminPassword: optional('E2E_SUPER_ADMIN_PASSWORD') ?? 'e2e-dev-only-Admin-123',
   ownerPassword: optional('E2E_OWNER_PASSWORD') ?? 'e2e-dev-only-Owner-123',

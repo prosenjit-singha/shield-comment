@@ -140,6 +140,40 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Module 6 gate (D17 a): a second API process from the backend image with a Graph stub as Meta host.
+  # META_GRAPH_BASE_URL is refused under NODE_ENV=production, so this one runs NODE_ENV=test; the
+  # stub (e2e/src/graph-stub.ts) runs in the test process. Placeholder Meta app + dev-only token key:
+  # it only ever decrypts the suite's own seeded Page token. Shares Postgres + Redis with `backend`.
+  # Host runs: global setup starts it (`up -d --no-deps --wait`) and teardown removes it.
+  backend-e2e:
+    profiles: [e2e]
+    image: shield-comment-backend
+    pull_policy: never
+    environment:
+      NODE_ENV: test
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-shield}:${POSTGRES_PASSWORD:-shield}@postgres:5432/${POSTGRES_DB:-shield_comment}?schema=public
+      REDIS_URL: redis://redis:6379
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://admin.localhost:5173,http://app.localhost:5174,http://localhost:5173,http://localhost:5174}
+      CLIENT_APP_URL: ${CLIENT_PUBLIC_URL:-http://app.localhost:5174}
+      TOKEN_ENCRYPTION_KEY: ZTJlLWRldi1vbmx5LXRva2VuLWtleS0zMi1ieXRlcyE=
+      TOKEN_ENCRYPTION_KEY_ID: e2e
+      META_APP_ID: "1000000000000001"
+      META_APP_SECRET: e2e-dev-only-app-secret
+      META_LOGIN_CONFIG_ID: "1000000000000002"
+      META_OAUTH_REDIRECT_URI: http://app.localhost:5174/meta/callback
+      META_GRAPH_BASE_URL: ${E2E_GRAPH_STUB_URL:-http://host.docker.internal:4010}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "127.0.0.1:${E2E_BACKEND_HOST_PORT:-3001}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
   # Playwright runner (e2e/Dockerfile, also has playwright-cli). The browser keeps the trusted origins
   # admin.localhost:5173 / app.localhost:5174 and maps them to the admin/client containers.
   e2e:
@@ -156,6 +190,8 @@ services:
       E2E_ADMIN_URL: http://admin.localhost:5173
       E2E_CLIENT_URL: http://app.localhost:5174
       E2E_API_URL: http://backend:3000
+      E2E_STUB_BACKEND: external
+      E2E_STUB_BACKEND_URL: http://backend-e2e:3000
       E2E_DATABASE_URL: postgresql://${POSTGRES_USER:-shield}:${POSTGRES_PASSWORD:-shield}@postgres:5432/${POSTGRES_DB:-shield_comment}
       E2E_REDIS_URL: redis://redis:6379
       E2E_HOST_RESOLVER_RULES: MAP admin.localhost admin, MAP app.localhost client
@@ -163,6 +199,8 @@ services:
       e2e-seed:
         condition: service_completed_successfully
       backend:
+        condition: service_healthy
+      backend-e2e:
         condition: service_healthy
       admin:
         condition: service_healthy
