@@ -28,6 +28,8 @@ import {
   promotionRedemptions,
   promotions,
   socialPages,
+  paymentEvents,
+  paymentTransactions,
   subscriptionAuditLogs,
   subscriptions,
   telegramChats,
@@ -63,7 +65,7 @@ export interface Actor {
 }
 
 /**
- * Deletes the manual-activation audit rows (PW-T9) → wallet ledger → balances → wallets →
+ * Deletes the payment events + transactions (M8-T2) → manual-activation audit rows (PW-T9) → wallet ledger → balances → wallets →
  * subscriptions → promotion redemptions (PR-T1) of these billing accounts (FKs restrict), not the
  * accounts themselves (workspaces may still point at them). Redemptions and subscriptions point
  * at each other: the redemption's `subscription_id` is cleared first.
@@ -74,6 +76,14 @@ export async function deleteBillingChildren(
 ): Promise<void> {
   if (accountIds.length === 0) return;
   const ids = [...accountIds];
+  const tranIds = db
+    .select({ tranId: paymentTransactions.tranId })
+    .from(paymentTransactions)
+    .where(inArray(paymentTransactions.billingAccountId, ids));
+  await db.delete(paymentEvents).where(inArray(paymentEvents.tranId, tranIds));
+  await db
+    .delete(paymentTransactions)
+    .where(inArray(paymentTransactions.billingAccountId, ids));
   await db
     .delete(subscriptionAuditLogs)
     .where(inArray(subscriptionAuditLogs.billingAccountId, ids));

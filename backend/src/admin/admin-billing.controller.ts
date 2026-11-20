@@ -11,7 +11,7 @@ import {
 export class AdminBillingController {
   constructor(private readonly billing: AdminBillingService) {}
 
-  /** `?skip=0&take=50` (max 100). Empty `{ items: [], total: 0, skip, take }` until Module 8. */
+  /** `?skip=0&take=50` (max 100) → `{ items, total, skip, take }`, newest first. */
   @Get('transactions')
   transactions(
     @Query() query: ListTransactionsQueryDto,

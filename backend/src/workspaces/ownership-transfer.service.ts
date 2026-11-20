@@ -22,6 +22,7 @@ import {
   accounts,
   billingAccounts,
   promotionRedemptions,
+  paymentTransactions,
   subscriptionAuditLogs,
   subscriptions,
   wallets,
@@ -474,7 +475,7 @@ export class OwnershipTransferService {
   }
 }
 
-/** Anything that points at the account (FKs restrict). Payment tables (Module 8) belong here too. */
+/** Anything that points at the account (FKs restrict). */
 const accountInUse = sql<boolean>`(${sql.join(
   [
     workspaces.billingAccountId,
@@ -482,6 +483,7 @@ const accountInUse = sql<boolean>`(${sql.join(
     wallets.billingAccountId,
     promotionRedemptions.billingAccountId,
     subscriptionAuditLogs.billingAccountId,
+    paymentTransactions.billingAccountId,
   ].map(
     (column) =>
       sql`exists (select 1 from ${column.table} where ${column} = ${billingAccounts.id})`,

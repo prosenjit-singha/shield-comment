@@ -20,3 +20,4 @@ export * from './wallet.js';
 export * from './subscription-audit.js';
 export * from './promotions.js';
 export * from './alerts.js';
+export * from './payments.js';

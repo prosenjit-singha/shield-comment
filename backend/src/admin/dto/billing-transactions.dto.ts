@@ -6,7 +6,7 @@ export const TRANSACTIONS_PAGE_MAX = 100;
 /**
  * `GET /api/admin/billing/transactions` query (M2-T9). Same paging rules as the other admin lists:
  * `skip` int ≥ 0 (default 0), `take` int 1–100 (default 50); any other param → 400.
- * Filters (status, gateway, workspace, dates) are added with the payments table in Module 8.
+ * Filters (status, gateway, workspace, dates) come with A4's Module 8 row (M8-T9).
  */
 export class ListTransactionsQueryDto {
   @IsOptional()
@@ -24,7 +24,7 @@ export class ListTransactionsQueryDto {
 }
 
 /**
- * Payment status, mapped from SSLCommerz V4 (IPN / validation API) by Module 8:
+ * Payment status (= `PAYMENT_STATUSES`, `payment_transactions.status`), set from SSLCommerz V4:
  * `PENDING` (session created, no IPN yet), `PAID` (`VALID`/`VALIDATED` after the validation API),
  * `FAILED`, `CANCELLED` (customer cancelled), `REFUNDED` (refund API).
  */
@@ -37,10 +37,7 @@ export const TRANSACTION_STATUSES = [
 ] as const;
 export type TransactionStatus = (typeof TRANSACTION_STATUSES)[number];
 
-/**
- * One payment row (final shape, user decision 2026-11-18). The list is always empty until Module 8
- * adds the payments table; the admin app (M2-T9) already renders these columns.
- */
+/** One `payment_transactions` row (final shape, user decision 2026-11-18; real rows since M8-T2). */
 export interface AdminTransaction {
   id: string;
   workspace: { id: string; name: string };
@@ -48,7 +45,7 @@ export interface AdminTransaction {
   plan: { id: string; name: string };
   /** Whole taka (৳), integer. */
   amountBdt: number;
-  /** Payment method SSLCommerz reports (`card_type`), e.g. `bKash`, `Nagad`, `Visa`, `Mastercard`. */
+  /** `gatewayLabel()`: `bKash`, `Nagad`, `Visa`, `Mastercard`, … from `card_type`; `PROMOTION` (৳0); `SSLCommerz` (no card yet). */
   gateway: string;
   status: TransactionStatus;
   /** Our SSLCommerz `tran_id` (unique per payment attempt). */
