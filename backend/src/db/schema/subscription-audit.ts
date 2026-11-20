@@ -19,6 +19,11 @@ export const SUBSCRIPTION_AUDIT_REASON_MAX = 500;
 /** Longest user agent kept (longer ones are truncated before the insert, like `plan_audit_logs`). */
 export const SUBSCRIPTION_AUDIT_USER_AGENT_MAX = 512;
 
+/** Who started the term: a super admin's manual activation (PW-T9) or a validated payment (M8-T3). */
+export const SUBSCRIPTION_AUDIT_SOURCES = ['ADMIN', 'PAYMENT'] as const;
+export type SubscriptionAuditSource =
+  (typeof SUBSCRIPTION_AUDIT_SOURCES)[number];
+
 /** A promotion on a manual activation's bill (PR-D12; PR-T3b). */
 export interface AppliedPromotion {
   promotionId: string;
@@ -47,9 +52,11 @@ export interface ActivationPrice {
 }
 
 /**
- * One row per manual plan activation by a super admin (`POST
- * /api/admin/clients/:workspaceId/subscription`, PW-T9; user decision 2026-11-19 PW-D16). Written
- * in the same transaction as the subscription change, after the billing account's `FOR UPDATE`
+ * One row per paid term written by `SubscriptionService.activatePaidTerm` (M8-T3): `source` ADMIN =
+ * a super admin's manual activation (`POST /api/admin/clients/:workspaceId/subscription`, PW-T9;
+ * user decision 2026-11-19 PW-D16, `admin_id` set) or PAYMENT = a validated payment (no admin;
+ * a renewal that moves the term has `before` = `after` = the same row). Written in the same
+ * transaction as the subscription change, after the billing account's `FOR UPDATE`
  * lock. `before_*` = the account's live subscription that was ended (all null when it had none);
  * `after_*` = the new `ACTIVE` one. Rows are never updated (no `updatedAt`). FKs are `restrict`
  * like the other audit tables: audit rows must outlive deletes (e2e `cleanup()` /
@@ -59,10 +66,9 @@ export const subscriptionAuditLogs = pgTable(
   'subscription_audit_logs',
   {
     id: id(),
-    /** Super admin who activated the plan. */
-    adminId: uuid()
-      .notNull()
-      .references(() => users.id, { onDelete: 'restrict' }),
+    /** ADMIN: the super admin who activated the plan; PAYMENT: `null`. */
+    source: text().$type<SubscriptionAuditSource>().notNull().default('ADMIN'),
+    adminId: uuid().references(() => users.id, { onDelete: 'restrict' }),
     billingAccountId: uuid()
       .notNull()
       .references(() => billingAccounts.id, { onDelete: 'restrict' }),
@@ -126,6 +132,12 @@ export const subscriptionAuditLogs = pgTable(
       'subscription_audit_logs_status_check',
       sql.raw(
         `${inListSql('after_status', SUBSCRIPTION_STATUSES)} and (${inListSql('before_status', SUBSCRIPTION_STATUSES, true)})`,
+      ),
+    ),
+    check(
+      'subscription_audit_logs_source_check',
+      sql.raw(
+        `${inListSql('source', SUBSCRIPTION_AUDIT_SOURCES)} and ((source = 'ADMIN') = (admin_id is not null))`,
       ),
     ),
     check(

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AiGatewayModule } from '../ai-gateway/ai-gateway.module.js';
+import { BillingModule } from '../billing/billing.module.js';
 import { TokenCipherModule } from '../crypto/token-cipher.module.js';
 import { HealthModule } from '../health/health.module.js';
 import { PromotionsModule } from '../promotions/promotions.module.js';
@@ -31,6 +32,7 @@ import { AdminSystemService } from './admin-system.service.js';
     TokenCipherModule,
     WalletModule,
     PromotionsModule,
+    BillingModule,
   ],
   controllers: [
     AdminClientsController,

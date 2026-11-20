@@ -123,6 +123,7 @@ describe('manual activation rules (PW-T9)', () => {
 
   describe('toActivationAudit', () => {
     const base = {
+      source: 'ADMIN' as const,
       adminId: 'admin',
       billingAccountId: 'acc',
       workspaceId: 'ws',
@@ -157,6 +158,7 @@ describe('manual activation rules (PW-T9)', () => {
           },
         }),
       ).toEqual({
+        source: 'ADMIN',
         adminId: 'admin',
         billingAccountId: 'acc',
         workspaceId: 'ws',

@@ -1,5 +1,6 @@
 import type {
   ActivationPrice,
+  SubscriptionAuditSource,
   SubscriptionInterval,
   SubscriptionStatus,
 } from '../db/schema/index.js';
@@ -118,9 +119,11 @@ export function endedStatus(
     : { status: 'EXPIRED' };
 }
 
-/** The `subscription_audit_logs` row of one activation (without `id` / `created_at`). */
+/** The `subscription_audit_logs` row of one paid term (without `id` / `created_at`). */
 export interface ActivationAuditInput {
-  adminId: string;
+  /** ADMIN = manual activation (with `adminId`); PAYMENT = a validated payment (`adminId` null). */
+  source: SubscriptionAuditSource;
+  adminId: string | null;
   billingAccountId: string;
   workspaceId: string;
   before: EndedSubscription | null;
@@ -141,6 +144,7 @@ export interface ActivationAuditInput {
 export function toActivationAudit(input: ActivationAuditInput) {
   const { before, after } = input;
   return {
+    source: input.source,
     adminId: input.adminId,
     billingAccountId: input.billingAccountId,
     workspaceId: input.workspaceId,

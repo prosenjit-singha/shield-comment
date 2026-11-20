@@ -281,6 +281,13 @@
       "when": 1795208969848,
       "tag": "0039_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795209918627,
+      "tag": "0040_subscription_audit_source",
+      "breakpoints": true
     }
   ]
 }

@@ -55,7 +55,7 @@ export function monthlyReset(anchor: Date, k: number): Date {
 }
 
 /** Index of the last reset of `anchor` at or before `at` (negative when `at` is before the anchor). */
-function resetIndex(anchor: Date, at: Date): number {
+export function resetIndex(anchor: Date, at: Date): number {
   const a = dhakaWall(anchor);
   const w = dhakaWall(at);
   const k = (w.year - a.year) * 12 + (w.month - a.month);

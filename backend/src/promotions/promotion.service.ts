@@ -152,6 +152,55 @@ const toDiscount = (row: DiscountRow): PriceDiscount => ({
   endsAt: row.endsAt,
 });
 
+interface RedemptionRow extends Omit<DiscountRow, 'endsAt'> {
+  redemptionId: string;
+  kind: string;
+  monthsUsed: number;
+  targeted: boolean;
+}
+
+/**
+ * Claimed redemptions of `kind` that target the plan and have months left (reading 9): `terms` =
+ * the snapshot, `discount` = the snapshot with only the months left (what this bill is priced at).
+ */
+const claimedOf = (
+  rows: readonly RedemptionRow[],
+  kind: 'DISCOUNT' | 'COUPON',
+): AccountDiscount[] =>
+  rows.flatMap((row) => {
+    if (row.kind !== kind || !row.targeted) return [];
+    const d = toDiscount({ ...row, endsAt: null });
+    const left = monthsLeft(d, row.monthsUsed);
+    if (left === 0) return [];
+    return [
+      {
+        discount:
+          d.discountScope === 'PER_MONTH' ? { ...d, durationMonths: left } : d,
+        terms: d,
+        monthsUsed: row.monthsUsed,
+        redemptionId: row.redemptionId,
+      },
+    ];
+  });
+
+/** The claim with the biggest first-bill saving (`planPrice` picks it), or `null`. */
+function bestClaim(
+  plan: PlanPriceSource,
+  interval: SubscriptionInterval,
+  claims: readonly AccountDiscount[],
+): { claim: AccountDiscount; amountBdt: number } | null {
+  const saving = planPrice(
+    plan,
+    interval,
+    claims.map((c) => c.discount),
+  )?.saving;
+  if (!saving) return null;
+  return {
+    claim: claims.find((c) => c.discount.promotionId === saving.promotionId)!,
+    amountBdt: saving.amountBdt,
+  };
+}
+
 const pgError = (error: unknown) =>
   ((error as { cause?: unknown }).cause ?? error) as {
     code?: string;
@@ -362,7 +411,48 @@ export class PromotionService {
     now = new Date(),
     db: PromotionExecutor = this.db,
   ): Promise<AccountDiscount | null> {
-    const rows = await db
+    const rows = await this.redemptionsOf(accountId, planId, db);
+    const claimed = claimedOf(rows, 'DISCOUNT');
+    const used = new Set(rows.map((r) => r.promotionId));
+    const live = (await this.liveDiscountsFor([planId], now))
+      .get(planId)!
+      .filter((d) => !used.has(d.promotionId));
+
+    const mine = bestClaim(plan, interval, claimed);
+    const best = planPrice(plan, interval, live);
+    if (!mine && !best?.saving) return null;
+    if ((best?.saving?.amountBdt ?? 0) > (mine?.amountBdt ?? 0)) {
+      const d = live.find((l) => l.promotionId === best!.saving!.promotionId)!;
+      return { discount: d, terms: d, monthsUsed: 0, redemptionId: null };
+    }
+    return mine!.claim;
+  }
+
+  /**
+   * The account's claimed COUPON that still has months on `planId` (Module 8 reading 7, PR-D19:
+   * a coupon covers only the months the admin set, `months_used` + the term's months each bill),
+   * priced like a claimed discount (snapshot terms, only the months left; Stop / end ignored). The
+   * biggest saving wins; `null` = none. Checkout puts it on top of `accountDiscount` when no new
+   * code is typed. Read-only: the caller advances `months_used` in its transaction.
+   */
+  async accountCoupon(
+    accountId: string,
+    planId: string,
+    plan: PlanPriceSource,
+    interval: SubscriptionInterval,
+    db: PromotionExecutor = this.db,
+  ): Promise<AccountDiscount | null> {
+    const rows = await this.redemptionsOf(accountId, planId, db);
+    return bestClaim(plan, interval, claimedOf(rows, 'COUPON'))?.claim ?? null;
+  }
+
+  /** The account's redemptions, each with whether its promotion targets `planId`. */
+  private redemptionsOf(
+    accountId: string,
+    planId: string,
+    db: PromotionExecutor,
+  ) {
+    return db
       .select({
         redemptionId: promotionRedemptions.id,
         promotionId: promotionRedemptions.promotionId,
@@ -380,47 +470,6 @@ export class PromotionService {
         eq(promotions.id, promotionRedemptions.promotionId),
       )
       .where(eq(promotionRedemptions.billingAccountId, accountId));
-    const claimed = rows.flatMap((row) => {
-      if (row.kind !== 'DISCOUNT' || !row.targeted) return [];
-      const d = toDiscount({ ...row, endsAt: null });
-      const left = monthsLeft(d, row.monthsUsed);
-      if (left === 0) return [];
-      return [
-        {
-          row,
-          d,
-          priced:
-            d.discountScope === 'PER_MONTH'
-              ? { ...d, durationMonths: left }
-              : d,
-        },
-      ];
-    });
-    const used = new Set(rows.map((r) => r.promotionId));
-    const live = (await this.liveDiscountsFor([planId], now))
-      .get(planId)!
-      .filter((d) => !used.has(d.promotionId));
-
-    const mine = planPrice(
-      plan,
-      interval,
-      claimed.map((c) => c.priced),
-    );
-    const best = planPrice(plan, interval, live);
-    if (!mine?.saving && !best?.saving) return null;
-    if ((best?.saving?.amountBdt ?? 0) > (mine?.saving?.amountBdt ?? 0)) {
-      const d = live.find((l) => l.promotionId === best!.saving!.promotionId)!;
-      return { discount: d, terms: d, monthsUsed: 0, redemptionId: null };
-    }
-    const c = claimed.find(
-      (x) => x.d.promotionId === mine!.saving!.promotionId,
-    )!;
-    return {
-      discount: c.priced,
-      terms: c.d,
-      monthsUsed: c.row.monthsUsed,
-      redemptionId: c.row.redemptionId,
-    };
   }
 
   /**

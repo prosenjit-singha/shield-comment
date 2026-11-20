@@ -144,7 +144,7 @@ export class WalletService {
    * activation, PW-D16): the wallet is re-anchored at the term start, the period containing `now`
    * gets balance rows with `used` 0 and the plan's grant **even when a row with that
    * `period_start` already exists** (`openPeriod` would keep its `used`), plus one `PLAN_GRANT`
-   * entry per meter with `actorUserId` (the admin). Other balance rows still open at `now` (the
+   * entry per meter with `actorUserId` (the admin; `null` for a payment). Other balance rows still open at `now` (the
    * ended trial / term) are closed at `now`, so a later `refund(at)` lands in the right period.
    * `added` (future top-ups) is kept. Run it inside the transaction that wrote the subscription;
    * returns the fresh balance of each meter.
@@ -153,7 +153,7 @@ export class WalletService {
     live: AccountLiveSubscription,
     now: Date,
     tx: WalletExecutor,
-    actorUserId: string,
+    actorUserId: string | null,
   ): Promise<Map<WalletMeter, WalletBalance>> {
     assertWalletInstant(now);
     const period = subscriptionPeriod(live, now);
