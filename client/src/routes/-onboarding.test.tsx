@@ -14,6 +14,7 @@ import {
   renderAppRoute,
   stubAppGlobals,
   SUMMARY,
+  DASHBOARD,
   summaryApi,
   toggleUrl,
 } from '@/test/app-routes'
@@ -403,7 +404,7 @@ describe('/dashboard with 0 active Pages', () => {
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeTruthy()
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(history.location.pathname).toBe('/dashboard')
-    // Only the session + the shell's billing summary (PW-T8 banner): no Pages call.
-    expect(apiCalls().map((call) => call.path)).toEqual(['/api/auth/get-session', SUMMARY])
+    // Only the session, the shell's billing summary (PW-T8 banner) and the dashboard summary (M6-T8): no Pages call.
+    expect(apiCalls().map((call) => call.path).sort()).toEqual(['/api/auth/get-session', DASHBOARD, SUMMARY].sort())
   })
 })

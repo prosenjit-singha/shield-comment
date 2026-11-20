@@ -10,6 +10,7 @@ import {
 import { render } from '@testing-library/react'
 import { vi } from 'vitest'
 import type { BillingSummary } from '@/lib/billing-summary'
+import type { DashboardSummary, SummaryRange } from '@/lib/dashboard-summary'
 import type { Language } from '@/lib/language'
 import type { WorkspaceMetaConnection, WorkspacePage } from '@/lib/meta-pages'
 import type { AiContextLevel, ModerationPolicy } from '@/lib/moderation-policy'
@@ -53,6 +54,7 @@ export const toggleUrl = (id: string) => `${PAGES}/${id}/toggle`
 export const DISCONNECT = '/api/workspaces/w1/meta/connection'
 export const POLICY = '/api/workspaces/w1/moderation/policy'
 export const SUMMARY = '/api/workspaces/w1/billing/summary'
+export const DASHBOARD = '/api/workspaces/w1/dashboard/summary'
 export const META_DIALOG = 'https://www.facebook.com/v26.0/dialog/oauth?client_id=1&state=abc'
 
 export function page(overrides: Partial<WorkspacePage> = {}): WorkspacePage {
@@ -108,10 +110,11 @@ export function pagesApi(
     })
   // `/pages` also loads the moderation policy once the list loaded (M5-T15 "AI analysis" card), and the
   // `_app` shell the billing summary (PW-T8 banner; a paid plan = no banner).
-  const handlers: Record<string, (init?: RequestInit) => Response | Promise<Response>> = {
+  const handlers: Record<string, (init?: RequestInit, url?: URL) => Response | Promise<Response>> = {
     [PAGES]: list,
     ...policyApi(),
     ...summaryApi(),
+    ...dashboardApi(),
   }
   const { onDisconnect } = options
   if (onDisconnect) {
@@ -209,9 +212,59 @@ export function summaryApi(respond: () => Response | Promise<Response> = () => j
   }
 }
 
-/** jsdom gaps the `_app` shell needs (top-bar theme toggle reads matchMedia; the router scrolls). */
+/** A zero-filled dashboard summary (M6-T5 contract) for `range`; `fill` sets day i's counts. */
+export function dashboardSummary(
+  range: SummaryRange = '30d',
+  fill: (i: number) => { scanned: number; autoHidden: number } = () => ({ scanned: 0, autoHidden: 0 }),
+): DashboardSummary {
+  const days = range === '7d' ? 7 : range === '30d' ? 30 : 90
+  const end = Date.parse('2026-11-20T00:00:00Z')
+  const daily = Array.from({ length: days }, (_, i) => ({
+    day: new Date(end - (days - 1 - i) * 86_400_000).toISOString().slice(0, 10),
+    ...fill(i),
+  }))
+  const zero = (category: DashboardSummary['intents'][number]['category']) => ({ category, count: 0 })
+  return {
+    range,
+    kpis: {
+      scanned: daily.reduce((sum, d) => sum + d.scanned, 0),
+      autoHidden: daily.reduce((sum, d) => sum + d.autoHidden, 0),
+      needsReview: 0,
+      scamsBlocked: 0,
+    },
+    daily,
+    intents: (['SAFE_INQUIRY', 'COMPETITOR_POACH', 'SCAM_PHISHING', 'SPAM_IRRELEVANT', 'ABUSIVE_TOXIC'] as const).map(zero),
+    flagged: (['COMPETITOR_POACH', 'SCAM_PHISHING', 'SPAM_IRRELEVANT', 'ABUSIVE_TOXIC'] as const).map(zero),
+  }
+}
+
+/**
+ * `GET …/dashboard/summary?range=` (`/dashboard`, M6-T8): answers `respond(range)` (default: an empty summary
+ * for the requested range). Any other method or range fails the test.
+ */
+export function dashboardApi(respond: (range: SummaryRange) => Response | Promise<Response> = (range) => json(200, dashboardSummary(range))) {
+  return {
+    [DASHBOARD]: (init?: RequestInit, url?: URL) => {
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method !== 'GET') throw new Error(`Unexpected ${method} ${DASHBOARD}`)
+      const range = url?.searchParams.get('range')
+      if (range !== '7d' && range !== '30d' && range !== '90d') throw new Error(`Unexpected range ${String(range)}`)
+      return respond(range)
+    },
+  }
+}
+
+/** jsdom gaps the `_app` shell needs (top-bar theme toggle reads matchMedia; the router scrolls; Recharts observes size). */
 export function stubAppGlobals(): void {
   vi.stubGlobal('scrollTo', () => {})
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  )
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: false,
     media: query,

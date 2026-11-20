@@ -6,7 +6,7 @@ import { resolveTheme, useUiStore } from '@/stores/ui-store'
 
 /**
  * `_app` top bar (M3-T9): logo, EN/BN switch (per-router store → `shield-lang` cookie), theme toggle,
- * the signed-in email and log-out. The sidebar navigation arrives with Module 6.
+ * the signed-in email and log-out. Navigation lives in `app-nav.tsx` (M6-T8).
  * `onSignOut` is omitted while impersonating: the banner's "Exit" is the only way out then.
  */
 export function AppTopBar({

@@ -45,8 +45,8 @@ export function json(status: number, body: unknown, headers: Record<string, stri
   })
 }
 
-/** Gets the `fetch` init (method, body) for paths that answer more than one method. */
-type Handler = (init?: RequestInit) => Response | Promise<Response>
+/** Gets the `fetch` init (method, body) for paths that answer more than one method, and the full URL (query). */
+type Handler = (init?: RequestInit, url?: URL) => Response | Promise<Response>
 
 /**
  * Answers by pathname; get-session defaults to "signed out". An unknown path rejects the fetch, and
@@ -65,7 +65,7 @@ export function mockApi(handlers: Record<string, Handler>): void {
       unexpected.push(url.pathname)
       throw new Error(`Unexpected fetch ${url.pathname}`)
     }
-    return handler(init)
+    return handler(init, url)
   })
 }
 

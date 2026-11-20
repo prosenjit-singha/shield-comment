@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Outlet, redirect, useNavigate } from '@tanstack/react-router'
 import { CircleAlert } from 'lucide-react'
 import { useState } from 'react'
+import { AppBottomBar, AppSidebar } from '@/components/app-shell/app-nav'
 import { AppTopBar } from '@/components/app-shell/app-top-bar'
 import { ImpersonationBanner } from '@/components/app-shell/impersonation-banner'
 import { ImpersonationEnded } from '@/components/app-shell/impersonation-ended'
@@ -101,9 +102,14 @@ function AppLayout() {
           </div>
         </div>
       ) : null}
-      <main className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6">
-        <Outlet />
-      </main>
+      {/* M6-T8 (D16 c): sidebar from md up, bottom bar below (pb-24 keeps content clear of it). */}
+      <div className="mx-auto flex w-full max-w-6xl flex-1 gap-6 p-4 pb-24 sm:p-6 sm:pb-24 md:pb-6">
+        <AppSidebar />
+        <main className="min-w-0 flex-1">
+          <Outlet />
+        </main>
+      </div>
+      <AppBottomBar />
     </div>
   )
 }
