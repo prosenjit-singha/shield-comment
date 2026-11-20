@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 6 section + the row's decisions, `docs/project-documentation/modules/module-6-client-dashboard.md`, the code the row names.
 - Standing approvals: **client/ + admin/ approved for every Module 6 row in this run** (user, 2026-11-20, "Both, rest of run (Recommended)"). Live AI or Meta calls: none without asking (no live calls in tests). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #13 (2026-11-20) · rows this session: 3 · estimate: 74k
+- Session: #13 (2026-11-20) · rows this session: 4 · estimate: 84k
 - Previous runs (Modules 3–5, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M6-T3 (2026-11-20) · commit: "feat(backend): add workspace comments feed api (M6-T3)"
+verified M6-T3 (2026-11-20)
 
 ## Resume
 `/orchestration --continue`
@@ -260,4 +260,4 @@ You are implementing exactly ONE task row, **M6-T4**, in the ShieldComment BD re
 - 2026-11-20 M6-PLAN ✅ · `de4d399` · docs only · Module 6 section in TASKS.md: 14 rows (M6-T1…T13 + GATE), 17 open decisions (D1–D17); next = pre-check asks D1–D17, then M6-T1
 - 2026-11-20 M6-T1 ✅ · `43b9b2e` + fix `98eedc6` · backend 2076 unit (was 2031) + e2e 1010 (was 983) · admin/client untouched · migration 0032: policy rules (keywords, URL/phone switches, allowed domains, Hide/Delete per kind), `comments.rule_match`, `ruleMatched` counter; policy API `rules` + availability flags, 400 codes, D4 gating; M6-PLAN decisions D1–D17 recorded + rows re-planned (M6-T7b added, M6-T13 moved)
 - 2026-11-20 M6-T2 ✅ · `13a29fd` · backend 2130 unit (was 2076) + e2e 1015 (was 1010) · static rule engine before the AI: keyword → URL → BD phone, no LLM/post context on a match, Hide/Delete per kind, REVIEW → NEEDS_REVIEW, gate test (1) in the service spec
-- 2026-11-20 M6-T3 ✅ · backend 2157 unit (was 2130) + e2e 1041 (was 1015) · `GET /api/workspaces/:workspaceId/comments` feed: filters, Dhaka days, `q` escaped, `since`, keyset cursor, latest action; every member + impersonated
+- 2026-11-20 M6-T3 ✅ · `7f2ab4e` · backend 2157 unit (was 2130) + e2e 1041 (was 1015) · `GET /api/workspaces/:workspaceId/comments` feed: filters, Dhaka days, `q` escaped, `since`, keyset cursor, latest action; every member + impersonated
