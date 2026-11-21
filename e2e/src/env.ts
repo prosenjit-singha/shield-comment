@@ -1,3 +1,4 @@
+import type { FullConfig } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -137,3 +138,16 @@ export function runIdentity(id: string = runId()) {
   } as const;
 }
 export type RunIdentity = ReturnType<typeof runIdentity>;
+
+/**
+ * Global setup/teardown seed and clean only for the compose suite (`chromium`) or `npm run smoke:local`
+ * (`SMOKE_LOCAL_SEED=1`: throwaway owner + super admin handed to the `smoke` project as SMOKE_* env).
+ * A plain `npm run smoke` touches neither Docker nor the database.
+ */
+export function seedsThisRun(config: FullConfig): boolean {
+  return smokeLocalSeed() || config.filteredProjects.some((project) => project.name === 'chromium');
+}
+
+export function smokeLocalSeed(): boolean {
+  return process.env.SMOKE_LOCAL_SEED === '1';
+}

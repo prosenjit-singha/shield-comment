@@ -74,6 +74,7 @@ Do staging first (M9-T13), then production (M9-T17) with the production values f
    - Resend: `EMAIL_FROM` on a verified domain.
    (`<host>` = `<domain>` in production, `staging.<domain>` on staging.)
 9. **Smoke**: `curl -fsS https://api.<host>/api/health/live`, `https://app.<host>/healthz`, `https://admin.<host>/healthz`, then the M9-T11 smoke suite and the §2 IP check.
+   The smoke suite (`e2e/smoke/`, read-only, no Docker/DB/Redis) runs from any machine with the e2e deps: `cd e2e && SMOKE_CLIENT_URL=https://app.staging.<domain> SMOKE_ADMIN_URL=https://admin.staging.<domain> SMOKE_API_URL=https://api.staging.<domain> SMOKE_OWNER_EMAIL=… SMOKE_OWNER_PASSWORD=… SMOKE_ADMIN_EMAIL=… SMOKE_ADMIN_PASSWORD=… npm run smoke` (the fixed staging owner has a verified email and a workspace; the super admin comes from `create-super-admin`; keep the values in a password manager or a shell env file, never in git). It refuses hosts without a `staging` label (or `localhost`/`*.localhost`); in production set `SMOKE_ALLOW_PRODUCTION=1` and it runs only the public checks (health, landing, robots/sitemap, headers), no sign-in. Locally against compose: `cd e2e && npm run smoke:local` (the global setup creates a throwaway verified owner + super admin, passes them in as `SMOKE_*`, and the teardown deletes their rows and `auth:*` keys).
 10. **Uptime monitor** (§6).
 
 ## 4. Redeploy, rollback, migrations

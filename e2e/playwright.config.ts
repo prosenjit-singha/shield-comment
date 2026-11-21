@@ -5,6 +5,8 @@ import { env } from './src/env.js';
  * Gate suite against the compose stack (`docker compose up --build`): `npm test` from the host,
  * `npm run test:docker` in the compose `e2e` service. Settings: `src/env.ts`.
  * One worker: the specs share the run's seeded users.
+ * Project `smoke` (M9-T11, `npm run smoke`): read-only checks against base URLs (`smoke/env.ts`);
+ * not run by default, and the global setup/teardown skip it (`seedsThisRun`).
  */
 export default defineConfig({
   testDir: './tests',
@@ -36,6 +38,19 @@ export default defineConfig({
           // origins (admin.localhost / app.localhost) to the compose services instead.
           args: env.hostResolverRules ? [`--host-resolver-rules=${env.hostResolverRules}`] : [],
         },
+      },
+    },
+    {
+      name: 'smoke',
+      testDir: './smoke',
+      default: false,
+      use: {
+        ...devices['Desktop Chrome'],
+        // No artifacts: sign-in credentials and session cookies must never land in a trace or report.
+        trace: 'off',
+        screenshot: 'off',
+        video: 'off',
+        launchOptions: env.chromiumPath ? { executablePath: env.chromiumPath } : {},
       },
     },
   ],
