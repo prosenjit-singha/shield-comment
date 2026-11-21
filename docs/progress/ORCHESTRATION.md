@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 9 section + the row's decisions, `docs/project-documentation/modules/module-9-launch-security.md`, the code the row names.
 - Standing approvals: **client/ approved for the rest of the run** (user, 2026-11-21, M9-T6 pre-check: "Rest of the run"); **admin/ approved for the rest of the run** (user, 2026-11-21, M9-T8 pre-check: "Rest of the run"). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included), deploys, DNS, hosting/Neon/Redis Cloud accounts or any production credential: none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #20 (2026-11-21, continues session #19) · rows this session: 4 · estimate: 260k
+- Session: #20 (2026-11-21, continues session #19) · rows this session: 5 · estimate: 285k
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M9-T14 (2026-11-22) · commit: "docs(deploy): record staging smoke and sandbox run (M9-T14)" (summary may be adjusted; subject contains (M9-T14))
+verified M9-T14 · next: M9-T14a vs M9-T15 order + M9-T15 pre-check (user)
 
 ## Resume
 `/orchestration --continue` — M9-T14 (staging accounts + smoke; payments skipped) dispatched.
@@ -507,4 +507,4 @@ One distinction: if you use Cloudflare's proxy, configure SSL/TLS mode as Full (
 - 2026-11-21 M9-T13 ✅ 2d86966 (4th try + docs-only close) · Neon production name restored (`br-winter-leaf`/`ep-bold-dawn`, no write/DDL on it); new schema-only `staging` `br-blue-waterfall-a1lipa9o`/`ep-morning-meadow-a17o9g0x` reset + migrated 48/48 (4 plans, 45 tables); Redis noeviction ✅; check-fly-config ✅; 3 Fly deploys (1 machine each, sin, 512/256/256 MB): api live 200, `/api/health` 200 once (db+redis up), app/admin `/healthz` 200, live via both proxies 200 · client crash on browser traffic (`ERR_INVALID_STATE`) → M9-T13a; super admin/owner + §2 IP + smoke → M9-T14; env files → M9-T13b · deploy.md prices/`fly auth docker`/schema-only procedure
 - 2026-11-21 M9-T13a ✅ dd61882 · client 1130/1130 (was 1128) · srvx/static Node-stream bodies no longer wrapped by undici (`ERR_INVALID_STATE` crash); staging client redeployed, no crash under browser traffic
 - 2026-11-21 M9-T13b ✅ 3c099f4 · backend unit 2641 (was 2634), e2e 1373, admin 465, client 1130 · env files per environment (`.env` → `.env.<env>` → `.env.local`), `.env.neon` → `.env.production`, `*:neon` → `*:production`, Neon branch guard on staging/production scripts, Vite env files read
-- 2026-11-22 M9-T14 ✅ · smoke staging 12/12 · no code tests (docs only) · staging super admin + verified owner created; §2 client IP ❌ (Fly edge address) → M9-T14a; SSLCommerz sandbox skipped → M9-T14b
+- 2026-11-22 M9-T14 ✅ 338b8b9 · smoke staging 12/12 · no code tests (docs only) · staging super admin + verified owner created; §2 client IP ❌ (Fly edge address) → M9-T14a; SSLCommerz sandbox skipped → M9-T14b
