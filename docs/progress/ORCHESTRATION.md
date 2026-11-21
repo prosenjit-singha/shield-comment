@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 9 section + the row's decisions, `docs/project-documentation/modules/module-9-launch-security.md`, the code the row names.
 - Standing approvals: none yet for admin/ or client/ in this run (the Module 8 approvals ended with that run; ask at the first row that touches each). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included), deploys, DNS, hosting/Neon/Redis Cloud accounts or any production credential: none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #18 (2026-11-21, continues from the Module 8 run) · rows this session: 6 · estimate: 170k
+- Session: #18 (2026-11-21, continues from the Module 8 run) · rows this session: 7 · estimate: 195k
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M9-PLAN (2026-11-21) · commit: "docs(progress): plan module 9 (M9-PLAN)"
+verified M9-PLAN · next M9-T1 pre-check: decisions M9-D1…D15
 
 ## Resume
 `/orchestration --continue`
@@ -375,4 +375,4 @@ You are implementing exactly ONE task row, **M9-T1**, in the ShieldComment BD re
 - 2026-11-21 M8-T12 ✅ 6899809 · client 1023 (was 1003) · backend/admin/root e2e untouched · C1 landing `/` + `/bn`: 9 sections (navbar EN | বাং, hero + simulator, trust strip, bento, ROAS calculator, how it works, live SSR pricing from `GET /api/plans` with both prices in the HTML + D11 register links, FAQ, footer CTA), failure fallback "See plans" + no-store
 - 2026-11-21 M8-T13 ✅ 39bf4eb · client 1037 (was 1023) · backend/admin/root e2e untouched · landing SEO: JSON-LD SoftwareApplication (lowest live price) + FAQPage, og:image 1200×630 + twitter card, robots.txt + sitemap.xml server routes, TikTok → Instagram copy; Lighthouse mobile `/` 100/96/100/100, `/bn` 99/96/100/100 (`client/scripts/lighthouse.sh`)
 - 2026-11-21 M8-GATE ✅ 0570111 · backend 2602 + e2e 1314 · admin 465 · client 1037 · root e2e 7/7 host + docker (was 4) · Lighthouse `/` 100/96/100/100, `/bn` 99/96/100/100 · Module 8 gate: SSLCommerz stub checkout round trip (monthly, yearly, tampered) + A4, curl raw HTML, browser check; no app code changed
-- 2026-11-21 M9-PLAN ✅ · docs only · Module 9 planned: 19 rows (12 code/docs + 7 👤 user steps) + GATE, decisions D1–D15 open (hosting, rate limits, origins, audit immutability, staging, smoke, App Review screencast, SSLCommerz live, contrast, password reset, legal pages, CSP, compression, uptime, gate scope)
+- 2026-11-21 M9-PLAN ✅ e4d5397 · docs only · Module 9 planned: 19 rows (12 code/docs + 7 👤 user steps) + GATE, decisions D1–D15 open (hosting, rate limits, origins, audit immutability, staging, smoke, App Review screencast, SSLCommerz live, contrast, password reset, legal pages, CSP, compression, uptime, gate scope)
