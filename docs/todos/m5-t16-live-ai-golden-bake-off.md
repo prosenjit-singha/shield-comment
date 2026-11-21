@@ -9,7 +9,7 @@ Run the 48-comment golden suite (`backend/test/fixtures/golden-comments.ts`, lab
 
 ## What you need to do first
 Provide at least one of these. Never commit them, and nothing will print or log them.
-- **Neon AI Gateway credits:** buy credits, then put the gateway base URL and token in `backend/.env.neon` (or `backend/.env`).
+- **Neon AI Gateway credits:** buy credits, then put the gateway base URL and token in `backend/.env.production` (was `.env.neon` before M9-T13b) (or `backend/.env`).
 - **Direct provider key(s):** OpenAI, Anthropic and/or Google. Save them in admin `/admin/settings` → AI provider (encrypted in the DB), or in the git-ignored `backend/.env`.
 
 ## Answers already given (2026-11-19)

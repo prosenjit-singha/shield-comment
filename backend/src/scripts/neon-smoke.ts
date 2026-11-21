@@ -13,7 +13,8 @@ import { StorageService } from '../storage/storage.service.js';
 /**
  * End-to-end check of the Neon services the backend uses besides Postgres:
  * object storage (put → get → presigned GET → delete → get null) and one AI gateway call.
- * Run: `npm run build && npm run neon:smoke` (loads `.env` then `.env.neon`). Exit 1 on any failure.
+ * Run: `npm run build && npm run neon:smoke:production` (or `:staging`; `.env` → `.env.<branch>` → `.env.local`,
+ * behind the Neon branch guard). Exit 1 on any failure.
  */
 @Module({
   imports: [

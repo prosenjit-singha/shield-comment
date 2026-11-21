@@ -53,16 +53,24 @@ EOF
 ask_environment() {
   local choice
   echo "${BOLD}Which database?${RESET}"
-  echo "  1) local    (backend/.env)"
-  [[ -f "$BACKEND_DIR/.env.neon" ]] && echo "  2) neon     (backend/.env + .env.neon)"
-  [[ -f "$BACKEND_DIR/.env.staging" ]] && echo "  3) staging  (backend/.env + .env.staging)"
+  echo "  1) development (backend/.env → .env.development → .env.local)"
+  [[ -f "$BACKEND_DIR/.env.staging" ]] && echo "  2) staging     (backend/.env → .env.staging → .env.local, Neon branch guard)"
+  [[ -f "$BACKEND_DIR/.env.production" ]] && echo "  3) production  (backend/.env → .env.production → .env.local, Neon branch guard)"
   while true; do
     read -rp "Choose [1]: " choice
+    ENV_NAME=
     case "${choice:-1}" in
-      1) ENV_NAME=local; ENV_ARGS=(--env-file-if-exists=.env); return ;;
-      2) [[ -f "$BACKEND_DIR/.env.neon" ]] && { ENV_NAME=neon; ENV_ARGS=(--env-file=.env --env-file=.env.neon); return; } ;;
-      3) [[ -f "$BACKEND_DIR/.env.staging" ]] && { ENV_NAME=staging; ENV_ARGS=(--env-file=.env --env-file=.env.staging); return; } ;;
+      1) ENV_NAME=development ;;
+      2) [[ -f "$BACKEND_DIR/.env.staging" ]] && ENV_NAME=staging ;;
+      3) [[ -f "$BACKEND_DIR/.env.production" ]] && ENV_NAME=production ;;
     esac
+    if [[ -n "$ENV_NAME" ]]; then
+      # Same files as the npm scripts (later wins, real env vars win); staging/production preload the
+      # guard that refuses a Neon endpoint of another branch (backend/src/config/neon-branch.ts).
+      ENV_ARGS=(--env-file-if-exists=.env "--env-file-if-exists=.env.$ENV_NAME" --env-file-if-exists=.env.local)
+      [[ "$ENV_NAME" != development ]] && ENV_ARGS+=(--import ./dist/scripts/neon-branch-guard.js)
+      return
+    fi
     warn "Pick one of the listed numbers."
   done
 }
@@ -156,6 +164,7 @@ add_super_admin() {
   output="$(
     cd "$BACKEND_DIR" || exit 1
     export SUPER_ADMIN_NAME="$NAME" SUPER_ADMIN_EMAIL="$EMAIL"
+    [[ "$ENV_NAME" != development ]] && export NEON_BRANCH="$ENV_NAME"
     if [[ -n "$PASSWORD" ]]; then export SUPER_ADMIN_PASSWORD="$PASSWORD"; else unset SUPER_ADMIN_PASSWORD; fi
     node "${ENV_ARGS[@]}" "$SCRIPT_JS" 2>&1
   )"

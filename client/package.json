@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build && tsc -b",
-    "start": "node server.mjs",
+    "start": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --env-file-if-exists=.env.production --env-file-if-exists=.env.production.local server.mjs",
     "lint": "oxlint",
     "test": "vitest run",
     "test:watch": "vitest"

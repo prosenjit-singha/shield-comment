@@ -96,3 +96,5 @@ Why:
 ## 7. Environment variables (backend)
 
 `DATABASE_URL`, `DIRECT_URL`, `REDIS_URL`, `BETTER_AUTH_SECRET` (≥32 chars), `BETTER_AUTH_URL`, `TRUSTED_ORIGINS` (comma list of app origins), plus existing app vars. The old `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` are removed.
+
+Env files per environment (M9-T13b, details in `deploy.md` §7): backend npm scripts load `.env` → `.env.<development|staging|production>` → `.env.local` with Node `--env-file-if-exists` (later wins, real env vars always win; no `dotenv`); `drizzle.config.ts` loads the development files with `process.loadEnvFile` so drizzle-kit gets `DIRECT_URL`. The `*:staging` / `*:production` scripts refuse a Neon endpoint of another branch (`src/config/neon-branch.ts`). admin/client use Vite's order (`.env.[mode].local` > `.env.[mode]` > `.env.local` > `.env`).
