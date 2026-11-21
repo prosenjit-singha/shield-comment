@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 9 section + the row's decisions, `docs/project-documentation/modules/module-9-launch-security.md`, the code the row names.
 - Standing approvals: **client/ approved for the rest of the run** (user, 2026-11-21, M9-T6 pre-check: "Rest of the run"); **admin/ approved for the rest of the run** (user, 2026-11-21, M9-T8 pre-check: "Rest of the run"). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included), deploys, DNS, hosting/Neon/Redis Cloud accounts or any production credential: none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #20 (2026-11-21, continues session #19) · rows this session: 0 · estimate: 55k
+- Session: #20 (2026-11-21, continues session #19) · rows this session: 1 · estimate: 75k
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M9-T10b (2026-11-21) · commit: "build(deploy): add fly free-plan staging configs (M9-T10b)"
+verified M9-T10b
 
 ## Resume
 `/orchestration --continue` — next M9-T10b (Fly.io Free-plan staging configs, $0 sizing; no open decision). Coming pre-check: M9-T13 (👤 Fly staging setup: account on the Free plan, 3 apps, Neon staging branch, Redis Cloud DB, secrets) needs the user's go-ahead.
@@ -445,4 +445,4 @@ One distinction: if you use Cloudflare's proxy, configure SSL/TLS mode as Full (
 - 2026-11-21 M9-T11 ✅ 7202418 · root e2e 7/7 (unchanged) · smoke 11/11 (`smoke:local`) · typecheck ✅ · read-only `smoke` Playwright project (`default: false`, base URLs + accounts from `SMOKE_*`, production guard, health/live + healthz, landing `/` `/bn` raw HTML, robots/sitemap, app + Helmet headers, cookie flags, client + admin read-only screens with 0 console errors) + `npm run smoke` / `smoke:local`; deploy.md §3 step 9
 - 2026-11-21 M9-T12 ✅ 6b96e7f · docs only (scope grep 8/8, route grep all match; no test runs, counts unchanged) · Meta App Review package `meta-app-review.md` (8 permission sections + reviewer notes, reviewer account, ≤ 3 min shot list, URLs table, pre-submit checklist), linked from deploy.md §3 step 8 + meta-webhooks-local.md §3
 - 2026-11-21 M9-REPLAN ✅ cf8b23e · docs only (no test runs; check-fly-config ✅, compose config ✅) · Oracle VPS staging re-plan: D16 added, D1/D3/D5/D6/D14 revised (history kept), new code row M9-T10b (`deploy/staging/` compose + Caddyfile + env template + DuckDNS updater + smoke allow-list), M9-T13…T17/T19/GATE rewritten for the DuckDNS hosts, deploy.md "Staging (Oracle VPS)" + Fly = production candidate, tech-stack §2 line
-- 2026-11-21 M9-T10b ✅ · check-fly-config ✅ 6 files + self-test 17/17 · compose config ✅ · e2e typecheck ✅ · root e2e 7/7 · guard 4/4 (was 3) · smoke:local 12/12 (was 11) · Fly Free-plan staging configs (`fly.staging.toml` ×3: backend 512 MB always on, client/admin 256 MB auto-stop, rolling, no release step), `SMOKE_STAGING_HOSTS` allow-list, deploy.md staging section + cost estimate, TASKS D16/D3/D6/D14 revised, M9-T13…GATE on fly.dev hosts
+- 2026-11-21 M9-T10b ✅ 52967da · check-fly-config ✅ 6 files + self-test 17/17 · compose config ✅ · e2e typecheck ✅ · root e2e 7/7 · guard 4/4 (was 3) · smoke:local 12/12 (was 11) · Fly Free-plan staging configs (`fly.staging.toml` ×3: backend 512 MB always on, client/admin 256 MB auto-stop, rolling, no release step), `SMOKE_STAGING_HOSTS` allow-list, deploy.md staging section + cost estimate, TASKS D16/D3/D6/D14 revised, M9-T13…GATE on fly.dev hosts
