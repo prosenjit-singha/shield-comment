@@ -7,18 +7,16 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 9 section + the row's decisions, `docs/project-documentation/modules/module-9-launch-security.md`, the code the row names.
 - Standing approvals: **client/ approved for the rest of the run** (user, 2026-11-21, M9-T6 pre-check: "Rest of the run"); **admin/ approved for the rest of the run** (user, 2026-11-21, M9-T8 pre-check: "Rest of the run"). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included), deploys, DNS, hosting/Neon/Redis Cloud accounts or any production credential: none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #20 (2026-11-21, continues session #19) · rows this session: 1 · estimate: 75k
+- Session: #20 (2026-11-21, continues session #19) · rows this session: 1 · estimate: 95k
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-verified M9-T10b
+paused: blocked M9-T13 (user account steps not done: flyctl not installed / no `fly auth login`; no Redis Cloud staging URL / `backend/.env.fly.staging`) · uncommitted: none · `## Next prompt` unchanged (re-dispatch M9-T13)
 
 ## Resume
-`/orchestration --continue` — next M9-T10b (Fly.io Free-plan staging configs, $0 sizing; no open decision). Coming pre-check: M9-T13 (👤 Fly staging setup: account on the Free plan, 3 apps, Neon staging branch, Redis Cloud DB, secrets) needs the user's go-ahead.
+`/orchestration --continue` — after you: (1) install flyctl in WSL (`curl -L https://fly.io/install.sh | sh`, add `~/.fly/bin` to PATH) and run `fly auth login` (Free plan + card); (2) create the Redis Cloud staging DB (`noeviction`) and put the backend staging secrets in git-ignored `backend/.env.fly.staging` (or have them ready); (3) keep the staging super admin + test owner credentials outside git. Then M9-T13 is dispatched again with the same prompt.
 
 ## Next prompt (M9-T13)
-
-PRE-CHECK: needs user decisions M9-T13 approval before dispatch — the user does the account steps and approves each `fly` command: Fly.io account on the Free plan (card) + `fly auth login`, the 3 staging apps (`shield-comment-api|app|admin-staging`, or other names if taken), Neon `staging` URLs (already in git-ignored `backend/.env.staging`), a new Redis Cloud staging DB (`noeviction`), staging secrets (`fly secrets import/set --stage`), the migration against Neon `staging`, the first deploy. Also ask: verified Fly price for backend 512 MB always on (stay, or try 256 MB), and whether a staging uptime monitor (backend only) is wanted. Quote every answer under "Recorded decisions" below before dispatch.
 
 You are implementing exactly ONE task row, **M9-T13**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder. **This is a 👤 user row: run only the steps the user approved (quoted below); every `fly`, Neon, Redis Cloud or Meta call outside that list needs a new approval → stop and report `needs-decision`.**
 
@@ -31,7 +29,9 @@ You are implementing exactly ONE task row, **M9-T13**, in the ShieldComment BD r
 
 **Recorded decisions** (orchestrator fills in the user's pre-check answers here, verbatim with date):
 - Staging = Fly.io Free plan, $0 target (D16 revised 2026-11-21, M9-T10b).
-- (approvals for each step: …)
+- M9-T13 go-ahead (user, 2026-11-21, verbatim): "Go ahead (Recommended)" — to the question: Fly account on the Free plan (card) + `fly auth login` and the Redis Cloud staging DB (noeviction) URL by the user; the agent runs `fly apps create` ×3, `fly secrets import`, the migration against Neon `staging` and the first deploy, **each only with the user's approval** (ask before each command; if an account step is not done yet, stop with `needs-decision`).
+- Backend staging RAM (user, 2026-11-21, verbatim): "512 MB (Recommended)" — keep 512 MB if the verified total stays under $5/month.
+- Staging uptime monitor (user, 2026-11-21, verbatim): "Backend only (Recommended)" — one free monitor on `https://shield-comment-api-staging.fly.dev/api/health/live` only; never `/api/health`, never client/admin `/healthz`.
 
 **Task (M9-T13): Staging on Fly.io Free plan**
 - Before anything: `python3 scripts/check-fly-config.py` ✅; check the current prices on fly.io/pricing and the account's billing/usage page (and any spend alert) and record them in `deploy.md` (replace the estimates).
@@ -56,6 +56,7 @@ You are implementing exactly ONE task row, **M9-T13**, in the ShieldComment BD r
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
 
 ### Decisions added by orchestrator
+- Pre-check answers for M9-T13 are quoted under "Recorded decisions" above (go-ahead, backend 512 MB, backend-only uptime monitor).
 - Carry-over from M9-T11: M9-T14 runs `npm run smoke` against staging with a fixed staging owner (verified email + workspace) and the staging super admin; the user keeps those credentials outside git.
 - Carry-over from M9-T7: `client/src/lib/legal-facts.json` holds `[TODO: …]` placeholders the user replaces before go-live; the legal copy is an agent draft awaiting the user's review.
 - Carry-over from M9-T10b: staging SSLCommerz IPN goes to the app host (`CLIENT_APP_URL`), which wakes the auto-stopped client; Meta webhooks/deauthorize/data deletion + Telegram on the always-on api host, Meta OAuth redirect on the app host.
@@ -307,6 +308,8 @@ One distinction: if you use Cloudflare's proxy, configure SSL/TLS mode as Full (
   - Orchestrator answer (2026-11-21): fits only if sized for $5: backend always-on (shared-cpu-1x 256 MB ≈ $2.19/mo per Fly 2026 pricing update; 512 MB price unverified), client + admin `auto_stop_machines` (pay only while running), shared IPv4 only (no dedicated IPv4), migrations run outside a release machine (3-machine cap), Neon + Redis Cloud unchanged. Not a hard cap: past $5 it bills the card. Pending: the user's pick between Fly free plan / Azure / AWS.
 - 2026-11-21 staging host (user, verbatim): "Fly.io free plan" → D16 superseded (Oracle sign-up blocked); M9-T10b prompt rewritten by the orchestrator for Fly.io Free-plan staging ($0: backend always-on, client + admin auto-stop, no dedicated IPv4, one machine per app).
 
+- 2026-11-21 M9-T13 pre-check (user, verbatim): go-ahead "Go ahead (Recommended)"; backend RAM "512 MB (Recommended)"; uptime monitor "Backend only (Recommended)".
+
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
 - 2026-11-18 M3-T9 ✅ dcab638 · client 151 · app shell + impersonation banner
@@ -446,3 +449,4 @@ One distinction: if you use Cloudflare's proxy, configure SSL/TLS mode as Full (
 - 2026-11-21 M9-T12 ✅ 6b96e7f · docs only (scope grep 8/8, route grep all match; no test runs, counts unchanged) · Meta App Review package `meta-app-review.md` (8 permission sections + reviewer notes, reviewer account, ≤ 3 min shot list, URLs table, pre-submit checklist), linked from deploy.md §3 step 8 + meta-webhooks-local.md §3
 - 2026-11-21 M9-REPLAN ✅ cf8b23e · docs only (no test runs; check-fly-config ✅, compose config ✅) · Oracle VPS staging re-plan: D16 added, D1/D3/D5/D6/D14 revised (history kept), new code row M9-T10b (`deploy/staging/` compose + Caddyfile + env template + DuckDNS updater + smoke allow-list), M9-T13…T17/T19/GATE rewritten for the DuckDNS hosts, deploy.md "Staging (Oracle VPS)" + Fly = production candidate, tech-stack §2 line
 - 2026-11-21 M9-T10b ✅ 52967da · check-fly-config ✅ 6 files + self-test 17/17 · compose config ✅ · e2e typecheck ✅ · root e2e 7/7 · guard 4/4 (was 3) · smoke:local 12/12 (was 11) · Fly Free-plan staging configs (`fly.staging.toml` ×3: backend 512 MB always on, client/admin 256 MB auto-stop, rolling, no release step), `SMOKE_STAGING_HOSTS` allow-list, deploy.md staging section + cost estimate, TASKS D16/D3/D6/D14 revised, M9-T13…GATE on fly.dev hosts
+- 2026-11-21 M9-T13 🟡 blocked: user account steps not done (flyctl not installed → no `fly auth login`; no Redis Cloud staging URL / `backend/.env.fly.staging`) · check-fly-config ✅ 6 files · nothing run against Fly/Neon/Redis, nothing committed
