@@ -18,20 +18,20 @@ App names are placeholders until created (names are global: if one is taken, cha
 - **Auto-stop (client, admin):** `auto_stop_machines = "stop"`, `auto_start_machines = true`, `min_machines_running = 0`. The Fly proxy stops an idle machine after a few minutes and starts it on the next request (that request waits a few seconds). The backend stays on (`"off"`, exactly 1): Meta webhooks and the BullMQ jobs (03:00 / 15-min / hourly) need it.
 - **Exactly 3 machines (the plan's cap):** first deploy with `--ha=false` (else Fly creates 2 machines per app); `strategy = "rolling"` (updates the one machine in place; `bluegreen`/`canary` start a second one); **no `release_command`** (it runs on an extra one-off machine); build with `--local-only` (local Docker, no remote builder machine; whether a builder counts against the cap is not verified). Don't use `fly console` (starts a new machine), `fly scale count 2` or `fly machine clone` on staging; `fly ssh console` is fine (it enters the running machine).
 
-### Monthly cost (estimate)
+### Monthly cost (verified 2026-11-21, M9-T13)
 
-| Item | Estimate / month |
+| Item | Price / month |
 |---|---|
-| Backend, shared-cpu-1x 512 MB, always on (730 h) | ≈ US$3.2–3.7 |
-| Client + admin, shared-cpu-1x 256 MB, only while running (≈ US$0.003 per machine-hour) | ≈ US$0.30 per 100 running hours |
+| Backend, shared-cpu-1x 512 MB, always on in `sin` (730 h) | ≈ US$4.68 |
+| Client + admin, shared-cpu-1x 256 MB in `sin`, only while running | ≈ US$0.0038 per machine-hour each |
 | Stopped machines (root filesystem) | a few cents |
 | Shared IPv4 + IPv6 (no dedicated IPv4) | US$0 |
 | Outbound data (staging traffic) | cents |
-| **Total** | **≈ US$3.5–4.5, under the US$5 allowance** |
+| **Total** | **≈ US$4.7 + US$0.0038 per client/admin running hour** |
 
-Estimates from Fly's 2026 pricing as researched on 2026-11-21 (256 MB ≈ US$2.19 always on); `sin` may be priced differently. **Verify on fly.io/pricing at M9-T13** before the first deploy.
+Prices from fly.io/pricing, checked at M9-T13 (`sin` costs more than the US regions). The backend alone uses most of the US$5: client + admin fit about **84 machine-hours a month** (≈ 42 h with both up) before the total passes US$5. Fly's docs say a personal org's bill under US$5 is waived. **No spend alert or limit** was found in the billing settings. The Fly CLI does not show usage: check the dashboard's usage/billing page (weekly at first).
 
-**Staying under US$5:** keep the sizes above; never add a dedicated IPv4 (`fly ips allocate-v4` without `--shared`), volumes, Fly Postgres/Redis or a second machine; leave client/admin on auto-stop; point uptime monitors only at the always-on backend (a 5-minute monitor on `/healthz` would keep client/admin awake all month); check the dashboard's usage/billing page weekly at first. Whether Fly offers a spend alert or limit on this plan is **not verified**: check the billing settings at M9-T13.
+**Staying under US$5:** keep the sizes above; never add a dedicated IPv4 (`fly ips allocate-v4` without `--shared`), volumes, Fly Postgres/Redis or a second machine; leave client/admin on auto-stop; point uptime monitors only at the always-on backend (a 5-minute monitor on `/healthz` would keep client/admin awake all month). The org is at the plan's 3-machine cap after the first deploy (flyctl prints "Your organization has reached its limit of 3 Machines"): rolling deploys update in place and still work.
 
 ### Staging env (D3 revised in M9-T10b)
 
@@ -43,11 +43,11 @@ Secrets per app, as in §7 (staging column): `TRUSTED_ORIGINS=https://shield-com
 
 1. **Account** (user): Fly.io account on the Free plan with a card; `fly auth login` on the developer machine.
 2. **Apps**: `fly apps create shield-comment-api-staging`, `… shield-comment-app-staging`, `… shield-comment-admin-staging`.
-3. **Data**: Neon `staging` branch URLs (§3 step 1; the developer machine's git-ignored `backend/.env.staging` already holds `DIRECT_URL` for migrations) and a new Redis Cloud free DB with `noeviction` (§3 step 2, §6 check).
-4. **Secrets** (`--stage`, before the first deploy): `fly secrets import --stage -a shield-comment-api-staging < backend/.env.fly.staging` (KEY=value lines per §7 staging column; git-ignored by `.env.*`; delete it after the import), `fly secrets set --stage -a shield-comment-app-staging API_UPSTREAM=http://shield-comment-api-staging.internal:3000 PUBLIC_SITE_URL=https://shield-comment-app-staging.fly.dev`, `fly secrets set --stage -a shield-comment-admin-staging API_UPSTREAM=http://shield-comment-api-staging.internal:3000`.
+3. **Data**: Neon **schema-only** `staging` branch (see "Staging data" below; git-ignored `backend/.env.staging` holds its URLs + `DIRECT_URL` for migrations) and a new Redis Cloud free DB with `noeviction` (§3 step 2, §6 check). **Object storage stays unset on staging** (user, M9-T13: the schema-only branch has no bucket; `AWS_*`/`STORAGE_BUCKET` are optional, uploads answer "Object storage is not configured").
+4. **Secrets** (`--stage`, before the first deploy): `fly secrets import --stage -a shield-comment-api-staging < backend/.env.fly.staging` (KEY=value lines per §7 staging column, **values unquoted**: `neon env pull` writes `"…"` around URLs, strip them; git-ignored by `.env.*`; delete it after the import), `fly secrets set --stage -a shield-comment-app-staging API_UPSTREAM=http://shield-comment-api-staging.internal:3000 PUBLIC_SITE_URL=https://shield-comment-app-staging.fly.dev`, `fly secrets set --stage -a shield-comment-admin-staging API_UPSTREAM=http://shield-comment-api-staging.internal:3000`.
 5. **Migrations, from the developer machine, before the backend deploy** (same order as production's release step: the schema is ready before the new code starts): `cd backend && npm run build && npm run db:deploy:staging` (Drizzle `migrate()` on the Neon `staging` **direct** URL). Never `drizzle-kit push`.
-6. **Backend**: `cd backend && fly deploy -c fly.staging.toml --ha=false --local-only`, then `curl -fsS https://shield-comment-api-staging.fly.dev/api/health/live` and once `…/api/health` (DB + Redis up; don't repeat it, it keeps Neon awake).
-7. **Client + admin**: `cd client && fly deploy -c fly.staging.toml --ha=false --local-only`, same in `admin/`; `curl -fsS https://shield-comment-app-staging.fly.dev/healthz` and `https://shield-comment-admin-staging.fly.dev/healthz`. `fly machine list -a <app>` shows one machine per app; after a few idle minutes client/admin show `stopped`.
+6. **Backend**: `fly auth docker` first (writes a short-lived registry login for local Docker; without it a `--local-only` push fails with "app repository not found"; repeat it if a later deploy is more than a few minutes away), then `cd backend && fly deploy -c fly.staging.toml --ha=false --local-only`, then `curl -fsS https://shield-comment-api-staging.fly.dev/api/health/live` and once `…/api/health` (DB + Redis up; don't repeat it, it keeps Neon awake).
+7. **Client + admin**: `cd client && fly deploy -c fly.staging.toml --ha=false --local-only`, same in `admin/`; `curl -fsS https://shield-comment-app-staging.fly.dev/healthz` and `https://shield-comment-admin-staging.fly.dev/healthz`. `fly machine list -a <app>` shows one machine per app; after a few idle minutes client/admin show `stopped` (**not yet observed**: M9-T13 saw browser traffic in the idle window and the client crash below; checked in M9-T13a).
 8. **Super admin**: `fly ssh console -a shield-comment-api-staging`, then `SUPER_ADMIN_EMAIL=… SUPER_ADMIN_PASSWORD=… SUPER_ADMIN_NAME='Super Admin' node dist/scripts/create-super-admin.js`. Then sign up the fixed staging test owner on the client (verified email + workspace) for the smoke suite.
 9. **Outside services** (Meta test app, SSLCommerz sandbox, test bot): webhook `https://shield-comment-api-staging.fly.dev/api/webhooks/meta`, deauthorize `…/api/meta/deauthorize`, data deletion `…/api/meta/data-deletion` (api host); OAuth redirect `https://shield-comment-app-staging.fly.dev/api/meta/oauth/callback` (`META_OAUTH_REDIRECT_URI`, app host: the browser flow needs the app cookies); Telegram `setWebhook` `https://shield-comment-api-staging.fly.dev/api/telegram/webhook`; SSLCommerz sandbox IPN `https://shield-comment-app-staging.fly.dev/api/billing/sslcommerz/ipn` (the backend sends it per payment from `CLIENT_APP_URL`; set the merchant panel to the same; a stopped client machine wakes for it in a few seconds).
 10. **Checks**: §2 client-IP steps on the staging hosts, then the smoke suite:
@@ -60,6 +60,18 @@ Secrets per app, as in §7 (staging column): `TRUSTED_ORIGINS=https://shield-com
     ```
     `SMOKE_STAGING_HOSTS` is an exact-hostname allow-list (case-insensitive, no suffix match): any other `*.fly.dev` host is refused like production.
 11. **Monitor (D14, optional on staging)**: UptimeRobot on `https://shield-comment-api-staging.fly.dev/api/health/live` only (never `/api/health`; not on client/admin `/healthz`, see "Staying under US$5").
+
+### Staging data (Neon schema-only branch, M9-T13)
+
+Staging never holds production rows (user, M9-T13: "Schema only"). Project `calm-thunder-04124611`: `production` = `br-winter-leaf-a1j7hozl` / `ep-bold-dawn-a1xh3drl` (default); `staging` = `br-blue-waterfall-a1lipa9o` / `ep-morning-meadow-a17o9g0x`. To (re)create it:
+
+1. `neon branches create --project-id calm-thunder-04124611 --name staging --parent production --schema-only` (a schema-only branch copies the tables but no rows: `drizzle.__drizzle_migrations` is empty and the rows the migrations seed, e.g. the 4 `plans`, are missing).
+2. `cd backend && neon env pull --project-id calm-thunder-04124611 --branch staging --file .env.staging`, then set `DIRECT_URL` = `DATABASE_URL_UNPOOLED` (keep `REDIS_URL`). **Check the endpoint id** in `DATABASE_URL`/`DIRECT_URL` is the staging one and never `ep-bold-dawn` (print the host only, never the URL).
+3. Reset on the staging endpoint only (check the id again first): `BEGIN; DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION pg_database_owner; GRANT USAGE ON SCHEMA public TO PUBLIC; COMMIT;` (same owner/ACL as Neon's default `public`).
+4. `npm run build && npm run db:deploy:staging` runs every migration from 0000 (M9-T13: 48/48, 4 `plans`, 45 tables).
+5. Re-stage the backend's branch secrets (`DATABASE_URL`, `DIRECT_URL`, `NEON_AI_GATEWAY_*`; unquoted) and redeploy.
+
+**Known issue (M9-T13a):** the client Start server crashes on real browser traffic (`TypeError [ERR_INVALID_STATE]: ReadableStream is already closed` in undici, Node 24.22); Fly restarts it. Fix before the smoke run.
 
 ### Redeploy, migrations, rollback (staging)
 
