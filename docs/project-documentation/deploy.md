@@ -1,8 +1,26 @@
-# Deploy runbook (Fly.io, Module 9)
+# Deploy runbook (Module 9)
 
-Hosting per Module 9 **D1 (a)**: Fly.io region `sin` (next to Neon `aws-ap-southeast-1`), the three existing Docker images, always-on machines. Origins per **D3 (a)**, staging per **D5 (a)**, uptime per **D14 (a)**. The domain is not chosen yet: `<domain>` below is a placeholder (filled in at M9-T13).
+**Staging runs on an Oracle Cloud VPS** (Module 9 D16, revised 2026-11-21 in M9-REPLAN): see [Staging (Oracle VPS)](#staging-oracle-vps) below. Sections 1–7 describe **Fly.io, now the production candidate only**: the production host is open again and is decided at the M9-T17 pre-check. Their "staging" columns and `-staging` app names are kept for reference; staging no longer uses them.
 
-> Nothing here has been run yet. Every `fly` / `neon` / DNS / Redis Cloud step needs the user's accounts and approval at its row's pre-check (M9-T13 staging, M9-T17 production).
+## Staging (Oracle VPS)
+
+Decision D16 (user, 2026-11-21): Oracle Cloud Always Free VM (Ampere A1, **linux/arm64**) running Docker Compose + Caddy (reverse proxy, automatic Let's Encrypt) + DuckDNS names, $0/month. Data stays on Neon `staging` + its own Redis Cloud DB (D5).
+
+| Host | Serves | Notes |
+|---|---|---|
+| `https://shield-comment.duckdns.org` | client (Start server) + backend at `/api/*` | Caddy sends `/api/*` straight to the backend. Meta webhooks, OAuth redirect, SSLCommerz IPN and Telegram use this host. No `api.` host on staging. |
+| `https://shield-comment-admin.duckdns.org` | admin nginx (proxies `/api/*`) | Own DuckDNS name (DuckDNS gives one label per registered name), so its Better Auth cookies stay separate. |
+
+- Staging env values (D3 revised): `TRUSTED_ORIGINS=https://shield-comment.duckdns.org,https://shield-comment-admin.duckdns.org`, `BETTER_AUTH_URL` = `CLIENT_APP_URL` = `PUBLIC_SITE_URL` = `https://shield-comment.duckdns.org`, `CORS_ORIGINS` unset. Other variables as in the §7 staging column.
+- Files (compose, `Caddyfile`, env template, DuckDNS updater, arm64 notes, smoke host allow-list): **M9-T10b**, `deploy/staging/`. Client IP plan there: Caddy sends one `X-Forwarded-For` entry, the app proxies use `FORWARDED_FOR_MODE=pass`, backend `TRUST_PROXY_HOPS=1` (verify on the VM like §2).
+- Setup on the VM (account, VM, DuckDNS, secrets, first migrate + start, super admin, monitor): **M9-T13**, each host command only with the user's approval.
+- Caveats to check in Oracle's docs at M9-T13 (not verified here): Oracle may reclaim an idle Always Free instance (95th-percentile CPU under 20 % for 7 days); the free A1 allowance is reported as 2 OCPU / 12 GB per tenancy in 2026.
+
+## Production candidate: Fly.io
+
+Hosting per Module 9 **D1 (a)** (revised: production only, host still open): Fly.io region `sin` (next to Neon `aws-ap-southeast-1`), the three existing Docker images, always-on machines. Origins per **D3 (a)**, staging per **D5 (a)**, uptime per **D14 (a)**. The production domain is not chosen yet: `<domain>` below is a placeholder (filled in at M9-T17).
+
+> Nothing here has been run yet. Every `fly` / `neon` / DNS / Redis Cloud step needs the user's accounts and approval at its row's pre-check (M9-T17 production).
 
 ## 1. Topology
 
@@ -41,7 +59,7 @@ There are two paths to the backend:
 
 ## 3. One-time setup per environment
 
-Do staging first (M9-T13), then production (M9-T17) with the production values from §7.
+Written for staging first, then production. Since D16, staging runs on the Oracle VPS instead: on Fly, do only the production pass (M9-T17) with the production values from §7.
 
 1. **Neon**: the branches already exist (`production`, `staging`; project `calm-thunder-04124611`, `aws-ap-southeast-1`). Get the URLs with `neon connection-string <branch> --pooled` (→ `DATABASE_URL`, host has `-pooler`) and `neon connection-string <branch>` (→ `DIRECT_URL`).
 2. **Redis Cloud**: one free 30 MB database per environment (never shared, D5), region `ap-southeast-1` (AWS Singapore). Configuration → *Data eviction policy* = **No eviction** (`noeviction`), then run the check in §6.
