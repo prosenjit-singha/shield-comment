@@ -11,47 +11,13 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Previous runs (Modules 3–7, PW, PR): see `## Log` and git history.
 
 ## State
-verified M8-T13
+dispatched M8-GATE (2026-11-21) · commit: "test(e2e): pass module 8 gate (M8-GATE)"
 
 ## Resume
 `/orchestration --continue` — the pre-check will ask for the admin/ approval (M8-T9 is the first admin row; client/ follows at M8-T10…T13).
 
-## Next prompt (M8-GATE)
-
-You are implementing exactly ONE task row, **M8-GATE**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
-
-**Read first (only these)**
-1. `AGENTS.md`.
-2. `docs/progress/MEMORY.md` (large: `grep -n` for the Module 8 line (payments, SSLCommerz client, test-only `SSLCOMMERZ_BASE_URL`, callbacks via `CLIENT_APP_URL/api/…`), **Gate E2E suite (M3-T12)**, **Module 6 gate e2e (M6-GATE)** (`graph-stub.ts` + compose `backend-e2e` pattern), **Module 7 gate e2e**, "Browser checks", **Client C1 landing (M8-T12)** + **Landing SEO (M8-T13)**).
-3. From `docs/progress/TASKS.md` (`grep -n`/`sed -n`; ~600 KB): the `## Module 8` header (readings 1–14, esp. 3/4/9 IPN + validation, 12 landing), decisions **D1** (env + sandbox) and **D13** (gate = mocked: root `e2e/` Playwright with an SSLCommerz HTTP stub; a manual sandbox run later), the M8-T13 row (previous) and the **M8-GATE** row with its M8-T6b carry-over (tokenization field names provisional; the gate keeps `SSLCOMMERZ_TOKENIZATION` off).
-4. Spec: `docs/project-documentation/modules/module-8-billing-sslcommerz.md` §"Agent Test & Verification Gate".
-5. Code to read or reuse: `backend/src/payments/sslcommerz.client.ts` (session + Order Validation calls, `verifySign`, base URL), `backend/src/config/env.validation.ts` (`SSLCOMMERZ_BASE_URL` is `NotInProduction()`), `backend/test/payment-callbacks.e2e-spec.ts` + `checkout.e2e-spec.ts` (fake session / validation answers + a valid IPN body with `verify_sign`: copy the shapes into the HTTP stub), `docker-compose.yml` services `backend-e2e` (profile e2e, NODE_ENV=test, stub URL env) + `e2e`, root `e2e/` (`src/graph-stub.ts` = the stub pattern, `src/stack.ts` seeding + `cleanupRun`, `src/env.ts`, `src/global-setup.ts`/`global-teardown.ts`, `tests/dashboard-comments.spec.ts` = how a spec forwards calls to `backend-e2e`), client `/billing` (`client/src/routes/_app/billing.tsx`), admin A4 (`admin/src/routes/_authed/admin/billing.tsx`), `client/scripts/lighthouse.sh`.
-
-**Recorded decisions:** D13 (a) mocked + a later manual sandbox run (answered 2026-11-21); D1 (a) env vars, sandbox default true (answered 2026-11-21). Standing approvals for this run: admin/ + client/ (user, 2026-11-21). **No live SSLCommerz call** (sandbox included) without asking.
-
-**Task (M8-GATE): Module 8 spec gate**
-- (1) Checkout round trip (D13): a root `e2e/` Playwright spec on the compose stack with an SSLCommerz HTTP stub (e.g. `e2e/src/sslcommerz-stub.ts`, like `graph-stub.ts`: answers only the session + Order Validation endpoints, records calls, 404 otherwise) and `backend-e2e` pointed at it (`SSLCOMMERZ_BASE_URL` + placeholder `SSLCOMMERZ_STORE_ID`/`_PASSWORD`, tokenization off). Cases: trial → paid monthly and yearly (checkout from `/billing` → stub gateway URL → IPN with a valid `verify_sign` → validation → subscription ACTIVE with a fresh wallet period → `/billing` shows it + the invoice), tampered amount rejected (not PAID), A4 `/admin/billing` shows the PAID row. Clean up every row the run creates; DB back to its baseline.
-- (2) Lighthouse `/` + `/bn` ≥ 80 Performance and ≥ 90 SEO: `client/scripts/lighthouse.sh` against the Docker client; report the 4 scores per page.
-- (3) `curl` `/` + `/bn` on the Docker client: H1, pricing table, `og:` tags and JSON-LD in the raw HTML; `/robots.txt` + `/sitemap.xml`.
-- Full checks below + Docker rebuild + health + headless browser check of `/billing`, `/plans`, `/`, `/bn`, `/admin/billing` (no console errors).
-- If a gate point fails because of a real bug, fix it in this row (smallest fix, with a test) and say so; if a fix needs a product decision, stop and report.
-
-**Rules:** TS strict, ESM, no `any`. Vitest (backend/admin/client), Playwright in root `e2e/`. No live external calls in tests (SSLCommerz/Meta/email mocked or stubbed); tests must fail on unexpected requests. Every tenant query is scoped by `workspace_id`. Frontend: TanStack Query for all API calls, client copy via `content(en, bn)`, shadcn OKLCH tokens. Never re-run `shadcn add`/`animate all` over admin components. Never commit `.env*` (except `.env.example`) or build/test output (Lighthouse reports, `e2e/playwright-report`, `e2e/test-results`). **Never stop or kill the user's own processes** (local Postgres 5432, Redis 6379, dev servers); on a port clash use env overrides or stop and report. Compose containers only.
-
-**Verify** (run all; report real numbers):
-- backend: `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test`, `npm run test:e2e`, `npm run lint`, `npx prettier --check "src/**/*.ts" "test/**/*.ts"` (only the known `src/scripts/ai-sdk-smoke.ts` may differ). Test DB ends with the baseline: 4 `plans` + 4 promotions + 4 `promotion_plans`.
-- admin + client: `npm run build`, `npm test`, `npm run lint`.
-- root `e2e/`: `npm run typecheck`, `npm test` (host) and `npm run test:docker`; app DB back to its baseline.
-- Docker: `docker compose up -d --build` for the changed services + health; Lighthouse + curl as above.
-- Current test counts: backend unit 2602, e2e 1314; admin 465; client 1037; root `e2e/` 4 (so drops are visible). Known flake: client `-nav.test.tsx` "workspace switcher … switches" under full-suite load (passes on rerun).
-
-**If a decision is missing:** if THIS row needs a product decision that is not recorded in TASKS.md/MEMORY.md/this prompt, STOP without coding that part and report `STATUS: needs-decision` with the question and 2–4 options (recommended first).
-
-**Finish (in this order)**
-1. TASKS.md: the row → `✅ <date>` + concise notes (built + choices). Add a Verification log entry at the TOP of `## Verification log`. Add short lasting facts to MEMORY.md ("Module 8 gate passed <date>") and point its "next" phrase at Module 9 planning (M9-PLAN), plus the pending manual SSLCommerz sandbox run (D13) and the tokenization doc check (M8-T6b).
-2. Journal `docs/progress/ORCHESTRATION.md`: append one `## Log` line (`- <date> M8-GATE ✅ · <tests> · <1-line summary>`); append your choices under `## Choices to confirm` as `- M8-GATE: …`; **replace** the `## Next prompt` section with `RUN COMPLETE` (the run scope ends at M8-GATE).
-3. Commit everything, journal included, with `test(e2e): pass module 8 gate (M8-GATE)` and an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
-4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
+## Next prompt
+RUN COMPLETE
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -172,6 +138,7 @@ You are implementing exactly ONE task row, **M8-GATE**, in the ShieldComment BD 
 - M8-T12: (1) server-side plans fetch = a `createServerFn` (`getServerPlans`) + `fetchPlansUpstream` with a 3 s timeout, same pattern as `/data-deletion`; failed fetch → fallback card + `Cache-Control: no-store` via the route `headers` option (success sets no cache header: M8-T13's call) · (2) no-JS pricing: each card prints the other interval's per-month price as a line ("or ৳449/month billed yearly (৳5,388)"), SSR = month, the switch only swaps which is main (no hydration flip, no CLS) · (3) a plan with a live trial shows only "Start free N-day trial" → `/register` (no Choose button), mirroring `/plans` · (4) no new shadcn components: FAQ = native `<details>`, ROAS slider = native range input · (5) H1 + hero say Facebook & Instagram (no TikTok: the product doesn't cover it); `landingHead()` title/description still mention TikTok, flagged for M8-T13 · (6) ROAS estimate = spend × 3 ROAS × 8% lost, assumptions printed under the result · (7) simulator = static sample Banglish comments (data, same in both languages) with a pulsing live dot, no JS animation · (8) plan fixtures moved to `src/test/plans-fixtures.ts`.
 - M8-T13: (1) JSON-LD through TanStack `meta` `{ 'script:ld+json': … }` (escaped by `HeadContent`) instead of `head().scripts` · (2) offer = cheapest live `monthly.perMonthBdt` (discount included) as `Offer` + `UnitPriceSpecification` MON; no `offers` when the fetch failed or there are no plans · (3) FAQ copy moved to `LANDING_FAQ` in `lib/seo.ts` (page + JSON-LD share it) · (4) robots/sitemap = Start server routes (absolute URLs from `PUBLIC_SITE_URL`, 1 h cache); robots disallows all 17 noindex app paths + `/api/` as the row asked (crawlers then never see those pages' `noindex`; acceptable, they aren't meant to be found) · (5) og-image rendered once from HTML with headless Chromium, generator not kept · (6) no performance code changes (swap already set, self-hosted fonts = nothing to preconnect, CLS 0); no gzip in `server.mjs` (prod proxy/CDN should compress) · (7) `client/scripts/lighthouse.sh` uses `npx -y lighthouse` (no dependency) + a warm-up request (cold first run gave 45) · (8) title/description TikTok → Instagram also fixed in `client.md` §4 (other TikTok mentions in client.md §3 left)
 
+- M8-GATE: (1) checkout + the browser's success return are forwarded to `backend-e2e` (M6 pattern, `maxRedirects: 0` so the 303 reaches the browser) and the spec sends the IPN itself; the production `backend` keeps no store · (2) separate stub on port 4011 (not merged into the Graph stub); its hosted page is served by the stub at `localhost:4011` (reachable by the browser in host and Docker runs) · (3) each case resets the owner's billing (`resetOwnerBilling`) instead of chaining monthly → yearly (an UPGRADE with credit math); yearly case pays Growth after a Starter trial · (4) tampered = validator answers ৳1 (AMOUNT_MISMATCH) + a forged amount after signing (BAD_SIGNATURE) · (5) `cleanupRun` now also deletes `promotion_redemptions` (trials / launch discounts made by the spec).
 ## Decisions asked
 - 2026-11-18 M3-T10: D13 0-Pages redirect → entry points only (recorded in TASKS.md D13)
 - 2026-11-18 Module 4 run: app approval → "Both, rest of run (Recommended)" (admin/ + client/ approved for every Module 4 row in this run)
@@ -367,3 +334,4 @@ You are implementing exactly ONE task row, **M8-GATE**, in the ShieldComment BD 
 - 2026-11-21 M8-T11 ✅ 52c8dfa · client 1003 (was 972) · backend/admin/root e2e untouched · invoices list + printable invoice view on `/billing` (`?invoice=`), `/plans` checkout links → `/billing?plan&interval` (preselect + checkout), banner → `/billing` for paid plans, D11 `/register` + `/login` hand-off
 - 2026-11-21 M8-T12 ✅ 6899809 · client 1023 (was 1003) · backend/admin/root e2e untouched · C1 landing `/` + `/bn`: 9 sections (navbar EN | বাং, hero + simulator, trust strip, bento, ROAS calculator, how it works, live SSR pricing from `GET /api/plans` with both prices in the HTML + D11 register links, FAQ, footer CTA), failure fallback "See plans" + no-store
 - 2026-11-21 M8-T13 ✅ 39bf4eb · client 1037 (was 1023) · backend/admin/root e2e untouched · landing SEO: JSON-LD SoftwareApplication (lowest live price) + FAQPage, og:image 1200×630 + twitter card, robots.txt + sitemap.xml server routes, TikTok → Instagram copy; Lighthouse mobile `/` 100/96/100/100, `/bn` 99/96/100/100 (`client/scripts/lighthouse.sh`)
+- 2026-11-21 M8-GATE ✅ · backend 2602 + e2e 1314 · admin 465 · client 1037 · root e2e 7/7 host + docker (was 4) · Lighthouse `/` 100/96/100/100, `/bn` 99/96/100/100 · Module 8 gate: SSLCommerz stub checkout round trip (monthly, yearly, tampered) + A4, curl raw HTML, browser check; no app code changed

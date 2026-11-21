@@ -245,6 +245,96 @@ export async function impersonationAuditCount(identity: RunIdentity): Promise<nu
   });
 }
 
+/**
+ * Every billing row of these accounts, FK order (M8-T2 payments, PW wallets, PR redemptions): payment
+ * events (by the accounts' tran_ids) → refunds → transactions → audit → wallet → subscriptions ↔
+ * redemptions (the redemption → subscription link is cleared first). The accounts themselves stay.
+ */
+async function deleteBillingRows(db: pg.Client, accountIds: string[]): Promise<void> {
+  const tx = 'select id from payment_transactions where billing_account_id = any($1::uuid[])';
+  await db.query(
+    'delete from payment_events where tran_id in (select tran_id from payment_transactions where billing_account_id = any($1::uuid[]))',
+    [accountIds],
+  );
+  await db.query(`delete from payment_refunds where payment_transaction_id in (${tx})`, [accountIds]);
+  await db.query('delete from payment_transactions where billing_account_id = any($1::uuid[])', [accountIds]);
+  await db.query('delete from subscription_audit_logs where billing_account_id = any($1::uuid[])', [accountIds]);
+  const walletIds = 'select id from wallets where billing_account_id = any($1::uuid[])';
+  await db.query(`delete from wallet_entries where wallet_id in (${walletIds})`, [accountIds]);
+  await db.query(`delete from wallet_balances where wallet_id in (${walletIds})`, [accountIds]);
+  await db.query('delete from wallets where billing_account_id = any($1::uuid[])', [accountIds]);
+  await db.query('update promotion_redemptions set subscription_id = null where billing_account_id = any($1::uuid[])', [
+    accountIds,
+  ]);
+  await db.query('delete from subscriptions where billing_account_id = any($1::uuid[])', [accountIds]);
+  await db.query('delete from promotion_redemptions where billing_account_id = any($1::uuid[])', [accountIds]);
+}
+
+async function ownerAccount(db: pg.Client, identity: RunIdentity): Promise<{ accountId: string; workspaceId: string }> {
+  const { rows } = await db.query<{ account_id: string; workspace_id: string }>(
+    `select w.billing_account_id as account_id, w.id as workspace_id from workspaces w
+       join workspace_members m on m.workspace_id = w.id join users u on u.id = m.user_id
+      where u.email = $1 and m.role = 'owner'`,
+    [identity.owner.email],
+  );
+  const row = rows[0];
+  if (rows.length !== 1 || !row?.account_id) throw new Error('Expected exactly one owner workspace with an account');
+  return { accountId: row.account_id, workspaceId: row.workspace_id };
+}
+
+/** Module 8 gate: the owner's account back to "no plan, never had a trial" (each checkout case starts here). */
+export async function resetOwnerBilling(identity: RunIdentity): Promise<void> {
+  await withDb(async (db) => {
+    await db.query('begin');
+    try {
+      await deleteBillingRows(db, [(await ownerAccount(db, identity)).accountId]);
+      await db.query('commit');
+    } catch (error) {
+      await db.query('rollback');
+      throw error;
+    }
+  });
+}
+
+/** The owner account's subscriptions (newest first), live wallet period, payments and their events. */
+export async function billingState(identity: RunIdentity) {
+  return withDb(async (db) => {
+    const { accountId } = await ownerAccount(db, identity);
+    const subscriptions = await db.query<{
+      status: string;
+      interval: string;
+      plan: string;
+      term_start: Date;
+      term_end: Date;
+    }>(
+      `select s.status, s.interval, p.slug as plan, s.current_term_start as term_start, s.current_term_end as term_end
+         from subscriptions s join plans p on p.id = s.plan_id
+        where s.billing_account_id = $1 order by s.created_at desc`,
+      [accountId],
+    );
+    const wallet = await db.query<{ period_start: Date; included: number }>(
+      `select b.period_start, b.included from wallet_balances b join wallets w on w.id = b.wallet_id
+        where w.billing_account_id = $1 and b.meter = 'monthlyComments' order by b.period_start desc limit 1`,
+      [accountId],
+    );
+    const payments = await db.query<{
+      tran_id: string;
+      status: string;
+      amount_bdt: number;
+      invoice_number: string | null;
+      card_type: string | null;
+      events: string[];
+    }>(
+      `select t.tran_id, t.status, t.amount_bdt, t.invoice_number, t.card_type,
+              coalesce((select array_agg(e.source || ':' || e.outcome order by e.received_at)
+                          from payment_events e where e.tran_id = t.tran_id), '{}') as events
+         from payment_transactions t where t.billing_account_id = $1 order by t.created_at`,
+      [accountId],
+    );
+    return { subscriptions: subscriptions.rows, wallet: wallet.rows[0], payments: payments.rows };
+  });
+}
+
 export interface CleanupSummary {
   userIds: string[];
   users: number;
@@ -290,26 +380,13 @@ export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary>
         [ids, wsIds],
       );
       const accountIds = accounts.rows.map((r) => r.id);
-      // Payments (M8-T2): events by the accounts' tran_ids, then the transactions (they reference
-      // subscriptions, workspaces and accounts, all restrict).
-      const runTranIds = 'select tran_id from payment_transactions where billing_account_id = any($1::uuid[])';
-      await db.query(`delete from payment_events where tran_id in (${runTranIds})`, [accountIds]);
-      await db.query(
-        'delete from payment_refunds where payment_transaction_id in (select id from payment_transactions where billing_account_id = any($1::uuid[]))',
-        [accountIds],
-      );
-      await db.query('delete from payment_transactions where billing_account_id = any($1::uuid[])', [accountIds]);
-      // Manual activation audit (PW-T9) references admins, accounts, workspaces, plans and
-      // subscriptions (all restrict) → before the subscriptions.
+      // Manual activation / payment audit (PW-T9, M8-T5) references admins, accounts, workspaces,
+      // plans and subscriptions (all restrict) → before the billing rows.
       await db.query(
         'delete from subscription_audit_logs where admin_id = any($1::uuid[]) or billing_account_id = any($2::uuid[]) or workspace_id = any($3::uuid[])',
         [ids, accountIds, wsIds],
       );
-      const walletIds = 'select id from wallets where billing_account_id = any($1::uuid[])';
-      await db.query(`delete from wallet_entries where wallet_id in (${walletIds})`, [accountIds]);
-      await db.query(`delete from wallet_balances where wallet_id in (${walletIds})`, [accountIds]);
-      await db.query('delete from wallets where billing_account_id = any($1::uuid[])', [accountIds]);
-      await db.query('delete from subscriptions where billing_account_id = any($1::uuid[])', [accountIds]);
+      await deleteBillingRows(db, accountIds);
       // Moderation (M5-T7): actions reference comments (restrict) → first; policies reference workspaces.
       await db.query('delete from moderation_actions where workspace_id = any($1::uuid[])', [wsIds]);
       await db.query('delete from moderation_policies where workspace_id = any($1::uuid[])', [wsIds]);

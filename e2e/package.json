@@ -6,7 +6,7 @@
   "description": "Playwright gate suite for ShieldComment BD, run against the docker compose stack",
   "scripts": {
     "test": "playwright test",
-    "test:docker": "cd .. && E2E_RUN_ID=${E2E_RUN_ID:-$(date +%s)} E2E_GRAPH_STUB_URL=http://e2e:4010 docker compose --profile e2e run --rm --build --use-aliases e2e; s=$?; docker compose --profile e2e rm -sf backend-e2e; exit $s",
+    "test:docker": "cd .. && E2E_RUN_ID=${E2E_RUN_ID:-$(date +%s)} E2E_GRAPH_STUB_URL=http://e2e:4010 E2E_SSLCOMMERZ_STUB_URL=http://e2e:4011 docker compose --profile e2e run --rm --build --use-aliases e2e; s=$?; docker compose --profile e2e rm -sf backend-e2e; exit $s",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "report": "playwright show-report"
   },

@@ -99,6 +99,10 @@ export const env = {
     optional('E2E_STUB_BACKEND_URL') ?? `http://localhost:${compose.E2E_BACKEND_HOST_PORT ?? '3001'}`,
   /** Graph stub port; `backend-e2e` reaches it at `META_GRAPH_BASE_URL` (docker-compose.yml). */
   graphStubPort: 4010,
+  /** SSLCommerz stub port (Module 8 gate); `backend-e2e` reaches it at `SSLCOMMERZ_BASE_URL`. */
+  sslcommerzStubPort: 4011,
+  /** Same placeholder store as `backend-e2e` in docker-compose.yml (signs the IPN / return forms). */
+  sslcommerzStore: { id: 'e2e_store', password: 'e2e-dev-only-store-pass' },
   /** Same dev-only key + id as `backend-e2e` in docker-compose.yml (encrypts the seeded Page token). */
   tokenKey: Buffer.from('e2e-dev-only-token-key-32-bytes!', 'utf8'),
   tokenKeyId: 'e2e',

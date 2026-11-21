@@ -181,6 +181,12 @@ services:
       META_LOGIN_CONFIG_ID: "1000000000000002"
       META_OAUTH_REDIRECT_URI: http://app.localhost:5174/meta/callback
       META_GRAPH_BASE_URL: ${E2E_GRAPH_STUB_URL:-http://host.docker.internal:4010}
+      # Module 8 gate: placeholder store (mirrored in e2e/src/env.ts) + the SSLCommerz stub; tokenization off.
+      SSLCOMMERZ_STORE_ID: e2e_store
+      SSLCOMMERZ_STORE_PASSWORD: e2e-dev-only-store-pass
+      SSLCOMMERZ_SANDBOX: "true"
+      SSLCOMMERZ_TOKENIZATION: "false"
+      SSLCOMMERZ_BASE_URL: ${E2E_SSLCOMMERZ_STUB_URL:-http://host.docker.internal:4011}
     extra_hosts:
       - host.docker.internal:host-gateway
     ports:
