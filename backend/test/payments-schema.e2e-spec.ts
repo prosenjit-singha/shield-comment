@@ -86,6 +86,8 @@ describe('Payments schema (e2e)', () => {
       riskLevel: 0,
       paidAt: new Date(),
       subscriptionId,
+      termStart: new Date(Date.now() - 60_000),
+      termEnd: new Date(Date.now() + 30 * 86_400_000),
       invoiceNumber: `SC-2026-${runDigits}${invoiceSeq++}`,
       ...patch,
     });
@@ -191,6 +193,12 @@ describe('Payments schema (e2e)', () => {
       ['PAID without paid_at', { paidAt: null }],
       ['PAID without invoice number', { invoiceNumber: null }],
       ['PAID without subscription', { subscriptionId: null }],
+      ['PAID without term (M8-T7)', { termStart: null, termEnd: null }],
+      ['PAID with a half term', { termEnd: null }],
+      [
+        'PAID with term end before start',
+        { termEnd: new Date(Date.now() - 120_000) },
+      ],
       ['PAID via SSLCommerz without val_id', { valId: null }],
       ['REFUNDED without paid_at', { status: 'REFUNDED', paidAt: null }],
       ['bad invoice number', { invoiceNumber: 'SC-26-00001' }],

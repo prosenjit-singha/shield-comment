@@ -1,0 +1,7 @@
+ALTER TABLE "payment_transactions" DROP CONSTRAINT "payment_transactions_settled_check";--> statement-breakpoint
+ALTER TABLE "payment_transactions" ADD COLUMN "term_start" timestamp (3) with time zone;--> statement-breakpoint
+ALTER TABLE "payment_transactions" ADD COLUMN "term_end" timestamp (3) with time zone;--> statement-breakpoint
+-- M8-T7: settled rows written before this migration (dev/test only; no live payments yet) get the
+-- linked subscription's current term: exact for a first payment, the latest term for a renewed row.
+UPDATE "payment_transactions" p SET "term_start" = s."current_term_start", "term_end" = s."current_term_end" FROM "subscriptions" s WHERE s."id" = p."subscription_id" AND p."paid_at" IS NOT NULL;--> statement-breakpoint
+ALTER TABLE "payment_transactions" ADD CONSTRAINT "payment_transactions_settled_check" CHECK (((status in ('PAID', 'REFUNDED')) = (paid_at is not null)) and ((paid_at is null and invoice_number is null and subscription_id is null and term_start is null and term_end is null) or (paid_at is not null and invoice_number is not null and subscription_id is not null and term_start is not null and term_end is not null)) and (paid_at is null or gateway = 'PROMOTION' or val_id is not null) and (term_end is null or term_end > term_start));

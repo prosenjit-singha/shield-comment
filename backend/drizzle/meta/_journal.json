@@ -309,6 +309,13 @@
       "when": 1795238307110,
       "tag": "0043_billing_auto_renew",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795239506508,
+      "tag": "0044_payment_invoice_term",
+      "breakpoints": true
     }
   ]
 }

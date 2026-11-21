@@ -155,6 +155,8 @@ describe('Admin billing transactions (e2e)', () => {
               valId: settled && gateway === 'SSLCOMMERZ' ? `VAL${i}` : null,
               paidAt: settled ? new Date(base + i * 60_000) : null,
               subscriptionId: settled ? sub!.id : null,
+              termStart: settled ? start : null,
+              termEnd: settled ? new Date(base + 30 * 86_400_000) : null,
               invoiceNumber: settled ? `SC-2026-${tag}${i}` : null,
               price: {
                 listChargedBdt: amountBdt,

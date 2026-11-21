@@ -12,6 +12,7 @@ import { BillingProcessor } from './billing.processor.js';
 import { CheckoutService } from './checkout.service.js';
 import { PaymentCallbacksController } from './payment-callbacks.controller.js';
 import { PaymentCallbacksService } from './payment-callbacks.service.js';
+import { InvoicesService } from './invoices.service.js';
 import { LimitService } from './limit.service.js';
 import { RenewalReminderService } from './renewal-reminder.service.js';
 import { SubscriptionService } from './subscription.service.js';
@@ -27,7 +28,7 @@ import { SubscriptionService } from './subscription.service.js';
  * `PaymentCallbacksService`), the M8-T6 jobs (`renewal-reminders` → `RenewalReminderService`,
  * `pending-payment-expiry`, the M8-D7b switch in `subscription-expiry`), M8-T6b tokenized
  * auto-renew (`AutoRenewState` + `PUT/DELETE …/billing/auto-renew`, `auto-renew-charge` →
- * `AutoRenewService`, only with `SSLCOMMERZ_TOKENIZATION=true`). Imported by `AppModule`
+ * `AutoRenewService`, only with `SSLCOMMERZ_TOKENIZATION=true`), M8-T7 client invoices (`InvoicesService`, `GET …/billing/invoices`). Imported by `AppModule`
  * and by the Better Auth module (sign-up + `/organization/create` hooks). Drizzle and the queues
  * are global.
  */
@@ -38,6 +39,7 @@ import { SubscriptionService } from './subscription.service.js';
     BillingSummaryService,
     SubscriptionService,
     CheckoutService,
+    InvoicesService,
     PaymentCallbacksService,
     LimitService,
     RenewalReminderService,

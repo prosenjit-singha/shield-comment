@@ -146,6 +146,12 @@ export const paymentTransactions = pgTable(
       onDelete: 'restrict',
     }),
     price: jsonb().$type<PaymentPrice>().notNull(),
+    /**
+     * The term this payment bought `[start, end)` (M8-T7 invoice), set when PAID. A snapshot:
+     * renewals move the linked subscription's term, so the row can't be read back from it.
+     */
+    termStart: timestamptz(),
+    termEnd: timestamptz(),
     /** D8, set only when PAID (kept when REFUNDED). */
     invoiceNumber: text().unique(),
     ...timestamps,
@@ -204,12 +210,12 @@ export const paymentTransactions = pgTable(
       'payment_transactions_price_check',
       sql`jsonb_typeof(price) = 'object'`,
     ),
-    // Settled (PAID / REFUNDED) ⇔ paid_at + invoice number + subscription, all or none
+    // Settled (PAID / REFUNDED) ⇔ paid_at + invoice number + subscription + term, all or none
     // (+ val_id unless PROMOTION).
     check(
       'payment_transactions_settled_check',
       sql.raw(
-        `((${inListSql('status', SETTLED_PAYMENT_STATUSES)}) = (paid_at is not null)) and (${allOrNoneSql(['paid_at', 'invoice_number', 'subscription_id'])}) and (paid_at is null or gateway = 'PROMOTION' or val_id is not null)`,
+        `((${inListSql('status', SETTLED_PAYMENT_STATUSES)}) = (paid_at is not null)) and (${allOrNoneSql(['paid_at', 'invoice_number', 'subscription_id', 'term_start', 'term_end'])}) and (paid_at is null or gateway = 'PROMOTION' or val_id is not null) and (term_end is null or term_end > term_start)`,
       ),
     ),
   ],

@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  Length,
   Matches,
   Max,
   Min,
@@ -195,6 +196,17 @@ export class EnvironmentVariables {
   )
   @NotInProduction('SSLCOMMERZ_BASE_URL')
   SSLCOMMERZ_BASE_URL?: string;
+
+  // --- Invoice seller details (M8-T7, Module 8 D8). Optional: unset → `null` on invoices.
+  @IsOptional()
+  @IsString()
+  @Length(1, 200)
+  INVOICE_SELLER_NAME?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 500)
+  INVOICE_SELLER_ADDRESS?: string;
 
   // --- Neon Object Storage (S3-compatible). Optional: StorageService is disabled without them.
   // `neon deploy` / `neon env pull` writes the AWS_* names; STORAGE_BUCKET is the bucket key in neon.ts.

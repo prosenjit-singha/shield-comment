@@ -229,6 +229,8 @@ export class PaymentCallbacksService {
         riskLevel: validation.riskLevel,
         paidAt: now,
         subscriptionId: done.subscriptionId,
+        termStart: done.term.start,
+        termEnd: done.term.end,
         invoiceNumber: invoiceNumberSql(now),
         price: { ...done.price, creditBdt: row.price.creditBdt },
       })

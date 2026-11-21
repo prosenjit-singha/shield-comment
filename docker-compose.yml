@@ -91,6 +91,9 @@ services:
       SSLCOMMERZ_STORE_PASSWORD:
       SSLCOMMERZ_SANDBOX:
       SSLCOMMERZ_TOKENIZATION:
+      # Invoice seller details (M8-T7, D8): optional, unset = null on invoices.
+      INVOICE_SELLER_NAME:
+      INVOICE_SELLER_ADDRESS:
       # Neon AI Gateway (Module 5): the base URL is env-only; the token can also be saved in /admin/settings.
       NEON_AI_GATEWAY_BASE_URL:
       NEON_AI_GATEWAY_TOKEN:

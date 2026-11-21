@@ -9,6 +9,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
@@ -36,7 +37,10 @@ import {
   CheckoutDto,
   CouponPreviewDto,
 } from './dto/checkout.dto.js';
+import { ListInvoicesQueryDto } from './dto/invoices.dto.js';
 import { StartTrialDto } from './dto/start-trial.dto.js';
+import type { InvoiceList, InvoiceView } from './invoices.js';
+import { InvoicesService } from './invoices.service.js';
 import { SubscriptionService } from './subscription.service.js';
 
 /** D2: an impersonated session reads billing but never pays (403 `IMPERSONATION_READ_ONLY`). */
@@ -79,6 +83,9 @@ const perAccount = (limit: number) =>
  * - `PUT auto-renew` `{ enabled }` / `DELETE auto-renew` (M8-T6b): opt-in toggle / remove the saved
  *   token (+ off) → 200 `AutoRenewView`. **Owner only** (D2), impersonated 403
  *   `IMPERSONATION_READ_ONLY`; PUT while unavailable (flag off) → 409 `AUTO_RENEW_UNAVAILABLE`.
+ * - `GET invoices?skip&take` → `{ items, total, skip, take }` (newest paid first) and
+ *   `GET invoices/:invoiceId` (M8-T7, D8): the billing account's PAID + REFUNDED payments,
+ *   **owner + admin** (D2; impersonated read ok); another account's / unsettled / non-uuid id → 404.
  */
 @Controller('workspaces/:workspaceId/billing')
 @UseGuards(WorkspaceAccessGuard)
@@ -88,6 +95,7 @@ export class BillingSummaryController {
     private readonly subscriptions: SubscriptionService,
     private readonly checkout: CheckoutService,
     private readonly autoRenew: AutoRenewState,
+    private readonly invoices: InvoicesService,
   ) {}
 
   @Get('summary')
@@ -184,5 +192,25 @@ export class BillingSummaryController {
   ): Promise<AutoRenewView> {
     assertNotImpersonated(session);
     return this.autoRenew.removeToken(workspace.id);
+  }
+
+  @Get('invoices')
+  @Roles('owner', 'admin')
+  @Header('Cache-Control', 'private, no-store')
+  listInvoices(
+    @CurrentWorkspace() workspace: WorkspaceContext,
+    @Query() query: ListInvoicesQueryDto,
+  ): Promise<InvoiceList> {
+    return this.invoices.list(workspace.id, query.skip, query.take);
+  }
+
+  @Get('invoices/:invoiceId')
+  @Roles('owner', 'admin')
+  @Header('Cache-Control', 'private, no-store')
+  invoice(
+    @CurrentWorkspace() workspace: WorkspaceContext,
+    @Param('invoiceId') invoiceId: string,
+  ): Promise<InvoiceView> {
+    return this.invoices.get(workspace.id, invoiceId);
   }
 }

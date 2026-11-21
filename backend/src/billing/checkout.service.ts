@@ -170,6 +170,8 @@ export class CheckoutService {
           gateway: 'PROMOTION',
           paidAt: now,
           subscriptionId: done.subscriptionId,
+          termStart: done.term.start,
+          termEnd: done.term.end,
           invoiceNumber: invoiceNumberSql(now),
           price: { ...done.price, creditBdt: price.creditBdt },
         });
