@@ -9,10 +9,9 @@ import { isValidIP, normalizeIP } from '@better-auth/core/utils/ip';
  * `TRUST_PROXY_HOPS` = proxies in front of the backend that append to `X-Forwarded-For`. From
  * `[...X-Forwarded-For entries, socket address]` the entry `hops` places from the right is the
  * client; everything left of it is client-chosen and ignored. 0 = socket only (nothing in front).
- * Count the proxies on the **app path** (browser → host load balancer → app proxy → backend):
- * compose 1 (admin nginx / client Start proxy), Fly.io 2 (Fly edge + app proxy). Traffic that
- * skips the app proxy (`api.<domain>`: Meta, Telegram) has one hop fewer, so its left neighbour is
- * read: such routes must not rely on the IP for security (see TASKS.md M9-T1 notes).
+ * Compose 1 (admin nginx / client Start proxy append). Fly.io 1: the edge appends, and the app
+ * proxies run with `FORWARDED_FOR_MODE=pass` (forward the edge's list as is), so the app path and
+ * the direct `api.<domain>` path (Meta, Telegram) count the same hops (M9-T10, deploy.md).
  */
 export const CLIENT_IP_HEADER = 'x-forwarded-for';
 

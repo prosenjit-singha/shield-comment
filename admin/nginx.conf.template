@@ -1,5 +1,5 @@
-# Rendered by the nginx image entrypoint (envsubst on ${API_UPSTREAM} / ${NGINX_RESOLVER} only;
-# nginx's own $vars are left alone) into /etc/nginx/conf.d/default.conf.
+# Rendered by the nginx image entrypoint (envsubst on the Dockerfile ENV names: API_UPSTREAM, NGINX_RESOLVER,
+# NGINX_RESOLVER_IPV6, FORWARDED_FOR_MODE; nginx's own $vars are left alone) into /etc/nginx/conf.d/default.conf.
 
 # Security headers (M9-T8, D12) are set once at server level. nginx inherits add_header only into
 # locations that set none of their own, so the page/asset locations below take Cache-Control from
@@ -7,6 +7,18 @@
 map $uri $static_cache_control {
   ~^/assets/ "public, max-age=31536000, immutable";
   default    "no-cache";
+}
+# X-Forwarded-For to the backend (deploy.md "Client IP"): `append` (default, compose) adds this hop's
+# peer; `pass` (Fly.io, FORWARDED_FOR_MODE env) forwards the edge's list as is, so the backend counts the
+# same TRUST_PROXY_HOPS on this path and on the direct api.<domain> path.
+map "${FORWARDED_FOR_MODE}" $forwarded_for {
+  pass    $http_x_forwarded_for;
+  default $proxy_add_x_forwarded_for;
+}
+# Keep a TLS edge's X-Forwarded-Proto (Fly reaches this server over http); else this server's scheme.
+map $http_x_forwarded_proto $forwarded_proto {
+  ""      $scheme;
+  default $http_x_forwarded_proto;
 }
 # HSTS only when the request reached the edge over https (an empty value adds no header).
 map $http_x_forwarded_proto $hsts {
@@ -47,15 +59,15 @@ server {
   # Same-origin API (tech-stack.md §4): /api/* goes to the backend with the path unchanged, so the
   # Better Auth cookie is host-only to this origin. A variable upstream + resolver re-resolves the
   # backend's address instead of pinning the IP seen at startup (and nginx starts even if it is down).
-  resolver ${NGINX_RESOLVER} valid=10s ipv6=off;
+  resolver ${NGINX_RESOLVER} valid=10s ipv6=${NGINX_RESOLVER_IPV6};
   location /api/ {
     set $api_upstream ${API_UPSTREAM};
     proxy_pass $api_upstream;
     proxy_http_version 1.1;
     # Host stays the upstream's own (hosted backends route on it); the browser's host goes in X-Forwarded-Host.
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-For $forwarded_for;
     proxy_set_header X-Forwarded-Host $http_host;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Proto $forwarded_proto;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_ssl_server_name on;
     add_header Cache-Control "no-store" always;

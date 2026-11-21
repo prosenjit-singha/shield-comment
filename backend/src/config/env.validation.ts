@@ -63,8 +63,8 @@ export class EnvironmentVariables {
   CORS_ORIGINS?: string;
 
   /**
-   * Proxies in front of the backend that append to `X-Forwarded-For`, counted on the app path
-   * (load balancer + app proxy). 0 = socket address only. See `src/common/http/client-ip.ts`.
+   * Proxies in front of the backend that append to `X-Forwarded-For` (compose 1, Fly.io 1 with the
+   * app proxies in `FORWARDED_FOR_MODE=pass`). 0 = socket address only. See `src/common/http/client-ip.ts`.
    */
   @Type(() => Number)
   @IsInt()

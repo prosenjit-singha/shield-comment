@@ -32,13 +32,19 @@ export interface ForwardInfo {
   proto: string
 }
 
-/** Copies request headers for the upstream call and appends this hop to X-Forwarded-*. */
+/**
+ * Copies request headers for the upstream call and appends this hop to X-Forwarded-*.
+ * `FORWARDED_FOR_MODE=pass` (Fly.io, read per call): X-Forwarded-For goes on as the edge sent it, so the
+ * backend counts the same TRUST_PROXY_HOPS here and on the direct api.<domain> path (deploy.md "Client IP").
+ */
 export function buildForwardHeaders(source: Headers, info: ForwardInfo): Headers {
   const headers = new Headers(source)
   for (const name of HOP_BY_HOP) headers.delete(name)
 
   const prior = source.get('x-forwarded-for')
-  if (info.clientIp) headers.set('x-forwarded-for', prior ? `${prior}, ${info.clientIp}` : info.clientIp)
+  if (info.clientIp && process.env.FORWARDED_FOR_MODE !== 'pass') {
+    headers.set('x-forwarded-for', prior ? `${prior}, ${info.clientIp}` : info.clientIp)
+  }
   // Keep values a front proxy (TLS terminator) already set; otherwise use what this server saw.
   headers.set('x-forwarded-host', source.get('x-forwarded-host') ?? info.host)
   headers.set('x-forwarded-proto', source.get('x-forwarded-proto') ?? info.proto)

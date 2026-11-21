@@ -581,3 +581,98 @@ describe('validateEnv: production origins (M9-T3, D3)', () => {
     },
   );
 });
+
+describe('validateEnv: documented deploy env (M9-T10, deploy.md)', () => {
+  // Mirrors the production table in docs/project-documentation/deploy.md (Fly [env] + fly secrets),
+  // with <domain> = example.com and made-up credentials of the right shape.
+  const PRODUCTION = {
+    NODE_ENV: 'production',
+    PORT: '3000',
+    HOST: '::',
+    LOG_LEVEL: 'info',
+    TRUST_PROXY_HOPS: '1',
+    DATABASE_URL:
+      'postgresql://app:pw@ep-example-a1b2c3d4-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
+    DIRECT_URL:
+      'postgresql://app:pw@ep-example-a1b2c3d4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
+    REDIS_URL:
+      'rediss://default:pw@redis-12345.c1.ap-southeast-1-1.ec2.redns.redis-cloud.com:12345',
+    BETTER_AUTH_SECRET: randomBytes(48).toString('base64'),
+    BETTER_AUTH_URL: 'https://api.example.com',
+    TRUSTED_ORIGINS: 'https://app.example.com,https://admin.example.com',
+    CLIENT_APP_URL: 'https://app.example.com',
+    TOKEN_ENCRYPTION_KEY: KEY,
+    TOKEN_ENCRYPTION_KEY_ID: 'k2026a',
+    META_APP_ID: '1234567890123456',
+    META_APP_SECRET: randomBytes(16).toString('hex'),
+    META_LOGIN_CONFIG_ID: '2345678901234567',
+    META_OAUTH_REDIRECT_URI: 'https://app.example.com/api/meta/oauth/callback',
+    META_WEBHOOK_VERIFY_TOKEN: randomBytes(24).toString('hex'),
+    RESEND_API_KEY: 're_0123456789abcdef',
+    EMAIL_FROM: 'ShieldComment BD <alerts@example.com>',
+    TELEGRAM_BOT_TOKEN: `1234567890:${'A'.repeat(35)}`,
+    TELEGRAM_BOT_USERNAME: 'ShieldCommentBot',
+    TELEGRAM_WEBHOOK_SECRET: randomBytes(32).toString('hex'),
+    SSLCOMMERZ_STORE_ID: 'shieldcommentlive',
+    SSLCOMMERZ_STORE_PASSWORD: 'live-store-password',
+    SSLCOMMERZ_SANDBOX: 'false',
+    SSLCOMMERZ_TOKENIZATION: 'false',
+    INVOICE_SELLER_NAME: 'ShieldComment BD',
+    INVOICE_SELLER_ADDRESS: 'Dhaka, Bangladesh',
+    AWS_ACCESS_KEY_ID: 'neon-credential-id',
+    AWS_SECRET_ACCESS_KEY: 'neon-credential-secret',
+    AWS_ENDPOINT_URL_S3:
+      'https://br-example-a1b2c3d4.storage.ap-southeast-1.aws.neon.tech',
+    AWS_REGION: 'ap-southeast-1',
+    STORAGE_BUCKET: 'assets',
+    NEON_AI_GATEWAY_BASE_URL:
+      'https://br-example-a1b2c3d4-api.ai.ap-southeast-1.aws.neon.tech',
+    NEON_AI_GATEWAY_TOKEN: 'nt_live_token',
+  };
+  const STAGING = {
+    ...PRODUCTION,
+    BETTER_AUTH_URL: 'https://api.staging.example.com',
+    TRUSTED_ORIGINS:
+      'https://app.staging.example.com,https://admin.staging.example.com',
+    CLIENT_APP_URL: 'https://app.staging.example.com',
+    META_OAUTH_REDIRECT_URI:
+      'https://app.staging.example.com/api/meta/oauth/callback',
+    SSLCOMMERZ_STORE_ID: 'testbox',
+    SSLCOMMERZ_SANDBOX: 'true',
+  };
+
+  it.each([
+    ['production', PRODUCTION],
+    ['staging', STAGING],
+  ])('the %s env passes with every feature on', (_name, env) => {
+    const validated = validateEnv(env);
+    expect(validated.NODE_ENV).toBe('production');
+    expect(validated.TRUST_PROXY_HOPS).toBe(1);
+    expect(validated.CORS_ORIGINS).toBeUndefined();
+  });
+
+  it('the minimum production env (no optional feature) passes', () => {
+    const {
+      NODE_ENV,
+      DATABASE_URL,
+      DIRECT_URL,
+      REDIS_URL,
+      BETTER_AUTH_SECRET,
+      BETTER_AUTH_URL,
+      TRUSTED_ORIGINS,
+      CLIENT_APP_URL,
+    } = PRODUCTION;
+    expect(() =>
+      validateEnv({
+        NODE_ENV,
+        DATABASE_URL,
+        DIRECT_URL,
+        REDIS_URL,
+        BETTER_AUTH_SECRET,
+        BETTER_AUTH_URL,
+        TRUSTED_ORIGINS,
+        CLIENT_APP_URL,
+      }),
+    ).not.toThrow();
+  });
+});

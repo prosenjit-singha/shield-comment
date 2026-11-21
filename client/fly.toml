@@ -1,0 +1,35 @@
+# Fly.io config for the client app (TanStack Start server) on app.<domain> (Module 9 D1, deploy.md).
+# Production: `cd client && fly deploy`. Staging: same file, `cd client && fly deploy -a shield-comment-app-staging`.
+# Per-environment values are `fly secrets` per app: API_UPSTREAM (http://<backend app>.internal:3000)
+# and PUBLIC_SITE_URL (https://app.<domain>).
+app = "shield-comment-app"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+  build-target = "runtime"
+
+[deploy]
+  strategy = "bluegreen"
+
+[env]
+  # The Fly edge already appends the visitor to X-Forwarded-For: forward it unchanged (deploy.md "Client IP").
+  FORWARDED_FOR_MODE = "pass"
+
+[http_service]
+  internal_port = 5174
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    path = "/healthz"
+    method = "GET"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

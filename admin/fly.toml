@@ -1,0 +1,37 @@
+# Fly.io config for the admin SPA (nginx) on admin.<domain> (Module 9 D1, deploy.md).
+# Production: `cd admin && fly deploy`. Staging: same file, `cd admin && fly deploy -a shield-comment-admin-staging`.
+# Per-environment value is a `fly secret` per app: API_UPSTREAM (http://<backend app>.internal:3000).
+app = "shield-comment-admin"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+  build-target = "runtime"
+
+[deploy]
+  strategy = "bluegreen"
+
+[env]
+  # Fly's private DNS; .internal names resolve to IPv6 only.
+  NGINX_RESOLVER = "[fdaa::3]"
+  NGINX_RESOLVER_IPV6 = "on"
+  # The Fly edge already appends the visitor to X-Forwarded-For: forward it unchanged (deploy.md "Client IP").
+  FORWARDED_FOR_MODE = "pass"
+
+[http_service]
+  internal_port = 5173
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    path = "/healthz"
+    method = "GET"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

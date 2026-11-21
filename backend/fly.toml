@@ -1,0 +1,50 @@
+# Fly.io config for the backend (Module 9 D1, runbook: docs/project-documentation/deploy.md).
+# Production: `cd backend && fly deploy`. Staging: same file, `cd backend && fly deploy -a shield-comment-api-staging`.
+# Only values shared by both environments live here; URLs, origins, Neon/Redis URLs and keys are
+# `fly secrets` per app (deploy.md env tables). Public host api.<domain> = Meta/Telegram webhooks only;
+# the apps reach this backend over Fly's private network (<app>.internal:3000).
+app = "shield-comment-api"
+primary_region = "sin"
+# BullMQ jobs get time to finish on a deploy/restart (interrupted ones are retried as stalled).
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+  build-target = "runtime"
+
+[deploy]
+  # Drizzle SQL migrations on a one-off machine (needs the DIRECT_URL secret) before the new version
+  # starts; a failing migration aborts the deploy. Never drizzle-kit push.
+  release_command = "node dist/db/migrate.js"
+  # New machine passes its health check before the old one stops: no gap for webhooks.
+  strategy = "bluegreen"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  # Dual-stack: Fly's proxy connects over IPv4, the app proxies over the IPv6-only private network.
+  HOST = "::"
+  LOG_LEVEL = "info"
+  # The Fly edge appends the visitor to X-Forwarded-For; the app proxies pass it on unchanged
+  # (FORWARDED_FOR_MODE=pass), so the app path and api.<domain> both count 1 (verified on staging, M9-T13).
+  TRUST_PROXY_HOPS = "1"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Always on (reading 10): BullMQ workers + schedulers run in this process.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    # Liveness only: /api/health queries the DB and keeps Neon's compute awake.
+    path = "/api/health/live"
+    method = "GET"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

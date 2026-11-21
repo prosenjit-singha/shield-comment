@@ -30,7 +30,7 @@
 |---|---|---|
 | PostgreSQL | Docker `postgres` (host port 5433) | **Neon free tier**, Singapore region (`ap-southeast-1`). One branch per environment. |
 | Redis | Docker `redis` or local Redis | **Redis Cloud free (30 MB)** with eviction set to `noeviction` (BullMQ needs this). Not Upstash: BullMQ uses up its command limit. |
-| backend / admin / client | `npm run dev` or `docker compose up --build` | Docker images. Hosting provider not decided yet (Module 9). |
+| backend / admin / client | `npm run dev` or `docker compose up --build` | Docker images on **Fly.io `sin`**, always on (Module 9 D1). Runbook + env tables: [`deploy.md`](./deploy.md). |
 
 **Neon rules**
 - `DATABASE_URL` = Neon **pooled** URL (host contains `-pooler`). The app uses it at runtime.

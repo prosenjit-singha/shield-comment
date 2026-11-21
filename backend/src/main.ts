@@ -16,6 +16,10 @@ async function bootstrap(): Promise<void> {
   configureApp(app);
   app.enableShutdownHooks();
 
-  await app.listen(Number(process.env.PORT ?? 3000), '0.0.0.0');
+  // HOST `::` on Fly.io (fly.toml): the app proxies reach it over the IPv6-only private network.
+  await app.listen(
+    Number(process.env.PORT ?? 3000),
+    process.env.HOST ?? '0.0.0.0',
+  );
 }
 await bootstrap();

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { buildForwardHeaders, proxyToApi } from './api-proxy'
 
 describe('buildForwardHeaders', () => {
@@ -36,6 +36,36 @@ describe('buildForwardHeaders', () => {
     expect(headers.get('x-forwarded-for')).toBe('203.0.113.7, 10.0.0.2')
     expect(headers.get('x-forwarded-host')).toBe('app.example.com')
     expect(headers.get('x-forwarded-proto')).toBe('https')
+  })
+
+  describe('FORWARDED_FOR_MODE=pass (Fly.io, M9-T10)', () => {
+    afterEach(() => vi.unstubAllEnvs())
+
+    it("forwards the edge's X-Forwarded-For unchanged (one hop on every path)", () => {
+      vi.stubEnv('FORWARDED_FOR_MODE', 'pass')
+      const headers = buildForwardHeaders(
+        new Headers({ 'x-forwarded-for': '198.51.100.1, 203.0.113.7', 'x-forwarded-proto': 'https' }),
+        { clientIp: '172.16.5.10', host: 'app.example.com', proto: 'http' },
+      )
+      expect(headers.get('x-forwarded-for')).toBe('198.51.100.1, 203.0.113.7')
+      expect(headers.get('x-forwarded-proto')).toBe('https')
+    })
+
+    it('adds no X-Forwarded-For when the edge sent none (the backend falls back to the socket)', () => {
+      vi.stubEnv('FORWARDED_FOR_MODE', 'pass')
+      const headers = buildForwardHeaders(new Headers(), { clientIp: '172.16.5.10', host: 'app.example.com', proto: 'http' })
+      expect(headers.get('x-forwarded-for')).toBeNull()
+    })
+
+    it('any other value appends as before', () => {
+      vi.stubEnv('FORWARDED_FOR_MODE', 'append')
+      const headers = buildForwardHeaders(new Headers({ 'x-forwarded-for': '203.0.113.7' }), {
+        clientIp: '10.0.0.2',
+        host: 'app.example.com',
+        proto: 'http',
+      })
+      expect(headers.get('x-forwarded-for')).toBe('203.0.113.7, 10.0.0.2')
+    })
   })
 })
 
