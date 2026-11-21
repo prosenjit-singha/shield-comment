@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 8 section + the row's decisions, `docs/project-documentation/modules/module-8-billing-sslcommerz.md`, the code the row names.
 - Standing approvals: **admin/** and **client/** for the rest of this run (user, 2026-11-21, M8-T9 pre-check). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included): none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #18 (2026-11-21) · rows this session: 3 · estimate: 100k
+- Session: #18 (2026-11-21) · rows this session: 4 · estimate: 120k
 - Previous runs (Modules 3–7, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M8-T12 (2026-11-21) · commit: "feat(client): add c1 landing page with live pricing (M8-T12)"
+verified M8-T12
 
 ## Resume
 `/orchestration --continue` — the pre-check will ask for the admin/ approval (M8-T9 is the first admin row; client/ follows at M8-T10…T13).
@@ -362,4 +362,4 @@ You are implementing exactly ONE task row, **M8-T13**, in the ShieldComment BD r
 - 2026-11-21 M8-T9 ✅ 0c3f438 · admin 465 (was 448) · backend/client/root e2e untouched · A4 `/admin/billing`: URL filters (status, gateway, q, from/to), risk badge + invoice column, transaction sheet (price + promotion lines, gateway ids, events, refund audit), D9 Mark refunded dialog, Failed IPNs tab
 - 2026-11-21 M8-T10 ✅ e0e0323 · client 972 (was 930) · backend/admin/root e2e untouched · C10 `/billing`: summary card (status, term, comments bar, renewal / scheduled / pending notices, D5/D6), shared plan cards as picker, coupon preview + price lines, SSLCommerz redirect + ৳0 path, return states incl. pending polling, auto-renew toggle + remove card, owner-only (D2); nav item Billing
 - 2026-11-21 M8-T11 ✅ 52c8dfa · client 1003 (was 972) · backend/admin/root e2e untouched · invoices list + printable invoice view on `/billing` (`?invoice=`), `/plans` checkout links → `/billing?plan&interval` (preselect + checkout), banner → `/billing` for paid plans, D11 `/register` + `/login` hand-off
-- 2026-11-21 M8-T12 ✅ · client 1023 (was 1003) · backend/admin/root e2e untouched · C1 landing `/` + `/bn`: 9 sections (navbar EN | বাং, hero + simulator, trust strip, bento, ROAS calculator, how it works, live SSR pricing from `GET /api/plans` with both prices in the HTML + D11 register links, FAQ, footer CTA), failure fallback "See plans" + no-store
+- 2026-11-21 M8-T12 ✅ 6899809 · client 1023 (was 1003) · backend/admin/root e2e untouched · C1 landing `/` + `/bn`: 9 sections (navbar EN | বাং, hero + simulator, trust strip, bento, ROAS calculator, how it works, live SSR pricing from `GET /api/plans` with both prices in the HTML + D11 register links, FAQ, footer CTA), failure fallback "See plans" + no-store
