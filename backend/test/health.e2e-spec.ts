@@ -70,4 +70,24 @@ describe('GET /api/health (e2e)', () => {
     const res = await request(app.getHttpServer()).get('/api/nope').expect(404);
     expect(res.body).toMatchObject({ statusCode: 404, path: '/api/nope' });
   });
+
+  it.each([
+    ['/api/health/live', 200],
+    ['/api/nope', 404],
+  ])(
+    'sends the Helmet headers on %s (%i), no X-Powered-By (M9-T1)',
+    async (path, status) => {
+      const res = await request(app.getHttpServer()).get(path).expect(status);
+      expect(res.headers).toMatchObject({
+        'x-content-type-options': 'nosniff',
+        'x-frame-options': 'SAMEORIGIN',
+        'cross-origin-resource-policy': 'same-site',
+        'referrer-policy': 'no-referrer',
+        'strict-transport-security': expect.stringContaining('max-age='),
+        'content-security-policy':
+          expect.stringContaining("default-src 'self'"),
+      });
+      expect(res.headers['x-powered-by']).toBeUndefined();
+    },
+  );
 });

@@ -62,6 +62,16 @@ export class EnvironmentVariables {
   @IsString()
   CORS_ORIGINS?: string;
 
+  /**
+   * Proxies in front of the backend that append to `X-Forwarded-For`, counted on the app path
+   * (load balancer + app proxy). 0 = socket address only. See `src/common/http/client-ip.ts`.
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  TRUST_PROXY_HOPS = 0;
+
   /** Signs Better Auth cookies/tokens. Generate with `openssl rand -base64 48`. */
   @IsString()
   @MinLength(32)

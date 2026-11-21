@@ -28,6 +28,8 @@ export default defineConfig({
       BETTER_AUTH_URL: 'http://localhost:3000',
       TRUSTED_ORIGINS: 'http://localhost:5173,http://localhost:5174',
       CLIENT_APP_URL: 'http://app.localhost:5174',
+      // One app proxy in front, like compose: the last X-Forwarded-For entry is the client (M9-T1).
+      TRUST_PROXY_HOPS: '1',
       // Real token cipher in e2e (fixed, test-only key: base64 of 32 bytes). MetaGraphClient is
       // overridden in the Meta specs, so no META_* vars (no live Meta calls).
       TOKEN_ENCRYPTION_KEY: 'ZTJlLXRva2VuLWNpcGhlci1rZXktMzItYnl0ZXMhISE=',

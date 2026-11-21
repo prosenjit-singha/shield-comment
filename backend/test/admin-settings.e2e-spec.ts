@@ -663,7 +663,7 @@ describe('Admin plan settings (e2e)', () => {
           features: { customBlocklist: true, banglaAiFilter: true },
         },
       })
-        .set('X-Forwarded-For', '203.0.113.7, 10.0.0.2')
+        .set('X-Forwarded-For', '198.51.100.66, 203.0.113.7')
         .set('User-Agent', UA)
         .expect(200);
       // Response shape unchanged.

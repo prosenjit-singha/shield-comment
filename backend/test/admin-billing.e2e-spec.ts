@@ -463,7 +463,7 @@ describe('Admin billing transactions (e2e)', () => {
           http()
             .post(`${TRANSACTIONS}/${id}/refund`)
             .set('Cookie', superAdmin.cookie)
-            .set('X-Forwarded-For', '203.0.113.9, 10.0.0.2')
+            .set('X-Forwarded-For', '198.51.100.66, 203.0.113.9')
             .set('User-Agent', 'm8t8-agent')
             .send(body as object);
         const refundRows = async () =>

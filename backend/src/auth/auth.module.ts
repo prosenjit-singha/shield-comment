@@ -14,7 +14,6 @@ import type { Database } from '../db/database.js';
 import { EmailService } from '../email/email.service.js';
 import { AUTH_SECONDARY_STORAGE } from '../redis/redis-secondary-storage.js';
 import { createBetterAuth } from './better-auth.js';
-import { clientIpMiddleware } from './client-ip.js';
 import { PasswordService } from './password.service.js';
 
 /**
@@ -29,8 +28,8 @@ import { PasswordService } from './password.service.js';
  * - `SubscriptionService` (from `BillingModule`): workspace links at sign-up / org create (PW-T3, no trial since PR-T3);
  *   `LimitService`: the `/organization/create` workspace limit (PW-T5) + invite seats (M7-T5);
  *   `EmailService` (global `EmailModule`): invitation emails (M7-T5).
- * - Client IP (rate limit, session `ipAddress`): `X-Forwarded-For`, else the socket address
- *   (src/auth/client-ip.ts).
+ * - Client IP (rate limit, session `ipAddress`): `X-Forwarded-For`, which `configureApp()` has
+ *   already replaced with the resolved IP (src/common/http/client-ip.ts, M9-T1).
  */
 export const AuthModule = BetterAuthModule.forRootAsync({
   imports: [BillingModule],
@@ -68,9 +67,6 @@ export const AuthModule = BetterAuthModule.forRootAsync({
       },
     }),
     disableTrustedOriginsCors: true,
-    // Fills a missing/unusable X-Forwarded-For with the socket address before Better Auth reads
-    // it, so direct callers never share the `no-trusted-ip` rate-limit bucket (M4-T10, D11).
-    middleware: clientIpMiddleware,
   }),
 });
 

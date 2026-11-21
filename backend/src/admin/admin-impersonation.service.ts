@@ -1,4 +1,3 @@
-import { isIP } from 'node:net';
 import {
   ConflictException,
   Injectable,
@@ -6,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import type { Request } from 'express';
 import type { EnvironmentVariables } from '../config/env.validation.js';
 import type { Database } from '../db/database.js';
 import {
@@ -67,19 +65,5 @@ export class AdminImpersonationService {
   }
 }
 
-/**
- * Caller IP for the audit row, read like Better Auth does (first `X-Forwarded-For` entry, set by
- * the nginx / Start proxies), falling back to the socket. Anything that isn't an IP is dropped.
- */
-export function requestIp(
-  req: Pick<Request, 'headers' | 'ip' | 'socket'>,
-): string | null {
-  const forwarded = req.headers['x-forwarded-for'];
-  const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)
-    ?.split(',')[0]
-    ?.trim();
-  for (const candidate of [first, req.ip, req.socket?.remoteAddress]) {
-    if (candidate && isIP(candidate)) return candidate;
-  }
-  return null;
-}
+/** Caller IP for the audit row: the resolved client IP, same as Better Auth's (M9-T1). */
+export { clientIp as requestIp } from '../common/http/client-ip.js';

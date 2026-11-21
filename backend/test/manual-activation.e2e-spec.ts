@@ -69,7 +69,7 @@ describe('Admin manual plan activation (e2e)', () => {
     http()
       .post(`${CLIENTS}/${workspaceId}/subscription`)
       .set('Cookie', cookie)
-      .set('X-Forwarded-For', '203.0.113.7, 10.0.0.2')
+      .set('X-Forwarded-For', '198.51.100.66, 203.0.113.7')
       .set('User-Agent', UA)
       .send(body);
 

@@ -11,49 +11,53 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-verified M9-PLAN · next M9-T1 pre-check: decisions M9-D1…D15
+dispatched M9-T1 (2026-11-21) · commit: "feat(backend): add proxy-safe client ip and helmet headers (M9-T1)"
 
 ## Resume
 `/orchestration --continue`
 
-## Next prompt (M9-T1)
+## Next prompt (M9-T2)
 
-PRE-CHECK: needs user decisions M9-D1…D15 before dispatch (TASKS.md "Module 9" decision list; ask them all at once, recommended option first, plus the domain name for D1/D3 and the legal facts for D11). Record the answers verbatim in `## Decisions asked`, mark each decision "ANSWERED <date>: …" in TASKS.md, then fill **Recorded decisions** below (M9-T1 needs D2, and D1 for the proxy hop counts). If D10 = (c), mark M9-T5/T6 "dropped (D10 c)" before dispatch. Standing approvals for admin/ or client/: none yet (M9-T1 is backend only).
-
-You are implementing exactly ONE task row, **M9-T1**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
+You are implementing exactly ONE task row, **M9-T2**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
 
 **Read first (only these)**
 1. `AGENTS.md`.
-2. `docs/progress/MEMORY.md` (all; Better Auth line incl. "Client IP (M4-T10)", Module 9 line).
-3. From `docs/progress/TASKS.md` (use `grep -n`/`sed -n`; the file is large): the `## Module 9` header paragraph, readings 1 + 2 (+ 10), decisions D1 + D2 (+ D3 for context), the M9-T1 row and the M9-T2 row (so T1 doesn't build T2's global throttler).
+2. `docs/progress/MEMORY.md` (the file is large: `grep -n` for the Better Auth line incl. "Client IP (M9-T1)", the Module 9 line, the Queues/Redis lines; skim the rest only if needed).
+3. From `docs/progress/TASKS.md` (use `grep -n`/`sed -n`; the file is large): the `## Module 9` header paragraph, readings 1 + 10, decisions D2 (+ D10 for the forgot/reset rule), the M9-T1 row (done, notes) and the M9-T2 row.
 4. Spec: `docs/project-documentation/modules/module-9-launch-security.md` (Implementation Checklist item 1).
-5. Code to read or reuse: `backend/src/auth/client-ip.ts` (+ its spec), `backend/src/auth/auth.module.ts` (`middleware` option), `backend/src/auth/better-auth.ts` (`advanced.ipAddress`), `backend/src/app.setup.ts`, `backend/src/main.ts`, `backend/src/meta-callbacks/meta-callbacks.controller.ts` + `.module.ts` (throttler on `req.ip`), `backend/src/billing/payment-callbacks.controller.ts` (`getTracker` = last `X-Forwarded-For` hop), `backend/src/billing/billing-summary.controller.ts` (per-user tracker, leave as is), `backend/src/config/env.validation.ts`, `backend/.env.example` + root `.env.example`, `docker-compose.yml` (backend + backend-e2e env), `client/src/server/api-proxy.test.ts` (the client proxy **extends** the XFF chain; admin nginx uses `$proxy_add_x_forwarded_for`). Test harness: `backend/test/auth-rate-limit-ip.e2e-spec.ts`, `backend/test/utils/create-test-app.ts`.
+5. Code to read or reuse: `backend/src/common/http/client-ip.ts` (`clientIp(req)` = the resolved IP; `X-Forwarded-For` is already rewritten in `configureApp()`, Express `trust proxy` = 1 so `req.ip` is the same value), `backend/src/app.setup.ts`, `backend/src/app.module.ts`, `backend/src/meta-callbacks/meta-callbacks.module.ts` (`ThrottlerModule.forRoot` + `META_CALLBACK_THROTTLE` to move to AppModule), `backend/src/meta-callbacks/meta-callbacks.controller.ts`, `backend/src/billing/payment-callbacks.controller.ts` (`perIp`), `backend/src/billing/billing-summary.controller.ts` (per-user checkout tracker), the playground + alerts-test throttles (`grep -rn "Throttle(" src`), `backend/src/redis/` (existing ioredis connection), `backend/src/health/`, `backend/src/webhooks/` + Telegram webhook controller (skip), `backend/src/common/filters/all-exceptions.filter.ts` (429 shape), `backend/src/auth/better-auth.ts` (`rateLimit.customRules`). Test harness: `backend/test/utils/create-test-app.ts`, `backend/test/meta-callbacks.e2e-spec.ts` (rate-limit describe), `backend/test/auth-rate-limit-ip.e2e-spec.ts`.
 
-**Recorded decisions** (fill at the pre-check): D2 = … · D1 = … (hop counts).
+**Recorded decisions** (user, 2026-11-21, M9-T1 pre-check): D2 = (a) global `ThrottlerGuard` (APP_GUARD) with **Redis storage** (shared across instances and restarts): 300 requests / min per signed-in user, 60 / min per resolved client IP for anonymous requests; skipped: `/api/health*`, `/api/webhooks/meta`, `/api/telegram/webhook`, and routes that keep their own limits (SSLCommerz + Meta callbacks, checkout, playground, alerts test); Better Auth keeps 100 / 60 s with sign-in 10, sign-up 5 and adds forgot/reset password 3 / min (D10 b: also the verification-email resend once M9-T5 adds it); 429 body = our error shape + `Retry-After`. D10 = (b) reset + email verification (rows M9-T5/T6).
 
-**Task (M9-T1): one proxy-safe client-IP resolver + Helmet on the backend**
-- `TRUST_PROXY_HOPS` env (int ≥ 0, default 0 = socket only; compose backend 1; `.env.example` ×2 with a comment on how to count hops). Pure resolver (e.g. `src/common/http/client-ip.ts`): from `[...X-Forwarded-For entries, socket]` take the entry `hops` places from the right; garbage/missing → socket; normalise like Better Auth (IPv4-mapped → IPv4, IPv6 → /64) so buckets stay stable. Note: app-proxied traffic passes one more proxy (client Start proxy / admin nginx) than direct `api.` traffic (Meta, Telegram), so one global count can be wrong for one path: make each path resolve correctly (e.g. compose/host: the app proxies are trusted hops, `api.` = LB only) or document the chosen rule; if fixing it needs client/admin proxy changes, don't touch those apps (no approval): report it as a follow-up for M9-T8.
-- Use it everywhere an IP keys a limit: Express `app.set('trust proxy', hops)` (so `req.ip` is right for the Meta callbacks throttler), `src/auth/client-ip.ts` **always overwrites** `X-Forwarded-For` with the resolved IP (no pass-through of a client-chosen value), the payment callbacks tracker. Session `ipAddress` + audit `requestIp()` should read the same value (check `requestIp()` callers).
-- `helmet` (new backend dependency; check it needs no install script) in `configureApp()`: defaults for a JSON API, `x-powered-by` off, `crossOriginResourcePolicy: same-site`; keep CORS as is (M9-T3 owns it). Check Helmet doesn't break the Meta webhook raw body, the SSLCommerz 303 redirects, CSV downloads or ticket attachment presigned URLs.
-- Tests to write: unit resolver (0/1/2 hops, list, spoofed left entries ignored, garbage, IPv6 /64, mapped IPv4); `client-ip.ts` spec updated (overwrite always); e2e: a spoofed `X-Forwarded-For` can't pick its own auth rate-limit bucket under hops 0 and 1 (`auth-rate-limit-ip.e2e-spec.ts`), Meta + payment callback throttlers key on the resolved IP, Helmet headers present on `/api/health/live` and on an error response (404), `X-Powered-By` absent.
+**Task (M9-T2): global Redis-backed rate limiting**
+- `ThrottlerModule.forRootAsync` in AppModule (move it out of `MetaCallbacksModule`; keep `META_CALLBACK_THROTTLE` and every existing per-route `@Throttle` as is), Redis `ThrottlerStorage` on the existing ioredis connection (small class, atomic INCR + PEXPIRE via one Lua/`multi`; no new dependency), global `APP_GUARD` (a `ThrottlerGuard` subclass): tracker = `user:<id>` when a session is present, else `ip:<clientIp(req)>`; limits 300/min user, 60/min anonymous (two named throttlers or one with a per-request limit, your call; document it).
+- `@SkipThrottle()` on health, the Meta webhook, the Telegram webhook; routes with their own limits keep only their own (no double counting with the global one).
+- Redis down → allow + warn once per window (never 500, never block logins).
+- 429 through `AllExceptionsFilter` with our error shape + `Retry-After` header.
+- Better Auth: add `customRules` for `/request-password-reset` + `/reset-password` (3 / min) now so M9-T5 inherits them; keep the others.
+- e2e `createTestApp`: in-memory storage override (no Redis connection in specs).
+- Tests to write: unit tracker (user vs IP, impersonated session = the session's user), storage (INCR/PEXPIRE, TTL returned, Redis error → allow + warn); e2e: 61st anonymous request in a minute → 429 + `Retry-After` + error shape, signed-in user has a separate 300 budget, a spoofed left `X-Forwarded-For` entry doesn't escape the anonymous bucket (TRUST_PROXY_HOPS 1 in e2e), skipped routes never 429, Meta/SSLCommerz callback limits unchanged, Better Auth reset rules present.
 
 **Rules:** TS strict, ESM, no `any`. Vitest. No live external calls in tests (Meta/SSLCommerz/etc. mocked); tests must fail on unexpected requests. Every tenant query is scoped by `workspace_id`. Backend only: don't edit `admin/` or `client/` (no approval yet). Never commit `.env*` (except `.env.example`) or build/test output. **Never stop or kill the user's own processes** (local Postgres 5432, Redis 6379, dev servers); on a port clash use env overrides or stop and report.
 
 **Verify** (run what applies; report real numbers):
 - backend: `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test`, `npm run test:e2e`, `npm run lint`, `npx prettier --check "src/**/*.ts" "test/**/*.ts"`. The test DB must end at its baseline (4 `plans` + 4 promotions + 4 promotion_plans).
-- compose: `docker compose up -d --build backend` + `/api/health/live` 200 + `curl -I` shows the Helmet headers; root `e2e/` `npm test` still 7/7 (auth through the app proxies must keep working: login, impersonation, checkout return).
-- Current test counts: backend unit 2602, e2e 1314; admin 465; client 1037; root `e2e/` 7.
+- compose: `docker compose up -d --build backend` + `/api/health/live` 200 + a quick anonymous burst shows 429 + `Retry-After` (then let the 60 s window expire or delete only your own `throttle:*` keys); root `e2e/` `npm test` still 7/7 (logins through the app proxies must not hit 429).
+- Current test counts: backend unit 2595, e2e 1322; admin 465; client 1037; root `e2e/` 7.
 
 **If a decision is missing:** if THIS row needs a product decision that is not recorded in TASKS.md/MEMORY.md/this prompt, STOP without coding that part. Report `STATUS: needs-decision` with the question and 2–4 options (recommended first). If your row finishes but the NEXT row needs decisions, report `STATUS: done`, list them under DECISION NEEDED and start the next prompt with `PRE-CHECK: needs user decisions <ids> before dispatch`.
 
 **Finish (in this order)**
-1. TASKS.md: the row → `✅ <date>` + concise notes (built + choices). Add a Verification log entry at the TOP of `## Verification log`. Add short lasting facts to MEMORY.md and point its "next" phrase at M9-T2.
+1. TASKS.md: the row → `✅ <date>` + concise notes (built + choices). Add a Verification log entry at the TOP of `## Verification log`. Add short lasting facts to MEMORY.md and point its "next" phrase at M9-T3.
 2. Journal `docs/progress/ORCHESTRATION.md`:
-   - append one `## Log` line (`- <date> M9-T1 ✅ · <tests> · <1-line summary>`); the orchestrator adds the commit hash;
-   - append your choices under `## Choices to confirm` as `- M9-T1: …`;
-   - **replace** the `## Next prompt` section with the M9-T2 prompt in this same format (`.claude/skills/orchestration/subagent-prompt.md`). Write `RUN COMPLETE` instead if the run scope in `## Run` is finished.
-3. Commit everything, journal included, with `feat(backend): add proxy-safe client ip and helmet headers (M9-T1)` and an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
+   - append one `## Log` line (`- <date> M9-T2 ✅ · <tests> · <1-line summary>`); the orchestrator adds the commit hash;
+   - append your choices under `## Choices to confirm` as `- M9-T2: …`;
+   - **replace** the `## Next prompt` section with the M9-T3 prompt in this same format (`.claude/skills/orchestration/subagent-prompt.md`). Write `RUN COMPLETE` instead if the run scope in `## Run` is finished.
+3. Commit everything, journal included, with `feat(backend): add global redis rate limiting (M9-T2)` and an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
+
+### Decisions added by orchestrator
+(none yet for M9-T2; all Module 9 decisions D1–D15 are recorded "ANSWERED 2026-11-21" in TASKS.md. Carry-over from M9-T1: the direct `api.<domain>` path has one hop fewer than `TRUST_PROXY_HOPS` counts, see the M9-T1 notes; M9-T10 decides the routing.)
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -176,6 +180,7 @@ You are implementing exactly ONE task row, **M9-T1**, in the ShieldComment BD re
 
 - M8-GATE: (1) checkout + the browser's success return are forwarded to `backend-e2e` (M6 pattern, `maxRedirects: 0` so the 303 reaches the browser) and the spec sends the IPN itself; the production `backend` keeps no store · (2) separate stub on port 4011 (not merged into the Graph stub); its hosted page is served by the stub at `localhost:4011` (reachable by the browser in host and Docker runs) · (3) each case resets the owner's billing (`resetOwnerBilling`) instead of chaining monthly → yearly (an UPGRADE with credit math); yearly case pays Growth after a Starter trial · (4) tampered = validator answers ৳1 (AMOUNT_MISMATCH) + a forged amount after signing (BAD_SIGNATURE) · (5) `cleanupRun` now also deletes `promotion_redemptions` (trials / launch discounts made by the spec).
 - M9-PLAN: (1) one table for all Module 9 rows: code/docs rows M9-T1…T12 first, 👤 user rows M9-T13…T19 after them (same ID series, marked `👤 user step` with "Agent prepares" vs "Only the user"), GATE last · (2) client-IP fix is its own first row (M9-T1, with Helmet) because every rate limit depends on it (reading 1); the global throttler is M9-T2 · (3) password reset (D10) and legal pages (D11) added although not in the spec: launch blockers (lockouts; Meta + SSLCommerz require public policy pages) · (4) staging replaces the zrok tunnel for the SSLCommerz sandbox run and the live Meta test (M9-T14/T15) · (5) D15 lets the gate pass before Meta App Review approval / live store approval (weeks) · (6) carry-overs: contrast = D9 (no silent token change), TikTok docs + nav flake = M9-T9, gzip = M9-T8, tokenization check = M9-T14.
+- M9-T1: one global middleware (first in `configureApp()`) rewrites `X-Forwarded-For` to the resolved IP + Express `trust proxy` 1 (instead of `trust proxy` = hops) so every reader shares one normalised value · `src/auth/client-ip.ts` + auth `middleware` option deleted (redundant) · audit `requestIp()` = alias of `clientIp()` (stores the normalised form, IPv6 /64, like session `ipAddress`) · `TRUST_PROXY_HOPS` read from `process.env` in `configureApp()` (validated at boot, 0–10) so e2e can vary it · hops count the **app path** (Fly 2); direct `api.` traffic is one hop short → follow-up M9-T10/T8: expose only webhook/callback routes on `api.` or normalise in the app proxies; verify the real count on staging · e2e env + compose + `.env.example` ×2 = 1 · Helmet defaults kept for the JSON API (incl. `Referrer-Policy: no-referrer`, harmless on JSON; root e2e login/impersonation pass) + CORP same-site
 
 ## Decisions asked
 - 2026-11-18 M3-T10: D13 0-Pages redirect → entry points only (recorded in TASKS.md D13)
@@ -250,6 +255,7 @@ You are implementing exactly ONE task row, **M9-T1**, in the ShieldComment BD re
 - 2026-11-21 M8-T9 pre-check: "How far should the admin/ approval go?" → "Rest of the run (Recommended)" · "Pre-approve client/ now so the run doesn't stop there?" → "Rest of the run (Recommended)".
 
 - 2026-11-21 Module 9 run start: user → "Start Module 9" (scope M9-PLAN → M9-GATE).
+- 2026-11-21 M9-T1 pre-check (Module 9 decisions): D1 → "Fly.io sin (Recommended)" · D2 → "Redis throttler (Recommended)" · D3 → "Subdomains, CORS off (Recommended)" · D4 → "7 audit tables, trigger (Recommended)" · D5 → "Hosted staging (Recommended)" · D6 → "Read-only smoke project (Recommended)" · D7 → "Agent writes, you record (Recommended)" · D8 → "At go-live (Recommended)" · D9 → "Darken --primary (Recommended)" · D10 → "Reset + verification" · D11 → "Agent drafts, you review (Recommended)" · D12 → "Report-Only first (Recommended)" · D13 → "gzip/br in client server (Recommended)" · D14 → "UptimeRobot free (Recommended)" · D15 → "Staging + review submitted (Recommended)" · domain → "Placeholder for now (Recommended)".
 
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
@@ -376,3 +382,4 @@ You are implementing exactly ONE task row, **M9-T1**, in the ShieldComment BD re
 - 2026-11-21 M8-T13 ✅ 39bf4eb · client 1037 (was 1023) · backend/admin/root e2e untouched · landing SEO: JSON-LD SoftwareApplication (lowest live price) + FAQPage, og:image 1200×630 + twitter card, robots.txt + sitemap.xml server routes, TikTok → Instagram copy; Lighthouse mobile `/` 100/96/100/100, `/bn` 99/96/100/100 (`client/scripts/lighthouse.sh`)
 - 2026-11-21 M8-GATE ✅ 0570111 · backend 2602 + e2e 1314 · admin 465 · client 1037 · root e2e 7/7 host + docker (was 4) · Lighthouse `/` 100/96/100/100, `/bn` 99/96/100/100 · Module 8 gate: SSLCommerz stub checkout round trip (monthly, yearly, tampered) + A4, curl raw HTML, browser check; no app code changed
 - 2026-11-21 M9-PLAN ✅ e4d5397 · docs only · Module 9 planned: 19 rows (12 code/docs + 7 👤 user steps) + GATE, decisions D1–D15 open (hosting, rate limits, origins, audit immutability, staging, smoke, App Review screencast, SSLCommerz live, contrast, password reset, legal pages, CSP, compression, uptime, gate scope)
+- 2026-11-21 M9-T1 ✅ · backend 2595 (was 2602) + e2e 1322 (was 1314) · root e2e 7/7 · proxy-safe client IP (`TRUST_PROXY_HOPS` resolver, XFF rewritten first in `configureApp()`, one value for Better Auth / `req.ip` / callback throttlers / audit) + Helmet; decisions D1–D15 marked answered, M9-T5/T6 now include email verification (D10 b)

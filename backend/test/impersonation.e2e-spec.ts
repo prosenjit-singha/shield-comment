@@ -148,7 +148,7 @@ describe('Impersonation (e2e)', () => {
 
     it('200 for a super admin: { token, redirectUrl }; only the hash is stored, with admin id and IP', async () => {
       const res = await impersonate(superAdmin.cookie, owner.workspaceId)
-        .set('X-Forwarded-For', '203.0.113.7, 10.0.0.1')
+        .set('X-Forwarded-For', '198.51.100.66, 203.0.113.7')
         .expect(200);
       expect(Object.keys(res.body).sort()).toEqual(['redirectUrl', 'token']);
       const token = res.body.token as string;

@@ -661,4 +661,20 @@ describe('SSLCommerz callbacks without SSLCommerz config (e2e)', () => {
       'NOT_CONFIGURED',
     ]);
   });
+
+  it('throttles per resolved client IP (60 / min, TRUST_PROXY_HOPS=1): spoofed left entries are ignored', async () => {
+    const cancel = (xff: string) =>
+      request(app.getHttpServer())
+        .post('/api/billing/sslcommerz/cancel')
+        .set('X-Forwarded-For', xff)
+        .type('form')
+        .send({ tran_id: tranId });
+    for (let i = 0; i < 60; i++) {
+      expect((await cancel(`198.51.100.${i + 1}, 203.0.113.60`)).status).toBe(
+        303,
+      );
+    }
+    await cancel('198.51.100.200, 203.0.113.60').expect(429);
+    expect((await cancel('203.0.113.60, 203.0.113.61')).status).toBe(303);
+  });
 });

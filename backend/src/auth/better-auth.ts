@@ -8,7 +8,7 @@ import type { LimitService } from '../billing/limit.service.js';
 import type { Database } from '../db/database.js';
 import * as schema from '../db/schema/index.js';
 import type { EmailService } from '../email/email.service.js';
-import { CLIENT_IP_HEADER } from './client-ip.js';
+import { CLIENT_IP_HEADER } from '../common/http/client-ip.js';
 import {
   firstWorkspaceName,
   parseWorkspaceName,
@@ -179,7 +179,7 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
       },
     },
     advanced: {
-      // Only this header; src/auth/client-ip.ts fills it with the socket address when unusable.
+      // Only this header: configureApp() replaces it with the resolved client IP (M9-T1).
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
       // Same UUIDv7 ids as every other table (src/db/schema/columns.ts).
       database: { generateId: () => uuidv7() },

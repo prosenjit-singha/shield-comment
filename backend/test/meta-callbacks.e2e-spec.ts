@@ -511,4 +511,20 @@ describe('Meta callbacks rate limit (e2e)', () => {
       .send({})
       .expect(400);
   });
+
+  it('keys on the resolved client IP (TRUST_PROXY_HOPS=1): spoofed left entries share one bucket', async () => {
+    const { default: request } = await import('supertest');
+    const deauthorize = (xff: string) =>
+      request(app.getHttpServer())
+        .post('/api/meta/deauthorize')
+        .set('X-Forwarded-For', xff)
+        .type('form')
+        .send({});
+    for (let i = 0; i < META_CALLBACK_THROTTLE.limit; i++) {
+      await deauthorize(`198.51.100.${i + 1}, 203.0.113.50`).expect(400);
+    }
+    await deauthorize('198.51.100.200, 203.0.113.50').expect(429);
+    // The proxy-added (last) entry is the key: another client has its own budget.
+    await deauthorize('203.0.113.50, 203.0.113.51').expect(400);
+  });
 });

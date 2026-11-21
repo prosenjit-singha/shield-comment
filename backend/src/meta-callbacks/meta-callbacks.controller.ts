@@ -35,7 +35,7 @@ import {
 
 /**
  * Meta platform callbacks (Module 4 D6, M4-T6), called by Meta's servers (no session →
- * `@Public()`), rate-limited per IP (`ThrottlerGuard`, `META_CALLBACK_THROTTLE`).
+ * `@Public()`), rate-limited per IP (`ThrottlerGuard` on `req.ip` = the resolved client IP, M9-T1).
  * Body: `application/x-www-form-urlencoded` `signed_request=…` (parsed by the Better Auth
  * integration's urlencoded parser, which covers every non-auth route). The signed_request is never
  * logged or echoed.

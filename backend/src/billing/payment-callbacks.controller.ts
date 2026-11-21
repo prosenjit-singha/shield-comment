@@ -10,26 +10,16 @@ import {
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { Public } from '../auth/decorators/public.decorator.js';
+import { clientIp } from '../common/http/client-ip.js';
 import { isRetryOutcome, successReturn } from './payment-callback.js';
 import { PaymentCallbacksService } from './payment-callbacks.service.js';
 
-/**
- * Per caller IP: the last `X-Forwarded-For` hop (added by the client's same-origin proxy, the only
- * way in, reading 4), else the socket address.
- */
+/** Per resolved client IP (`TRUST_PROXY_HOPS`, M9-T1). */
 const perIp = Throttle({
   default: {
     limit: 60,
     ttl: 60_000,
-    getTracker: (req) => {
-      const { headers, ip } = req as Request;
-      const forwarded = headers['x-forwarded-for'];
-      const last = (Array.isArray(forwarded) ? forwarded.join(',') : forwarded)
-        ?.split(',')
-        .pop()
-        ?.trim();
-      return `sslcommerz:${last || ip || 'none'}`;
-    },
+    getTracker: (req) => `sslcommerz:${clientIp(req as Request) ?? 'none'}`,
   },
 });
 
