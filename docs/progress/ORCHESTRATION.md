@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 9 section + the row's decisions, `docs/project-documentation/modules/module-9-launch-security.md`, the code the row names.
 - Standing approvals: **client/ approved for the rest of the run** (user, 2026-11-21, M9-T6 pre-check: "Rest of the run"); **admin/ approved for the rest of the run** (user, 2026-11-21, M9-T8 pre-check: "Rest of the run"). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included), deploys, DNS, hosting/Neon/Redis Cloud accounts or any production credential: none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #19 (2026-11-21, continues session #18) · rows this session: 8 · estimate: 200k
+- Session: #19 (2026-11-21, continues session #18) · rows this session: 9 · estimate: 220k
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M9-T12 (2026-11-21) · commit: "docs(meta): add Meta App Review package (M9-T12)" (summary may vary; subject contains (M9-T12))
+verified M9-T12
 
 ## Resume
 `/orchestration --continue` — next M9-T4 (immutable audit logs, backend only, D4 answered). Coming pre-checks: M9-T5 asks what happens to existing unverified accounts and to impersonation under required email verification (D10 b); M9-T7 asks the legal facts (D11); the first admin/ and client/ rows ask for app approval.
@@ -413,4 +413,4 @@ Carry-over from M9-T12: the staging Meta test app gets the URLs from `meta-app-r
 - 2026-11-21 M9-T9 ✅ 8cb1a05 · client 1125 (was 1116) · admin 465 · root e2e 7/7 · Lighthouse `/` + `/bn` a11y 100 (was 96), perf/bp/seo 100 · darker light primary/secondary, lifted dark brand tokens with dark foregrounds, contrast token test, client.md TikTok copy, nav flake root cause (Motion exit kept the menu's aria-hidden) fixed in the test harness
 - 2026-11-21 M9-T10 ✅ 7946524 · backend unit 2634 (was 2631) · e2e 1373 · client 1128 (was 1125) · admin 465 · root e2e 7/7 · fly.toml ×3 (sin, always on, bluegreen, live/healthz checks, migrate release step; staging = same file `-a <app>-staging`, per-env values as fly secrets) + `scripts/check-fly-config.py` + `deploy.md` runbook/env tables; `FORWARDED_FOR_MODE=pass` on Fly → `TRUST_PROXY_HOPS=1` on app + direct api. paths; proxies keep the edge's X-Forwarded-Proto; backend `HOST` env (Fly `::`)
 - 2026-11-21 M9-T11 ✅ 7202418 · root e2e 7/7 (unchanged) · smoke 11/11 (`smoke:local`) · typecheck ✅ · read-only `smoke` Playwright project (`default: false`, base URLs + accounts from `SMOKE_*`, production guard, health/live + healthz, landing `/` `/bn` raw HTML, robots/sitemap, app + Helmet headers, cookie flags, client + admin read-only screens with 0 console errors) + `npm run smoke` / `smoke:local`; deploy.md §3 step 9
-- 2026-11-21 M9-T12 ✅ · docs only (scope grep 8/8, route grep all match; no test runs, counts unchanged) · Meta App Review package `meta-app-review.md` (8 permission sections + reviewer notes, reviewer account, ≤ 3 min shot list, URLs table, pre-submit checklist), linked from deploy.md §3 step 8 + meta-webhooks-local.md §3
+- 2026-11-21 M9-T12 ✅ 6b96e7f · docs only (scope grep 8/8, route grep all match; no test runs, counts unchanged) · Meta App Review package `meta-app-review.md` (8 permission sections + reviewer notes, reviewer account, ≤ 3 min shot list, URLs table, pre-submit checklist), linked from deploy.md §3 step 8 + meta-webhooks-local.md §3
