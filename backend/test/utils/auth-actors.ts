@@ -124,7 +124,10 @@ export async function deleteBillingChildren(
 
 export function sessionCookie(res: request.Response): string {
   const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = raw?.find((c) => c.startsWith('better-auth.session_token='));
+  // `__Secure-` prefix when BETTER_AUTH_URL is https (M9-T3).
+  const cookie = raw?.find((c) =>
+    /^(__Secure-)?better-auth\.session_token=/.test(c),
+  );
   expect(cookie, 'session cookie').toBeDefined();
   return cookie!.split(';')[0]!;
 }

@@ -64,6 +64,9 @@ function sessionCookie(res: request.Response): string {
   const cookie = raw?.find((c) => c.startsWith('better-auth.session_token='));
   expect(cookie, 'session cookie').toBeDefined();
   expect(cookie).toMatch(/HttpOnly/i);
+  // M9-T3: explicit Lax; no `Secure` while BETTER_AUTH_URL is http (secure-cookies.e2e-spec.ts).
+  expect(cookie).toMatch(/SameSite=Lax/i);
+  expect(cookie).not.toMatch(/;\s*Secure/i);
   return cookie!.split(';')[0]!;
 }
 

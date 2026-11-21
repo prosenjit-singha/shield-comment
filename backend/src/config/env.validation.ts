@@ -81,7 +81,10 @@ export class EnvironmentVariables {
   @IsString()
   BETTER_AUTH_URL!: string;
 
-  /** Comma list of app origins allowed to call `/api/auth/*` (CSRF / redirect checks). */
+  /**
+   * Comma list of app origins allowed to call `/api/auth/*` (CSRF / redirect checks). Required in
+   * production, https only there (except localhost hosts): see `productionOriginErrors()`.
+   */
   @IsOptional()
   @IsString()
   TRUSTED_ORIGINS?: string;
@@ -526,6 +529,65 @@ function previousTokenKeysError(
   }
 }
 
+function splitOrigins(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+}
+
+/** https, or http on `localhost` / `*.localhost` (compose; browsers treat those as secure). */
+function isSecureOrLocalUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:') return true;
+    return (
+      url.protocol === 'http:' &&
+      (url.hostname === 'localhost' || url.hostname.endsWith('.localhost'))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Production-only origin rules (M9-T3, Module 9 D3): `TRUSTED_ORIGINS` is required, and every origin
+ * or public URL is https unless its host is `localhost` / `*.localhost`. Dev/test are not checked.
+ */
+function productionOriginErrors(env: EnvironmentVariables): string[] {
+  if (env.NODE_ENV !== NodeEnv.Production) return [];
+  const rule =
+    'must use https:// when NODE_ENV=production (http only for localhost / *.localhost)';
+  const errors: string[] = [];
+  const trusted = splitOrigins(env.TRUSTED_ORIGINS);
+  if (trusted.length === 0) {
+    errors.push(
+      '- TRUSTED_ORIGINS: is required when NODE_ENV=production (comma list of the app origins)',
+    );
+  }
+  const lists: [string, string[]][] = [
+    ['TRUSTED_ORIGINS', trusted],
+    ['CORS_ORIGINS', splitOrigins(env.CORS_ORIGINS)],
+  ];
+  for (const [name, origins] of lists) {
+    origins.forEach((origin, i) => {
+      if (!isSecureOrLocalUrl(origin)) {
+        errors.push(`- ${name}: entry ${i + 1} ${rule}`);
+      }
+    });
+  }
+  const urls: [string, string | undefined][] = [
+    ['BETTER_AUTH_URL', env.BETTER_AUTH_URL],
+    ['CLIENT_APP_URL', env.CLIENT_APP_URL],
+  ];
+  for (const [name, value] of urls) {
+    if (value !== undefined && !isSecureOrLocalUrl(value)) {
+      errors.push(`- ${name}: ${rule}`);
+    }
+  }
+  return errors;
+}
+
 /** Fails fast at boot if required env vars are missing or malformed. */
 export function validateEnv(
   config: Record<string, unknown>,
@@ -533,16 +595,18 @@ export function validateEnv(
   const validated = plainToInstance(EnvironmentVariables, config, {
     enableImplicitConversion: true,
   });
-  const errors = validateSync(validated, { skipMissingProperties: false });
-  if (errors.length > 0) {
-    // Property + constraint messages only: messages never include values (no secrets in logs).
-    const details = errors
-      .map(
-        (error) =>
-          `- ${error.property}: ${Object.values(error.constraints ?? {}).join('; ')}`,
-      )
-      .join('\n');
-    throw new Error(`Invalid environment configuration:\n${details}`);
+  // Property + constraint messages only: messages never include values (no secrets in logs).
+  const details = [
+    ...validateSync(validated, { skipMissingProperties: false }).map(
+      (error) =>
+        `- ${error.property}: ${Object.values(error.constraints ?? {}).join('; ')}`,
+    ),
+    ...productionOriginErrors(validated),
+  ];
+  if (details.length > 0) {
+    throw new Error(
+      `Invalid environment configuration:\n${details.join('\n')}`,
+    );
   }
   return validated;
 }

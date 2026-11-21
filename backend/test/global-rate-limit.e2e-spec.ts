@@ -1,8 +1,10 @@
 import type { INestApplication } from '@nestjs/common';
 import { AuthService } from '@thallesp/nestjs-better-auth';
+import { and, gte, isNull } from 'drizzle-orm';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import type { createBetterAuth } from '../src/auth/better-auth.js';
+import { paymentEvents } from '../src/db/schema/index.js';
 import { GLOBAL_THROTTLE } from '../src/rate-limit/global-throttler.guard.js';
 import { createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
@@ -19,6 +21,7 @@ describe('Global rate limit (e2e)', () => {
   let app: INestApplication<App>;
   let actors: ReturnType<typeof createAuthActors>;
   const http = () => request(app.getHttpServer());
+  const startedAt = new Date();
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -26,6 +29,16 @@ describe('Global rate limit (e2e)', () => {
   });
 
   afterAll(async () => {
+    // The SSLCommerz IPN probe logs a tran-less `NOT_CONFIGURED` event; leaving it skews
+    // admin-billing's event totals when that spec runs later (M9-T3).
+    await actors?.db
+      .delete(paymentEvents)
+      .where(
+        and(
+          isNull(paymentEvents.tranId),
+          gte(paymentEvents.receivedAt, startedAt),
+        ),
+      );
     await actors?.cleanup();
     await app?.close();
   });

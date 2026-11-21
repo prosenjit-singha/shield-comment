@@ -182,9 +182,13 @@ describe('validateEnv: META_GRAPH_BASE_URL (M6-T4, D17)', () => {
         META_GRAPH_BASE_URL: 'http://graph-stub:4010',
       }),
     ).toContain('must not be set when NODE_ENV=production');
-    expect(validateEnv({ ...BASE, NODE_ENV: 'production' }).NODE_ENV).toBe(
-      'production',
-    );
+    expect(
+      validateEnv({
+        ...BASE,
+        NODE_ENV: 'production',
+        TRUSTED_ORIGINS: 'https://app.shield.test',
+      }).NODE_ENV,
+    ).toBe('production');
   });
 });
 
@@ -450,4 +454,130 @@ describe('validateEnv: SSLCommerz (M8-T1, D1)', () => {
       'SSLCOMMERZ_BASE_URL is a test-only override and must not be set when NODE_ENV=production',
     );
   });
+});
+
+describe('validateEnv: production origins (M9-T3, D3)', () => {
+  const PROD = {
+    ...BASE,
+    NODE_ENV: 'production',
+    BETTER_AUTH_URL: 'https://api.shield.test',
+    TRUSTED_ORIGINS: 'https://app.shield.test, https://admin.shield.test',
+    CLIENT_APP_URL: 'https://app.shield.test',
+  };
+  const error = (env: Record<string, unknown>) => {
+    try {
+      validateEnv(env);
+    } catch (e) {
+      return (e as Error).message;
+    }
+    return '';
+  };
+  const HTTPS_RULE = 'must use https:// when NODE_ENV=production';
+
+  it('accepts https origins + URLs, CORS unset', () => {
+    const env = validateEnv(PROD);
+    expect(env.TRUSTED_ORIGINS).toBe(PROD.TRUSTED_ORIGINS);
+    expect(env.CORS_ORIGINS).toBeUndefined();
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['empty', ''],
+    ['only commas/spaces', ' , '],
+  ])('refuses a %s TRUSTED_ORIGINS', (_name, value) => {
+    expect(error({ ...PROD, TRUSTED_ORIGINS: value })).toContain(
+      '- TRUSTED_ORIGINS: is required when NODE_ENV=production',
+    );
+  });
+
+  it.each([
+    ['TRUSTED_ORIGINS', 'https://app.shield.test,http://admin.shield.test', 2],
+    ['TRUSTED_ORIGINS', 'app.shield.test', 1],
+    ['CORS_ORIGINS', 'http://app.shield.test', 1],
+    ['CORS_ORIGINS', 'https://app.shield.test, http://evil.test', 2],
+  ])('refuses %s entry that is not https: %s', (name, value, entry) => {
+    const message = error({ ...PROD, [name]: value });
+    expect(message).toContain(`- ${name}: entry ${entry} ${HTTPS_RULE}`);
+    // Names the variable, never echoes the value.
+    expect(message).not.toContain('shield.test');
+  });
+
+  it.each(['BETTER_AUTH_URL', 'CLIENT_APP_URL'])(
+    'refuses an http %s',
+    (name) => {
+      expect(error({ ...PROD, [name]: 'http://api.shield.test' })).toContain(
+        `- ${name}: ${HTTPS_RULE}`,
+      );
+    },
+  );
+
+  it('lists every refusal at once', () => {
+    const message = error({
+      ...PROD,
+      TRUSTED_ORIGINS: undefined,
+      CORS_ORIGINS: 'http://a.test',
+      BETTER_AUTH_URL: 'http://api.test',
+      CLIENT_APP_URL: 'http://app.test',
+    });
+    for (const name of [
+      'TRUSTED_ORIGINS',
+      'CORS_ORIGINS',
+      'BETTER_AUTH_URL',
+      'CLIENT_APP_URL',
+    ]) {
+      expect(message).toContain(`- ${name}:`);
+    }
+  });
+
+  it('allows http on localhost and *.localhost (compose)', () => {
+    expect(() =>
+      validateEnv({
+        ...PROD,
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        CLIENT_APP_URL: 'http://app.localhost:5174',
+        TRUSTED_ORIGINS: 'http://admin.localhost:5173,http://localhost:5174',
+        CORS_ORIGINS: 'http://app.localhost:5174',
+      }),
+    ).not.toThrow();
+  });
+
+  it('refuses look-alike hosts (localhost.evil.test, xlocalhost)', () => {
+    expect(
+      error({ ...PROD, TRUSTED_ORIGINS: 'http://localhost.evil.test' }),
+    ).toContain(`- TRUSTED_ORIGINS: entry 1 ${HTTPS_RULE}`);
+    expect(error({ ...PROD, CLIENT_APP_URL: 'http://xlocalhost' })).toContain(
+      `- CLIENT_APP_URL: ${HTTPS_RULE}`,
+    );
+  });
+
+  it('passes the docker-compose backend env (NODE_ENV=production on http://*.localhost)', () => {
+    const origins =
+      'http://admin.localhost:5173,http://app.localhost:5174,http://localhost:5173,http://localhost:5174';
+    expect(() =>
+      validateEnv({
+        ...BASE,
+        NODE_ENV: 'production',
+        TRUST_PROXY_HOPS: '1',
+        CORS_ORIGINS: origins,
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        TRUSTED_ORIGINS: origins,
+        CLIENT_APP_URL: 'http://app.localhost:5174',
+      }),
+    ).not.toThrow();
+  });
+
+  it.each(['development', 'test'])(
+    'does not check origins when NODE_ENV=%s',
+    (nodeEnv) => {
+      expect(() =>
+        validateEnv({
+          ...BASE,
+          NODE_ENV: nodeEnv,
+          BETTER_AUTH_URL: 'http://api.shield.test',
+          CORS_ORIGINS: 'http://evil.test',
+          CLIENT_APP_URL: 'http://app.shield.test',
+        }),
+      ).not.toThrow();
+    },
+  );
 });

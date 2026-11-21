@@ -139,6 +139,7 @@ type SessionFields = {
  * Design: docs/project-documentation/tech-stack.md §3.
  */
 export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
+  const secureCookies = new URL(settings.baseURL).protocol === 'https:';
   return betterAuth({
     appName: 'ShieldComment BD',
     basePath: '/api/auth',
@@ -182,6 +183,17 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
       },
     },
     advanced: {
+      // Explicit cookie flags (M9-T3, reading 4): `Secure` + `__Secure-` prefix exactly when the
+      // public URL is https. Compose runs production on http://*.localhost, so it stays off there.
+      useSecureCookies: secureCookies,
+      // Better Auth skips the Origin check under NODE_ENV=test by default; keep it on everywhere so
+      // e2e runs the production CSRF check (cookie-carrying POSTs need a TRUSTED_ORIGINS Origin).
+      disableOriginCheck: false,
+      defaultCookieAttributes: {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: secureCookies,
+      },
       // Only this header: configureApp() replaces it with the resolved client IP (M9-T1).
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
       // Same UUIDv7 ids as every other table (src/db/schema/columns.ts).
