@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 8 section + the row's decisions, `docs/project-documentation/modules/module-8-billing-sslcommerz.md`, the code the row names.
 - Standing approvals: **admin/** and **client/** for the rest of this run (user, 2026-11-21, M8-T9 pre-check). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included): none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #18 (2026-11-21) · rows this session: 2 · estimate: 80k
+- Session: #18 (2026-11-21) · rows this session: 3 · estimate: 100k
 - Previous runs (Modules 3–7, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M8-T11 (2026-11-21) · commit: "feat(client): add invoices and checkout wiring (M8-T11)"
+verified M8-T11
 
 ## Resume
 `/orchestration --continue` — the pre-check will ask for the admin/ approval (M8-T9 is the first admin row; client/ follows at M8-T10…T13).
@@ -359,4 +359,4 @@ You are implementing exactly ONE task row, **M8-T12**, in the ShieldComment BD r
 - 2026-11-21 M8-T8 ✅ e9a6bbb · backend 2602 unit (was 2589) + 1314 e2e (was 1271) · admin/client/root e2e untouched · admin billing filters + transaction sheet + failed events list + D9 mark-refunded (`payment_refunds` 0045) + real dashboard MRR and gateway volume
 - 2026-11-21 M8-T9 ✅ 0c3f438 · admin 465 (was 448) · backend/client/root e2e untouched · A4 `/admin/billing`: URL filters (status, gateway, q, from/to), risk badge + invoice column, transaction sheet (price + promotion lines, gateway ids, events, refund audit), D9 Mark refunded dialog, Failed IPNs tab
 - 2026-11-21 M8-T10 ✅ e0e0323 · client 972 (was 930) · backend/admin/root e2e untouched · C10 `/billing`: summary card (status, term, comments bar, renewal / scheduled / pending notices, D5/D6), shared plan cards as picker, coupon preview + price lines, SSLCommerz redirect + ৳0 path, return states incl. pending polling, auto-renew toggle + remove card, owner-only (D2); nav item Billing
-- 2026-11-21 M8-T11 ✅ · client 1003 (was 972) · backend/admin/root e2e untouched · invoices list + printable invoice view on `/billing` (`?invoice=`), `/plans` checkout links → `/billing?plan&interval` (preselect + checkout), banner → `/billing` for paid plans, D11 `/register` + `/login` hand-off
+- 2026-11-21 M8-T11 ✅ 52c8dfa · client 1003 (was 972) · backend/admin/root e2e untouched · invoices list + printable invoice view on `/billing` (`?invoice=`), `/plans` checkout links → `/billing?plan&interval` (preselect + checkout), banner → `/billing` for paid plans, D11 `/register` + `/login` hand-off
