@@ -8,17 +8,22 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import { render } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { onTestFinished, vi } from 'vitest'
 import type { Language } from '@/lib/language'
 import { createQueryClient } from '@/lib/query-client'
+import { Route as ForgotPasswordRoute } from '@/routes/forgot-password'
 import { Route as InviteRoute } from '@/routes/invite.$invitationId'
 import { Route as LoginRoute } from '@/routes/login'
 import { Route as RegisterRoute } from '@/routes/register'
+import { Route as ResetPasswordRoute } from '@/routes/reset-password'
+import { Route as VerifyEmailRoute } from '@/routes/verify-email'
 import { createLanguageStore, LanguageStoreContext } from '@/stores/language-store'
 
 /**
- * Test harness for the C2 auth screens (M3-T8) + the invite link (M7-T14). The real `/login`, `/register`
- * and `/invite/$invitationId` route files are
+ * Test harness for the C2 auth screens (M3-T8) + the invite link (M7-T14) + password reset / email
+ * verification (M9-T6). The real `/login`, `/register`, `/forgot-password`, `/reset-password`,
+ * `/verify-email` and `/invite/$invitationId` route files are
  * mounted under a bare root (the generated tree pulls in the Start server functions); `/`, `/onboarding`,
  * `/dashboard`, `/billing` and `/orders` are stubs (the onboarding wizard + `_app` guard are tested in
  * `src/routes/_app/-onboarding.test.tsx`).
@@ -31,6 +36,9 @@ const stub = (path: string, text: string) =>
 const routeTree = rootRoute.addChildren([
   LoginRoute.update({ id: '/login', path: '/login', getParentRoute: () => rootRoute } as never),
   RegisterRoute.update({ id: '/register', path: '/register', getParentRoute: () => rootRoute } as never),
+  ForgotPasswordRoute.update({ id: '/forgot-password', path: '/forgot-password', getParentRoute: () => rootRoute } as never),
+  ResetPasswordRoute.update({ id: '/reset-password', path: '/reset-password', getParentRoute: () => rootRoute } as never),
+  VerifyEmailRoute.update({ id: '/verify-email', path: '/verify-email', getParentRoute: () => rootRoute } as never),
   InviteRoute.update({
     id: '/invite/$invitationId',
     path: '/invite/$invitationId',
@@ -109,19 +117,20 @@ export function callsTo(path: string): ApiCall[] {
   return apiCalls().filter((call) => call.path === path)
 }
 
-export function renderAuthRoute(path: string, language: Language = 'en') {
+export function renderAuthRoute(path: string, language: Language = 'en', { strict = false } = {}) {
   const queryClient = createQueryClient()
   const defaults = queryClient.getDefaultOptions()
   queryClient.setDefaultOptions({ ...defaults, queries: { ...defaults.queries, retry: false } })
   const history = createMemoryHistory({ initialEntries: [path] })
   const router = createRouter({ routeTree, history, context: { queryClient } })
   const languageStore = createLanguageStore(language)
-  render(
+  const tree = (
     <LanguageStoreContext value={languageStore}>
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
       </QueryClientProvider>
-    </LanguageStoreContext>,
+    </LanguageStoreContext>
   )
+  render(strict ? <StrictMode>{tree}</StrictMode> : tree)
   return { router, history, queryClient, languageStore }
 }

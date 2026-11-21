@@ -44,6 +44,14 @@ const copy = {
     register: 'Create an account',
     required: 'Enter your email address.',
     badEmail: 'Enter a valid email address.',
+    forgot: 'Forgot password?',
+    resetNotice: 'Your password was changed. Log in with the new password.',
+    inbox: 'Check your inbox',
+    verifyFirst: 'Verify your email before you log in. We can send the link to rahim@shop.bd again.',
+    resend: 'Resend verification email',
+    resent: 'We sent a new link. Check your inbox.',
+    tooMany: 'Too many attempts.',
+    back: 'Back to log in',
   },
   bn: {
     email: 'ইমেইল',
@@ -54,6 +62,14 @@ const copy = {
     register: 'অ্যাকাউন্ট খুলুন',
     required: 'আপনার ইমেইল ঠিকানা লিখুন।',
     badEmail: 'একটি সঠিক ইমেইল ঠিকানা দিন।',
+    forgot: 'পাসওয়ার্ড ভুলে গেছেন?',
+    resetNotice: 'আপনার পাসওয়ার্ড বদলানো হয়েছে। নতুন পাসওয়ার্ড দিয়ে লগ ইন করুন।',
+    inbox: 'আপনার ইনবক্স দেখুন',
+    verifyFirst: 'লগ ইন করার আগে আপনার ইমেইল যাচাই করুন। rahim@shop.bd ঠিকানায় লিংকটি আবার পাঠাতে পারি।',
+    resend: 'যাচাই ইমেইল আবার পাঠান',
+    resent: 'নতুন একটি লিংক পাঠিয়েছি। আপনার ইনবক্স দেখুন।',
+    tooMany: 'অনেকবার চেষ্টা করা হয়েছে।',
+    back: 'লগ ইনে ফিরে যান',
   },
 } as const
 
@@ -233,6 +249,62 @@ describe.each(['en', 'bn'] as const)('/login (%s)', (language) => {
     mockApi({})
     renderAuthRoute('/login', language)
     expect((await screen.findByRole('link', { name: t.register })).getAttribute('href')).toBe('/register')
+  })
+
+  it('links to /forgot-password (M9-T6)', async () => {
+    mockApi({})
+    renderAuthRoute('/login', language)
+    expect((await screen.findByRole('link', { name: t.forgot })).getAttribute('href')).toBe('/forgot-password')
+  })
+
+  it('shows the "password changed" notice only with ?reset=1', async () => {
+    mockApi({})
+    renderAuthRoute('/login?reset=1', language)
+    expect((await screen.findByRole('status')).textContent).toBe(t.resetNotice)
+    cleanup()
+    mockApi({})
+    renderAuthRoute('/login', language)
+    await screen.findByRole('heading', { name: t.title })
+    expect(screen.queryByText(t.resetNotice)).toBeNull()
+  })
+
+  it('403 EMAIL_NOT_VERIFIED → "check your inbox" and resends to the typed email', async () => {
+    mockApi({
+      '/api/auth/sign-in/email': () => json(403, { code: 'EMAIL_NOT_VERIFIED', message: 'Email not verified' }),
+      '/api/auth/send-verification-email': () => json(200, { status: true }),
+    })
+    const { history } = renderAuthRoute('/login', language)
+    await fillAndSubmit(language)
+
+    expect(await screen.findByRole('heading', { name: t.inbox })).toBeTruthy()
+    expect(screen.getByText(t.verifyFirst)).toBeTruthy()
+    expect(history.location.pathname).toBe('/login')
+    expect(callsTo('/api/auth/send-verification-email')).toHaveLength(0) // sign-in sends nothing
+
+    fireEvent.click(screen.getByRole('button', { name: t.resend }))
+    expect(await screen.findByText(t.resent)).toBeTruthy()
+    expect(callsTo('/api/auth/send-verification-email')).toEqual([
+      { path: '/api/auth/send-verification-email', method: 'POST', body: { email: 'rahim@shop.bd' } },
+    ])
+
+    // Back to the form, the typed email kept.
+    fireEvent.click(screen.getByRole('button', { name: t.back }))
+    expect(await screen.findByRole('heading', { name: t.title })).toBeTruthy()
+    expect((screen.getByLabelText(t.email) as HTMLInputElement).value).toBe('rahim@shop.bd')
+  })
+
+  it('403 EMAIL_NOT_VERIFIED → resend 429 shows the rate-limit message', async () => {
+    mockApi({
+      '/api/auth/sign-in/email': () => json(403, { code: 'EMAIL_NOT_VERIFIED' }),
+      '/api/auth/send-verification-email': () => json(429, { message: 'Too many requests.' }),
+    })
+    renderAuthRoute('/login', language)
+    await fillAndSubmit(language)
+    fireEvent.click(await screen.findByRole('button', { name: t.resend }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.dataset.kind).toBe('rate-limited')
+    expect(alert.textContent).toContain(t.tooMany)
+    expect(screen.getByRole('button', { name: t.resend })).toHaveProperty('disabled', false) // no X-Retry-After
   })
 })
 

@@ -1,8 +1,9 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router'
+import { useMutation } from '@tanstack/react-query'
+import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 import { LoaderCircle } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { AuthAlert, AuthScreen, FormField } from '@/components/auth/auth-screen'
+import { CheckInbox } from '@/components/auth/check-inbox'
 import { Button } from '@/components/ui/button'
 import { useLanguage } from '@/hooks/use-language'
 import { authErrorMessage, type AuthError } from '@/lib/auth-errors'
@@ -15,15 +16,14 @@ import {
   type SignUpInput,
 } from '@/lib/auth-forms'
 import { checkoutTarget, validateCheckoutIntent } from '@/lib/billing'
-import { postAuthDestination } from '@/lib/post-auth'
 import { sessionQueryOptions } from '@/lib/session'
 
 /**
  * C2 sign-up (M3-T8, decision D13): name, email, password + business name (= the first workspace's
- * name). No email verification yet. After sign-up the user lands on `/onboarding` (skippable) via
- * `postAuthDestination` (D13 entry-point rule). D11 (M8-T11): `?plan=<slug>&interval=month|year` from a
- * "Choose plan" button lands on that checkout (`/billing?plan=&interval=`) instead, signed-in or after
- * sign-up; a malformed plan is ignored.
+ * name). Since M9-T5/T6 (D10 b) sign-up sets no session: the page turns into "check your inbox" (resend
+ * button) and `/verify-email` signs the user in. D11 (M8-T11): a signed-in visitor with
+ * `?plan=<slug>&interval=month|year` from a "Choose plan" button goes to that checkout; the intent only
+ * rides along on the links (after verification the account lands on `/plans`, it has no plan yet).
  */
 export const Route = createFileRoute('/register')({
   validateSearch: validateCheckoutIntent,
@@ -44,21 +44,11 @@ const EMPTY: SignUpInput = { name: '', email: '', password: '', businessName: ''
 
 function RegisterPage() {
   const intent = Route.useSearch()
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const { content } = useLanguage()
   const [values, setValues] = useState<SignUpInput>(EMPTY)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors<keyof SignUpInput>>({})
 
-  const signUp = useMutation<void, AuthError, SignUpInput>({
-    mutationFn: signUpWithWorkspace,
-    onSuccess: async () => {
-      // Better Auth signed the new user in: drop the cached `null` session, then D13: /onboarding while
-      // the new workspace has 0 active Pages (always, unless the check fails → /dashboard).
-      queryClient.removeQueries()
-      await navigate({ href: checkoutTarget(intent) ?? (await postAuthDestination(queryClient)), replace: true })
-    },
-  })
+  const signUp = useMutation<void, AuthError, SignUpInput>({ mutationFn: signUpWithWorkspace })
 
   const update = (field: keyof SignUpInput, value: string) => {
     setValues((current) => ({ ...current, [field]: value }))
@@ -82,6 +72,23 @@ function RegisterPage() {
   const errorFor = (field: keyof SignUpInput) => {
     const error = fieldErrors[field]
     return error ? fieldErrorMessage(field, error, content) : undefined
+  }
+
+  if (signUp.isSuccess) {
+    return (
+      <CheckInbox
+        email={signUp.variables.email.trim()}
+        reason="sign-up"
+        footer={
+          <p>
+            {content('Already verified?', 'যাচাই করা হয়ে গেছে?')}{' '}
+            <Link to="/login" search={intent} className="font-medium text-primary underline-offset-4 hover:underline">
+              {content('Log in', 'লগ ইন')}
+            </Link>
+          </p>
+        }
+      />
+    )
   }
 
   return (
@@ -142,12 +149,7 @@ function RegisterPage() {
         </fieldset>
         {signUp.error && (
           <AuthAlert id="sign-up-error" kind={signUp.error.kind}>
-            {authErrorMessage(signUp.error, content)}{' '}
-            {signUp.error.kind === 'user-exists' && (
-              <Link to="/login" search={intent} className="font-medium text-primary underline-offset-4 hover:underline">
-                {content('Go to login', 'লগইনে যান')}
-              </Link>
-            )}
+            {authErrorMessage(signUp.error, content)}
           </AuthAlert>
         )}
         <Button type="submit" className="h-11 w-full" disabled={signUp.isPending}>

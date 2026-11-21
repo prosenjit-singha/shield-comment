@@ -13,11 +13,14 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as BnRouteImport } from './routes/bn'
 import { Route as DataDeletionRouteImport } from './routes/data-deletion'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as ImpersonateRouteImport } from './routes/impersonate'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AppAnalyticsRouteImport } from './routes/_app/analytics'
 import { Route as AppBillingRouteImport } from './routes/_app/billing'
 import { Route as AppCommentsRouteImport } from './routes/_app/comments'
@@ -54,6 +57,11 @@ const DataDeletionRoute = DataDeletionRouteImport.update({
   path: '/data-deletion',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ImpersonateRoute = ImpersonateRouteImport.update({
   id: '/impersonate',
   path: '/impersonate',
@@ -69,6 +77,11 @@ const RegisterRoute = RegisterRouteImport.update({
   path: '/register',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
   id: '/robots.txt',
   path: '/robots.txt',
@@ -77,6 +90,11 @@ const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
@@ -164,11 +182,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/bn': typeof BnRoute
   '/data-deletion': typeof DataDeletionRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/analytics': typeof AppAnalyticsRoute
   '/billing': typeof AppBillingRoute
   '/comments': typeof AppCommentsRoute
@@ -190,11 +211,14 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/bn': typeof BnRoute
   '/data-deletion': typeof DataDeletionRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/analytics': typeof AppAnalyticsRoute
   '/billing': typeof AppBillingRoute
   '/comments': typeof AppCommentsRoute
@@ -217,11 +241,14 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/bn': typeof BnRoute
   '/data-deletion': typeof DataDeletionRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/_app/analytics': typeof AppAnalyticsRoute
   '/_app/billing': typeof AppBillingRoute
   '/_app/comments': typeof AppCommentsRoute
@@ -245,11 +272,14 @@ export interface FileRouteTypes {
     | '/'
     | '/bn'
     | '/data-deletion'
+    | '/forgot-password'
     | '/impersonate'
     | '/login'
     | '/register'
+    | '/reset-password'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/verify-email'
     | '/analytics'
     | '/billing'
     | '/comments'
@@ -271,11 +301,14 @@ export interface FileRouteTypes {
     | '/'
     | '/bn'
     | '/data-deletion'
+    | '/forgot-password'
     | '/impersonate'
     | '/login'
     | '/register'
+    | '/reset-password'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/verify-email'
     | '/analytics'
     | '/billing'
     | '/comments'
@@ -297,11 +330,14 @@ export interface FileRouteTypes {
     | '/_app'
     | '/bn'
     | '/data-deletion'
+    | '/forgot-password'
     | '/impersonate'
     | '/login'
     | '/register'
+    | '/reset-password'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/verify-email'
     | '/_app/analytics'
     | '/_app/billing'
     | '/_app/comments'
@@ -325,11 +361,14 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   BnRoute: typeof BnRoute
   DataDeletionRoute: typeof DataDeletionRoute
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   ImpersonateRoute: typeof ImpersonateRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  VerifyEmailRoute: typeof VerifyEmailRoute
   ApiSplatRoute: typeof ApiSplatRoute
   InviteInvitationIdRoute: typeof InviteInvitationIdRoute
 }
@@ -364,6 +403,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DataDeletionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/impersonate': {
       id: '/impersonate'
       path: '/impersonate'
@@ -385,6 +431,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/robots.txt': {
       id: '/robots.txt'
       path: '/robots.txt'
@@ -397,6 +450,13 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/analytics': {
@@ -565,11 +625,14 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   BnRoute: BnRoute,
   DataDeletionRoute: DataDeletionRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   ImpersonateRoute: ImpersonateRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  VerifyEmailRoute: VerifyEmailRoute,
   ApiSplatRoute: ApiSplatRoute,
   InviteInvitationIdRoute: InviteInvitationIdRoute,
 }

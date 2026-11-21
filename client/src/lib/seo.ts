@@ -154,6 +154,7 @@ const DISALLOWED_PATHS = [
   '/comments',
   '/dashboard',
   '/data-deletion',
+  '/forgot-password',
   '/impersonate',
   '/invite/',
   '/login',
@@ -162,9 +163,11 @@ const DISALLOWED_PATHS = [
   '/plans',
   '/playground',
   '/register',
+  '/reset-password',
   '/rules',
   '/settings',
   '/support',
+  '/verify-email',
 ]
 
 /** `/robots.txt`: allow everything public, skip the app routes, point at the sitemap. */

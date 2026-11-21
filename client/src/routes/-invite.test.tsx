@@ -52,8 +52,7 @@ const copy = {
     server: 'The server is unavailable right now.',
     network: 'Can’t reach the server.',
     retry: 'Try again',
-    userExists: 'An account with this email already exists.',
-    goLogin: 'Go to login',
+    inbox: 'Check your inbox',
     nameRequired: 'Enter your name.',
   },
   bn: {
@@ -77,13 +76,13 @@ const copy = {
     server: 'সার্ভার এই মুহূর্তে পাওয়া যাচ্ছে না।',
     network: 'সার্ভারে সংযোগ করা যাচ্ছে না।',
     retry: 'আবার চেষ্টা করুন',
-    userExists: 'এই ইমেইলে আগে থেকেই একটি অ্যাকাউন্ট আছে।',
-    goLogin: 'লগইনে যান',
+    inbox: 'আপনার ইনবক্স দেখুন',
     nameRequired: 'আপনার নাম লিখুন।',
   },
 } as const
 
 beforeEach(() => {
+  localStorage.clear()
   fetchMock.mockReset()
   vi.stubGlobal('fetch', fetchMock)
   vi.stubGlobal('scrollTo', () => {})
@@ -107,34 +106,23 @@ describe.each(['en', 'bn'] as const)('/invite/$invitationId signed out (%s)', (l
     fireEvent.click(screen.getByRole('button', { name: t.create }))
   }
 
-  it('signs up with invitationId (no workspaceName), accepts, then opens /dashboard', async () => {
-    let state: 'out' | 'in' | 'joined' = 'out'
-    mockApi({
-      '/api/auth/get-session': () => json(200, state === 'out' ? null : state === 'in' ? SESSION : JOINED),
-      [SIGN_UP]: () => {
-        state = 'in'
-        return json(200, { token: 't', user: USER })
-      },
-      [ACCEPT]: () => {
-        state = 'joined'
-        return json(200, { invitation: { id: ID }, member: { id: 'm2' } })
-      },
-      [GET]: () => json(200, INVITE),
-    })
+  it('signs up with invitationId (no workspaceName), shows "check your inbox" and remembers the invite (M9-T6-a)', async () => {
+    mockApi({ [SIGN_UP]: () => json(200, { token: null, user: USER }) })
     const { router } = renderAuthRoute(PATH, language)
     expect(await screen.findByRole('heading', { name: t.title })).toBeTruthy()
     await signUp()
 
-    await waitFor(() => expect(router.state.location.pathname).toBe('/dashboard'))
+    expect(await screen.findByRole('heading', { name: t.inbox })).toBeTruthy()
+    expect(router.state.location.pathname).toBe(PATH)
     expect(callsTo(SIGN_UP)[0]!.body).toEqual({
       name: 'Karim',
       email: 'karim@shop.bd',
       password: 'secret-password',
       invitationId: ID,
     })
-    expect(callsTo(ACCEPT)).toHaveLength(1)
-    expect(callsTo(ACCEPT)[0]!.body).toEqual({ invitationId: ID })
-    expect(state).toBe('joined')
+    expect(callsTo(ACCEPT)).toHaveLength(0) // no session yet: accepted after /verify-email brings them back
+    expect(JSON.parse(localStorage.getItem('shield-pending-invite')!)).toEqual({ invitationId: ID, email: 'karim@shop.bd' })
+    expect(screen.getByRole('link', { name: t.logIn }).getAttribute('href')).toBe(`/login?redirect=${encodeURIComponent(PATH)}`)
   })
 
   it('"Log in" goes to /login and comes back to the invite after signing in', async () => {
@@ -165,18 +153,13 @@ describe.each(['en', 'bn'] as const)('/invite/$invitationId signed out (%s)', (l
   it.each([
     ['unknown / expired / cancelled', refusal(400, 'INVITATION_NOT_FOUND'), 'notFound'],
     ['wrong email', refusal(403, 'YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION'), 'wrongEmail'],
-    ['existing account', refusal(422, 'USER_ALREADY_EXISTS'), 'userExists'],
   ] as const)('shows the sign-up refusal: %s', async (_name, respond, key) => {
     mockApi({ [SIGN_UP]: respond })
     renderAuthRoute(PATH, language)
     await signUp()
     expect(await alertText()).toContain(t[key])
     expect(callsTo(ACCEPT)).toHaveLength(0)
-    if (key === 'userExists') {
-      expect(screen.getByRole('link', { name: t.goLogin }).getAttribute('href')).toBe(
-        `/login?redirect=${encodeURIComponent(PATH)}`,
-      )
-    }
+    expect(localStorage.getItem('shield-pending-invite')).toBeNull()
   })
 
   it('checks the fields before sending', async () => {

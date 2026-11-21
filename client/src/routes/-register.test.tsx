@@ -5,27 +5,11 @@ import { callsTo, fetchMock, json, mockApi, renderAuthRoute } from '@/test/auth-
 vi.mock('@/server/session', () => ({ getServerSession: vi.fn() }))
 
 const USER = { id: 'u1', email: 'rahim@shop.bd', name: 'Rahim', emailVerified: false }
-const SESSION = { session: { id: 's1', userId: 'u1', impersonatedBy: null, activeOrganizationId: 'w1' }, user: USER }
-const PAGES = '/api/workspaces/w1/pages'
-const SUMMARY = '/api/workspaces/w1/billing/summary'
+const SIGN_UP = '/api/auth/sign-up/email'
+const RESEND = '/api/auth/send-verification-email'
 
-/**
- * Sign-up succeeds; get-session answers "signed out" until then (the /register guard) and the new
- * session after it; the PR-T6 plan check answers with `summary` (default: a live plan) and the D13
- * pages check with `pages` (default: `activeCount` active Pages).
- */
-function signUpFlow(activeCount: number, pages?: () => Response, summary: () => Response = () => json(200, { status: 'ACTIVE' })) {
-  let signedUp = false
-  return {
-    '/api/auth/sign-up/email': () => {
-      signedUp = true
-      return json(200, { token: 't', user: USER })
-    },
-    '/api/auth/get-session': () => json(200, signedUp ? SESSION : null),
-    [PAGES]: pages ?? (() => json(200, { items: [], pageLimit: { limit: 1, activeCount } })),
-    [SUMMARY]: summary,
-  }
-}
+/** M9-T5: sign-up answers `token: null` and sets no session; the backend emails the verification link. */
+const signUpOk = () => ({ [SIGN_UP]: () => json(200, { token: null, user: USER }) })
 
 const copy = {
   en: {
@@ -37,6 +21,12 @@ const copy = {
     pending: 'Creating account…',
     title: 'Create your account',
     login: 'Log in',
+    inbox: 'Check your inbox',
+    sentTo: 'We sent a verification link to rahim@shop.bd.',
+    resend: 'Resend verification email',
+    resent: 'We sent a new link. Check your inbox.',
+    cooldown: 'Resend in 60 s',
+    tooMany: 'Too many attempts. Try again in 40 s.',
     errors: {
       name: 'Enter your name.',
       business: 'Enter your business name.',
@@ -56,6 +46,12 @@ const copy = {
     pending: 'অ্যাকাউন্ট খোলা হচ্ছে…',
     title: 'আপনার অ্যাকাউন্ট খুলুন',
     login: 'লগ ইন',
+    inbox: 'আপনার ইনবক্স দেখুন',
+    sentTo: 'rahim@shop.bd ঠিকানায় একটি যাচাই লিংক পাঠিয়েছি।',
+    resend: 'যাচাই ইমেইল আবার পাঠান',
+    resent: 'নতুন একটি লিংক পাঠিয়েছি। আপনার ইনবক্স দেখুন।',
+    cooldown: '৬০ সেকেন্ড পরে আবার পাঠান',
+    tooMany: 'অনেকবার চেষ্টা করা হয়েছে। ৪০ সেকেন্ড পরে আবার চেষ্টা করুন।',
     errors: {
       name: 'আপনার নাম লিখুন।',
       business: 'আপনার ব্যবসার নাম লিখুন।',
@@ -96,84 +92,50 @@ afterEach(() => {
 describe.each(['en', 'bn'] as const)('/register (%s)', (language) => {
   const t = copy[language]
 
-  it('sends the business name as workspaceName and lands on /onboarding (0 active Pages, D13)', async () => {
-    mockApi(signUpFlow(0))
-    const { history, queryClient } = renderAuthRoute('/register', language)
+  it('sends the business name as workspaceName, then shows "check your inbox" (no session, M9-T5)', async () => {
+    mockApi(signUpOk())
+    const { history } = renderAuthRoute('/register', language)
     expect(await screen.findByRole('heading', { name: t.title })).toBeTruthy()
 
     await fill(language)
     submit(language)
 
-    expect(await screen.findByText('Onboarding stub')).toBeTruthy()
-    expect(history.location.pathname).toBe('/onboarding')
-    expect(history.length).toBe(1)
-    const calls = callsTo('/api/auth/sign-up/email')
-    expect(calls).toHaveLength(1)
+    expect(await screen.findByRole('heading', { name: t.inbox })).toBeTruthy()
+    expect(screen.getByText((text) => text.startsWith(t.sentTo))).toBeTruthy()
+    expect(history.location.pathname).toBe('/register')
     // The exact JSON body Better Auth's client put on the wire: trimmed values + workspaceName.
-    expect(calls[0]).toEqual({
-      path: '/api/auth/sign-up/email',
-      method: 'POST',
-      body: {
-        name: 'Rahim Uddin',
-        email: 'rahim@shop.bd',
-        password: 'strong-pass-1',
-        workspaceName: 'Rahim Fashion House',
+    expect(callsTo(SIGN_UP)).toEqual([
+      {
+        path: SIGN_UP,
+        method: 'POST',
+        body: { name: 'Rahim Uddin', email: 'rahim@shop.bd', password: 'strong-pass-1', workspaceName: 'Rahim Fashion House' },
       },
-    })
-    // The D13 check ran once against the new session's workspace; both answers stay cached for the
-    // `_app` guard and the wizard.
-    expect(callsTo('/api/auth/get-session')).toHaveLength(2) // guard (signed out) + the D13 check
-    expect(callsTo(PAGES)).toHaveLength(1)
-    expect(queryClient.getQueryData(['auth', 'session'])).toMatchObject({ session: { activeOrganizationId: 'w1' } })
-    expect(queryClient.getQueryData(['workspace', 'w1', 'pages'])).toMatchObject({ pageLimit: { activeCount: 0 } })
+    ])
+    expect(callsTo('/api/auth/get-session')).toHaveLength(1) // the guard only: nobody is signed in
+    expect(callsTo(RESEND)).toHaveLength(0) // sign-up already sent the email
   })
 
-  it('lands on /plans while the account has no plan (PR-T6, reading 5), without the pages check', async () => {
-    mockApi(signUpFlow(0, undefined, () => json(200, { status: 'NONE', plan: null, trialEligible: true })))
-    const { history, queryClient } = renderAuthRoute('/register', language)
+  it('resends the verification email, then waits out the cooldown', async () => {
+    mockApi({ ...signUpOk(), [RESEND]: () => json(200, { status: true }) })
+    renderAuthRoute('/register', language)
     await fill(language)
     submit(language)
+    fireEvent.click(await screen.findByRole('button', { name: t.resend }))
 
-    expect(await screen.findByText('Plans stub')).toBeTruthy()
-    expect(history.location.pathname).toBe('/plans')
-    expect(history.length).toBe(1)
-    expect(callsTo(SUMMARY)).toHaveLength(1)
-    expect(callsTo(PAGES)).toHaveLength(0)
-    // Cached for the shell banner and the trial button.
-    expect(queryClient.getQueryData(['workspace', 'w1', 'billing', 'summary'])).toMatchObject({ trialEligible: true })
+    expect(await screen.findByText(t.resent)).toBeTruthy()
+    expect(screen.getByRole('button', { name: t.cooldown })).toHaveProperty('disabled', true)
+    expect(callsTo(RESEND)).toEqual([{ path: RESEND, method: 'POST', body: { email: 'rahim@shop.bd' } }])
   })
 
-  it('skips the plan step when the summary check fails', async () => {
-    mockApi(signUpFlow(0, undefined, () => json(503, { statusCode: 503, message: 'down' })))
-    const { history } = renderAuthRoute('/register', language)
+  it('shows the 429 message on resend and waits X-Retry-After', async () => {
+    mockApi({ ...signUpOk(), [RESEND]: () => json(429, { message: 'Too many requests.' }, { 'X-Retry-After': '40' }) })
+    renderAuthRoute('/register', language)
     await fill(language)
     submit(language)
+    fireEvent.click(await screen.findByRole('button', { name: t.resend }))
 
-    expect(await screen.findByText('Onboarding stub')).toBeTruthy()
-    expect(history.location.pathname).toBe('/onboarding')
-    expect(callsTo(SUMMARY)).toHaveLength(1)
-  })
-
-  it('goes to /dashboard when the workspace already has an active Page', async () => {
-    mockApi(signUpFlow(1))
-    const { history } = renderAuthRoute('/register', language)
-    await fill(language)
-    submit(language)
-
-    expect(await screen.findByText('Dashboard stub')).toBeTruthy()
-    expect(history.location.pathname).toBe('/dashboard')
-    expect(history.length).toBe(1)
-  })
-
-  it('falls back to /dashboard when the pages check fails', async () => {
-    mockApi(signUpFlow(0, () => new Response('<html>Bad Gateway</html>', { status: 502 })))
-    const { history } = renderAuthRoute('/register', language)
-    await fill(language)
-    submit(language)
-
-    expect(await screen.findByText('Dashboard stub')).toBeTruthy()
-    expect(history.location.pathname).toBe('/dashboard')
-    expect(callsTo(PAGES)).toHaveLength(1) // no retry before falling back
+    expect((await screen.findByRole('alert')).textContent).toContain(t.tooMany)
+    expect(screen.getByRole('button', { name: t.cooldown.replace('60', '40').replace('৬০', '৪০') })).toHaveProperty('disabled', true)
   })
 
   it('shows every missing field without calling the API, and focuses the first', async () => {
@@ -209,11 +171,11 @@ describe.each(['en', 'bn'] as const)('/register (%s)', (language) => {
   })
 
   it('accepts an 80-character business name (trimmed)', async () => {
-    mockApi(signUpFlow(0))
+    mockApi(signUpOk())
     renderAuthRoute('/register', language)
     await fill(language, { business: ` ${'ক'.repeat(80)} ` })
     submit(language)
-    expect(await screen.findByText('Onboarding stub')).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: t.inbox })).toBeTruthy()
     expect(callsTo('/api/auth/sign-up/email')[0]?.body).toMatchObject({ workspaceName: 'ক'.repeat(80) })
   })
 
@@ -235,14 +197,6 @@ describe.each(['en', 'bn'] as const)('/register (%s)', (language) => {
 
 describe('/register error mapping', () => {
   const cases: { name: string; respond: () => Promise<Response>; kind: string; en: string; bn: string }[] = [
-    {
-      name: '422 user already exists',
-      respond: async () =>
-        json(422, { code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL', message: 'User already exists. Use another email.' }),
-      kind: 'user-exists',
-      en: 'An account with this email already exists.',
-      bn: 'এই ইমেইলে আগে থেকেই একটি অ্যাকাউন্ট আছে।',
-    },
     {
       name: '400 password too short',
       respond: async () => json(400, { code: 'PASSWORD_TOO_SHORT', message: 'Password too short' }),
@@ -301,50 +255,18 @@ describe('/register error mapping', () => {
       expect(history.location.pathname).toBe('/register')
     })
   })
-
-  it('offers a link to /login when the email is taken', async () => {
-    mockApi({ '/api/auth/sign-up/email': async () => json(422, { code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' }) })
-    const { history } = renderAuthRoute('/register')
-    await fill('en')
-    submit('en')
-    const alert = await screen.findByRole('alert')
-    fireEvent.click(alert.querySelector('a')!)
-    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeTruthy()
-    expect(history.location.pathname).toBe('/login')
-  })
 })
 
 describe.each(['en', 'bn'] as const)('/register D11 hand-off (%s)', (language) => {
   const t = copy[language]
 
-    it('D11: ?plan=&interval= lands on that checkout after sign-up, without the plan or pages checks', async () => {
-      mockApi(signUpFlow(0))
-      const { history } = renderAuthRoute('/register?plan=growth&interval=year', language)
+    it('keeps ?plan=&interval= on the "Log in" link after sign-up too', async () => {
+      mockApi(signUpOk())
+      renderAuthRoute('/register?plan=growth&interval=year', language)
       await fill(language)
       submit(language)
-
-      expect(await screen.findByText('Billing stub')).toBeTruthy()
-      expect(history.location.href).toBe('/billing?plan=growth&interval=year')
-      expect(history.length).toBe(1)
-      expect(callsTo(SUMMARY)).toHaveLength(0)
-      expect(callsTo(PAGES)).toHaveLength(0)
-    })
-
-    it('D11: a missing interval means monthly; a malformed plan falls back to the normal flow', async () => {
-      mockApi(signUpFlow(0))
-      const { history } = renderAuthRoute('/register?plan=pro', language)
-      await fill(language)
-      submit(language)
-      expect(await screen.findByText('Billing stub')).toBeTruthy()
-      expect(history.location.href).toBe('/billing?plan=pro&interval=month')
-      cleanup()
-
-      mockApi(signUpFlow(0, undefined, () => json(200, { status: 'NONE', plan: null, trialEligible: true })))
-      const second = renderAuthRoute('/register?plan=..%2Fadmin&interval=year', language)
-      await fill(language)
-      submit(language)
-      expect(await screen.findByText('Plans stub')).toBeTruthy()
-      expect(second.history.location.pathname).toBe('/plans')
+      await screen.findByRole('heading', { name: t.inbox })
+      expect(screen.getByRole('link', { name: t.login }).getAttribute('href')).toBe('/login?plan=growth&interval=year')
     })
 
     it('keeps ?plan=&interval= on the "Log in" link for an existing account', async () => {

@@ -1,5 +1,5 @@
 import { authClient } from '@/lib/auth-client'
-import { authErrorFromResponse, toAuthError, type ContentFn } from '@/lib/auth-errors'
+import { authErrorFromResponse, toAuthError, type AuthClientError, type ContentFn } from '@/lib/auth-errors'
 
 /** Better Auth `emailAndPassword` limits on the backend (`minPasswordLength: 8`, default max 128). */
 export const PASSWORD_MIN = 8
@@ -22,10 +22,10 @@ export interface SignUpInput {
   businessName: string
 }
 
-export type FieldError = 'required' | 'invalid-email' | 'too-short' | 'too-long'
+export type FieldError = 'required' | 'invalid-email' | 'too-short' | 'too-long' | 'mismatch'
 export type FieldErrors<K extends string> = Partial<Record<K, FieldError>>
 
-function emailError(email: string): FieldError | undefined {
+export function emailError(email: string): FieldError | undefined {
   if (!email.trim()) return 'required'
   return EMAIL_PATTERN.test(email.trim()) ? undefined : 'invalid-email'
 }
@@ -46,23 +46,44 @@ export function validateSignIn(input: SignInInput): FieldErrors<keyof SignInInpu
  * Same rules as the backend: Better Auth's password length, and `parseWorkspaceName` (trimmed,
  * 1–80 characters) for the business name, so a valid form never gets the hook's 400.
  */
+function passwordError(password: string): FieldError | undefined {
+  if (!password) return 'required'
+  if (password.length < PASSWORD_MIN) return 'too-short'
+  return password.length > PASSWORD_MAX ? 'too-long' : undefined
+}
+
+export interface NewPasswordInput {
+  password: string
+  confirmPassword: string
+}
+
+/** `/reset-password`: the sign-up password rules + the confirmation must match. */
+export function validateNewPassword(input: NewPasswordInput): FieldErrors<keyof NewPasswordInput> {
+  return compact({
+    password: passwordError(input.password),
+    confirmPassword: !input.confirmPassword
+      ? 'required'
+      : input.confirmPassword !== input.password
+        ? 'mismatch'
+        : undefined,
+  })
+}
+
 export function validateSignUp(input: SignUpInput): FieldErrors<keyof SignUpInput> {
   const businessName = input.businessName.trim()
   return compact({
     name: input.name.trim() ? undefined : 'required',
     email: emailError(input.email),
-    password: !input.password
-      ? 'required'
-      : input.password.length < PASSWORD_MIN
-        ? 'too-short'
-        : input.password.length > PASSWORD_MAX
-          ? 'too-long'
-          : undefined,
+    password: passwordError(input.password),
     businessName: !businessName ? 'required' : businessName.length > BUSINESS_NAME_MAX ? 'too-long' : undefined,
   })
 }
 
-export function fieldErrorMessage(field: keyof SignUpInput, error: FieldError, content: ContentFn): string {
+export function fieldErrorMessage(
+  field: keyof SignUpInput | keyof NewPasswordInput,
+  error: FieldError,
+  content: ContentFn,
+): string {
   switch (error) {
     case 'required':
       switch (field) {
@@ -74,8 +95,12 @@ export function fieldErrorMessage(field: keyof SignUpInput, error: FieldError, c
           return content('Enter your password.', 'আপনার পাসওয়ার্ড লিখুন।')
         case 'businessName':
           return content('Enter your business name.', 'আপনার ব্যবসার নাম লিখুন।')
+        case 'confirmPassword':
+          return content('Enter the new password again.', 'নতুন পাসওয়ার্ডটি আবার লিখুন।')
       }
       break
+    case 'mismatch':
+      return content('The passwords don’t match.', 'পাসওয়ার্ড দুটি মিলছে না।')
     case 'invalid-email':
       return content('Enter a valid email address.', 'একটি সঠিক ইমেইল ঠিকানা দিন।')
     case 'too-short':
@@ -91,60 +116,66 @@ export function fieldErrorMessage(field: keyof SignUpInput, error: FieldError, c
   return ''
 }
 
-/** Reads Better Auth's rate-limit header off a failed response. */
-function captureRetryAfter() {
-  const captured = { retryAfter: null as string | null }
-  const onError = (ctx: { response: Response }) => {
-    captured.retryAfter = ctx.response.headers.get('X-Retry-After')
-  }
-  return { captured, onError }
-}
-
-/** `POST /api/auth/sign-in/email`. Throws `AuthError` (network failures included). */
-export async function signInWithEmail(input: SignInInput): Promise<void> {
-  const { captured, onError } = captureRetryAfter()
-  let result: Awaited<ReturnType<typeof authClient.signIn.email>>
+/**
+ * Runs one Better Auth client call: a thrown fetch becomes `AuthError('network')`, an `{ error }` result
+ * an `AuthError` (with Better Auth's `X-Retry-After` read off the failed response).
+ */
+async function authCall(
+  call: (onError: (ctx: { response: Response }) => void) => Promise<{ error: AuthClientError | null }>,
+): Promise<void> {
+  let retryAfter: string | null = null
+  let result: { error: AuthClientError | null }
   try {
-    result = await authClient.signIn.email({ email: input.email.trim(), password: input.password }, { onError })
+    result = await call((ctx) => {
+      retryAfter = ctx.response.headers.get('X-Retry-After')
+    })
   } catch (thrown) {
     throw toAuthError(thrown)
   }
-  if (result.error) throw authErrorFromResponse(result.error, captured.retryAfter)
+  if (result.error) throw authErrorFromResponse(result.error, retryAfter)
 }
+
+/** `POST /api/auth/sign-in/email`. Throws `AuthError` (network failures included). */
+export const signInWithEmail = (input: SignInInput) =>
+  authCall((onError) => authClient.signIn.email({ email: input.email.trim(), password: input.password }, { onError }))
 
 /**
  * `POST /api/auth/sign-up/email` with the business name as `workspaceName`; the backend's sign-up hook
  * names the first workspace with it. `workspaceName` is not a Better Auth user field, so it isn't in
  * the typed first argument; it goes in `fetchOptions.body`, which the client merges into the JSON body
- * (`better-auth/dist/client/proxy.mjs`: `{ ...body, ...options.body }`). Better Auth signs the new user
- * in (autoSignIn), so the session cookie is set when this resolves.
+ * (`better-auth/dist/client/proxy.mjs`: `{ ...body, ...options.body }`). Since M9-T5 (D10 b) sign-up
+ * sets no session: the backend emails a verification link (a taken email answers the same 200).
  */
-export async function signUpWithWorkspace(input: SignUpInput): Promise<void> {
-  const { captured, onError } = captureRetryAfter()
-  let result: Awaited<ReturnType<typeof authClient.signUp.email>>
-  try {
-    result = await authClient.signUp.email(
+export const signUpWithWorkspace = (input: SignUpInput) =>
+  authCall((onError) =>
+    authClient.signUp.email(
       { name: input.name.trim(), email: input.email.trim(), password: input.password },
       { body: { workspaceName: input.businessName.trim() }, onError },
-    )
-  } catch (thrown) {
-    throw toAuthError(thrown)
-  }
-  if (result.error) throw authErrorFromResponse(result.error, captured.retryAfter)
-}
+    ),
+  )
 
 /**
  * `POST /api/auth/sign-out` for the current session (normal log-out and the impersonation "Exit").
  * Better Auth answers 200 even when the session is already gone, so any error means the cookie may
  * still be live: 403 (untrusted Origin), 429, 5xx or a network failure. Throws `AuthError`.
  */
-export async function signOutCurrentSession(): Promise<void> {
-  const { captured, onError } = captureRetryAfter()
-  let result: Awaited<ReturnType<typeof authClient.signOut>>
-  try {
-    result = await authClient.signOut({ fetchOptions: { onError } })
-  } catch (thrown) {
-    throw toAuthError(thrown)
-  }
-  if (result.error) throw authErrorFromResponse(result.error, captured.retryAfter)
-}
+export const signOutCurrentSession = () => authCall((onError) => authClient.signOut({ fetchOptions: { onError } }))
+
+/** `POST /api/auth/request-password-reset`: 200 whether or not the account exists (no enumeration). */
+export const requestPasswordReset = (email: string) =>
+  authCall((onError) => authClient.requestPasswordReset({ email: email.trim() }, { onError }))
+
+/** `POST /api/auth/reset-password`: revokes every session; a bad, used or expired token → `invalid-token`. */
+export const resetPassword = (token: string, newPassword: string) =>
+  authCall((onError) => authClient.resetPassword({ token, newPassword }, { onError }))
+
+/** `POST /api/auth/send-verification-email`: 200 for unknown or already verified emails too. */
+export const sendVerificationEmail = (email: string) =>
+  authCall((onError) => authClient.sendVerificationEmail({ email: email.trim() }, { onError }))
+
+/**
+ * `GET /api/auth/verify-email?token=`: the first use sets the session cookie (auto sign-in); a replay
+ * answers 200 without one. Bad or expired → `invalid-token`.
+ */
+export const verifyEmail = (token: string) =>
+  authCall((onError) => authClient.verifyEmail({ query: { token } }, { onError }))

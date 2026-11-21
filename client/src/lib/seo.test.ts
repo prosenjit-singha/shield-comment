@@ -76,7 +76,7 @@ describe('robots.txt + sitemap.xml', () => {
   it('robots allows the site, disallows the noindex app routes, points at the sitemap', () => {
     const lines = robotsTxt(ORIGIN).split('\n')
     expect(lines.slice(0, 2)).toEqual(['User-agent: *', 'Allow: /'])
-    for (const path of ['/api/', '/dashboard', '/billing', '/plans', '/login', '/register', '/settings']) expect(lines).toContain(`Disallow: ${path}`)
+    for (const path of ['/api/', '/dashboard', '/billing', '/plans', '/login', '/register', '/settings', '/forgot-password', '/reset-password', '/verify-email']) expect(lines).toContain(`Disallow: ${path}`)
     expect(lines).not.toContain('Disallow: /')
     expect(lines).not.toContain('Disallow: /bn')
     expect(lines).toContain(`Sitemap: ${ORIGIN}/sitemap.xml`)

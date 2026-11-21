@@ -1,5 +1,5 @@
 /**
- * Sign-in / sign-up failures on `/login` and `/register` (C2). Same mapping as the admin panel's
+ * Sign-in / sign-up / password reset / email verification failures on the C2 screens. Same mapping as the admin panel's
  * `src/lib/auth-errors.ts`, plus the sign-up cases Better Auth returns. The copy is bilingual:
  * `authErrorMessage(error, content)` picks the text for the current language.
  */
@@ -7,8 +7,9 @@ export type AuthFailure =
   | 'invalid-credentials' // 401 INVALID_EMAIL_OR_PASSWORD
   | 'rate-limited' // 429 (+ X-Retry-After)
   | 'banned' // 403 BANNED_USER
+  | 'email-not-verified' // 403 EMAIL_NOT_VERIFIED (sign-in before the email link was opened, M9-T5)
   | 'forbidden' // any other 403 (e.g. untrusted Origin)
-  | 'user-exists' // 422 USER_ALREADY_EXISTS(_USE_ANOTHER_EMAIL)
+  | 'invalid-token' // reset 400 / verify 401 INVALID_TOKEN, verify 401 TOKEN_EXPIRED
   | 'weak-password' // 400 PASSWORD_TOO_SHORT / PASSWORD_TOO_LONG
   | 'invalid-email' // 400 INVALID_EMAIL
   | 'invalid-business-name' // 400 from our sign-up hook (`workspaceName must be 1-80 characters`)
@@ -53,11 +54,12 @@ export function authErrorFromResponse(error: AuthClientError, retryAfterHeader?:
   const { status, code = '', message = '' } = error
   const as = (kind: AuthFailure, retryAfterSeconds?: number) => new AuthError(kind, { status, retryAfterSeconds })
 
+  if (code === 'INVALID_TOKEN' || code === 'TOKEN_EXPIRED') return as('invalid-token')
   if (status === 401 || code === 'INVALID_EMAIL_OR_PASSWORD') return as('invalid-credentials')
   if (status === 429) return as('rate-limited', parseRetryAfter(retryAfterHeader))
   if (code === 'BANNED_USER') return as('banned')
+  if (code === 'EMAIL_NOT_VERIFIED') return as('email-not-verified')
   if (status === 403) return as('forbidden')
-  if (code === 'USER_ALREADY_EXISTS' || code === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL') return as('user-exists')
   if (code === 'PASSWORD_TOO_SHORT' || code === 'PASSWORD_TOO_LONG') return as('weak-password')
   if (code === 'INVALID_EMAIL') return as('invalid-email')
   if (status === 400 && /workspaceName/i.test(`${code} ${message}`)) return as('invalid-business-name')
@@ -97,10 +99,15 @@ export function authErrorMessage(error: AuthError, content: ContentFn): string {
         'The request was refused. Reload the page and try again.',
         'অনুরোধটি প্রত্যাখ্যান করা হয়েছে। পেজটি রিলোড করে আবার চেষ্টা করুন।',
       )
-    case 'user-exists':
+    case 'email-not-verified':
       return content(
-        'An account with this email already exists. Log in instead.',
-        'এই ইমেইলে আগে থেকেই একটি অ্যাকাউন্ট আছে। লগ ইন করুন।',
+        'Verify your email address first: open the link we emailed you.',
+        'আগে আপনার ইমেইল ঠিকানা যাচাই করুন: আমাদের পাঠানো ইমেইলের লিংকটি খুলুন।',
+      )
+    case 'invalid-token':
+      return content(
+        'This link has expired or was already used.',
+        'এই লিংকের মেয়াদ শেষ বা এটি আগেই ব্যবহার করা হয়েছে।',
       )
     case 'weak-password':
       return content(

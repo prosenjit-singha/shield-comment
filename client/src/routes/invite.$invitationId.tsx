@@ -3,6 +3,7 @@ import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-r
 import { LoaderCircle, LogOut, UsersRound } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { AuthAlert, AuthScreen, FormField } from '@/components/auth/auth-screen'
+import { CheckInbox } from '@/components/auth/check-inbox'
 import { Button } from '@/components/ui/button'
 import { useLanguage } from '@/hooks/use-language'
 import { ApiError, toApiError } from '@/lib/api'
@@ -16,6 +17,7 @@ import {
   isFinalInviteError,
   isInvitationId,
   notFoundError,
+  rememberPendingInvite,
   signUpFromInvite,
   type InvitationDetails,
   type InviteSignUpInput,
@@ -27,7 +29,8 @@ import { workspacesQueryKey, workspacesQueryOptions } from '@/lib/workspaces'
 /**
  * Invite link (M7-T14; Module 7 D8 a, M7-D18 a, M7-D22 "generic page"). Public, outside `_app`.
  * Signed out: a generic "you've been invited" page with the sign-up form (sends `invitationId`, no
- * `workspaceName`, then accepts) and a log-in link that returns here. Signed in: the invite (workspace,
+ * `workspaceName`) and a log-in link that returns here. Sign-up sets no session (M9-T5): the page shows
+ * "check your inbox" and remembers the invite, so `/verify-email` brings this browser back (M9-T6-a). Signed in: the invite (workspace,
  * inviter, role from `get-invitation`) + Accept → active workspace → `/dashboard`.
  */
 export const Route = createFileRoute('/invite/$invitationId')({
@@ -69,7 +72,7 @@ function InvitePage() {
   return session ? (
     <SignedIn invitationId={invitationId} session={session} accept={accept} />
   ) : (
-    <SignedOut invitationId={invitationId} onSignedUp={() => accept.mutate()} />
+    <SignedOut invitationId={invitationId} />
   )
 }
 
@@ -93,22 +96,15 @@ function InviteFrame({ footer, children }: { footer: ReactNode; children: ReactN
 
 const EMPTY: InviteSignUpInput = { name: '', email: '', password: '' }
 
-function SignedOut({ invitationId, onSignedUp }: { invitationId: string; onSignedUp: () => void }) {
+function SignedOut({ invitationId }: { invitationId: string }) {
   const { content, language } = useLanguage()
-  const queryClient = useQueryClient()
-  const router = useRouter()
   const [values, setValues] = useState<InviteSignUpInput>(EMPTY)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors<keyof InviteSignUpInput>>({})
   const loginSearch = { redirect: `/invite/${invitationId}` }
 
   const signUp = useMutation<void, AuthError | ApiError, InviteSignUpInput>({
     mutationFn: (input) => (isInvitationId(invitationId) ? signUpFromInvite(invitationId, input) : Promise.reject(notFoundError())),
-    onSuccess: async () => {
-      // Signed in now (autoSignIn): drop the cached `null` session, re-run the guard, then accept.
-      queryClient.removeQueries()
-      await router.invalidate()
-      onSignedUp()
-    },
+    onSuccess: (_data, input) => rememberPendingInvite({ invitationId, email: input.email.trim() }),
   })
 
   const update = (field: keyof InviteSignUpInput, value: string) => {
@@ -137,6 +133,23 @@ function SignedOut({ invitationId, onSignedUp }: { invitationId: string; onSigne
     return error ? fieldErrorMessage(field, error, content) : undefined
   }
   const error = signUp.error
+
+  if (signUp.isSuccess) {
+    return (
+      <CheckInbox
+        email={signUp.variables.email.trim()}
+        reason="sign-up"
+        footer={
+          <p>
+            {content('Already verified?', 'যাচাই করা হয়ে গেছে?')}{' '}
+            <Link to="/login" search={loginSearch} className="font-medium text-primary underline-offset-4 hover:underline">
+              {content('Log in', 'লগ ইন')}
+            </Link>
+          </p>
+        }
+      />
+    )
+  }
 
   return (
     <InviteFrame
@@ -189,12 +202,7 @@ function SignedOut({ invitationId, onSignedUp }: { invitationId: string; onSigne
         </fieldset>
         {error && (
           <AuthAlert id="invite-sign-up-error" kind={error instanceof AuthError ? error.kind : 'invalid-input'}>
-            {error instanceof AuthError ? authErrorMessage(error, content) : inviteErrorMessage(error, content, language)}{' '}
-            {error instanceof AuthError && error.kind === 'user-exists' && (
-              <Link to="/login" search={loginSearch} className="font-medium text-primary underline-offset-4 hover:underline">
-                {content('Go to login', 'লগইনে যান')}
-              </Link>
-            )}
+            {error instanceof AuthError ? authErrorMessage(error, content) : inviteErrorMessage(error, content, language)}
           </AuthAlert>
         )}
         <Button type="submit" className="h-11 w-full" disabled={signUp.isPending}>

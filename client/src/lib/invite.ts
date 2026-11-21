@@ -121,3 +121,46 @@ export const isFinalInviteError = (error: ApiError) =>
   error.code === 'ORGANIZATION_NOT_FOUND' ||
   error.code === 'INVITER_IS_NO_LONGER_A_MEMBER_OF_THE_ORGANIZATION' ||
   error.code === 'YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION'
+
+/*
+ * M9-T6-a: an invitee signs up without a session (email verification, M9-T5), so the browser remembers
+ * which invite to return to after `/verify-email`. Not a secret (the invite still needs the recipient's
+ * session). localStorage, not sessionStorage: the email link opens a new tab, which starts with an empty
+ * sessionStorage. Read once, then cleared.
+ */
+const PENDING_INVITE_KEY = 'shield-pending-invite'
+
+export interface PendingInvite {
+  invitationId: string
+  email: string
+}
+
+export function rememberPendingInvite(invite: PendingInvite): void {
+  try {
+    localStorage.setItem(PENDING_INVITE_KEY, JSON.stringify(invite))
+  } catch {
+    // Storage blocked: the verified invitee gets the "open the invite link again" notice instead.
+  }
+}
+
+export function takePendingInvite(): PendingInvite | null {
+  try {
+    const raw = localStorage.getItem(PENDING_INVITE_KEY)
+    localStorage.removeItem(PENDING_INVITE_KEY)
+    const value: unknown = raw ? JSON.parse(raw) : null
+    if (
+      value &&
+      typeof value === 'object' &&
+      'invitationId' in value &&
+      'email' in value &&
+      typeof value.invitationId === 'string' &&
+      typeof value.email === 'string' &&
+      isInvitationId(value.invitationId)
+    ) {
+      return { invitationId: value.invitationId, email: value.email }
+    }
+  } catch {
+    // Blocked storage or a corrupt value: no pending invite.
+  }
+  return null
+}

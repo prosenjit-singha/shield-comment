@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router'
-import { LoaderCircle } from 'lucide-react'
+import { CircleCheck, LoaderCircle } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { AuthAlert, AuthScreen, FormField } from '@/components/auth/auth-screen'
+import { CheckInbox } from '@/components/auth/check-inbox'
 import { Button } from '@/components/ui/button'
 import { useLanguage } from '@/hooks/use-language'
 import { authErrorMessage, type AuthError } from '@/lib/auth-errors'
@@ -20,17 +21,22 @@ import { sessionQueryOptions } from '@/lib/session'
 
 interface LoginSearch extends CheckoutIntent {
   redirect?: string
+  /** `1` after `/reset-password` succeeded (M9-T6): shows the "password changed" notice. */
+  reset?: 1
 }
 
 /**
  * C2 sign-in (M3-T8). A signed-in visitor goes straight to `?redirect=` (via `safeRedirect`). After a
  * sign-in without a usable `?redirect=`, `postAuthDestination` applies the D13 onboarding rule. D11
  * (M8-T11): `?plan=&interval=` (an existing account from a "Choose plan" button) goes to that checkout.
+ * M9-T6 (D10 b): "Forgot password?" link, `?reset=1` notice, and an unverified account (403
+ * `EMAIL_NOT_VERIFIED`) gets the "check your inbox" screen with a resend button for the typed email.
  */
 export const Route = createFileRoute('/login')({
   // Return the key even when invalid: the router merges the raw search under this result.
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
     redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
+    reset: search.reset === 1 || search.reset === '1' ? 1 : undefined,
     ...validateCheckoutIntent(search),
   }),
   beforeLoad: async ({ context, search }) => {
@@ -47,7 +53,7 @@ export const Route = createFileRoute('/login')({
 })
 
 function LoginPage() {
-  const { redirect: target, plan, interval } = Route.useSearch()
+  const { redirect: target, plan, interval, reset } = Route.useSearch()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { content } = useLanguage()
@@ -86,6 +92,20 @@ function LoginPage() {
     return error ? fieldErrorMessage(field, error, content) : undefined
   }
 
+  if (signIn.error?.kind === 'email-not-verified') {
+    return (
+      <CheckInbox
+        email={values.email.trim()}
+        reason="sign-in"
+        footer={
+          <Button variant="link" className="h-auto p-0" onClick={() => signIn.reset()}>
+            {content('Back to log in', 'লগ ইনে ফিরে যান')}
+          </Button>
+        }
+      />
+    )
+  }
+
   return (
     <AuthScreen
       title={content('Welcome back', 'আবার স্বাগতম')}
@@ -103,6 +123,15 @@ function LoginPage() {
       }
     >
       <form className="flex flex-col gap-4" onSubmit={onSubmit} noValidate aria-busy={signIn.isPending}>
+        {reset && (
+          <p role="status" className="flex items-start gap-2.5 rounded-2xl bg-primary/10 px-4 py-3 text-sm">
+            <CircleCheck className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+            {content(
+              'Your password was changed. Log in with the new password.',
+              'আপনার পাসওয়ার্ড বদলানো হয়েছে। নতুন পাসওয়ার্ড দিয়ে লগ ইন করুন।',
+            )}
+          </p>
+        )}
         <fieldset className="flex flex-col gap-4" disabled={signIn.isPending}>
           <FormField
             id="email"
@@ -125,6 +154,12 @@ function LoginPage() {
             error={errorFor('password')}
             aria-invalid={badCredentials || fieldErrors.password ? true : undefined}
           />
+          <Link
+            to="/forgot-password"
+            className="-mt-2 self-end px-4 text-sm font-medium text-primary underline-offset-4 hover:underline"
+          >
+            {content('Forgot password?', 'পাসওয়ার্ড ভুলে গেছেন?')}
+          </Link>
         </fieldset>
         {signIn.error && (
           <AuthAlert id="sign-in-error" kind={signIn.error.kind}>
