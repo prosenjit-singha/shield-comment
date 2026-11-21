@@ -17,6 +17,7 @@ import { Route as ImpersonateRouteImport } from './routes/impersonate'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as AppAnalyticsRouteImport } from './routes/_app/analytics'
+import { Route as AppBillingRouteImport } from './routes/_app/billing'
 import { Route as AppCommentsRouteImport } from './routes/_app/comments'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppOnboardingRouteImport } from './routes/_app/onboarding'
@@ -69,6 +70,11 @@ const RegisterRoute = RegisterRouteImport.update({
 const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
   id: '/analytics',
   path: '/analytics',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBillingRoute = AppBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
   getParentRoute: () => AppRoute,
 } as any)
 const AppCommentsRoute = AppCommentsRouteImport.update({
@@ -150,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/analytics': typeof AppAnalyticsRoute
+  '/billing': typeof AppBillingRoute
   '/comments': typeof AppCommentsRoute
   '/dashboard': typeof AppDashboardRoute
   '/onboarding': typeof AppOnboardingRoute
@@ -173,6 +180,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/analytics': typeof AppAnalyticsRoute
+  '/billing': typeof AppBillingRoute
   '/comments': typeof AppCommentsRoute
   '/dashboard': typeof AppDashboardRoute
   '/onboarding': typeof AppOnboardingRoute
@@ -197,6 +205,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/_app/analytics': typeof AppAnalyticsRoute
+  '/_app/billing': typeof AppBillingRoute
   '/_app/comments': typeof AppCommentsRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/onboarding': typeof AppOnboardingRoute
@@ -222,6 +231,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/analytics'
+    | '/billing'
     | '/comments'
     | '/dashboard'
     | '/onboarding'
@@ -245,6 +255,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/analytics'
+    | '/billing'
     | '/comments'
     | '/dashboard'
     | '/onboarding'
@@ -268,6 +279,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/_app/analytics'
+    | '/_app/billing'
     | '/_app/comments'
     | '/_app/dashboard'
     | '/_app/onboarding'
@@ -352,6 +364,13 @@ declare module '@tanstack/react-router' {
       path: '/analytics'
       fullPath: '/analytics'
       preLoaderRoute: typeof AppAnalyticsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/billing': {
+      id: '/_app/billing'
+      path: '/billing'
+      fullPath: '/billing'
+      preLoaderRoute: typeof AppBillingRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/comments': {
@@ -473,6 +492,7 @@ const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppAnalyticsRoute: typeof AppAnalyticsRoute
+  AppBillingRoute: typeof AppBillingRoute
   AppCommentsRoute: typeof AppCommentsRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppOnboardingRoute: typeof AppOnboardingRoute
@@ -486,6 +506,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAnalyticsRoute: AppAnalyticsRoute,
+  AppBillingRoute: AppBillingRoute,
   AppCommentsRoute: AppCommentsRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppOnboardingRoute: AppOnboardingRoute,

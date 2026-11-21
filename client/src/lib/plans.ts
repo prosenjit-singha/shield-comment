@@ -84,6 +84,9 @@ export interface PublicPlansResponse {
   contactWhatsapp: string | null
 }
 
+/** The highlighted plan gets the primary button (PR-D9), the others outline. */
+export const planButtonVariant = (plan: PublicPlan) => (plan.highlighted ? 'default' : 'outline')
+
 export const plansQueryKey = ['plans'] as const
 
 export const plansQueryOptions = queryOptions({

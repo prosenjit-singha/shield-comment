@@ -22,6 +22,7 @@ import type { Team, TeamInvitation, TeamMember } from '@/lib/team'
 import { createQueryClient } from '@/lib/query-client'
 import { Route as AppRoute } from '@/routes/_app'
 import { Route as AnalyticsRoute } from '@/routes/_app/analytics'
+import { Route as BillingRoute } from '@/routes/_app/billing'
 import { Route as CommentsRoute } from '@/routes/_app/comments'
 import { Route as DashboardRoute } from '@/routes/_app/dashboard'
 import { Route as OnboardingRoute } from '@/routes/_app/onboarding'
@@ -56,6 +57,7 @@ const routeTree = rootRoute.addChildren([
     DashboardRoute.update(childOptions('/dashboard')),
     CommentsRoute.update(childOptions('/comments')),
     PlansRoute.update(childOptions('/plans')),
+    BillingRoute.update(childOptions('/billing')),
     RulesRoute.update(childOptions('/rules')),
     PlaygroundRoute.update(childOptions('/playground')),
     AnalyticsRoute.update(childOptions('/analytics')),
@@ -246,6 +248,10 @@ export function billingSummary(overrides: Partial<BillingSummary> = {}): Billing
     workspaces: { used: 1, limit: 1 },
     pages: { used: 1, limit: 1 },
     trialEligible: false,
+    renewal: { dueAt: '2026-12-15T18:00:00.000Z', canRenew: false },
+    pendingPayment: null,
+    scheduled: null,
+    autoRenew: { available: false, enabled: false, tokenSaved: false },
     ...overrides,
   }
 }

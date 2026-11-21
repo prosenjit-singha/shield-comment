@@ -32,7 +32,7 @@ const copy = {
     d7: '7 days',
     d30: '30 days',
     d90: '90 days',
-    nav: ['Dashboard', 'Comments', 'Pages', 'Rules', 'Playground', 'Analytics', 'Plans', 'Support', 'Settings'],
+    nav: ['Dashboard', 'Comments', 'Pages', 'Rules', 'Playground', 'Analytics', 'Plans', 'Billing', 'Support', 'Settings'],
     more: 'More',
     total: '1,500',
   },
@@ -57,7 +57,7 @@ const copy = {
     d7: '৭ দিন',
     d30: '৩০ দিন',
     d90: '৯০ দিন',
-    nav: ['ড্যাশবোর্ড', 'কমেন্ট', 'পেজ', 'নিয়ম', 'প্লেগ্রাউন্ড', 'অ্যানালিটিক্স', 'প্ল্যান', 'সাপোর্ট', 'সেটিংস'],
+    nav: ['ড্যাশবোর্ড', 'কমেন্ট', 'পেজ', 'নিয়ম', 'প্লেগ্রাউন্ড', 'অ্যানালিটিক্স', 'প্ল্যান', 'বিলিং', 'সাপোর্ট', 'সেটিংস'],
     more: 'আরও',
     total: '১,৫০০',
   },
@@ -217,7 +217,7 @@ describe.each(['en', 'bn'] as const)('/dashboard (%s)', (language: Language) => 
   // M7-T11 (D16 a): 9 sidebar items; the bottom bar = 4 + "More" (sheet tests in `-nav.test.tsx`).
   describe('navigation (D16)', () => {
     const navLinks = (testId: string) => within(screen.getByTestId(testId)).getAllByRole('link')
-    const ALL = ['/dashboard', '/comments', '/pages', '/rules', '/playground', '/analytics', '/plans', '/support', '/settings']
+    const ALL = ['/dashboard', '/comments', '/pages', '/rules', '/playground', '/analytics', '/plans', '/billing', '/support', '/settings']
     const BOTTOM = [0, 1, 3, 5] // Dashboard, Comments, Rules, Analytics
 
     it('lists every item in the desktop sidebar and four in the mobile bottom bar, with the active one marked', async () => {
@@ -237,7 +237,7 @@ describe.each(['en', 'bn'] as const)('/dashboard (%s)', (language: Language) => 
       expect(side.map((link) => link.textContent)).toEqual([...t.nav])
       expect(side.map((link) => link.getAttribute('href'))).toEqual(ALL)
       // Active even with a range in the URL.
-      expect(side.map((link) => link.getAttribute('aria-current'))).toEqual(['page', null, null, null, null, null, null, null, null])
+      expect(side.map((link) => link.getAttribute('aria-current'))).toEqual(['page', null, null, null, null, null, null, null, null, null])
 
       const bottom = navLinks('app-bottom-bar')
       expect(bottom.map((link) => link.textContent)).toEqual(BOTTOM.map((i) => t.nav[i]))
@@ -260,7 +260,7 @@ describe.each(['en', 'bn'] as const)('/dashboard (%s)', (language: Language) => 
       fireEvent.click(navLinks('app-sidebar')[6]!)
       await waitFor(() => expect(history.location.pathname).toBe('/plans'))
       await waitFor(() =>
-        expect(navLinks('app-sidebar').map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null, null, null, null, 'page', null, null]),
+        expect(navLinks('app-sidebar').map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null, null, null, null, 'page', null, null, null]),
       )
       // Plans lives in "More" on mobile: the More button is the active one there.
       expect(navLinks('app-bottom-bar').map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null, null])

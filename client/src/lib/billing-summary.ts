@@ -6,7 +6,7 @@ import { apiFetch } from '@/lib/api'
  * `GET /api/workspaces/:workspaceId/billing/summary` (any member, `private, no-store`) →
  * `BillingSummary`. Mirrors `backend/src/billing/dto/billing-summary.dto.ts` (dates arrive as ISO
  * strings). Every count is pooled across the workspace's billing account. Drives the `_app` plan
- * status banner (PW-T8); the Module 8 `/billing` page will read the same query.
+ * status banner (PW-T8) and C10 `/billing` (M8-T10, same query).
  */
 
 /**
@@ -38,6 +38,22 @@ export interface BillingSummary {
   pages: BillingUsage
   /** PR-T3: `POST …/billing/trial` can succeed (billing account, no live plan, never had a trial). */
   trialEligible: boolean
+  /** M8-T6 (D4): the live paid term's renewal (`dueAt` = term end; `canRenew` = 7-day window, nothing scheduled); `null` otherwise. */
+  renewal: { dueAt: string; canRenew: boolean } | null
+  /** M8-T6: the newest PENDING payment younger than 60 min. */
+  pendingPayment: { tranId: string; amountBdt: number; createdAt: string } | null
+  /** M8-D7b: the paid next term on another plan / interval, from the current term end. */
+  scheduled: { planId: string; planName: string; interval: SubscriptionInterval; startsAt: string } | null
+  /** M8-T6b / M8-D15: tokenized auto-renew; the toggle shows only when `available`. */
+  autoRenew: AutoRenewView
+}
+
+/** `PUT` / `DELETE …/billing/auto-renew` answer (= summary `autoRenew`). */
+export interface AutoRenewView {
+  available: boolean
+  enabled: boolean
+  /** A card / wallet token from a validated payment is saved. */
+  tokenSaved: boolean
 }
 
 const summaryPath = (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/billing/summary`

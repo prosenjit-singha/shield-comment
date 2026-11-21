@@ -1,6 +1,7 @@
 import { Link, useLocation } from '@tanstack/react-router'
 import {
   ChartLine,
+  CreditCard,
   Ellipsis,
   FlaskConical,
   Gem,
@@ -19,13 +20,13 @@ import { useLanguage } from '@/hooks/use-language'
 /**
  * `_app` navigation (M6-T8, D16 c): a sidebar from `md` up, a fixed bottom bar below it. Both are in
  * the DOM and CSS picks one (no JS breakpoint, no flash of the wrong one).
- * Order: Dashboard, Comments, Pages, Rules, Playground, Analytics, Plans, Support, Settings (M7-T11, D16 a).
+ * Order: Dashboard, Comments, Pages, Rules, Playground, Analytics, Plans, Billing (M8-T10), Support, Settings (M7-T11, D16 a).
  * The bottom bar shows `BOTTOM_BAR` + a "More" sheet with the rest. Only routes that exist are listed
  * (a `<Link>` to a missing route breaks the router types). Settings links `/settings` (→ `/settings/team`)
  * so it stays active on every settings tab.
  */
 interface NavItem {
-  to: '/dashboard' | '/comments' | '/pages' | '/rules' | '/playground' | '/analytics' | '/plans' | '/support' | '/settings'
+  to: '/dashboard' | '/comments' | '/pages' | '/rules' | '/playground' | '/analytics' | '/plans' | '/billing' | '/support' | '/settings'
   icon: LucideIcon
   label: (content: ContentFn) => string
 }
@@ -38,6 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/playground', icon: FlaskConical, label: (c) => c('Playground', 'প্লেগ্রাউন্ড') },
   { to: '/analytics', icon: ChartLine, label: (c) => c('Analytics', 'অ্যানালিটিক্স') },
   { to: '/plans', icon: Gem, label: (c) => c('Plans', 'প্ল্যান') },
+  { to: '/billing', icon: CreditCard, label: (c) => c('Billing', 'বিলিং') },
   { to: '/support', icon: LifeBuoy, label: (c) => c('Support', 'সাপোর্ট') },
   { to: '/settings', icon: Settings, label: (c) => c('Settings', 'সেটিংস') },
 ]

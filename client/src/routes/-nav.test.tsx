@@ -20,7 +20,7 @@ const TWO_WORKSPACES = [
 const copy = {
   en: {
     more: 'More',
-    moreItems: ['Pages', 'Playground', 'Plans', 'Support', 'Settings'],
+    moreItems: ['Pages', 'Playground', 'Plans', 'Billing', 'Support', 'Settings'],
     support: 'Support',
     supportEmpty: 'No tickets yet. Open one when you need help.',
     settings: 'Settings',
@@ -34,7 +34,7 @@ const copy = {
   },
   bn: {
     more: 'আরও',
-    moreItems: ['পেজ', 'প্লেগ্রাউন্ড', 'প্ল্যান', 'সাপোর্ট', 'সেটিংস'],
+    moreItems: ['পেজ', 'প্লেগ্রাউন্ড', 'প্ল্যান', 'বিলিং', 'সাপোর্ট', 'সেটিংস'],
     support: 'সাপোর্ট',
     supportEmpty: 'এখনো কোনো টিকিট নেই। সাহায্য দরকার হলে একটি টিকিট খুলুন।',
     settings: 'সেটিংস',
@@ -68,7 +68,7 @@ afterEach(() => {
 describe.each(['en', 'bn'] as const)('M7-T11 navigation (%s)', (language) => {
   const t = copy[language]
 
-  it('"More" opens a sheet with the other five pages; picking one navigates, closes it and marks More active', async () => {
+  it('"More" opens a sheet with the other six pages; picking one navigates, closes it and marks More active', async () => {
     mockApi({ '/api/auth/get-session': () => json(200, SESSION), ...summaryApi(), ...ticketsApi(), ...teamApi() })
     const { history } = renderAppRoute('/support', language)
     expect(await screen.findByText(t.supportEmpty)).toBeTruthy()
@@ -78,8 +78,8 @@ describe.each(['en', 'bn'] as const)('M7-T11 navigation (%s)', (language) => {
     const sheet = await screen.findByRole('dialog', { name: t.more })
     const links = within(sheet).getAllByRole('link')
     expect(links.map((link) => link.textContent)).toEqual([...t.moreItems])
-    expect(links.map((link) => link.getAttribute('href'))).toEqual(['/pages', '/playground', '/plans', '/support', '/settings'])
-    expect(links.map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null, 'page', null])
+    expect(links.map((link) => link.getAttribute('href'))).toEqual(['/pages', '/playground', '/plans', '/billing', '/support', '/settings'])
+    expect(links.map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null, null, 'page', null])
 
     fireEvent.click(within(sheet).getByRole('link', { name: t.settings }))
     await waitFor(() => expect(history.location.pathname).toBe('/settings/team'))

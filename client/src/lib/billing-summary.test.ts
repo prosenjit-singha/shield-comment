@@ -22,6 +22,10 @@ function summary(overrides: Partial<BillingSummary> = {}): BillingSummary {
     workspaces: { used: 1, limit: 1 },
     pages: { used: 0, limit: 1 },
     trialEligible: false,
+    renewal: null,
+    pendingPayment: null,
+    scheduled: null,
+    autoRenew: { available: false, enabled: false, tokenSaved: false },
     ...overrides,
   }
 }

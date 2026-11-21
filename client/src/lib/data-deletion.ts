@@ -136,3 +136,12 @@ export function formatDhakaDayMonth(iso: string, language: Language): string {
   if (language === 'bn') return `${toBanglaDigits(String(day))} ${BN_MONTHS[month]}`
   return `${day} ${EN_MONTHS[month]}`
 }
+
+/** `15 Dec 2026` / `১৫ ডিসেম্বর ২০২৬` (Bangladesh day with the year; billing term dates, M8-T10). */
+export function formatDhakaDate(iso: string, language: Language): string {
+  const time = Date.parse(iso)
+  if (Number.isNaN(time)) return iso
+  const year = new Date(time + DHAKA_OFFSET_MS).getUTCFullYear()
+  const dayMonth = formatDhakaDayMonth(iso, language)
+  return language === 'bn' ? `${dayMonth} ${toBanglaDigits(String(year))}` : `${dayMonth} ${year}`
+}
