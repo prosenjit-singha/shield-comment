@@ -20,14 +20,17 @@ function run(exception: unknown) {
   } as unknown as ArgumentsHost;
   const filter = new AllExceptionsFilter();
   // 5xx are logged; keep test output quiet.
-  vi.spyOn(
-    (filter as unknown as { logger: { error: () => void } }).logger,
-    'error',
-  ).mockImplementation(() => undefined);
+  const logged = vi
+    .spyOn(
+      (filter as unknown as { logger: { error: () => void } }).logger,
+      'error',
+    )
+    .mockImplementation(() => undefined);
   filter.catch(exception, host);
   return {
     status: status.mock.calls[0]?.[0] as number,
     body: json.mock.calls[0]?.[0] as Record<string, unknown>,
+    logged,
   };
 }
 
@@ -131,5 +134,25 @@ describe('AllExceptionsFilter', () => {
     const { status, body } = run(new Error('db password in message'));
     expect(status).toBe(500);
     expect(body.message).toBe('Internal server error');
+  });
+
+  it('an audit_log_immutable DB error (M9-T4 trigger) is a logged 500 without detail', () => {
+    const pg = Object.assign(new Error('audit_log_immutable'), {
+      code: 'P0001',
+      detail: 'DELETE on plan_audit_logs',
+    });
+    const err = new Error('Failed query: delete from "plan_audit_logs"', {
+      cause: pg,
+    });
+    const { status, body, logged } = run(err);
+    expect(status).toBe(500);
+    expect(Object.keys(body).sort()).toEqual(
+      ['error', 'message', 'path', 'statusCode', 'timestamp'].sort(),
+    );
+    expect(JSON.stringify(body)).not.toMatch(/audit|plan_audit_logs|P0001/);
+    expect(logged).toHaveBeenCalledWith(
+      expect.objectContaining({ err }),
+      err.message,
+    );
   });
 });

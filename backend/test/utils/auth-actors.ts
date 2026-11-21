@@ -1,7 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { getDrizzleToken } from '@nestjs/drizzle';
 import { AuthService } from '@thallesp/nestjs-better-auth';
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import type { BetterAuth } from '../../src/auth/better-auth.js';
@@ -65,6 +65,23 @@ export interface Actor {
   workspaceId: string;
 }
 
+type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+/**
+ * Runs `fn` in a transaction that first does `SET LOCAL shield.audit_maintenance = 'on'`: the
+ * only way past the audit-log trigger (M9-T4, migration 0046). Tests only; `src/` must never use it
+ * (`audit-maintenance.spec.ts`). Inside another transaction it nests (savepoint).
+ */
+export function withAuditMaintenance<T>(
+  db: Pick<Database, 'transaction'>,
+  fn: (tx: Tx) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL shield.audit_maintenance = 'on'`);
+    return fn(tx);
+  });
+}
+
 /**
  * Deletes the payment events + refund audit rows (M8-T8) + transactions (M8-T2) → manual-activation audit rows (PW-T9) → wallet ledger → balances → wallets →
  * subscriptions → promotion redemptions (PR-T1) of these billing accounts (FKs restrict), not the
@@ -72,11 +89,16 @@ export interface Actor {
  * at each other: the redemption's `subscription_id` is cleared first.
  */
 export async function deleteBillingChildren(
-  db: Pick<Database, 'select' | 'delete' | 'update'>,
+  db: Pick<Database, 'transaction'>,
   accountIds: readonly string[],
 ): Promise<void> {
   if (accountIds.length === 0) return;
-  const ids = [...accountIds];
+  await withAuditMaintenance(db, (tx) =>
+    deleteBillingRows(tx, [...accountIds]),
+  );
+}
+
+async function deleteBillingRows(db: Tx, ids: string[]): Promise<void> {
   const tranIds = db
     .select({ tranId: paymentTransactions.tranId })
     .from(paymentTransactions)
@@ -341,9 +363,14 @@ export function createAuthActors(app: INestApplication<App>) {
    * Deletes every tracked workspace and user (members, sessions and accounts cascade). Their
    * billing children (wallet entries, balances, wallets, subscriptions), impersonation, status and
    * plan audit rows, ticket attachments, ticket messages and tickets go first: those FKs are `restrict`. Billing
-   * accounts go after the workspaces and before the users.
+   * accounts go after the workspaces and before the users. One transaction with the audit-log
+   * escape hatch (M9-T4).
    */
-  async function cleanup() {
+  function cleanup(): Promise<void> {
+    return withAuditMaintenance(db, deleteTracked);
+  }
+
+  async function deleteTracked(db: Tx): Promise<void> {
     // Billing (PW-T1): the accounts owned by the tracked users or used by the tracked workspaces.
     // Their wallet ledger → balances → wallets → subscriptions go first (FKs restrict); the
     // accounts themselves after the workspaces (which point at them) and before the users.

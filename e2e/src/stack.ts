@@ -245,6 +245,12 @@ export async function impersonationAuditCount(identity: RunIdentity): Promise<nu
   });
 }
 
+/** Opens a transaction that may delete audit rows: the audit-log trigger's escape hatch (M9-T4, migration 0046). */
+async function beginAuditMaintenance(db: pg.Client): Promise<void> {
+  await db.query('begin');
+  await db.query("set local shield.audit_maintenance = 'on'");
+}
+
 /**
  * Every billing row of these accounts, FK order (M8-T2 payments, PW wallets, PR redemptions): payment
  * events (by the accounts' tran_ids) → refunds → transactions → audit → wallet → subscriptions ↔
@@ -285,7 +291,7 @@ async function ownerAccount(db: pg.Client, identity: RunIdentity): Promise<{ acc
 /** Module 8 gate: the owner's account back to "no plan, never had a trial" (each checkout case starts here). */
 export async function resetOwnerBilling(identity: RunIdentity): Promise<void> {
   await withDb(async (db) => {
-    await db.query('begin');
+    await beginAuditMaintenance(db);
     try {
       await deleteBillingRows(db, [(await ownerAccount(db, identity)).accountId]);
       await db.query('commit');
@@ -353,7 +359,7 @@ export interface CleanupSummary {
 export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary> {
   const emails = [identity.superAdmin.email, identity.owner.email];
   const { userIds, workspaces, auditRows } = await withDb(async (db) => {
-    await db.query('begin');
+    await beginAuditMaintenance(db);
     try {
       const users = await db.query<{ id: string }>('select id from users where email = any($1)', [emails]);
       const ids = users.rows.map((r) => r.id);

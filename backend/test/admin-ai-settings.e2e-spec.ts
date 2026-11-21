@@ -27,7 +27,11 @@ import {
   aiProviderSettings,
   aiSettingsAuditLogs,
 } from '../src/db/schema/index.js';
-import { type Actor, createAuthActors } from './utils/auth-actors.js';
+import {
+  type Actor,
+  createAuthActors,
+  withAuditMaintenance,
+} from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
 import { type FakeAiGateway, fakeAiGateway } from './utils/fake-ai-gateway.js';
 
@@ -118,9 +122,11 @@ describe('Admin AI provider settings (e2e)', () => {
   afterEach(async () => {
     await actors.db.delete(aiProviderKeys);
     await actors.db.delete(aiProviderSettings);
-    await actors.db
-      .delete(aiSettingsAuditLogs)
-      .where(eq(aiSettingsAuditLogs.adminId, superAdmin.id));
+    await withAuditMaintenance(actors.db, (tx) =>
+      tx
+        .delete(aiSettingsAuditLogs)
+        .where(eq(aiSettingsAuditLogs.adminId, superAdmin.id)),
+    );
     app.get(DbAiConfigResolver).invalidate();
     expect(ai.pending).toBe(0);
     ai.reset();

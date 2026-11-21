@@ -21,6 +21,7 @@ import {
   sessionCookie,
   TRUSTED_ORIGIN,
   tokenOf,
+  withAuditMaintenance,
 } from './utils/auth-actors.js';
 import { createTestApp, uniqueEmail } from './utils/create-test-app.js';
 
@@ -325,10 +326,13 @@ describe('Impersonation (e2e)', () => {
     it('an expired token is rejected (4xx) and stays unused', async () => {
       const expired = await issueToken(owner.workspaceId);
       const tokenHash = hashImpersonationToken(expired);
-      await db()
-        .update(impersonationAuditLogs)
-        .set({ expiresAt: new Date(Date.now() - 1_000) })
-        .where(eq(impersonationAuditLogs.tokenHash, tokenHash));
+      // Test-only rewrite: the audit trigger (M9-T4) refuses it without the escape hatch.
+      await withAuditMaintenance(db(), (tx) =>
+        tx
+          .update(impersonationAuditLogs)
+          .set({ expiresAt: new Date(Date.now() - 1_000) })
+          .where(eq(impersonationAuditLogs.tokenHash, tokenHash)),
+      );
       const res = await exchange(expired);
       expect(res.status).toBe(401);
       const [row] = await db()
