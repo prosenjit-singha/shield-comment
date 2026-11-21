@@ -7,14 +7,14 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 9 section + the row's decisions, `docs/project-documentation/modules/module-9-launch-security.md`, the code the row names.
 - Standing approvals: none yet for admin/ or client/ in this run (the Module 8 approvals ended with that run; ask at the first row that touches each). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included), deploys, DNS, hosting/Neon/Redis Cloud accounts or any production credential: none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #18 (2026-11-21, continues from the Module 8 run) · rows this session: 9 · estimate: 250k
+- Session: #18 (2026-11-21, continues from the Module 8 run) · rows this session: 10 · estimate: 275k
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M9-T3 (2026-11-21) · commit: "feat(backend): enforce strict origins and secure cookies (M9-T3)"
+paused: row cap (10 rows in session #18) after verified M9-T3 · next M9-T4 (backend only, no open decision)
 
 ## Resume
-`/orchestration --continue`
+`/orchestration --continue` — next M9-T4 (immutable audit logs, backend only, D4 answered). Coming pre-checks: M9-T5 asks what happens to existing unverified accounts and to impersonation under required email verification (D10 b); M9-T7 asks the legal facts (D11); the first admin/ and client/ rows ask for app approval.
 
 ## Next prompt (M9-T4)
 
@@ -383,4 +383,4 @@ You are implementing exactly ONE task row, **M9-T4**, in the ShieldComment BD re
 - 2026-11-21 M9-PLAN ✅ e4d5397 · docs only · Module 9 planned: 19 rows (12 code/docs + 7 👤 user steps) + GATE, decisions D1–D15 open (hosting, rate limits, origins, audit immutability, staging, smoke, App Review screencast, SSLCommerz live, contrast, password reset, legal pages, CSP, compression, uptime, gate scope)
 - 2026-11-21 M9-T1 ✅ 3222681 · backend 2595 (was 2602) + e2e 1322 (was 1314) · root e2e 7/7 · proxy-safe client IP (`TRUST_PROXY_HOPS` resolver, XFF rewritten first in `configureApp()`, one value for Better Auth / `req.ip` / callback throttlers / audit) + Helmet; decisions D1–D15 marked answered, M9-T5/T6 now include email verification (D10 b)
 - 2026-11-21 M9-T2 ✅ 1fa4963 · backend 2606 (was 2595) + e2e 1327 (was 1322) · root e2e 7/7 · global Redis rate limiting: `GlobalThrottlerGuard` 300/min per user, 60/min per anonymous IP, Redis `ThrottlerStorage` (also for the per-route throttles), skips on health/webhooks/own-limit routes, 429 `RATE_LIMITED` + `Retry-After`, Better Auth reset rules 3/min
-- 2026-11-21 M9-T3 ✅ · backend 2622 (was 2606) + e2e 1334 (was 1327) · root e2e 7/7 · strict origins + secure cookies: production boot refuses missing `TRUSTED_ORIGINS` and non-https origins/URLs (localhost hosts allowed), explicit Better Auth cookie flags (Secure iff https URL) + Origin check on in tests, CORS off unless `CORS_ORIGINS` (e2e-proven); fixed M9-T2 test event leak
+- 2026-11-21 M9-T3 ✅ f07b285 · backend 2622 (was 2606) + e2e 1334 (was 1327) · root e2e 7/7 · strict origins + secure cookies: production boot refuses missing `TRUSTED_ORIGINS` and non-https origins/URLs (localhost hosts allowed), explicit Better Auth cookie flags (Secure iff https URL) + Origin check on in tests, CORS off unless `CORS_ORIGINS` (e2e-proven); fixed M9-T2 test event leak
