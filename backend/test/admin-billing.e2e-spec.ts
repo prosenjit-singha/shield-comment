@@ -1,8 +1,14 @@
 import type { INestApplication } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
-import type { TransactionList } from '../src/admin/dto/billing-transactions.dto.js';
+import type {
+  AdminTransactionDetail,
+  PaymentEventList,
+  TransactionList,
+} from '../src/admin/dto/billing-transactions.dto.js';
 import {
+  paymentEvents,
+  paymentRefunds,
   paymentTransactions,
   plans,
   subscriptions,
@@ -12,6 +18,7 @@ import { type Actor, createAuthActors } from './utils/auth-actors.js';
 import { createTestApp } from './utils/create-test-app.js';
 
 const TRANSACTIONS = '/api/admin/billing/transactions';
+const EVENTS = '/api/admin/billing/events';
 
 /**
  * M2-T9 + M8-T2: `GET /api/admin/billing/transactions` = `payment_transactions`, newest first, with
@@ -63,6 +70,23 @@ describe('Admin billing transactions (e2e)', () => {
       });
       for (const cookie of [adminCookie, ownerCookie]) {
         await http().get(TRANSACTIONS).set('Cookie', cookie).expect(403);
+      }
+    });
+
+    it('M8-T8 routes are super admin only too', async () => {
+      const id = '01900000-0000-7000-8000-000000000000';
+      for (const [method, path] of [
+        ['get', EVENTS],
+        ['get', `${TRANSACTIONS}/${id}`],
+        ['post', `${TRANSACTIONS}/${id}/refund`],
+      ] as const) {
+        await http()[method](path).expect(401);
+        const res = await http()
+          [method](path)
+          .set('Cookie', client.cookie)
+          .send({ reason: 'x' })
+          .expect(403);
+        expect(res.body).toMatchObject({ message: 'Super admin only' });
       }
     });
   });
@@ -167,10 +191,25 @@ describe('Admin billing transactions (e2e)', () => {
                 creditBdt: 0,
               },
               createdAt: new Date(base + i * 60_000),
+              // D10: G was activated with risk_level 1.
+              riskLevel: tranId === 'M8T2G' ? 1 : 0,
             };
           }),
         );
+        subscriptionId = sub!.id;
       });
+
+      let subscriptionId: string;
+      const tran = (id: string) => `${id}${tag}`;
+      const tranIds = (page: TransactionList) =>
+        page.items.map((r) => r.tranId.slice(0, 5));
+      async function idOf(tranId: string) {
+        const [row] = await actors.db
+          .select({ id: paymentTransactions.id })
+          .from(paymentTransactions)
+          .where(eq(paymentTransactions.tranId, tran(tranId)));
+        return row!.id;
+      }
 
       it('lists every row newest first with names, status and gateway labels', async () => {
         const page = await list('');
@@ -195,6 +234,10 @@ describe('Admin billing transactions (e2e)', () => {
             createdAt: new Date(
               base + (rows.length - 1 - j) * 60_000,
             ).toISOString(),
+            riskFlagged: tranId === 'M8T2G',
+            invoiceNumber: ['PAID', 'REFUNDED'].includes(status as string)
+              ? `SC-2026-${tag}${rows.length - 1 - j}`
+              : null,
           })),
         );
       });
@@ -207,6 +250,343 @@ describe('Admin billing transactions (e2e)', () => {
         );
         expect((await list('skip=7&take=5')).items).toEqual([]);
       });
+
+      it.each([
+        ['status=PAID', ['M8T2G', 'M8T2F', 'M8T2B']],
+        ['status=PENDING', ['M8T2A']],
+        ['gateway=bKash', ['M8T2B']],
+        ['gateway=Mastercard', ['M8T2G']],
+        ['gateway=SSLCommerz', ['M8T2D', 'M8T2A']],
+        ['gateway=PROMOTION', ['M8T2F']],
+        ['gateway=bkash', []],
+        ['status=PAID&gateway=Visa', []],
+        ['status=REFUNDED&gateway=Visa', ['M8T2E']],
+        ['q=m8t2c', ['M8T2C']],
+        ['q=%25', []],
+        ['q=nobody-matches', []],
+        // Payment times: Dhaka 2026-11-21 12:00–12:06.
+        [
+          'from=2026-11-21&to=2026-11-21',
+          ['M8T2G', 'M8T2F', 'M8T2E', 'M8T2D', 'M8T2C', 'M8T2B', 'M8T2A'],
+        ],
+        ['to=2026-11-20', []],
+        ['from=2026-11-22', []],
+        ['from=2026-11-21&status=FAILED&q=M8T2', ['M8T2C']],
+      ])('filters %s', async (query, expected) => {
+        const page = await list(query);
+        expect(tranIds(page)).toEqual(expected);
+        expect(page.total).toBe(expected.length);
+      });
+
+      it('q matches the workspace name and the payer name / email', async () => {
+        for (const q of [
+          workspace.name,
+          client.email.toUpperCase(),
+          'm2t9-client',
+        ])
+          expect((await list(`q=${encodeURIComponent(q)}`)).total).toBe(
+            rows.length,
+          );
+      });
+
+      it('400 when from is after to', async () => {
+        await http()
+          .get(`${TRANSACTIONS}?from=2026-11-22&to=2026-11-21`)
+          .set('Cookie', superAdmin.cookie)
+          .expect(400);
+      });
+
+      describe('events', () => {
+        const at = (min: number) => new Date(base + 600_000 + min * 60_000);
+        /** [tranId (null = none, U = unknown), source, outcome], oldest first. */
+        const events = [
+          ['M8T2B', 'IPN', 'PAID'],
+          ['M8T2B', 'SUCCESS', 'ALREADY_PAID'],
+          ['M8T2C', 'FAIL', 'FAILED'],
+          ['M8T2D', 'CANCEL', 'CANCELLED'],
+          ['U', 'IPN', 'UNKNOWN_TRAN_ID'],
+          ['M8T2A', 'IPN', 'AMOUNT_MISMATCH'],
+          ['M8T2G', 'IPN', 'PAID_DUPLICATE_CLAIM'],
+          ['M8T2A', 'IPN', 'ACTIVATION_FAILED'],
+          [null, 'IPN', 'BAD_SIGNATURE'],
+          ['M8T2C', 'FAIL', 'NOT_PENDING'],
+        ] as const;
+        const unknown = `UNKNOWN${tag}`;
+        const tranOf = (t: string | null) =>
+          t === null ? null : t === 'U' ? unknown : tran(t);
+
+        beforeAll(async () => {
+          await actors.db.insert(paymentEvents).values(
+            events.map(([t, source, outcome], i) => ({
+              tranId: tranOf(t),
+              source,
+              outcome,
+              receivedAt: at(i),
+            })),
+          );
+        });
+
+        afterAll(async () => {
+          // Events without a matching transaction are not cleaned by the account cleanup.
+          await actors.db
+            .delete(paymentEvents)
+            .where(
+              or(
+                isNull(paymentEvents.tranId),
+                eq(paymentEvents.tranId, unknown),
+              ),
+            );
+        });
+
+        async function listEvents(query: string) {
+          const res = await http()
+            .get(`${EVENTS}${query ? `?${query}` : ''}`)
+            .set('Cookie', superAdmin.cookie)
+            .expect(200);
+          return res.body as PaymentEventList;
+        }
+
+        it('outcome=failed: everything except PAID / ALREADY_PAID / FAILED / CANCELLED, newest first, linked to its transaction', async () => {
+          const page = await listEvents('outcome=failed');
+          const failed = events
+            .map((e, i) => [e, i] as const)
+            .filter(
+              ([[, , o]]) =>
+                !['PAID', 'ALREADY_PAID', 'FAILED', 'CANCELLED'].includes(o),
+            )
+            .reverse();
+          expect(page).toMatchObject({
+            total: failed.length,
+            skip: 0,
+            take: 50,
+          });
+          expect(page.items).toEqual(
+            failed.map(([[t, source, outcome], i]) => ({
+              id: expect.any(String) as string,
+              tranId: tranOf(t),
+              source,
+              outcome,
+              receivedAt: at(i).toISOString(),
+              transaction:
+                t === null || t === 'U'
+                  ? null
+                  : { id: expect.any(String) as string, workspace },
+            })),
+          );
+          expect(page.items[0]!.outcome).toBe('NOT_PENDING');
+          expect(page.items.map((e) => e.outcome)).toEqual(
+            expect.arrayContaining([
+              'PAID_DUPLICATE_CLAIM',
+              'ACTIVATION_FAILED',
+              'UNKNOWN_TRAN_ID',
+              'BAD_SIGNATURE',
+            ]),
+          );
+        });
+
+        it('no outcome = every event; pages with skip/take', async () => {
+          expect((await listEvents('')).total).toBe(events.length);
+          const page = await listEvents('outcome=failed&skip=1&take=2');
+          expect(page.items.map((e) => e.outcome)).toEqual([
+            'BAD_SIGNATURE',
+            'ACTIVATION_FAILED',
+          ]);
+          expect(page.total).toBe(6);
+        });
+
+        it.each([
+          ['outcome=PAID'],
+          ['outcome=all'],
+          ['take=0'],
+          ['source=IPN'],
+        ])('400 for %s', async (query) => {
+          await http()
+            .get(`${EVENTS}?${query}`)
+            .set('Cookie', superAdmin.cookie)
+            .expect(400);
+        });
+
+        it('transaction sheet: payer, term, price lines, risk, its events oldest first', async () => {
+          const res = await http()
+            .get(`${TRANSACTIONS}/${await idOf('M8T2B')}`)
+            .set('Cookie', superAdmin.cookie)
+            .expect(200);
+          const detail = res.body as AdminTransactionDetail;
+          expect(detail).toMatchObject({
+            tranId: tran('M8T2B'),
+            status: 'PAID',
+            gateway: 'bKash',
+            riskFlagged: false,
+            riskLevel: 0,
+            invoiceNumber: `SC-2026-${tag}1`,
+            kind: 'NEW',
+            interval: 'month',
+            user: { id: client.id, email: client.email },
+            paidAt: new Date(base + 60_000).toISOString(),
+            term: {
+              start: new Date(base).toISOString(),
+              end: new Date(base + 30 * 86_400_000).toISOString(),
+            },
+            valId: 'VAL1',
+            cardType: 'BKASH-BKash',
+            listPriceBdt: 499,
+            promotions: [],
+            creditBdt: 0,
+            refund: null,
+          });
+          expect(detail.events.map((e) => [e.source, e.outcome])).toEqual([
+            ['IPN', 'PAID'],
+            ['SUCCESS', 'ALREADY_PAID'],
+          ]);
+          const g = (
+            await http()
+              .get(`${TRANSACTIONS}/${await idOf('M8T2G')}`)
+              .set('Cookie', superAdmin.cookie)
+              .expect(200)
+          ).body as AdminTransactionDetail;
+          expect(g).toMatchObject({ riskFlagged: true, riskLevel: 1 });
+        });
+
+        it.each([['not-a-uuid'], ['01900000-0000-7000-8000-000000000000']])(
+          'sheet 404 for %s',
+          async (id) => {
+            await http()
+              .get(`${TRANSACTIONS}/${id}`)
+              .set('Cookie', superAdmin.cookie)
+              .expect(404);
+          },
+        );
+      });
+
+      describe('refund (D9)', () => {
+        const refund = (id: string, body: unknown) =>
+          http()
+            .post(`${TRANSACTIONS}/${id}/refund`)
+            .set('Cookie', superAdmin.cookie)
+            .set('X-Forwarded-For', '203.0.113.9, 10.0.0.2')
+            .set('User-Agent', 'm8t8-agent')
+            .send(body as object);
+        const refundRows = async () =>
+          actors.db
+            .select()
+            .from(paymentRefunds)
+            .where(
+              inArray(
+                paymentRefunds.paymentTransactionId,
+                actors.db
+                  .select({ id: paymentTransactions.id })
+                  .from(paymentTransactions)
+                  .where(
+                    eq(paymentTransactions.workspaceId, client.workspaceId),
+                  ),
+              ),
+            );
+
+        it.each([
+          ['no body', {}],
+          ['blank reason', { reason: '   ' }],
+          ['reason over 500', { reason: 'x'.repeat(501) }],
+          ['non-string reason', { reason: 5 }],
+          ['unknown field', { reason: 'ok', notify: true }],
+        ])('400 for %s', async (_label, body) => {
+          await refund(await idOf('M8T2B'), body).expect(400);
+          expect(await refundRows()).toEqual([]);
+        });
+
+        it.each([['M8T2A'], ['M8T2C'], ['M8T2D'], ['M8T2E']])(
+          '409 NOT_REFUNDABLE for %s (not PAID), no audit row',
+          async (t) => {
+            const res = await refund(await idOf(t), { reason: 'r' }).expect(
+              409,
+            );
+            expect(res.body).toMatchObject({ code: 'NOT_REFUNDABLE' });
+            expect(await refundRows()).toEqual([]);
+          },
+        );
+
+        it('404 for an unknown or malformed id', async () => {
+          await refund('01900000-0000-7000-8000-000000000000', {
+            reason: 'r',
+          }).expect(404);
+          await refund('nope', { reason: 'r' }).expect(404);
+        });
+
+        it('PAID → REFUNDED: status only, settled facts + plan kept, one audit row; a second try is 409', async () => {
+          const id = await idOf('M8T2G');
+          const before = (
+            await actors.db
+              .select()
+              .from(paymentTransactions)
+              .where(eq(paymentTransactions.id, id))
+          )[0]!;
+          const [subBefore] = await actors.db
+            .select()
+            .from(subscriptions)
+            .where(eq(subscriptions.id, subscriptionId));
+          const res = await refund(id, {
+            reason: '  Refunded in the merchant panel  ',
+          }).expect(200);
+          expect(res.body).toMatchObject({
+            id,
+            status: 'REFUNDED',
+            invoiceNumber: before.invoiceNumber,
+            refund: {
+              admin: { id: superAdmin.id },
+              reason: 'Refunded in the merchant panel',
+              createdAt: expect.any(String) as string,
+            },
+          });
+          const after = (
+            await actors.db
+              .select()
+              .from(paymentTransactions)
+              .where(eq(paymentTransactions.id, id))
+          )[0]!;
+          expect(after).toEqual({
+            ...before,
+            status: 'REFUNDED',
+            updatedAt: expect.any(Date) as Date,
+          });
+          const [subAfter] = await actors.db
+            .select()
+            .from(subscriptions)
+            .where(eq(subscriptions.id, subscriptionId));
+          expect(subAfter).toEqual(subBefore);
+          expect(await refundRows()).toEqual([
+            {
+              id: expect.any(String) as string,
+              paymentTransactionId: id,
+              adminId: superAdmin.id,
+              reason: 'Refunded in the merchant panel',
+              ipAddress: '203.0.113.9',
+              userAgent: 'm8t8-agent',
+              createdAt: expect.any(Date) as Date,
+            },
+          ]);
+          // Listed as REFUNDED; a second mark is refused and writes nothing.
+          expect(tranIds(await list('status=REFUNDED'))).toEqual([
+            'M8T2G',
+            'M8T2E',
+          ]);
+          await refund(id, { reason: 'again' }).expect(409);
+          expect(await refundRows()).toHaveLength(1);
+          const sheet = (
+            await http()
+              .get(`${TRANSACTIONS}/${id}`)
+              .set('Cookie', superAdmin.cookie)
+              .expect(200)
+          ).body as AdminTransactionDetail;
+          expect(sheet.refund?.reason).toBe('Refunded in the merchant panel');
+          // A ৳0 PROMOTION row is PAID too: it can be marked as well.
+          await refund(await idOf('M8T2F'), { reason: 'void' }).expect(200);
+          expect(
+            await actors.db
+              .select({ status: paymentTransactions.status })
+              .from(paymentTransactions)
+              .where(and(eq(paymentTransactions.id, await idOf('M8T2F')))),
+          ).toEqual([{ status: 'REFUNDED' }]);
+        });
+      });
     });
 
     it.each([
@@ -216,8 +596,11 @@ describe('Admin billing transactions (e2e)', () => {
       ['take 0', 'take=0'],
       ['take over 100', 'take=101'],
       ['non-numeric take', 'take=ten'],
-      ['unknown parameter', 'status=PAID'],
-      ['unknown parameter with valid paging', 'skip=0&take=10&gateway=bkash'],
+      ['unknown parameter', 'workspaceId=x'],
+      ['unknown parameter with valid paging', 'skip=0&take=10&sort=newest'],
+      ['unknown status', 'status=paid'],
+      ['impossible date', 'from=2026-02-30'],
+      ['date-time instead of a date', 'to=2026-11-21T00:00:00Z'],
     ])('400 for %s', async (_label, query) => {
       const res = await http()
         .get(`${TRANSACTIONS}?${query}`)

@@ -1,10 +1,17 @@
 import type { INestApplication } from '@nestjs/common';
 import { asc, count, eq, inArray } from 'drizzle-orm';
 import type { App } from 'supertest/types.js';
-import { dhakaBucketKey } from '../src/admin/dashboard-range.js';
+import {
+  addDays,
+  dhakaBucketKey,
+  dhakaMidnight,
+} from '../src/admin/dashboard-range.js';
 import type { DashboardStatsResponse } from '../src/admin/dto/dashboard-stats.dto.js';
 import {
   dailyCommentStats,
+  type PaymentGateway,
+  type PaymentStatus,
+  paymentTransactions,
   plans,
   subscriptions,
   tickets,
@@ -81,7 +88,8 @@ describe('Admin dashboard stats (e2e)', () => {
     expect(s.timezone).toBe('Asia/Dhaka');
     expect(s.kpis).toEqual({
       activeClients: expect.any(Number) as number,
-      mrrBdt: 0,
+      // MRR is covered by the M8-T8 block (plan helpers here create priced rows).
+      mrrBdt: expect.any(Number) as number,
       commentsScanned: 0,
       openTickets: expect.any(Number) as number,
     });
@@ -97,7 +105,7 @@ describe('Admin dashboard stats (e2e)', () => {
         bucket: expect.any(String) as string,
         newClients: expect.any(Number) as number,
         totalClients: expect.any(Number) as number,
-        mrrBdt: 0,
+        mrrBdt: expect.any(Number) as number,
       });
     }
     expect(s.series.planTiers).toEqual(planTiers);
@@ -460,6 +468,154 @@ describe('Admin dashboard stats (e2e)', () => {
         for (const x of all) await actors.expirePlan(x);
       }
       expect((await stats('range=7d')).series.planTiers).toEqual([]);
+    });
+  });
+
+  describe('MRR + gateways (M8-T8, reading 13)', () => {
+    const DAY = 86_400_000;
+    const tag = String(Date.now()).slice(-8);
+
+    it('MRR = live ACTIVE per-month values (yearly ÷ 12) now and at each bucket end; gateways = PAID volume per label in the range', async () => {
+      const today = dhakaBucketKey(new Date(), 'day');
+      const midnight = dhakaMidnight(today);
+      const [plan] = await db()
+        .select({ id: plans.id })
+        .from(plans)
+        .where(eq(plans.slug, 'growth'));
+      const clientAccount = await actors.accountIdOf(client);
+      const yearlyAccount = await actors.accountIdOf(edge.janLast!);
+      const sub = (
+        billingAccountId: string,
+        over: Partial<typeof subscriptions.$inferInsert>,
+      ): typeof subscriptions.$inferInsert => ({
+        billingAccountId,
+        planId: plan!.id,
+        interval: 'month',
+        status: 'ACTIVE',
+        startedAt: midnight,
+        currentTermStart: midnight,
+        currentTermEnd: new Date(midnight.getTime() + 30 * DAY),
+        pricePerMonthBdt: 999,
+        chargedBdt: 999,
+        ...over,
+      });
+      const subIds = (
+        await db()
+          .insert(subscriptions)
+          .values([
+            sub(clientAccount, {}),
+            sub(yearlyAccount, {
+              interval: 'year',
+              pricePerMonthBdt: 449,
+              chargedBdt: 5388,
+              currentTermEnd: new Date(midnight.getTime() + 365 * DAY),
+            }),
+            // Ran from 10 days ago until today 00:00 Dhaka: only the earlier buckets.
+            sub(clientAccount, {
+              status: 'CANCELED',
+              startedAt: new Date(midnight.getTime() - 10 * DAY),
+              currentTermStart: new Date(midnight.getTime() - 10 * DAY),
+              currentTermEnd: new Date(midnight.getTime() + 20 * DAY),
+              canceledAt: midnight,
+              pricePerMonthBdt: 1000,
+              chargedBdt: 1000,
+            }),
+            // A trial has no price: never MRR.
+            sub(await actors.accountIdOf(edge.febFirst!), {
+              status: 'TRIALING',
+              currentTermEnd: new Date(midnight.getTime() + 7 * DAY),
+              trialEndsAt: new Date(midnight.getTime() + 7 * DAY),
+              pricePerMonthBdt: null,
+              chargedBdt: null,
+            }),
+          ])
+          .returning({ id: subscriptions.id })
+      ).map((r) => r.id);
+      const paidSub = subIds[0]!;
+      let n = 0;
+      const pay = (
+        status: PaymentStatus,
+        gateway: PaymentGateway,
+        cardType: string | null,
+        amountBdt: number,
+        paidAt: Date,
+      ): typeof paymentTransactions.$inferInsert => {
+        const settled = status === 'PAID' || status === 'REFUNDED';
+        n += 1;
+        return {
+          billingAccountId: clientAccount,
+          workspaceId: client.workspaceId,
+          userId: client.id,
+          planId: plan!.id,
+          interval: 'month',
+          kind: 'NEW',
+          tranId: `M8T8D${tag}${n}`,
+          amountBdt,
+          status,
+          gateway,
+          cardType,
+          valId: settled && gateway === 'SSLCOMMERZ' ? `VAL${n}` : null,
+          paidAt: settled ? paidAt : null,
+          subscriptionId: settled ? paidSub : null,
+          termStart: settled ? midnight : null,
+          termEnd: settled ? new Date(midnight.getTime() + 30 * DAY) : null,
+          invoiceNumber: settled ? `SC-2026-${tag}${n}` : null,
+          price: {
+            listChargedBdt: amountBdt,
+            chargedBdt: amountBdt,
+            perMonthBdt: amountBdt,
+            discount: null,
+            coupon: null,
+            creditBdt: 0,
+          },
+        };
+      };
+      const recent = new Date(midnight.getTime() + 60_000);
+      const old = new Date(midnight.getTime() - 40 * DAY);
+      await db()
+        .insert(paymentTransactions)
+        .values([
+          pay('PAID', 'SSLCOMMERZ', 'BKASH-BKash', 499, recent),
+          pay('PAID', 'SSLCOMMERZ', 'bkash-BKash', 499, recent),
+          pay('PAID', 'SSLCOMMERZ', 'VISA-Brac Bank', 1499, recent),
+          pay('PAID', 'SSLCOMMERZ', 'NAGAD-Nagad', 999, old),
+          pay('REFUNDED', 'SSLCOMMERZ', 'BKASH-BKash', 5000, recent),
+          pay('PENDING', 'SSLCOMMERZ', null, 7000, recent),
+          pay('PAID', 'PROMOTION', null, 0, recent),
+        ]);
+      try {
+        const week = await stats('range=7d');
+        expect(week.kpis.mrrBdt).toBe(999 + 449);
+        expect(week.series.growth.map((p) => p.mrrBdt)).toEqual([
+          ...Array<number>(6).fill(1000),
+          999 + 449,
+        ]);
+        expect(week.series.gateways).toEqual([
+          { gateway: 'Visa', amountBdt: 1499, transactions: 1 },
+          { gateway: 'bKash', amountBdt: 998, transactions: 2 },
+        ]);
+        const quarter = await stats('range=90d');
+        expect(quarter.kpis.mrrBdt).toBe(999 + 449);
+        expect(quarter.series.gateways).toEqual([
+          { gateway: 'Visa', amountBdt: 1499, transactions: 1 },
+          { gateway: 'Nagad', amountBdt: 999, transactions: 1 },
+          { gateway: 'bKash', amountBdt: 998, transactions: 2 },
+        ]);
+        // A past range: no gateways, no MRR in its buckets; the KPI is still MRR now.
+        const past = await stats(
+          `from=${addDays(today, -60)}&to=${addDays(today, -50)}`,
+        );
+        expect(past.kpis.mrrBdt).toBe(999 + 449);
+        expect(past.series.gateways).toEqual([]);
+        expect(past.series.growth.every((p) => p.mrrBdt === 0)).toBe(true);
+      } finally {
+        await db()
+          .delete(paymentTransactions)
+          .where(eq(paymentTransactions.billingAccountId, clientAccount));
+        await db()
+          .delete(subscriptions)
+          .where(inArray(subscriptions.id, subIds));
+      }
     });
   });
 

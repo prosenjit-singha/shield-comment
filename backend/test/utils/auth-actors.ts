@@ -29,6 +29,7 @@ import {
   promotions,
   socialPages,
   paymentEvents,
+  paymentRefunds,
   paymentTransactions,
   subscriptionAuditLogs,
   subscriptions,
@@ -65,7 +66,7 @@ export interface Actor {
 }
 
 /**
- * Deletes the payment events + transactions (M8-T2) → manual-activation audit rows (PW-T9) → wallet ledger → balances → wallets →
+ * Deletes the payment events + refund audit rows (M8-T8) + transactions (M8-T2) → manual-activation audit rows (PW-T9) → wallet ledger → balances → wallets →
  * subscriptions → promotion redemptions (PR-T1) of these billing accounts (FKs restrict), not the
  * accounts themselves (workspaces may still point at them). Redemptions and subscriptions point
  * at each other: the redemption's `subscription_id` is cleared first.
@@ -81,6 +82,17 @@ export async function deleteBillingChildren(
     .from(paymentTransactions)
     .where(inArray(paymentTransactions.billingAccountId, ids));
   await db.delete(paymentEvents).where(inArray(paymentEvents.tranId, tranIds));
+  await db
+    .delete(paymentRefunds)
+    .where(
+      inArray(
+        paymentRefunds.paymentTransactionId,
+        db
+          .select({ id: paymentTransactions.id })
+          .from(paymentTransactions)
+          .where(inArray(paymentTransactions.billingAccountId, ids)),
+      ),
+    );
   await db
     .delete(paymentTransactions)
     .where(inArray(paymentTransactions.billingAccountId, ids));
@@ -456,6 +468,10 @@ export function createAuthActors(app: INestApplication<App>) {
       await db
         .delete(planAuditLogs)
         .where(inArray(planAuditLogs.adminId, userIds));
+      // D9 refund audit (M8-T8): admin FK restrict.
+      await db
+        .delete(paymentRefunds)
+        .where(inArray(paymentRefunds.adminId, userIds));
       // AI settings audit (M5-T3): actor FK restrict. Settings/key rows use `set null`.
       await db
         .delete(aiSettingsAuditLogs)

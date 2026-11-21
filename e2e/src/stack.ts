@@ -294,6 +294,10 @@ export async function cleanupRun(identity: RunIdentity): Promise<CleanupSummary>
       // subscriptions, workspaces and accounts, all restrict).
       const runTranIds = 'select tran_id from payment_transactions where billing_account_id = any($1::uuid[])';
       await db.query(`delete from payment_events where tran_id in (${runTranIds})`, [accountIds]);
+      await db.query(
+        'delete from payment_refunds where payment_transaction_id in (select id from payment_transactions where billing_account_id = any($1::uuid[]))',
+        [accountIds],
+      );
       await db.query('delete from payment_transactions where billing_account_id = any($1::uuid[])', [accountIds]);
       // Manual activation audit (PW-T9) references admins, accounts, workspaces, plans and
       // subscriptions (all restrict) → before the subscriptions.

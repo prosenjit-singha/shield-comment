@@ -1,15 +1,30 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { and, asc, count, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  lt,
+  lte,
+  ne,
+  sql,
+} from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import {
   dailyCommentStats,
+  paymentTransactions,
   plans,
   subscriptions,
   tickets,
   UNRESOLVED_TICKET_STATUSES,
   workspaces,
 } from '../db/schema/index.js';
+import { gatewayLabelSql } from '../payments/gateway-label.js';
 import { isLiveAt } from '../wallet/live-subscription.queries.js';
 import {
   type DashboardRangeQuery,
@@ -72,7 +87,10 @@ export class AdminDashboardService {
     const s = dailyCommentStats;
     const statsBucket = sql<string>`to_char(${s.day}, ${format})`;
 
-    const [perBucket, [before], [active], [open], tiers, comments] =
+    const sub = subscriptions;
+    const t = paymentTransactions;
+    const label = gatewayLabelSql(t.gateway, t.cardType);
+    const [perBucket, [before], [active], [open], tiers, comments, paid, gw] =
       await Promise.all([
         this.db
           .select({ bucket, newClients: count() })
@@ -115,6 +133,49 @@ export class AdminDashboardService {
           .from(s)
           .where(sql`${s.day} between ${range.from} and ${range.to}`)
           .groupBy(statsBucket),
+        // MRR (M8-T8, reading 13): paid rows that may be in force between the range start and now
+        // (a superset; `mrrAt` applies the exact rule). Trials have no price.
+        this.db
+          .select({
+            status: sub.status,
+            interval: sub.interval,
+            chargedBdt: sub.chargedBdt,
+            currentTermStart: sub.currentTermStart,
+            currentTermEnd: sub.currentTermEnd,
+            canceledAt: sub.canceledAt,
+            scheduledInterval: sub.scheduledInterval,
+            scheduledChargedBdt: sql<
+              number | null
+            >`(${sub.scheduledPrice} ->> 'chargedBdt')::int`,
+          })
+          .from(sub)
+          .where(
+            and(
+              ne(sub.status, 'TRIALING'),
+              isNotNull(sub.chargedBdt),
+              lte(sub.currentTermStart, now),
+              sql`${sub.currentTermEnd} + interval '28 days' > ${range.start}`,
+            ),
+          ),
+        // Gateways (M8-T8, reading 13): PAID volume per label, paid in the range; ৳0 promotion
+        // rows are not gateway volume.
+        this.db
+          .select({
+            gateway: label,
+            amountBdt: sql<number>`sum(${t.amountBdt})`.mapWith(Number),
+            transactions: count(),
+          })
+          .from(t)
+          .where(
+            and(
+              eq(t.status, 'PAID'),
+              eq(t.gateway, 'SSLCOMMERZ'),
+              gte(t.paidAt, range.start),
+              lt(t.paidAt, range.end),
+            ),
+          )
+          .groupBy(label)
+          .orderBy(desc(sql`sum(${t.amountBdt})`), asc(label)),
       ]);
 
     return buildDashboardStats(range, {
@@ -128,6 +189,11 @@ export class AdminDashboardService {
       comments: Object.fromEntries(
         comments.map(({ bucket: key, ...counts }) => [key, counts]),
       ),
+      mrr: {
+        subscriptions: paid.map((r) => ({ ...r, chargedBdt: r.chargedBdt! })),
+        now,
+      },
+      gateways: gw,
     });
   }
 }

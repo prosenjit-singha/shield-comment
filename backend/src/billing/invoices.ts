@@ -108,22 +108,27 @@ const promotionLine = (
   months: p.months,
 });
 
+/** The bill's promotion lines (PR-D12): discount, then coupon. Shared with A4's transaction sheet. */
+export const promotionLines = ({
+  discount,
+  coupon,
+}: Pick<PaymentPrice, 'discount' | 'coupon'>): InvoicePromotionLine[] => [
+  ...(discount ? [promotionLine('DISCOUNT', discount)] : []),
+  ...(coupon ? [promotionLine('COUPON', coupon)] : []),
+];
+
 /** Pure: a settled row (+ seller env) → the invoice; promotion lines = discount, then coupon. */
 export function toInvoiceView(
   r: InvoiceRow,
   seller: InvoiceView['seller'],
 ): InvoiceView {
-  const { discount, coupon } = r.price;
   return {
     ...toInvoiceListItem(r),
     tranId: r.tranId,
     kind: r.kind,
     term: { start: r.termStart.toISOString(), end: r.termEnd.toISOString() },
     listPriceBdt: r.price.listChargedBdt,
-    promotions: [
-      ...(discount ? [promotionLine('DISCOUNT', discount)] : []),
-      ...(coupon ? [promotionLine('COUPON', coupon)] : []),
-    ],
+    promotions: promotionLines(r.price),
     creditBdt: r.price.creditBdt,
     chargedBdt: r.amountBdt,
     seller,

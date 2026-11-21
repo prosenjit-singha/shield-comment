@@ -250,6 +250,41 @@ export const paymentEvents = pgTable(
   ],
 );
 
+/** D9 refund reason length (trimmed). */
+export const PAYMENT_REFUND_REASON_MAX = 500;
+
+/**
+ * D9 (M8-T8): one row per transaction a super admin marked REFUNDED on A4 (the money goes back in
+ * the SSLCommerz merchant panel; the plan is not touched). Written in the same transaction as the
+ * PAID → REFUNDED update, after the row's `FOR UPDATE` lock; never updated. FKs `restrict` like
+ * the other audit tables (e2e `cleanup()` / `deleteBillingChildren` delete these first).
+ */
+export const paymentRefunds = pgTable(
+  'payment_refunds',
+  {
+    id: id(),
+    paymentTransactionId: uuid()
+      .notNull()
+      .unique()
+      .references(() => paymentTransactions.id, { onDelete: 'restrict' }),
+    adminId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    reason: text().notNull(),
+    /** Admin's IP (first `X-Forwarded-For` entry, like `plan_audit_logs`). */
+    ipAddress: text(),
+    userAgent: text(),
+    createdAt: timestamptz().notNull().defaultNow(),
+  },
+  (t) => [
+    index().on(t.adminId),
+    check(
+      'payment_refunds_reason_check',
+      sql.raw(lengthSql('reason', 1, PAYMENT_REFUND_REASON_MAX)),
+    ),
+  ],
+);
+
 export const paymentTransactionsRelations = relations(
   paymentTransactions,
   ({ one }) => ({

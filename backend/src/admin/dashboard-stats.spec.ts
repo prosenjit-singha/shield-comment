@@ -4,7 +4,10 @@ import { validate } from 'class-validator';
 import { resolveDashboardRange } from './dashboard-range.js';
 import {
   buildDashboardStats,
+  bucketEnd,
   commentsPoint,
+  type MrrSubscription,
+  mrrAt,
   planTierSlices,
 } from './dashboard-stats.js';
 import { DashboardStatsQueryDto } from './dto/dashboard-stats.dto.js';
@@ -130,6 +133,103 @@ describe('buildDashboardStats', () => {
       planTiers: [],
     });
     expect(stats.series.growth.map((p) => p.totalClients)).toEqual([0, 1]);
+  });
+});
+
+describe('MRR (M8-T8, reading 13)', () => {
+  const d = (iso: string) => new Date(iso);
+  const sub = (over: Partial<MrrSubscription>): MrrSubscription => ({
+    status: 'ACTIVE',
+    interval: 'month',
+    chargedBdt: 499,
+    currentTermStart: d('2026-11-01T00:00:00Z'),
+    currentTermEnd: d('2026-12-01T00:00:00Z'),
+    canceledAt: null,
+    scheduledInterval: null,
+    scheduledChargedBdt: null,
+    ...over,
+  });
+
+  it('monthly = charged, yearly = charged ÷ 12, summed then rounded', () => {
+    const subs = [
+      sub({}),
+      sub({ interval: 'year', chargedBdt: 5388 }), // 449
+      sub({ interval: 'year', chargedBdt: 1000 }), // 83.33…
+      sub({ interval: 'year', chargedBdt: 1000 }), // 83.33… → 666.67 total
+    ];
+    expect(mrrAt(subs, NOW)).toBe(499 + 449 + 167);
+  });
+
+  it('counts a term only inside [start, canceled_at ?? end)', () => {
+    const later = d('2026-12-05T00:00:00Z');
+    const subs = [
+      sub({ status: 'EXPIRED' }),
+      sub({ status: 'CANCELED', canceledAt: d('2026-11-10T00:00:00Z') }),
+    ];
+    expect(mrrAt(subs, d('2026-10-31T23:59:59Z'), later)).toBe(0);
+    expect(mrrAt(subs, d('2026-11-01T00:00:00Z'), later)).toBe(998);
+    expect(mrrAt(subs, d('2026-11-10T00:00:00Z'), later)).toBe(499);
+    expect(mrrAt(subs, d('2026-12-01T00:00:00Z'), later)).toBe(0);
+  });
+
+  it('now: only live ACTIVE rows (TRIALING never; EXPIRED / CANCELED ended by now)', () => {
+    const subs = [sub({}), sub({ status: 'EXPIRED' })];
+    expect(mrrAt(subs, NOW, NOW)).toBe(499);
+    // Before now the early-expired row still counts (when it expired is not stored).
+    expect(mrrAt(subs, d('2026-11-17T00:00:00Z'), NOW)).toBe(998);
+  });
+
+  it('M8-D7b: a still-ACTIVE row reads as its scheduled term for 28 days past the end', () => {
+    const scheduled = sub({
+      interval: 'year',
+      chargedBdt: 5388,
+      scheduledInterval: 'month',
+      scheduledChargedBdt: 299,
+    });
+    expect(mrrAt([scheduled], d('2026-11-30T00:00:00Z'))).toBe(449);
+    expect(mrrAt([scheduled], d('2026-12-01T00:00:00Z'))).toBe(299);
+    expect(mrrAt([scheduled], d('2026-12-29T00:00:00Z'))).toBe(0);
+    // After the switch the old row is EXPIRED (it keeps scheduled_*): not counted twice.
+    expect(
+      mrrAt([{ ...scheduled, status: 'EXPIRED' }], d('2026-12-01T00:00:00Z')),
+    ).toBe(0);
+  });
+
+  it('bucketEnd = next Dhaka midnight (day) or next month start (month)', () => {
+    expect(bucketEnd('2026-11-18', 'day').toISOString()).toBe(
+      '2026-11-18T18:00:00.000Z',
+    );
+    expect(bucketEnd('2026-12', 'month').toISOString()).toBe(
+      '2026-12-31T18:00:00.000Z',
+    );
+  });
+
+  it('KPI = MRR now; each growth point = MRR at its bucket end (now for the last)', () => {
+    const range = resolveDashboardRange({ range: '7d' }, NOW); // 2026-11-12 … 2026-11-18
+    const stats = buildDashboardStats(range, {
+      activeClients: 0,
+      clientsBefore: 0,
+      openTickets: 0,
+      newClients: {},
+      planTiers: [],
+      mrr: {
+        now: NOW,
+        subscriptions: [
+          // From 2026-11-14 00:00 Dhaka.
+          sub({ currentTermStart: d('2026-11-13T18:00:00Z') }),
+          // Starts after NOW: not in the KPI nor the last bucket.
+          sub({ currentTermStart: d('2026-11-18T05:00:00Z') }),
+        ],
+      },
+      gateways: [{ gateway: 'bKash', amountBdt: 998, transactions: 2 }],
+    });
+    expect(stats.kpis.mrrBdt).toBe(499);
+    expect(stats.series.growth.map((p) => p.mrrBdt)).toEqual([
+      0, 0, 499, 499, 499, 499, 499,
+    ]);
+    expect(stats.series.gateways).toEqual([
+      { gateway: 'bKash', amountBdt: 998, transactions: 2 },
+    ]);
   });
 });
 

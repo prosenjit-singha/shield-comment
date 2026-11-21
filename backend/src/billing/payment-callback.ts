@@ -35,6 +35,18 @@ export const PAYMENT_OUTCOMES = {
 export type PaymentOutcome =
   (typeof PAYMENT_OUTCOMES)[keyof typeof PAYMENT_OUTCOMES];
 
+/**
+ * Outcomes that are **not** failures (M8-T8, A4 "Failed IPNs"): paid, acked, or a customer's own
+ * fail / cancel. Everything else is listed as failed (incl. `PAID_DUPLICATE_CLAIM`,
+ * `ACTIVATION_FAILED`, `NOT_PENDING` and unknown tran ids).
+ */
+export const NOT_FAILED_OUTCOMES: readonly PaymentOutcome[] = [
+  PAYMENT_OUTCOMES.paid,
+  PAYMENT_OUTCOMES.alreadyPaid,
+  PAYMENT_OUTCOMES.failed,
+  PAYMENT_OUTCOMES.cancelled,
+];
+
 /** Outcomes that mean "the payment is settled" (success return → `payment=success`). */
 const SETTLED_OUTCOMES: readonly PaymentOutcome[] = [
   PAYMENT_OUTCOMES.paid,
