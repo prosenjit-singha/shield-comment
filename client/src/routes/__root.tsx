@@ -41,7 +41,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { name: 'theme-color', content: '#0668E1' },
+      { name: 'theme-color', content: '#005CDA' },
       { title: SITE_NAME },
     ],
     links: [

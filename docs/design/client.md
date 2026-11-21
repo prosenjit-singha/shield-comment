@@ -10,8 +10,8 @@
 ```tsx
 const { content } = useLanguage();
 <h1>{content(
-  "Stop Losing Facebook & TikTok Ad Sales to Scam Comments",
-  "ফেসবুক ও টিকটক অ্যাডের স্ক্যাম কমেন্টে সেল হারানো বন্ধ করুন"
+  "Stop Losing Facebook & Instagram Ad Sales to Scam Comments",
+  "ফেসবুক ও ইনস্টাগ্রাম অ্যাডের স্ক্যাম কমেন্টে সেল হারানো বন্ধ করুন"
 )}</h1>
 ```
 
@@ -22,8 +22,8 @@ const { content } = useLanguage();
 
 ## 3. 9-Section Landing Page Blueprint
 1. **Sticky Minimal Navbar:** Logo, 3 links, `EN | বাং` pill toggle (`rounded-full`), Login ghost button, `"Start Free"` `--primary` `rounded-full` CTA.
-2. **Hero Section:** SEO H1 + subheadline + `RippleButton` CTA + Animated Live Meta/TikTok Comment Simulator card showing Banglish scam detection (`--secondary` `#FE2C55`) and buyer reply (`--primary` `#0668E1`).
-3. **Trust & Platform Strip:** Facebook, Instagram, TikTok, bKash, Nagad, Visa/Mastercard ([SSLCommerz](https://sslcommerz.com/)).
+2. **Hero Section:** SEO H1 + subheadline + `RippleButton` CTA + Animated Live Facebook & Instagram Comment Simulator card showing Banglish scam detection (`--secondary` `#C70037`) and buyer reply (`--primary` `#005CDA`).
+3. **Trust & Platform Strip:** Facebook, Instagram, bKash, Nagad, Visa/Mastercard ([SSLCommerz](https://sslcommerz.com/)).
 4. **Problem vs. Solution (3-Card Bento Grid):** Competitor Poaching, bKash/Phishing Scams, Buried Buyer Inquiries.
 5. **Interactive BDT ROAS Calculator:** Animate UI `Slider` (৳10,000–৳5,00,000 ad spend) + `CountingNumber` savings readout.
 6. **How It Works (3 Steps):** Connect Page -> Enable Bangla/Banglish AI -> Watch ROAS climb.

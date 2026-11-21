@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import { render } from '@testing-library/react'
+import { MotionGlobalConfig } from 'motion/react'
 import { vi } from 'vitest'
 import type { Analytics, AnalyticsBucket, AnalyticsCounts, Granularity } from '@/lib/analytics'
 import type { BillingSummary } from '@/lib/billing-summary'
@@ -807,6 +808,10 @@ export function stubAppGlobals(): void {
     } as unknown as Animation
   }
   Element.prototype.getAnimations ??= () => []
+  // M9-T9 flake root cause: a closing Radix menu keeps `aria-hidden` on the rest of the page until Animate UI's
+  // Motion exit animation ends, and that runs on wall-clock frames (0.3–0.7 s alone, > 1 s under full-suite
+  // load), so `findByRole` on the shell timed out. Finish every Motion animation instantly in tests.
+  MotionGlobalConfig.skipAnimations = true
   useUiStore.setState({ theme: 'light' })
 }
 
