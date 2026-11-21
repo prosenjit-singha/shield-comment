@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LANDING_FAQ, landingHead, robotsTxt, sitemapXml } from '@/lib/seo'
+import { LANDING_FAQ, landingHead, legalHead, robotsTxt, sitemapXml } from '@/lib/seo'
 
 const ORIGIN = 'https://app.example.com'
 
@@ -82,12 +82,48 @@ describe('robots.txt + sitemap.xml', () => {
     expect(lines).toContain(`Sitemap: ${ORIGIN}/sitemap.xml`)
   })
 
-  it('sitemap lists / and /bn with hreflang alternates', () => {
+  it('robots does not disallow the legal pages (M9-T7)', () => {
+    const disallowed = robotsTxt(ORIGIN)
+      .split('\n')
+      .filter((line) => line.startsWith('Disallow: '))
+      .map((line) => line.slice('Disallow: '.length))
+    for (const path of ['/privacy', '/terms', '/refund-policy', '/bn/privacy', '/bn/terms', '/bn/refund-policy']) {
+      expect(disallowed.some((prefix) => path.startsWith(prefix))).toBe(false)
+    }
+  })
+
+  it('sitemap lists the landing + legal pages (en + bn) with hreflang alternates', () => {
     const xml = sitemapXml(ORIGIN)
     expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true)
     expect(xml).toContain('xmlns:xhtml="http://www.w3.org/1999/xhtml"')
-    expect([...xml.matchAll(/<loc>(.+?)<\/loc>/g)].map((m) => m[1])).toEqual([`${ORIGIN}/`, `${ORIGIN}/bn`])
+    expect([...xml.matchAll(/<loc>(.+?)<\/loc>/g)].map((m) => m[1])).toEqual(
+      ['/', '/bn', '/privacy', '/bn/privacy', '/terms', '/bn/terms', '/refund-policy', '/bn/refund-policy'].map((path) => `${ORIGIN}${path}`),
+    )
     expect(xml.match(/<xhtml:link rel="alternate" hreflang="bn" href="https:\/\/app\.example\.com\/bn"\/>/g)).toHaveLength(2)
     expect(xml.match(/hreflang="x-default" href="https:\/\/app\.example\.com\/"/g)).toHaveLength(2)
+    expect(xml.match(/hreflang="bn" href="https:\/\/app\.example\.com\/bn\/refund-policy"\/>/g)).toHaveLength(2)
+    expect(xml.match(/hreflang="x-default" href="https:\/\/app\.example\.com\/privacy"\/>/g)).toHaveLength(2)
+  })
+})
+
+describe('legalHead (M9-T7)', () => {
+  it.each([
+    ['privacy', 'en', 'Privacy Policy | ShieldComment BD', '/privacy', '/bn/privacy'],
+    ['terms', 'bn', 'সেবার শর্তাবলি | ShieldComment BD', '/terms', '/bn/terms'],
+    ['refund', 'en', 'Refund Policy | ShieldComment BD', '/refund-policy', '/bn/refund-policy'],
+    ['refund', 'bn', 'রিফান্ড পলিসি | ShieldComment BD', '/refund-policy', '/bn/refund-policy'],
+  ] as const)('%s (%s): title, description, canonical + hreflang, no noindex', (page, language, title, en, bn) => {
+    const { meta, links } = legalHead(page, language, ORIGIN)
+    expect(meta[0]).toEqual({ title })
+    const description = String(content(meta as unknown as Meta[], 'description'))
+    expect(description.length).toBeGreaterThan(50)
+    expect(description.length).toBeLessThanOrEqual(160)
+    expect(JSON.stringify(meta)).not.toMatch(/noindex/)
+    expect(links).toEqual([
+      { rel: 'canonical', href: `${ORIGIN}${language === 'bn' ? bn : en}` },
+      { rel: 'alternate', hrefLang: 'en', href: `${ORIGIN}${en}` },
+      { rel: 'alternate', hrefLang: 'bn', href: `${ORIGIN}${bn}` },
+      { rel: 'alternate', hrefLang: 'x-default', href: `${ORIGIN}${en}` },
+    ])
   })
 })

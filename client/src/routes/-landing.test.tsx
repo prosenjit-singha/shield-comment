@@ -101,6 +101,11 @@ const card = (name: string) => {
   return found
 }
 
+const LEGAL_LINKS = {
+  en: { privacy: ['Privacy Policy', '/privacy'], terms: ['Terms of Service', '/terms'], refund: ['Refund Policy', '/refund-policy'] },
+  bn: { privacy: ['প্রাইভেসি পলিসি', '/bn/privacy'], terms: ['সেবার শর্তাবলি', '/bn/terms'], refund: ['রিফান্ড পলিসি', '/bn/refund-policy'] },
+} as const
+
 beforeEach(() => {
   fetchMock.mockReset()
   vi.stubGlobal('fetch', fetchMock)
@@ -140,6 +145,15 @@ describe.each(['en', 'bn'] as const)('landing (%s)', (language) => {
     expect(screen.getByRole('link', { name: language === 'en' ? 'বাং' : 'EN' }).getAttribute('aria-current')).toBeNull()
     expect(screen.getAllByRole('link', { name: t.login })[0]?.getAttribute('href')).toBe('/login')
     for (const link of screen.getAllByRole('link', { name: new RegExp(`^${t.start}`) })) expect(link.getAttribute('href')).toBe('/register')
+  })
+
+  it('footer links the legal pages in the page language (M9-T7)', async () => {
+    mockApi({ [PLANS]: () => json(200, plansResponse()) })
+    renderLanding(language)
+    await screen.findByRole('heading', { level: 1 })
+    const nav = screen.getByRole('navigation', { name: language === 'en' ? 'Legal' : 'আইনি তথ্য' })
+    expect(nav.closest('footer')).toBeTruthy()
+    for (const [name, path] of Object.values(LEGAL_LINKS[language])) expect(within(nav).getByRole('link', { name }).getAttribute('href')).toBe(path)
   })
 
   it('pricing: 11 rows per card, highlighted card, trial + discount text, both prices without JS', async () => {

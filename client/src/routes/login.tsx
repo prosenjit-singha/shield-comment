@@ -3,6 +3,7 @@ import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-ro
 import { CircleCheck, LoaderCircle } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { AuthAlert, AuthScreen, FormField } from '@/components/auth/auth-screen'
+import { LegalLinks } from '@/components/legal/legal-links'
 import { CheckInbox } from '@/components/auth/check-inbox'
 import { Button } from '@/components/ui/button'
 import { useLanguage } from '@/hooks/use-language'
@@ -114,12 +115,15 @@ function LoginPage() {
         'আপনার অ্যাডে স্ক্যাম কমেন্ট ঠেকাতে লগ ইন করুন।',
       )}
       footer={
-        <p>
-          {content('New to ShieldComment?', 'ShieldComment-এ নতুন?')}{' '}
-          <Link to="/register" search={{ plan, interval }} className="font-medium text-primary underline-offset-4 hover:underline">
-            {content('Create an account', 'অ্যাকাউন্ট খুলুন')}
-          </Link>
-        </p>
+        <div className="flex flex-col items-center gap-3">
+          <p>
+            {content('New to ShieldComment?', 'ShieldComment-এ নতুন?')}{' '}
+            <Link to="/register" search={{ plan, interval }} className="font-medium text-primary underline-offset-4 hover:underline">
+              {content('Create an account', 'অ্যাকাউন্ট খুলুন')}
+            </Link>
+          </p>
+          <LegalLinks className="justify-center gap-x-4 text-xs" />
+        </div>
       }
     >
       <form className="flex flex-col gap-4" onSubmit={onSubmit} noValidate aria-busy={signIn.isPending}>

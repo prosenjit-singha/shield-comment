@@ -16,10 +16,13 @@ import { Route as DataDeletionRouteImport } from './routes/data-deletion'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as ImpersonateRouteImport } from './routes/impersonate'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as RefundPolicyRouteImport } from './routes/refund-policy'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AppAnalyticsRouteImport } from './routes/_app/analytics'
 import { Route as AppBillingRouteImport } from './routes/_app/billing'
@@ -33,6 +36,9 @@ import { Route as AppRulesRouteImport } from './routes/_app/rules'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSupportRouteImport } from './routes/_app/support'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
+import { Route as BnPrivacyRouteImport } from './routes/bn_.privacy'
+import { Route as BnRefundPolicyRouteImport } from './routes/bn_.refund-policy'
+import { Route as BnTermsRouteImport } from './routes/bn_.terms'
 import { Route as InviteInvitationIdRouteImport } from './routes/invite.$invitationId'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
 import { Route as AppSettingsAlertsRouteImport } from './routes/_app/settings/alerts'
@@ -72,6 +78,16 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RefundPolicyRoute = RefundPolicyRouteImport.update({
+  id: '/refund-policy',
+  path: '/refund-policy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
@@ -90,6 +106,11 @@ const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
@@ -157,6 +178,21 @@ const ApiSplatRoute = ApiSplatRouteImport.update({
   path: '/api/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BnPrivacyRoute = BnPrivacyRouteImport.update({
+  id: '/bn_/privacy',
+  path: '/bn/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BnRefundPolicyRoute = BnRefundPolicyRouteImport.update({
+  id: '/bn_/refund-policy',
+  path: '/bn/refund-policy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BnTermsRoute = BnTermsRouteImport.update({
+  id: '/bn_/terms',
+  path: '/bn/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InviteInvitationIdRoute = InviteInvitationIdRouteImport.update({
   id: '/invite/$invitationId',
   path: '/invite/$invitationId',
@@ -185,10 +221,13 @@ export interface FileRoutesByFullPath {
   '/forgot-password': typeof ForgotPasswordRoute
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
+  '/refund-policy': typeof RefundPolicyRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/verify-email': typeof VerifyEmailRoute
   '/analytics': typeof AppAnalyticsRoute
   '/billing': typeof AppBillingRoute
@@ -202,6 +241,9 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRouteWithChildren
   '/support': typeof AppSupportRoute
   '/api/$': typeof ApiSplatRoute
+  '/bn/privacy': typeof BnPrivacyRoute
+  '/bn/refund-policy': typeof BnRefundPolicyRoute
+  '/bn/terms': typeof BnTermsRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/settings/alerts': typeof AppSettingsAlertsRoute
   '/settings/team': typeof AppSettingsTeamRoute
@@ -214,10 +256,13 @@ export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
+  '/refund-policy': typeof RefundPolicyRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/verify-email': typeof VerifyEmailRoute
   '/analytics': typeof AppAnalyticsRoute
   '/billing': typeof AppBillingRoute
@@ -230,6 +275,9 @@ export interface FileRoutesByTo {
   '/rules': typeof AppRulesRoute
   '/support': typeof AppSupportRoute
   '/api/$': typeof ApiSplatRoute
+  '/bn/privacy': typeof BnPrivacyRoute
+  '/bn/refund-policy': typeof BnRefundPolicyRoute
+  '/bn/terms': typeof BnTermsRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/settings/alerts': typeof AppSettingsAlertsRoute
   '/settings/team': typeof AppSettingsTeamRoute
@@ -244,10 +292,13 @@ export interface FileRoutesById {
   '/forgot-password': typeof ForgotPasswordRoute
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
+  '/refund-policy': typeof RefundPolicyRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/verify-email': typeof VerifyEmailRoute
   '/_app/analytics': typeof AppAnalyticsRoute
   '/_app/billing': typeof AppBillingRoute
@@ -261,6 +312,9 @@ export interface FileRoutesById {
   '/_app/settings': typeof AppSettingsRouteWithChildren
   '/_app/support': typeof AppSupportRoute
   '/api/$': typeof ApiSplatRoute
+  '/bn_/privacy': typeof BnPrivacyRoute
+  '/bn_/refund-policy': typeof BnRefundPolicyRoute
+  '/bn_/terms': typeof BnTermsRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/_app/settings/alerts': typeof AppSettingsAlertsRoute
   '/_app/settings/team': typeof AppSettingsTeamRoute
@@ -275,10 +329,13 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/impersonate'
     | '/login'
+    | '/privacy'
+    | '/refund-policy'
     | '/register'
     | '/reset-password'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/terms'
     | '/verify-email'
     | '/analytics'
     | '/billing'
@@ -292,6 +349,9 @@ export interface FileRouteTypes {
     | '/settings'
     | '/support'
     | '/api/$'
+    | '/bn/privacy'
+    | '/bn/refund-policy'
+    | '/bn/terms'
     | '/invite/$invitationId'
     | '/settings/alerts'
     | '/settings/team'
@@ -304,10 +364,13 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/impersonate'
     | '/login'
+    | '/privacy'
+    | '/refund-policy'
     | '/register'
     | '/reset-password'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/terms'
     | '/verify-email'
     | '/analytics'
     | '/billing'
@@ -320,6 +383,9 @@ export interface FileRouteTypes {
     | '/rules'
     | '/support'
     | '/api/$'
+    | '/bn/privacy'
+    | '/bn/refund-policy'
+    | '/bn/terms'
     | '/invite/$invitationId'
     | '/settings/alerts'
     | '/settings/team'
@@ -333,10 +399,13 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/impersonate'
     | '/login'
+    | '/privacy'
+    | '/refund-policy'
     | '/register'
     | '/reset-password'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/terms'
     | '/verify-email'
     | '/_app/analytics'
     | '/_app/billing'
@@ -350,6 +419,9 @@ export interface FileRouteTypes {
     | '/_app/settings'
     | '/_app/support'
     | '/api/$'
+    | '/bn_/privacy'
+    | '/bn_/refund-policy'
+    | '/bn_/terms'
     | '/invite/$invitationId'
     | '/_app/settings/alerts'
     | '/_app/settings/team'
@@ -364,12 +436,18 @@ export interface RootRouteChildren {
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   ImpersonateRoute: typeof ImpersonateRoute
   LoginRoute: typeof LoginRoute
+  PrivacyRoute: typeof PrivacyRoute
+  RefundPolicyRoute: typeof RefundPolicyRoute
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  TermsRoute: typeof TermsRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
   ApiSplatRoute: typeof ApiSplatRoute
+  BnPrivacyRoute: typeof BnPrivacyRoute
+  BnRefundPolicyRoute: typeof BnRefundPolicyRoute
+  BnTermsRoute: typeof BnTermsRoute
   InviteInvitationIdRoute: typeof InviteInvitationIdRoute
 }
 
@@ -424,6 +502,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/refund-policy': {
+      id: '/refund-policy'
+      path: '/refund-policy'
+      fullPath: '/refund-policy'
+      preLoaderRoute: typeof RefundPolicyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/register': {
       id: '/register'
       path: '/register'
@@ -450,6 +542,13 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/verify-email': {
@@ -543,6 +642,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/bn_/privacy': {
+      id: '/bn_/privacy'
+      path: '/bn/privacy'
+      fullPath: '/bn/privacy'
+      preLoaderRoute: typeof BnPrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bn_/refund-policy': {
+      id: '/bn_/refund-policy'
+      path: '/bn/refund-policy'
+      fullPath: '/bn/refund-policy'
+      preLoaderRoute: typeof BnRefundPolicyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bn_/terms': {
+      id: '/bn_/terms'
+      path: '/bn/terms'
+      fullPath: '/bn/terms'
+      preLoaderRoute: typeof BnTermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/invite/$invitationId': {
       id: '/invite/$invitationId'
       path: '/invite/$invitationId'
@@ -628,12 +748,18 @@ const rootRouteChildren: RootRouteChildren = {
   ForgotPasswordRoute: ForgotPasswordRoute,
   ImpersonateRoute: ImpersonateRoute,
   LoginRoute: LoginRoute,
+  PrivacyRoute: PrivacyRoute,
+  RefundPolicyRoute: RefundPolicyRoute,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  TermsRoute: TermsRoute,
   VerifyEmailRoute: VerifyEmailRoute,
   ApiSplatRoute: ApiSplatRoute,
+  BnPrivacyRoute: BnPrivacyRoute,
+  BnRefundPolicyRoute: BnRefundPolicyRoute,
+  BnTermsRoute: BnTermsRoute,
   InviteInvitationIdRoute: InviteInvitationIdRoute,
 }
 export const routeTree = rootRouteImport

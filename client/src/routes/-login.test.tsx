@@ -80,6 +80,11 @@ async function fillAndSubmit(language: 'en' | 'bn', email = ' rahim@shop.bd ', p
   fireEvent.click(screen.getByRole('button', { name: t.submit }))
 }
 
+const LEGAL_LINKS = {
+  en: { privacy: ['Privacy Policy', '/privacy'], terms: ['Terms of Service', '/terms'], refund: ['Refund Policy', '/refund-policy'] },
+  bn: { privacy: ['প্রাইভেসি পলিসি', '/bn/privacy'], terms: ['সেবার শর্তাবলি', '/bn/terms'], refund: ['রিফান্ড পলিসি', '/bn/refund-policy'] },
+} as const
+
 beforeEach(() => {
   fetchMock.mockReset()
   vi.stubGlobal('fetch', fetchMock)
@@ -249,6 +254,13 @@ describe.each(['en', 'bn'] as const)('/login (%s)', (language) => {
     mockApi({})
     renderAuthRoute('/login', language)
     expect((await screen.findByRole('link', { name: t.register })).getAttribute('href')).toBe('/register')
+  })
+
+  it('footer links the legal pages (M9-T7)', async () => {
+    mockApi({})
+    renderAuthRoute('/login', language)
+    await screen.findByRole('link', { name: t.register })
+    for (const [name, path] of Object.values(LEGAL_LINKS[language])) expect(screen.getByRole('link', { name }).getAttribute('href')).toBe(path)
   })
 
   it('links to /forgot-password (M9-T6)', async () => {

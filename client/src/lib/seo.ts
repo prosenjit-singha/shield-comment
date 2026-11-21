@@ -1,4 +1,5 @@
 import type { Language } from '@/lib/language'
+import { LEGAL_DOCS } from '@/lib/legal'
 
 export const SITE_NAME = 'ShieldComment BD'
 
@@ -20,7 +21,28 @@ const LANDING_META: Record<Language, { title: string; description: string; local
   },
 }
 
-const LANDING_PATH: Record<Language, string> = { en: '/', bn: '/bn' }
+/** Indexable public pages, each with a fixed English and Bangla URL (hreflang pairs, `sitemap.xml`). */
+export const PUBLIC_PAGES = {
+  landing: { en: '/', bn: '/bn' },
+  privacy: { en: '/privacy', bn: '/bn/privacy' },
+  terms: { en: '/terms', bn: '/bn/terms' },
+  refund: { en: '/refund-policy', bn: '/bn/refund-policy' },
+} as const
+export type PublicPage = keyof typeof PUBLIC_PAGES
+export type LegalPage = Exclude<PublicPage, 'landing'>
+
+const LANDING_PATH = PUBLIC_PAGES.landing
+
+/** canonical + hreflang en / bn / x-default (English) for a public page. */
+function alternateLinks(page: PublicPage, language: Language, origin: string) {
+  const paths = PUBLIC_PAGES[page]
+  return [
+    { rel: 'canonical', href: `${origin}${paths[language]}` },
+    { rel: 'alternate', hrefLang: 'en', href: `${origin}${paths.en}` },
+    { rel: 'alternate', hrefLang: 'bn', href: `${origin}${paths.bn}` },
+    { rel: 'alternate', hrefLang: 'x-default', href: `${origin}${paths.en}` },
+  ]
+}
 
 /** Link-preview image (1200×630, `client/public/og-image.png`). */
 export const OG_IMAGE = { path: '/og-image.png', width: 1200, height: 630 } as const
@@ -137,16 +159,29 @@ export function landingHead(language: Language, origin: string, lowestPriceBdt: 
       { 'script:ld+json': app },
       { 'script:ld+json': faq },
     ],
-    links: [
-      { rel: 'canonical', href: url },
-      { rel: 'alternate', hrefLang: 'en', href: `${origin}${LANDING_PATH.en}` },
-      { rel: 'alternate', hrefLang: 'bn', href: `${origin}${LANDING_PATH.bn}` },
-      { rel: 'alternate', hrefLang: 'x-default', href: `${origin}${LANDING_PATH.en}` },
-    ],
+    links: alternateLinks('landing', language, origin),
   }
 }
 
-/** Every app route serves `noindex`; crawlers skip them (and the API). Only `/` + `/bn` are public pages. */
+/** Legal pages (M9-T7): indexable (no `noindex`), title + description + canonical + hreflang. */
+export function legalHead(page: LegalPage, language: Language, origin: string) {
+  const doc = LEGAL_DOCS[page]
+  const fullTitle = `${doc.title[language]} | ${SITE_NAME}`
+  const description = doc.description[language]
+  return {
+    meta: [
+      { title: fullTitle },
+      { name: 'description', content: description },
+      { property: 'og:type', content: 'website' },
+      { property: 'og:site_name', content: SITE_NAME },
+      { property: 'og:title', content: fullTitle },
+      { property: 'og:url', content: `${origin}${PUBLIC_PAGES[page][language]}` },
+    ],
+    links: alternateLinks(page, language, origin),
+  }
+}
+
+/** Every app route serves `noindex`; crawlers skip them (and the API). Only `PUBLIC_PAGES` are indexable. */
 const DISALLOWED_PATHS = [
   '/api/',
   '/analytics',
@@ -175,13 +210,15 @@ export function robotsTxt(origin: string): string {
   return ['User-agent: *', 'Allow: /', ...DISALLOWED_PATHS.map((path) => `Disallow: ${path}`), '', `Sitemap: ${origin}/sitemap.xml`, ''].join('\n')
 }
 
-/** `/sitemap.xml`: `/` + `/bn`, each with its hreflang alternates. */
+/** `/sitemap.xml`: every `PUBLIC_PAGES` URL (en + bn), each with its hreflang alternates. */
 export function sitemapXml(origin: string): string {
-  const alternates = (['en', 'bn'] as const)
-    .map((lang) => `    <xhtml:link rel="alternate" hreflang="${lang}" href="${origin}${LANDING_PATH[lang]}"/>`)
-    .concat(`    <xhtml:link rel="alternate" hreflang="x-default" href="${origin}${LANDING_PATH.en}"/>`)
-    .join('\n')
-  const urls = (['en', 'bn'] as const).map((lang) => `  <url>\n    <loc>${origin}${LANDING_PATH[lang]}</loc>\n${alternates}\n  </url>`)
+  const urls = Object.values(PUBLIC_PAGES).flatMap((paths) => {
+    const alternates = (['en', 'bn'] as const)
+      .map((lang) => `    <xhtml:link rel="alternate" hreflang="${lang}" href="${origin}${paths[lang]}"/>`)
+      .concat(`    <xhtml:link rel="alternate" hreflang="x-default" href="${origin}${paths.en}"/>`)
+      .join('\n')
+    return (['en', 'bn'] as const).map((lang) => `  <url>\n    <loc>${origin}${paths[lang]}</loc>\n${alternates}\n  </url>`)
+  })
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">',

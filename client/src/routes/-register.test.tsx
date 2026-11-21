@@ -79,6 +79,11 @@ async function fill(
 
 const submit = (language: Lang) => fireEvent.click(screen.getByRole('button', { name: copy[language].submit }))
 
+const LEGAL_LINKS = {
+  en: { privacy: ['Privacy Policy', '/privacy'], terms: ['Terms of Service', '/terms'], refund: ['Refund Policy', '/refund-policy'] },
+  bn: { privacy: ['প্রাইভেসি পলিসি', '/bn/privacy'], terms: ['সেবার শর্তাবলি', '/bn/terms'], refund: ['রিফান্ড পলিসি', '/bn/refund-policy'] },
+} as const
+
 beforeEach(() => {
   fetchMock.mockReset()
   vi.stubGlobal('fetch', fetchMock)
@@ -192,6 +197,19 @@ describe.each(['en', 'bn'] as const)('/register (%s)', (language) => {
     mockApi({})
     renderAuthRoute('/register', language)
     expect((await screen.findByRole('link', { name: t.login })).getAttribute('href')).toBe('/login')
+  })
+
+  it('says that creating an account accepts the Terms and Privacy Policy, linked (M9-T7)', async () => {
+    mockApi({})
+    renderAuthRoute('/register', language)
+    const terms = await screen.findByRole('link', { name: LEGAL_LINKS[language].terms[0] })
+    expect(terms.getAttribute('href')).toBe(LEGAL_LINKS[language].terms[1])
+    expect(screen.getByRole('link', { name: LEGAL_LINKS[language].privacy[0] }).getAttribute('href')).toBe(LEGAL_LINKS[language].privacy[1])
+    expect(terms.closest('p')?.textContent).toBe(
+      language === 'en'
+        ? 'By creating an account you agree to our Terms of Service and Privacy Policy.'
+        : 'অ্যাকাউন্ট খুলে আপনি আমাদের সেবার শর্তাবলি ও প্রাইভেসি পলিসি মেনে নিচ্ছেন।',
+    )
   })
 })
 

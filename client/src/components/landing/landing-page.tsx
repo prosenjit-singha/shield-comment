@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { ArrowRight, ChevronDown, EyeOff, Link2, MessageCircleQuestion, PlugZap, ShieldAlert, ShieldCheck, Sparkles, TrendingUp } from 'lucide-react'
 import { useId, useState, type ReactNode } from 'react'
+import { LanguagePill } from '@/components/language-pill'
+import { LegalLinks } from '@/components/legal/legal-links'
 import { FacebookIcon, InstagramIcon } from '@/components/meta/brand-icons'
 import { IntervalSwitch, PlanCard } from '@/components/plans/plan-card'
 import { Button } from '@/components/ui/button'
@@ -55,32 +57,6 @@ function Section({ id, title, eyebrow, intro, children, className }: { id: strin
         {children}
       </div>
     </section>
-  )
-}
-
-/** `EN | বাং` pill: plain links to the fixed language URLs; the click also saves the cookie for the app. */
-function LanguagePill() {
-  const { language, setLanguage, content } = useLanguage()
-  const item = (lang: 'en' | 'bn', to: '/' | '/bn', label: string) => (
-    <Link
-      to={to}
-      hrefLang={lang}
-      lang={lang}
-      aria-current={language === lang ? 'page' : undefined}
-      onClick={() => setLanguage(lang)}
-      className={cn(
-        'inline-flex h-8 min-w-11 items-center justify-center rounded-full px-3 text-xs font-medium transition-colors',
-        language === lang ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-      )}
-    >
-      {label}
-    </Link>
-  )
-  return (
-    <nav aria-label={content('Language', 'ভাষা')} className="flex items-center rounded-full bg-muted p-0.5">
-      {item('en', '/', 'EN')}
-      {item('bn', '/bn', 'বাং')}
-    </nav>
   )
 }
 
@@ -504,9 +480,12 @@ function FooterCta() {
       </div>
       <footer className="mx-auto mt-8 flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
         <span>© ShieldComment BD</span>
-        <Link to="/login" className="hover:text-foreground">
-          {content('Log in', 'লগ ইন')}
-        </Link>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <LegalLinks />
+          <Link to="/login" className="hover:text-foreground">
+            {content('Log in', 'লগ ইন')}
+          </Link>
+        </div>
       </footer>
     </section>
   )

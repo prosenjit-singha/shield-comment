@@ -30,5 +30,11 @@ describe('language cookie helpers', () => {
     expect(fixedLanguageForPath('/bn/pricing')).toBe('bn')
     expect(fixedLanguageForPath('/dashboard')).toBeNull()
     expect(fixedLanguageForPath('/bnx')).toBeNull()
+    // Legal pages (M9-T7): fixed like the landing.
+    expect(fixedLanguageForPath('/privacy')).toBe('en')
+    expect(fixedLanguageForPath('/terms')).toBe('en')
+    expect(fixedLanguageForPath('/refund-policy')).toBe('en')
+    expect(fixedLanguageForPath('/bn/refund-policy')).toBe('bn')
+    expect(fixedLanguageForPath('/data-deletion')).toBeNull()
   })
 })

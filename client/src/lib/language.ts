@@ -1,3 +1,5 @@
+import { PUBLIC_PAGES } from '@/lib/seo'
+
 export type Language = 'en' | 'bn'
 
 /** Preference cookie (not httpOnly: the browser writes it). The server reads it so SSR HTML matches. */
@@ -30,12 +32,12 @@ export function writeLanguageCookie(language: Language): void {
 }
 
 /**
- * Landing URLs have a fixed language so `hreflang` stays honest: `/` is English, `/bn` is Bangla.
- * Every other page follows the cookie.
+ * Public pages (`PUBLIC_PAGES`) have a fixed language so `hreflang` stays honest: `/`, `/privacy`… are
+ * English, `/bn`, `/bn/privacy`… Bangla. Every other page follows the cookie.
  */
 export function fixedLanguageForPath(pathname: string): Language | null {
   if (pathname === '/bn' || pathname.startsWith('/bn/')) return 'bn'
-  if (pathname === '/') return 'en'
+  if (Object.values(PUBLIC_PAGES).some((paths) => paths.en === pathname)) return 'en'
   return null
 }
 

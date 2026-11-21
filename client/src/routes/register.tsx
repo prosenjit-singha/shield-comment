@@ -3,6 +3,7 @@ import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 import { LoaderCircle } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { AuthAlert, AuthScreen, FormField } from '@/components/auth/auth-screen'
+import { AgreeToTerms } from '@/components/legal/legal-links'
 import { CheckInbox } from '@/components/auth/check-inbox'
 import { Button } from '@/components/ui/button'
 import { useLanguage } from '@/hooks/use-language'
@@ -158,6 +159,7 @@ function RegisterPage() {
             ? content('Creating account…', 'অ্যাকাউন্ট খোলা হচ্ছে…')
             : content('Create account', 'অ্যাকাউন্ট খুলুন')}
         </Button>
+        <AgreeToTerms />
       </form>
     </AuthScreen>
   )
