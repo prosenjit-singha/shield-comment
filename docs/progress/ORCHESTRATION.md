@@ -11,10 +11,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-paused: row cap (10 rows in session #19) after verified M9-REPLAN · next M9-T10b (staging VPS configs, no open decision)
+paused: needs decision — staging host: the user cannot create the Oracle account (payment verification page does not load); D16 must be re-decided before M9-T10b · after verified M9-REPLAN (row cap also reached in session #19)
 
 ## Resume
-`/orchestration --continue` — next M9-T10b (staging VPS configs: `deploy/staging/` compose + Caddyfile + env template + DuckDNS updater + smoke allow-list; no open decision). Coming pre-check: M9-T13 (👤 Oracle VPS staging setup) needs the user's go-ahead.
+`/orchestration --continue` — first answer the pending decision: which staging host replaces Oracle (recommended: Azure free account VM; alt: AWS free plan). Then the orchestrator revises D16 + the M9-T10b prompt and dispatches M9-T10b.
 
 ## Next prompt (M9-T10b)
 
@@ -301,6 +301,8 @@ One distinction: if you use Cloudflare's proxy, configure SSL/TLS mode as Full (
   - Staging host (after the orchestrator's answer: Oracle is the only always-on $0 option; idle-reclaim + 2026 A1 cut caveats; Fly staging = paid) → "Oracle VPS (Recommended)"
   - Production still Fly.io + own domain? → "Not decided yet"
   - Next step → "Yes, re-plan next" (docs-only M9-REPLAN row, then M9-T10b staging VPS configs)
+- 2026-11-21 after M9-REPLAN (user, verbatim): "Hey there is an issue with the oracle cloud. I am unable to create account. When it is for payment verification step the website says failed to connect I mean that verification page is not loading at all. So what are the best free hosting option available now? like azure, aws, which will give me $200 credit. Check which one can handle the our three project with docker, kubernates, because I want to build ci/cd pipeline later. First research if we can deploy our web apps to cloud free of cost, if card info needed I am okay with that but I want $0 cost for current staging."
+  - Orchestrator research answer (2026-11-21): recommended Azure free account (12-month free B-series VMs, x86 B2ats v2, Docker Compose + Caddy + DuckDNS, CI/CD via GitHub Actions → GHCR); AWS free plan (6 months, $100–200 credits) as second; Kubernetes not $0 long-term (AKS system pool needs ≥2 vCPU/4 GB and no B-series). Pending: the user's pick; then revise D16 and the M9-T10b prompt (drop arm64-only notes if x86).
 
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
