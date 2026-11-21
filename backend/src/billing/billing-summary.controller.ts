@@ -1,12 +1,14 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Header,
   HttpCode,
   Param,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
@@ -21,6 +23,7 @@ import { Roles } from '../auth/decorators/roles.decorator.js';
 import { WorkspaceAccessGuard } from '../auth/guards/workspace-access.guard.js';
 import { IMPERSONATION_READ_ONLY } from '../auth/workspace-invites.js';
 import type { PaymentPrice } from '../db/schema/index.js';
+import { AutoRenewState, type AutoRenewView } from './auto-renew.js';
 import { BillingSummaryService } from './billing-summary.service.js';
 import {
   CheckoutService,
@@ -28,7 +31,11 @@ import {
   type PaymentStatusView,
 } from './checkout.service.js';
 import type { BillingSummary } from './dto/billing-summary.dto.js';
-import { CheckoutDto, CouponPreviewDto } from './dto/checkout.dto.js';
+import {
+  AutoRenewDto,
+  CheckoutDto,
+  CouponPreviewDto,
+} from './dto/checkout.dto.js';
 import { StartTrialDto } from './dto/start-trial.dto.js';
 import { SubscriptionService } from './subscription.service.js';
 
@@ -69,6 +76,9 @@ const perAccount = (limit: number) =>
  *   Codes: `CheckoutService`.
  * - `GET payments/:tranId` (M8-T5): one payment of the workspace's billing account for the
  *   return page, **owner + admin** (D2; impersonated read ok); another account's id → 404.
+ * - `PUT auto-renew` `{ enabled }` / `DELETE auto-renew` (M8-T6b): opt-in toggle / remove the saved
+ *   token (+ off) → 200 `AutoRenewView`. **Owner only** (D2), impersonated 403
+ *   `IMPERSONATION_READ_ONLY`; PUT while unavailable (flag off) → 409 `AUTO_RENEW_UNAVAILABLE`.
  */
 @Controller('workspaces/:workspaceId/billing')
 @UseGuards(WorkspaceAccessGuard)
@@ -77,6 +87,7 @@ export class BillingSummaryController {
     private readonly billing: BillingSummaryService,
     private readonly subscriptions: SubscriptionService,
     private readonly checkout: CheckoutService,
+    private readonly autoRenew: AutoRenewState,
   ) {}
 
   @Get('summary')
@@ -150,5 +161,28 @@ export class BillingSummaryController {
     @Param('tranId') tranId: string,
   ): Promise<PaymentStatusView> {
     return this.checkout.paymentStatus(workspace.id, tranId);
+  }
+
+  @Put('auto-renew')
+  @Roles('owner')
+  @Header('Cache-Control', 'private, no-store')
+  setAutoRenew(
+    @Session() session: AuthSession,
+    @CurrentWorkspace() workspace: WorkspaceContext,
+    @Body() body: AutoRenewDto,
+  ): Promise<AutoRenewView> {
+    assertNotImpersonated(session);
+    return this.autoRenew.setEnabled(workspace.id, body.enabled);
+  }
+
+  @Delete('auto-renew')
+  @Roles('owner')
+  @Header('Cache-Control', 'private, no-store')
+  removeAutoRenew(
+    @Session() session: AuthSession,
+    @CurrentWorkspace() workspace: WorkspaceContext,
+  ): Promise<AutoRenewView> {
+    assertNotImpersonated(session);
+    return this.autoRenew.removeToken(workspace.id);
   }
 }

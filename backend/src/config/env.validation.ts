@@ -174,6 +174,15 @@ export class EnvironmentVariables {
   })
   SSLCOMMERZ_SANDBOX: 'true' | 'false' = 'true';
 
+  /**
+   * M8-T6b (D4): tokenized auto-renew. `false` (default) = manual renewal only; turn on only once
+   * SSLCommerz approved tokenization for the store (needs the token cipher env too).
+   */
+  @IsIn(['true', 'false'], {
+    message: 'SSLCOMMERZ_TOKENIZATION must be true or false',
+  })
+  SSLCOMMERZ_TOKENIZATION: 'true' | 'false' = 'false';
+
   /** Test/compose-only SSLCommerz host (a stub). Refused when `NODE_ENV=production`. */
   @IsOptional()
   @IsUrl(

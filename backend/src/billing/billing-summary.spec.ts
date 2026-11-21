@@ -66,6 +66,7 @@ describe('toBillingSummary (PW-T6)', () => {
       renewal: null,
       pendingPayment: null,
       scheduled: null,
+      autoRenew: { available: false, enabled: false, tokenSaved: false },
     });
   });
 
@@ -91,6 +92,7 @@ describe('toBillingSummary (PW-T6)', () => {
       renewal: null,
       pendingPayment: null,
       scheduled: null,
+      autoRenew: { available: false, enabled: false, tokenSaved: false },
     });
   });
 
@@ -122,6 +124,7 @@ describe('toBillingSummary (PW-T6)', () => {
       renewal: null,
       pendingPayment: null,
       scheduled: null,
+      autoRenew: { available: false, enabled: false, tokenSaved: false },
     });
   });
 
@@ -167,6 +170,7 @@ describe('toBillingSummary (PW-T6)', () => {
       renewal: null,
       pendingPayment: null,
       scheduled: null,
+      autoRenew: { available: false, enabled: false, tokenSaved: false },
     });
   });
 

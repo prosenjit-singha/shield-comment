@@ -110,3 +110,33 @@ export function renewalReminderEmail(
     clientAppUrl,
   );
 }
+
+/** M8-T6b: the auto-renew charge failed (last try, M8-D14); the owner renews by hand. */
+export function autoRenewFailedEmail(
+  input: { termEnd: Date; planName: string },
+  clientAppUrl: string,
+): EmailContent {
+  const url = `${clientAppUrl.replace(/\/+$/, '')}/billing`;
+  const { planName } = input;
+  return bilingualEmail(
+    {
+      en: {
+        subject: 'We could not renew your ShieldComment plan',
+        lines: [
+          `The automatic payment for your ${planName} plan did not go through. Your plan ends on ${dhakaDate(input.termEnd, 'en-GB')} (Bangladesh time).`,
+          'Renew by hand to keep moderation running.',
+        ],
+        cta: { label: 'Renew plan', url },
+      },
+      bn: {
+        subject: 'আপনার ShieldComment প্ল্যান অটো-রিনিউ করা যায়নি',
+        lines: [
+          `আপনার ${planName} প্ল্যানের স্বয়ংক্রিয় পেমেন্ট সম্পন্ন হয়নি। আপনার প্ল্যান ${dhakaDate(input.termEnd, 'bn-BD')} (বাংলাদেশ সময়) শেষ হবে।`,
+          'মডারেশন চালু রাখতে নিজে রিনিউ করুন।',
+        ],
+        cta: { label: 'প্ল্যান রিনিউ করুন', url },
+      },
+    },
+    clientAppUrl,
+  );
+}

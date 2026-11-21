@@ -8,6 +8,7 @@ import type { ScheduledJob } from '../queue/job-schedulers.js';
 export const SUBSCRIPTION_EXPIRY_JOB_NAME = 'subscription-expiry';
 export const RENEWAL_REMINDERS_JOB_NAME = 'renewal-reminders';
 export const PENDING_PAYMENT_EXPIRY_JOB_NAME = 'pending-payment-expiry';
+export const AUTO_RENEW_CHARGE_JOB_NAME = 'auto-renew-charge';
 
 /**
  * - `subscription-expiry` every 15 min (plan §3.3): due scheduled changes start (M8-D7b), then
@@ -34,3 +35,10 @@ export const BILLING_SCHEDULED_JOBS: readonly ScheduledJob[] = [
     pattern: '*/15 * * * *',
   },
 ];
+
+/** M8-T6b: hourly token charges (M8-D14); registered only while auto-renew is available. */
+export const AUTO_RENEW_CHARGE_JOB: ScheduledJob = {
+  schedulerId: 'auto-renew-charge-hourly',
+  name: AUTO_RENEW_CHARGE_JOB_NAME,
+  pattern: '5 * * * *',
+};

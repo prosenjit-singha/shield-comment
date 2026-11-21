@@ -9,6 +9,7 @@ import {
   type BillingJobOutcome,
   BillingProcessor,
 } from './billing.processor.js';
+import type { AutoRenewService } from './auto-renew.service.js';
 import type { CheckoutService } from './checkout.service.js';
 import type { RenewalReminderService } from './renewal-reminder.service.js';
 import type { SubscriptionService } from './subscription.service.js';
@@ -36,12 +37,14 @@ describe('BillingProcessor (PW-T3, M8-T6)', () => {
   const run = vi.fn<RenewalReminderService['run']>();
   const expirePendingPayments =
     vi.fn<CheckoutService['expirePendingPayments']>();
+  const chargeDue = vi.fn<AutoRenewService['chargeDue']>();
   let logs: string[];
   const processor = () =>
     new BillingProcessor(
       { expireDue, switchScheduled } as unknown as SubscriptionService,
       { run } as unknown as RenewalReminderService,
       { expirePendingPayments } as unknown as CheckoutService,
+      { chargeDue } as unknown as AutoRenewService,
     );
 
   beforeEach(() => {
@@ -117,6 +120,14 @@ describe('BillingProcessor (PW-T3, M8-T6)', () => {
     await expect(
       processor().process(job({ name: 'pending-payment-expiry' })),
     ).resolves.toEqual({ kind: 'pending_payment_expiry', cancelled: 4 });
+    expect(expireDue).not.toHaveBeenCalled();
+  });
+
+  it('auto-renew-charge → AutoRenewService.chargeDue() (M8-T6b)', async () => {
+    chargeDue.mockResolvedValue({ kind: 'auto_renew', charged: 1, failed: 2 });
+    await expect(
+      processor().process(job({ name: 'auto-renew-charge' })),
+    ).resolves.toEqual({ kind: 'auto_renew', charged: 1, failed: 2 });
     expect(expireDue).not.toHaveBeenCalled();
   });
 

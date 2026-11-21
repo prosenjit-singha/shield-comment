@@ -18,6 +18,7 @@ describe('payment callbacks (pure)', () => {
     bankTranId: 'B1',
     cardType: 'BKASH-BKash',
     riskLevel: 0,
+    token: null,
   };
 
   it('validationOutcome: all checks pass for VALID and VALIDATED', () => {

@@ -29,6 +29,8 @@ export interface BillingSummaryInput {
   renewal?: BillingSummary['renewal'];
   pendingPayment?: BillingSummary['pendingPayment'];
   scheduled?: BillingSummary['scheduled'];
+  /** M8-T6b (unavailable when left out). */
+  autoRenew?: BillingSummary['autoRenew'];
 }
 
 /**
@@ -105,5 +107,10 @@ export function toBillingSummary(input: BillingSummaryInput): BillingSummary {
     renewal: input.renewal ?? null,
     pendingPayment: input.pendingPayment ?? null,
     scheduled: input.scheduled ?? null,
+    autoRenew: input.autoRenew ?? {
+      available: false,
+      enabled: false,
+      tokenSaved: false,
+    },
   };
 }

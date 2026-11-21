@@ -9,6 +9,11 @@ import {
 import { isScheduledJobData } from '../queue/job-schedulers.js';
 import { QUEUE_NAMES } from '../queue/queue.constants.js';
 import {
+  AutoRenewService,
+  type AutoRenewOutcome,
+} from './auto-renew.service.js';
+import {
+  AUTO_RENEW_CHARGE_JOB_NAME,
   PENDING_PAYMENT_EXPIRY_JOB_NAME,
   RENEWAL_REMINDERS_JOB_NAME,
   SUBSCRIPTION_EXPIRY_JOB_NAME,
@@ -38,19 +43,22 @@ export interface PendingPaymentExpiryOutcome {
 export type BillingJobOutcome =
   | SubscriptionExpiryOutcome
   | RenewalRemindersOutcome
-  | PendingPaymentExpiryOutcome;
+  | PendingPaymentExpiryOutcome
+  | AutoRenewOutcome;
 
 const JOB_NAMES: readonly string[] = [
   SUBSCRIPTION_EXPIRY_JOB_NAME,
   RENEWAL_REMINDERS_JOB_NAME,
   PENDING_PAYMENT_EXPIRY_JOB_NAME,
+  AUTO_RENEW_CHARGE_JOB_NAME,
 ];
 
 /**
  * The one worker of the `billing` queue (PW-T3; in the API process). Dispatches by job name:
  * `subscription-expiry` → `SubscriptionService.switchScheduled()` + `expireDue()`,
  * `renewal-reminders` → `RenewalReminderService.run()`, `pending-payment-expiry` →
- * `CheckoutService.expirePendingPayments()` (M8-T6). Unknown name / invalid data /
+ * `CheckoutService.expirePendingPayments()` (M8-T6), `auto-renew-charge` → `AutoRenewService.chargeDue()`
+ * (M8-T6b). Unknown name / invalid data /
  * permanent DB error → `UnrecoverableError` (no retries); anything else is retried (5 attempts).
  * Logs carry ids, counts and error codes only.
  *
@@ -65,6 +73,7 @@ export class BillingProcessor extends WorkerHost {
     private readonly subscriptions: SubscriptionService,
     private readonly reminders: RenewalReminderService,
     private readonly checkout: CheckoutService,
+    private readonly autoRenew: AutoRenewService,
   ) {
     super();
   }
@@ -103,6 +112,13 @@ export class BillingProcessor extends WorkerHost {
       const outcome = await this.reminders.run();
       this.logger.debug(
         `renewal-reminders: ${outcome.sent} sent, ${outcome.skipped} skipped, ${outcome.failed} failed`,
+      );
+      return outcome;
+    }
+    if (name === AUTO_RENEW_CHARGE_JOB_NAME) {
+      const outcome = await this.autoRenew.chargeDue();
+      this.logger.debug(
+        `auto-renew-charge: ${outcome.charged} charged, ${outcome.failed} failed`,
       );
       return outcome;
     }

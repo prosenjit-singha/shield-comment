@@ -393,6 +393,7 @@ describe('Renewals + reminders (e2e)', () => {
       comments: { used: 1, limit: 50 },
       renewal: { dueAt: newEnd, canRenew: false },
       scheduled: null,
+      autoRenew: { available: false, enabled: false, tokenSaved: false },
     });
 
     // The switch (scoped to this account; the job runs it every 15 min).
@@ -560,6 +561,7 @@ describe('Renewals + reminders (e2e)', () => {
       expect(res.body).toMatchObject({
         renewal: null,
         scheduled: null,
+        autoRenew: { available: false, enabled: false, tokenSaved: false },
         pendingPayment: {
           tranId: fresh,
           amountBdt: 1000,

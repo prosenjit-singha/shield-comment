@@ -22,6 +22,7 @@ import {
   verifySign,
 } from '../payments/sslcommerz.client.js';
 import { isLiveAt } from '../wallet/live-subscription.queries.js';
+import { AutoRenewState } from './auto-renew.js';
 import { invoiceNumberSql } from './checkout.service.js';
 import {
   callbackTranId,
@@ -67,6 +68,7 @@ export class PaymentCallbacksService {
     @Inject(SSLCOMMERZ_CONFIG)
     private readonly sslcommerzConfig: SslcommerzConfig | null,
     private readonly config: ConfigService<EnvironmentVariables, true>,
+    private readonly autoRenew: AutoRenewState,
   ) {}
 
   returnUrl(payment: ReturnPayment, tranId: string | null): string {
@@ -128,7 +130,29 @@ export class PaymentCallbacksService {
     if (isSettled(row.status)) return PAYMENT_OUTCOMES.alreadyPaid;
     const valId = typeof body.val_id === 'string' ? body.val_id : '';
     if (!valId) return PAYMENT_OUTCOMES.noValId;
+    return this.validateAndPay(row, valId, now);
+  }
 
+  /**
+   * M8-T6b: a token charge answered with `valId`: the same Order Validation checks + PAID once as an
+   * IPN (no `payment_events` row: there was no callback). The IPN of that charge, if any, then acks.
+   */
+  async settleCharge(
+    tranId: string,
+    valId: string,
+    now: Date = new Date(),
+  ): Promise<PaymentOutcome> {
+    const row = await this.findRow(tranId);
+    if (!row) return PAYMENT_OUTCOMES.unknownTranId;
+    if (isSettled(row.status)) return PAYMENT_OUTCOMES.alreadyPaid;
+    return this.validateAndPay(row, valId, now);
+  }
+
+  private async validateAndPay(
+    row: { id: string; tranId: string; amountBdt: number },
+    valId: string,
+    now: Date,
+  ): Promise<PaymentOutcome> {
     let validation: SslcommerzValidation;
     try {
       validation = await this.sslcommerz.validate(valId);
@@ -213,6 +237,12 @@ export class PaymentCallbacksService {
           eq(paymentTransactions.id, row.id),
           eq(paymentTransactions.billingAccountId, row.billingAccountId),
         ),
+      );
+    if (validation.token)
+      await this.autoRenew.saveToken(
+        tx,
+        row.billingAccountId,
+        validation.token,
       );
     this.logger.log(
       `payment paid tran_id=${row.tranId} account=${row.billingAccountId} kind=${kind} subscription=${done.subscriptionId} risk=${validation.riskLevel}`,

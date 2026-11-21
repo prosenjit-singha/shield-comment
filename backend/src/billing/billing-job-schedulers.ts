@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   type OnApplicationBootstrap,
+  Optional,
 } from '@nestjs/common';
 import {
   registerJobSchedulers,
@@ -10,7 +11,11 @@ import {
   type SchedulerQueue,
 } from '../queue/job-schedulers.js';
 import { QUEUE_NAMES } from '../queue/queue.constants.js';
-import { BILLING_SCHEDULED_JOBS } from './billing-scheduled.jobs.js';
+import { AutoRenewState } from './auto-renew.js';
+import {
+  AUTO_RENEW_CHARGE_JOB,
+  BILLING_SCHEDULED_JOBS,
+} from './billing-scheduled.jobs.js';
 
 /**
  * Registers the `billing` job schedulers (PW-T3: `subscription-expiry`) at startup, like
@@ -26,6 +31,7 @@ export class BillingJobSchedulers implements OnApplicationBootstrap {
   constructor(
     @InjectQueue(QUEUE_NAMES.billing)
     private readonly queue: SchedulerQueue,
+    @Optional() private readonly autoRenew?: AutoRenewState,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -35,7 +41,10 @@ export class BillingJobSchedulers implements OnApplicationBootstrap {
   register(timeoutMs = SCHEDULER_REGISTRATION_TIMEOUT_MS): Promise<void> {
     return registerJobSchedulers(
       this.queue,
-      BILLING_SCHEDULED_JOBS,
+      // M8-T6b: the charge job only while auto-renew is available (flag off → not registered).
+      this.autoRenew?.available
+        ? [...BILLING_SCHEDULED_JOBS, AUTO_RENEW_CHARGE_JOB]
+        : BILLING_SCHEDULED_JOBS,
       this.logger,
       timeoutMs,
     );

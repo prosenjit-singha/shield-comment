@@ -18,7 +18,11 @@ const TAG_BYTES = 16;
  * platform secret: its context uses the workspace part `platform` (see `aiProviderKeyContext`).
  */
 export type TokenPurpose =
-  'meta_user_token' | 'meta_page_token' | 'ai_provider_key';
+  | 'meta_user_token'
+  | 'meta_page_token'
+  | 'ai_provider_key'
+  /** M8-T6b: SSLCommerz saved-payment token (workspace part `billing`, subject = billing account). */
+  | 'sslcommerz_token';
 
 /**
  * AAD context = purpose + workspace + subject (FB user id / Page id). A ciphertext

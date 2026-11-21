@@ -8,6 +8,7 @@ import {
   SSLCOMMERZ_LIVE_URL,
   SSLCOMMERZ_SANDBOX_URL,
   SSLCOMMERZ_TIMEOUT_MS,
+  SSLCOMMERZ_TOKEN_CHARGE_PATH,
   sslcommerzCallbackUrls,
   SslcommerzClient,
   type SslcommerzConfig,
@@ -71,8 +72,14 @@ describe('createSslcommerzConfig (D1)', () => {
       storeId: 'unitstore01',
       storePassword: PASSWORD,
       sandbox: true,
+      tokenization: false,
       baseUrl: SSLCOMMERZ_SANDBOX_URL,
     });
+    expect(
+      createSslcommerzConfig(
+        configOf({ ...STORE, SSLCOMMERZ_TOKENIZATION: 'true' }),
+      )?.tokenization,
+    ).toBe(true);
     const live = createSslcommerzConfig(
       configOf({ ...STORE, SSLCOMMERZ_SANDBOX: 'false' }),
     );
@@ -181,6 +188,19 @@ describe('SslcommerzClient', () => {
       });
       // D3: every method the store has enabled shows; no filter.
       expect(form).not.toHaveProperty('multi_card_name');
+      // M8-T6b: no tokenization field unless asked.
+      expect(form).not.toHaveProperty('tokenize');
+    });
+
+    it('tokenize: true adds the tokenization field (M8-T6b)', async () => {
+      fetchMock.mockResolvedValueOnce(
+        json(200, { status: 'SUCCESS', sessionkey: 'S', GatewayPageURL: 'u' }),
+      );
+      await client.createSession({ ...SESSION_INPUT, tokenize: true });
+      const form = Object.fromEntries(
+        fetchMock.mock.calls[0]![1]?.body as URLSearchParams,
+      );
+      expect(form.tokenize).toBe('1');
     });
 
     it('FAILED → SslcommerzError with the gateway reason', async () => {
@@ -246,6 +266,7 @@ describe('SslcommerzClient', () => {
         bankTranId: 'BANK1',
         cardType: 'BKASH-BKash',
         riskLevel: 0,
+        token: null,
       });
       const url = new URL(fetchMock.mock.calls[0]![0] as string);
       expect(url.origin + url.pathname).toBe(
@@ -269,6 +290,17 @@ describe('SslcommerzClient', () => {
         status: 'VALIDATED',
         riskLevel: 1,
       });
+    });
+
+    it('returns the saved-card token when present (M8-T6b), never logged', async () => {
+      fetchMock.mockResolvedValueOnce(
+        json(200, { ...validBody('VALID'), token: 'TOKEN-SECRET-1' }),
+      );
+      await expect(client.validate('VAL123')).resolves.toMatchObject({
+        token: 'TOKEN-SECRET-1',
+      });
+      for (const args of logSpy.mock.calls)
+        expect(args.map(String).join(' ')).not.toContain('TOKEN-SECRET');
     });
 
     it('INVALID_TRANSACTION', async () => {
@@ -311,6 +343,50 @@ describe('SslcommerzClient', () => {
       PaymentsNotConfiguredError,
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  describe('chargeToken (M8-T6b)', () => {
+    const INPUT = {
+      token: 'TOKEN-SECRET-2',
+      tranId: 'SC1A2B3C4D5F',
+      amountBdt: 1000,
+      ipnUrl: URLS.ipn,
+    };
+
+    it('POSTs the token charge form → val_id; the token is never logged', async () => {
+      fetchMock.mockResolvedValueOnce(
+        json(200, { status: 'SUCCESS', val_id: 'VALC1' }),
+      );
+      await expect(client.chargeToken(INPUT)).resolves.toEqual({
+        valId: 'VALC1',
+      });
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe(`http://stub.test${SSLCOMMERZ_TOKEN_CHARGE_PATH}`);
+      expect(init?.method).toBe('POST');
+      expect(Object.fromEntries(init?.body as URLSearchParams)).toEqual({
+        store_id: 'unitstore01',
+        store_passwd: PASSWORD,
+        token: 'TOKEN-SECRET-2',
+        tran_id: 'SC1A2B3C4D5F',
+        total_amount: '1000',
+        currency: 'BDT',
+        ipn_url: URLS.ipn,
+      });
+      for (const args of [...logSpy.mock.calls, ...warnSpy.mock.calls])
+        expect(args.map(String).join(' ')).not.toContain('TOKEN-SECRET');
+    });
+
+    it('FAILED → kind failed with the reason; no val_id → invalid_response', async () => {
+      fetchMock.mockResolvedValueOnce(
+        json(200, { status: 'FAILED', failedreason: 'Card expired' }),
+      );
+      const error = await failure(() => client.chargeToken(INPUT));
+      expect([error.kind, error.reason]).toEqual(['failed', 'Card expired']);
+      fetchMock.mockResolvedValueOnce(json(200, { status: 'SUCCESS' }));
+      expect((await failure(() => client.chargeToken(INPUT))).kind).toBe(
+        'invalid_response',
+      );
+    });
   });
 });
 

@@ -13,6 +13,20 @@ export const SSLCOMMERZ_SESSION_PATH = '/gwprocess/v4/api.php';
 export const SSLCOMMERZ_VALIDATION_PATH =
   '/validator/api/validationserverAPI.php';
 export const SSLCOMMERZ_TIMEOUT_MS = 20_000;
+
+/**
+ * Tokenized auto-renew (M8-T6b, off by default). ponytail: SSLCommerz's tokenization API is not in
+ * the public V4 docs (it comes with the merchant approval, D4), so these names are provisional and
+ * the fakes are written against them; confirm them against the merchant docs before
+ * `SSLCOMMERZ_TOKENIZATION=true` (M8-GATE note). Session: `tokenize=1` asks for a reusable token;
+ * the Order Validation answer carries it in `token`; a charge = form POST to `TOKEN_CHARGE_PATH`
+ * (`token`, `tran_id`, `total_amount`, `currency`, `ipn_url`) → `status` SUCCESS + `val_id`, which
+ * then goes through the usual Order Validation API.
+ */
+export const SSLCOMMERZ_TOKENIZE_FIELD = 'tokenize';
+export const SSLCOMMERZ_TOKEN_FIELD = 'token';
+export const SSLCOMMERZ_TOKEN_CHARGE_PATH =
+  '/gwprocess/v4/api/token/charge.php';
 /** Gateway reasons are short; cap them so an odd body can't flood errors. */
 const REASON_MAX = 200;
 
@@ -20,6 +34,8 @@ export interface SslcommerzConfig {
   storeId: string;
   storePassword: string;
   sandbox: boolean;
+  /** `SSLCOMMERZ_TOKENIZATION=true` (M8-T6b); absent = off. */
+  tokenization?: boolean;
   /** No trailing slash. */
   baseUrl: string;
 }
@@ -55,6 +71,8 @@ export function createSslcommerzConfig(
     storeId,
     storePassword,
     sandbox,
+    tokenization:
+      config.get('SSLCOMMERZ_TOKENIZATION', { infer: true }) === 'true',
     baseUrl: (
       override ?? (sandbox ? SSLCOMMERZ_SANDBOX_URL : SSLCOMMERZ_LIVE_URL)
     ).replace(/\/+$/, ''),
@@ -89,6 +107,16 @@ export interface CreateSessionInput {
   productName: string;
   customer: { name: string; email: string; phone?: string };
   urls: SslcommerzCallbackUrls;
+  /** M8-T6b: ask SSLCommerz for a reusable token (only with tokenization on and the owner opted in). */
+  tokenize?: boolean;
+}
+
+export interface ChargeTokenInput {
+  /** The decrypted saved token (never logged). */
+  token: string;
+  tranId: string;
+  amountBdt: number;
+  ipnUrl: string;
 }
 
 export interface SslcommerzSession {
@@ -110,6 +138,8 @@ export type SslcommerzValidation =
       cardType: string | null;
       /** 0 = safe, 1 = risky (Module 8 D10). */
       riskLevel: number;
+      /** M8-T6b: the reusable token when the session asked for one (never logged). */
+      token: string | null;
     }
   | { status: 'INVALID_TRANSACTION'; valId: string };
 
@@ -214,6 +244,7 @@ export class SslcommerzClient {
       product_category: 'Software',
       product_profile: 'non-physical-goods',
     });
+    if (input.tokenize) form.set(SSLCOMMERZ_TOKENIZE_FIELD, '1');
     const body = await this.request(
       `${config.baseUrl}${SSLCOMMERZ_SESSION_PATH}`,
       {
@@ -293,7 +324,46 @@ export class SslcommerzClient {
       bankTranId: str(body.bank_tran_id),
       cardType: str(body.card_type),
       riskLevel: Number.isFinite(riskLevel) ? riskLevel : 0,
+      token: str(body[SSLCOMMERZ_TOKEN_FIELD]),
     };
+  }
+
+  /** M8-T6b: charges a saved token → the `val_id` to validate. A decline = `SslcommerzError` kind `failed`. */
+  async chargeToken(input: ChargeTokenInput): Promise<{ valId: string }> {
+    const config = this.requireConfig();
+    const context = `token charge tran_id=${input.tranId}`;
+    const body = await this.request(
+      `${config.baseUrl}${SSLCOMMERZ_TOKEN_CHARGE_PATH}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          store_id: config.storeId,
+          store_passwd: config.storePassword,
+          [SSLCOMMERZ_TOKEN_FIELD]: input.token,
+          tran_id: input.tranId,
+          total_amount: String(input.amountBdt),
+          currency: 'BDT',
+          ipn_url: input.ipnUrl,
+        }),
+      },
+      context,
+    );
+    const status = str(body.status);
+    const valId = str(body.val_id);
+    if ((status === 'SUCCESS' || status === 'VALID') && valId) {
+      this.logger.log(`sslcommerz ${context} status=${status}`);
+      return { valId };
+    }
+    if (status === 'FAILED') {
+      this.logger.warn(`sslcommerz ${context} status=FAILED`);
+      throw new SslcommerzError(
+        'failed',
+        null,
+        (str(body.failedreason) ?? 'unknown').slice(0, REASON_MAX),
+      );
+    }
+    throw this.failed(new SslcommerzError('invalid_response', null), context);
   }
 
   private requireConfig(): SslcommerzConfig {

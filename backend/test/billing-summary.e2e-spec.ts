@@ -182,6 +182,7 @@ describe('Billing summary (e2e)', () => {
         renewal: null,
         pendingPayment: null,
         scheduled: null,
+        autoRenew: { available: false, enabled: false, tokenSaved: false },
       });
       expect(trial.trialEndsAt!.getTime()).toBe(trial.currentTermEnd.getTime());
 
@@ -275,6 +276,7 @@ describe('Billing summary (e2e)', () => {
         renewal: null,
         pendingPayment: null,
         scheduled: null,
+        autoRenew: { available: false, enabled: false, tokenSaved: false },
       });
     });
 
@@ -316,6 +318,7 @@ describe('Billing summary (e2e)', () => {
         renewal: null,
         pendingPayment: null,
         scheduled: null,
+        autoRenew: { available: false, enabled: false, tokenSaved: false },
       });
     });
 
@@ -334,6 +337,7 @@ describe('Billing summary (e2e)', () => {
         renewal: null,
         pendingPayment: null,
         scheduled: null,
+        autoRenew: { available: false, enabled: false, tokenSaved: false },
       });
       await actors.startTrial(fresh);
       expect(await summary(fresh, fresh.workspaceId)).toMatchObject({

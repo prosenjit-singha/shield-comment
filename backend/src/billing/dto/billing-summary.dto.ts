@@ -1,3 +1,4 @@
+import type { AutoRenewView } from '../auto-renew.js';
 import type {
   SubscriptionInterval,
   SubscriptionStatus,
@@ -65,4 +66,9 @@ export interface BillingSummary {
     interval: SubscriptionInterval;
     startsAt: Date;
   } | null;
+  /**
+   * M8-T6b (D4, M8-D15): tokenized auto-renew. `available` false while `SSLCOMMERZ_TOKENIZATION`
+   * is off (the client hides the toggle, M8-T10); `tokenSaved` = a card / wallet token is stored.
+   */
+  autoRenew: AutoRenewView;
 }

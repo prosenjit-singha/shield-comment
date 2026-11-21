@@ -1,4 +1,11 @@
-import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import {
   SUBSCRIPTION_INTERVALS,
   type SubscriptionInterval,
@@ -31,4 +38,10 @@ export class CouponPreviewDto {
   @IsString()
   @MaxLength(64)
   code!: string;
+}
+
+/** `PUT /api/workspaces/:workspaceId/billing/auto-renew` body (M8-T6b). */
+export class AutoRenewDto {
+  @IsBoolean()
+  enabled!: boolean;
 }

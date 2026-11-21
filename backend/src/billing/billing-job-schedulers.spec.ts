@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import { DEFAULT_JOB_OPTIONS } from '../queue/queue.constants.js';
+import type { AutoRenewState } from './auto-renew.js';
 import { BillingJobSchedulers } from './billing-job-schedulers.js';
 
 type Upsert = Queue['upsertJobScheduler'];
@@ -47,6 +48,24 @@ describe('BillingJobSchedulers (PW-T3)', () => {
     expect(logs).toEqual([
       'log: Job schedulers registered: subscription-expiry-15min, renewal-reminders-daily, pending-payment-expiry-15min',
     ]);
+  });
+
+  it('M8-T6b: the hourly auto-renew-charge job only while auto-renew is available', async () => {
+    upsert.mockResolvedValue(undefined as never);
+    const queue = { upsertJobScheduler: upsert } as unknown as Queue;
+    await new BillingJobSchedulers(queue, {
+      available: false,
+    } as AutoRenewState).register();
+    expect(upsert).toHaveBeenCalledTimes(3);
+    upsert.mockClear();
+    await new BillingJobSchedulers(queue, {
+      available: true,
+    } as AutoRenewState).register();
+    expect(upsert.mock.calls.map((c) => [c[0], c[1]])).toContainEqual([
+      'auto-renew-charge-hourly',
+      { pattern: '5 * * * *', tz: 'Asia/Dhaka' },
+    ]);
+    expect(upsert).toHaveBeenCalledTimes(4);
   });
 
   it('boot does not wait: onApplicationBootstrap returns before Redis answers', () => {

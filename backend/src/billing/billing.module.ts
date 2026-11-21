@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
+import { TokenCipherModule } from '../crypto/token-cipher.module.js';
 import { PaymentsModule } from '../payments/payments.module.js';
 import { PromotionsModule } from '../promotions/promotions.module.js';
 import { WalletModule } from '../wallet/wallet.module.js';
+import { AutoRenewState } from './auto-renew.js';
+import { AutoRenewService } from './auto-renew.service.js';
 import { BillingJobSchedulers } from './billing-job-schedulers.js';
 import { BillingSummaryController } from './billing-summary.controller.js';
 import { BillingSummaryService } from './billing-summary.service.js';
@@ -22,12 +25,14 @@ import { SubscriptionService } from './subscription.service.js';
  * (M8-T4, `CheckoutService` → `PaymentsModule`), `GET …/billing/payments/:tranId` + the `@Public()`
  * SSLCommerz callbacks `/api/billing/sslcommerz/{ipn,success,fail,cancel}` (M8-T5,
  * `PaymentCallbacksService`), the M8-T6 jobs (`renewal-reminders` → `RenewalReminderService`,
- * `pending-payment-expiry`, the M8-D7b switch in `subscription-expiry`). Imported by `AppModule`
+ * `pending-payment-expiry`, the M8-D7b switch in `subscription-expiry`), M8-T6b tokenized
+ * auto-renew (`AutoRenewState` + `PUT/DELETE …/billing/auto-renew`, `auto-renew-charge` →
+ * `AutoRenewService`, only with `SSLCOMMERZ_TOKENIZATION=true`). Imported by `AppModule`
  * and by the Better Auth module (sign-up + `/organization/create` hooks). Drizzle and the queues
  * are global.
  */
 @Module({
-  imports: [WalletModule, PromotionsModule, PaymentsModule],
+  imports: [WalletModule, PromotionsModule, PaymentsModule, TokenCipherModule],
   controllers: [BillingSummaryController, PaymentCallbacksController],
   providers: [
     BillingSummaryService,
@@ -36,6 +41,8 @@ import { SubscriptionService } from './subscription.service.js';
     PaymentCallbacksService,
     LimitService,
     RenewalReminderService,
+    AutoRenewState,
+    AutoRenewService,
     BillingProcessor,
     BillingJobSchedulers,
   ],

@@ -13,6 +13,7 @@ import {
 } from '../meta/social-pages.queries.js';
 import { findLiveSubscription } from '../wallet/live-subscription.queries.js';
 import { WalletService } from '../wallet/wallet.service.js';
+import { AutoRenewState } from './auto-renew.js';
 import { renewalOf, toBillingSummary } from './billing-summary.js';
 import { PENDING_PAYMENT_TTL_MS } from './checkout.service.js';
 import {
@@ -34,6 +35,7 @@ export class BillingSummaryService {
     @InjectDrizzle() private readonly db: Database,
     private readonly wallet: WalletService,
     private readonly limits: LimitService,
+    private readonly autoRenew: AutoRenewState,
   ) {}
 
   async summary(
@@ -53,6 +55,7 @@ export class BillingSummaryService {
       hadTrial,
       pendingPayment,
       scheduled,
+      autoRenew,
     ] = await Promise.all([
       accountId
         ? findSummarySubscription(
@@ -67,6 +70,7 @@ export class BillingSummaryService {
       accountId ? accountHadTrial(this.db, accountId) : true,
       accountId ? this.pendingPayment(accountId, now) : null,
       live ? this.scheduled(live.subscriptionId, now) : null,
+      this.autoRenew.view(accountId),
     ]);
     return toBillingSummary({
       live,
@@ -79,6 +83,7 @@ export class BillingSummaryService {
       renewal: renewalOf(live, scheduled !== null, now),
       pendingPayment,
       scheduled,
+      autoRenew,
     });
   }
 

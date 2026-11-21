@@ -1,6 +1,7 @@
 import { relations, sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
+  boolean,
   check,
   index,
   integer,
@@ -60,9 +61,27 @@ export const billingAccounts = pgTable(
     ownerUserId: uuid()
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
+    /**
+     * M8-T6b tokenized auto-renew (off unless `SSLCOMMERZ_TOKENIZATION=true`): the owner's opt-in,
+     * the SSLCommerz token saved by a validated payment (`TokenCipherService` ciphertext, context
+     * `autoRenewTokenContext(accountId)`; never logged or returned) and the charge marker (term end
+     * + attempts 1–2 made for it, M8-D14).
+     */
+    autoRenewEnabled: boolean().notNull().default(false),
+    autoRenewToken: text(),
+    autoRenewTermEnd: timestamptz(),
+    autoRenewAttempts: integer(),
     ...timestamps,
   },
-  (t) => [unique('billing_accounts_owner_user_id_unique').on(t.ownerUserId)],
+  (t) => [
+    unique('billing_accounts_owner_user_id_unique').on(t.ownerUserId),
+    check(
+      'billing_accounts_auto_renew_marker_check',
+      sql.raw(
+        `(${allOrNoneSql(['auto_renew_term_end', 'auto_renew_attempts'])}) and (auto_renew_attempts is null or auto_renew_attempts in (1, 2))`,
+      ),
+    ),
+  ],
 );
 
 export const subscriptions = pgTable(

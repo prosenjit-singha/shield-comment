@@ -34,6 +34,7 @@ import {
   SslcommerzError,
 } from '../payments/sslcommerz.client.js';
 import { isLiveAt } from '../wallet/live-subscription.queries.js';
+import { AutoRenewState } from './auto-renew.js';
 import { paymentAmount, paymentKind } from './paid-term.js';
 import { SubscriptionService } from './subscription.service.js';
 
@@ -83,7 +84,7 @@ export const invoiceNumberSql = (paidAt: Date): SQL =>
   sql`(select 'SC-' || to_char(${paidAt.toISOString()}::timestamptz at time zone 'Asia/Dhaka', 'YYYY') || '-' || lpad(n::text, greatest(5, length(n::text)), '0') from (select nextval('payment_invoice_number_seq') as n) s)`;
 
 /** Our `tran_id` (`TRAN_ID_PATTERN`): `SC` + 16 base64url chars. */
-const newTranId = () => `SC${randomBytes(12).toString('base64url')}`;
+export const newTranId = () => `SC${randomBytes(12).toString('base64url')}`;
 
 /**
  * Client checkout (M8-T4; D2, D6, D7, M8-D7b; readings 6, 7, 8). The workspace's billing account
@@ -107,6 +108,7 @@ export class CheckoutService {
     @Inject(SSLCOMMERZ_CONFIG)
     private readonly sslcommerzConfig: SslcommerzConfig | null,
     private readonly config: ConfigService<EnvironmentVariables, true>,
+    private readonly autoRenew: AutoRenewState,
   ) {}
 
   /** Coupon preview (reading 7): the checkout price with `code` applied. */
@@ -201,6 +203,7 @@ export class CheckoutService {
           this.config.get('CLIENT_APP_URL', { infer: true }) ??
             DEFAULT_CLIENT_APP_URL,
         ),
+        tokenize: await this.autoRenew.wantsToken(accountId),
       });
       this.logger.log(
         `checkout started tran_id=${tranId} account=${accountId} workspace=${workspaceId} kind=${kind} amount=${amountBdt}`,
