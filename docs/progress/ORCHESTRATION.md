@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 9 section + the row's decisions, `docs/project-documentation/modules/module-9-launch-security.md`, the code the row names.
 - Standing approvals: **client/ approved for the rest of the run** (user, 2026-11-21, M9-T6 pre-check: "Rest of the run"); **admin/ approved for the rest of the run** (user, 2026-11-21, M9-T8 pre-check: "Rest of the run"). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included), deploys, DNS, hosting/Neon/Redis Cloud accounts or any production credential: none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #20 (2026-11-21, continues session #19) · rows this session: 5 · estimate: 285k
+- Session: #20 (2026-11-21, continues session #19) · rows this session: 6 · estimate: 305k
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M9-T14a (2026-11-22) · commit: "fix(backend): trust fly-client-ip behind fly edge (M9-T14a)"
+verified M9-T14a · next M9-T15 pre-check (Meta live calls, AI provider)
 
 ## Resume
 `/orchestration --continue` — M9-T14a (Fly-Client-IP fix + backend redeploy, each fly command approved) dispatched; then M9-T15 pre-check (Meta live calls approval, live AI provider + spend cap).
@@ -512,4 +512,4 @@ One distinction: if you use Cloudflare's proxy, configure SSL/TLS mode as Full (
 - 2026-11-21 M9-T13a ✅ dd61882 · client 1130/1130 (was 1128) · srvx/static Node-stream bodies no longer wrapped by undici (`ERR_INVALID_STATE` crash); staging client redeployed, no crash under browser traffic
 - 2026-11-21 M9-T13b ✅ 3c099f4 · backend unit 2641 (was 2634), e2e 1373, admin 465, client 1130 · env files per environment (`.env` → `.env.<env>` → `.env.local`), `.env.neon` → `.env.production`, `*:neon` → `*:production`, Neon branch guard on staging/production scripts, Vite env files read
 - 2026-11-22 M9-T14 ✅ 338b8b9 · smoke staging 12/12 · no code tests (docs only) · staging super admin + verified owner created; §2 client IP ❌ (Fly edge address) → M9-T14a; SSLCommerz sandbox skipped → M9-T14b
-- 2026-11-22 M9-T14a ✅ · backend unit 2650 (was 2641), e2e 1377 (was 1373), client 1130 · client IP from `Fly-Client-IP` behind `TRUST_FLY_CLIENT_IP` on Fly; staging redeployed, §2 green on app/admin/direct paths, fakes ignored
+- 2026-11-22 M9-T14a ✅ 9442226 · backend unit 2650 (was 2641), e2e 1377 (was 1373), client 1130 · client IP from `Fly-Client-IP` behind `TRUST_FLY_CLIENT_IP` on Fly; staging redeployed, §2 green on app/admin/direct paths, fakes ignored
