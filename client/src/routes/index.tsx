@@ -6,7 +6,7 @@ import { landingHead } from '@/lib/seo'
 /** English landing page (C1), server-rendered with live pricing for SEO and Meta link previews. */
 export const Route = createFileRoute('/')({
   loader: ({ context }) => loadLanding(context.queryClient),
-  head: ({ loaderData }) => landingHead('en', loaderData?.origin ?? ''),
+  head: ({ loaderData }) => landingHead('en', loaderData?.origin ?? '', loaderData?.lowestPriceBdt ?? null),
   headers: ({ loaderData }) => landingHeaders(loaderData),
   component: LandingPage,
 })

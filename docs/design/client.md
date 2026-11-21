@@ -49,8 +49,8 @@ const { content } = useLanguage();
 9. **Dark-Contrast Footer CTA:** `#0F172A` surface with subtle `--primary` & `--accent` glow.
 
 ## 4. Technical SEO Metadata
-- **Title (<=60 chars):** `ShieldComment BD | AI Facebook & TikTok Comment Blocker`
-- **Description (<=155 chars):** `Auto-hide spam, bKash scams & competitor comments on Facebook & TikTok ads in Bangladesh. Supports Bangla, Banglish & English. Pay via bKash, Nagad & Visa.`
+- **Title (<=60 chars):** `ShieldComment BD | AI Facebook & Instagram Comment Blocker`
+- **Description (<=155 chars):** `Auto-hide spam, bKash scams & competitor comments on Facebook & Instagram ads in Bangladesh. Supports Bangla, Banglish & English. Pay via bKash, Nagad & Visa.`
 - **JSON-LD:** `SoftwareApplication` (`BDT 499`) + `FAQPage` schemas.
 - **Where:** set title, description, Open Graph (`og:title`, `og:description`, `og:image`), `hreflang` and JSON-LD in the route's `head()` in TanStack Start so they are in the server HTML. Meta's link-preview crawler does not run JavaScript.
 

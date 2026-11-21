@@ -16,6 +16,8 @@ import { Route as DataDeletionRouteImport } from './routes/data-deletion'
 import { Route as ImpersonateRouteImport } from './routes/impersonate'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as AppAnalyticsRouteImport } from './routes/_app/analytics'
 import { Route as AppBillingRouteImport } from './routes/_app/billing'
 import { Route as AppCommentsRouteImport } from './routes/_app/comments'
@@ -65,6 +67,16 @@ const LoginRoute = LoginRouteImport.update({
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
+  id: '/robots.txt',
+  path: '/robots.txt',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
@@ -155,6 +167,8 @@ export interface FileRoutesByFullPath {
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/robots.txt': typeof RobotsDottxtRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/analytics': typeof AppAnalyticsRoute
   '/billing': typeof AppBillingRoute
   '/comments': typeof AppCommentsRoute
@@ -179,6 +193,8 @@ export interface FileRoutesByTo {
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/robots.txt': typeof RobotsDottxtRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/analytics': typeof AppAnalyticsRoute
   '/billing': typeof AppBillingRoute
   '/comments': typeof AppCommentsRoute
@@ -204,6 +220,8 @@ export interface FileRoutesById {
   '/impersonate': typeof ImpersonateRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/robots.txt': typeof RobotsDottxtRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_app/analytics': typeof AppAnalyticsRoute
   '/_app/billing': typeof AppBillingRoute
   '/_app/comments': typeof AppCommentsRoute
@@ -230,6 +248,8 @@ export interface FileRouteTypes {
     | '/impersonate'
     | '/login'
     | '/register'
+    | '/robots.txt'
+    | '/sitemap.xml'
     | '/analytics'
     | '/billing'
     | '/comments'
@@ -254,6 +274,8 @@ export interface FileRouteTypes {
     | '/impersonate'
     | '/login'
     | '/register'
+    | '/robots.txt'
+    | '/sitemap.xml'
     | '/analytics'
     | '/billing'
     | '/comments'
@@ -278,6 +300,8 @@ export interface FileRouteTypes {
     | '/impersonate'
     | '/login'
     | '/register'
+    | '/robots.txt'
+    | '/sitemap.xml'
     | '/_app/analytics'
     | '/_app/billing'
     | '/_app/comments'
@@ -304,6 +328,8 @@ export interface RootRouteChildren {
   ImpersonateRoute: typeof ImpersonateRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
+  RobotsDottxtRoute: typeof RobotsDottxtRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiSplatRoute: typeof ApiSplatRoute
   InviteInvitationIdRoute: typeof InviteInvitationIdRoute
 }
@@ -357,6 +383,20 @@ declare module '@tanstack/react-router' {
       path: '/register'
       fullPath: '/register'
       preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/robots.txt': {
+      id: '/robots.txt'
+      path: '/robots.txt'
+      fullPath: '/robots.txt'
+      preLoaderRoute: typeof RobotsDottxtRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/analytics': {
@@ -528,6 +568,8 @@ const rootRouteChildren: RootRouteChildren = {
   ImpersonateRoute: ImpersonateRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
+  RobotsDottxtRoute: RobotsDottxtRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiSplatRoute: ApiSplatRoute,
   InviteInvitationIdRoute: InviteInvitationIdRoute,
 }

@@ -20,15 +20,19 @@ export interface LandingLoaderData {
   origin: string
   /** `false` = the plans fetch failed: fallback link, and the page must not be cached. */
   plansLoaded: boolean
+  /** Cheapest live monthly price (৳) for the JSON-LD offer; `null` = no plans. */
+  lowestPriceBdt: number | null
 }
 
 /** Shared `/` + `/bn` loader. Never throws: the page renders without pricing when the API is down. */
 export async function loadLanding(queryClient: QueryClient): Promise<LandingLoaderData> {
-  const plansLoaded = await queryClient.fetchQuery(landingPlansQueryOptions).then(
-    () => true,
-    () => false,
-  )
-  return { origin: getSiteOrigin(), plansLoaded }
+  const plans = await queryClient.fetchQuery(landingPlansQueryOptions).catch(() => null)
+  const prices = plans?.items.map((plan) => plan.monthly.perMonthBdt) ?? []
+  return {
+    origin: getSiteOrigin(),
+    plansLoaded: plans !== null,
+    lowestPriceBdt: prices.length > 0 ? Math.min(...prices) : null,
+  }
 }
 
 /** Response headers for the landing HTML: a page rendered without prices is never cached. */

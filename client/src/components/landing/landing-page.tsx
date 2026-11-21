@@ -10,6 +10,7 @@ import { useLanguage } from '@/hooks/use-language'
 import type { SubscriptionInterval } from '@/lib/billing-summary'
 import { AD_SPEND, landingPlansQueryOptions, protectedSales, ROAS_ASSUMED, SALES_LOST_PERCENT } from '@/lib/landing'
 import { formatNumber, formatTaka, planButtonVariant, type PublicPlan } from '@/lib/plans'
+import { LANDING_FAQ } from '@/lib/seo'
 import { cn } from '@/lib/utils'
 
 /**
@@ -464,60 +465,16 @@ function PlanAction({ plan, interval }: { plan: PublicPlan; interval: Subscripti
 
 function Faq() {
   const { content } = useLanguage()
-  const items = [
-    {
-      q: content('Does it understand Bangla and Banglish?', 'এটি কি বাংলা ও বাংলিশ বোঝে?'),
-      a: content(
-        'Yes. The AI reads Bangla script, Banglish (Bangla in English letters), English and mixes of them, including local scam patterns.',
-        'হ্যাঁ। এআই বাংলা লিপি, বাংলিশ (ইংরেজি অক্ষরে বাংলা), ইংরেজি এবং এগুলোর মিশ্রণ পড়ে, স্থানীয় স্ক্যামের ধরনসহ।',
-      ),
-    },
-    {
-      q: content('Do you need my Facebook password?', 'আপনাদের কি আমার ফেসবুক পাসওয়ার্ড লাগবে?'),
-      a: content(
-        'No. You connect through the official Meta login and choose which Pages to share. You can disconnect any time.',
-        'না। অফিসিয়াল মেটা লগইনের মাধ্যমে যুক্ত করেন এবং কোন পেজ শেয়ার করবেন তা নিজেই বেছে নেন। যেকোনো সময় বিচ্ছিন্ন করতে পারেন।',
-      ),
-    },
-    {
-      q: content('What happens to a hidden comment?', 'লুকানো কমেন্টের কী হয়?'),
-      a: content(
-        'Meta hides it from everyone except the person who wrote it and their friends. Nothing is deleted unless you choose that, and you can unhide it from your dashboard.',
-        'মেটা এটি লেখক ও তার বন্ধুদের ছাড়া সবার কাছ থেকে লুকিয়ে রাখে। আপনি না চাইলে কিছু মোছা হয় না, আর ড্যাশবোর্ড থেকে আবার দেখাতে পারেন।',
-      ),
-    },
-    {
-      q: content('How do I pay?', 'কীভাবে পেমেন্ট করব?'),
-      a: content(
-        'Pay in Taka with bKash, Nagad, Visa or Mastercard through SSLCommerz’s secure checkout. You get an invoice for every payment.',
-        'SSLCommerz-এর নিরাপদ চেকআউটে বিকাশ, নগদ, ভিসা বা মাস্টারকার্ডে টাকায় পেমেন্ট করুন। প্রতিটি পেমেন্টের ইনভয়েস পাবেন।',
-      ),
-    },
-    {
-      q: content('Can I try it before paying?', 'পেমেন্টের আগে কি চেষ্টা করে দেখতে পারি?'),
-      a: content(
-        'When a free trial is running, its plan card says so. Create an account and start the trial from the Plans page, no payment needed.',
-        'ফ্রি ট্রায়াল চালু থাকলে সেই প্ল্যানের কার্ডে লেখা থাকে। অ্যাকাউন্ট খুলে প্ল্যান পেজ থেকে ট্রায়াল শুরু করুন, কোনো পেমেন্ট লাগবে না।',
-      ),
-    },
-    {
-      q: content('Do I pay monthly or yearly?', 'মাসিক না বার্ষিক পেমেন্ট?'),
-      a: content(
-        'Either. You pay for a month or a year at a time, and yearly costs less per month. You renew from Billing before the term ends.',
-        'দুটোই পারেন। এক মাস বা এক বছরের জন্য একবারে পেমেন্ট করেন, বার্ষিক প্ল্যানে প্রতি মাসের খরচ কম। মেয়াদ শেষের আগে বিলিং থেকে রিনিউ করেন।',
-      ),
-    },
-  ]
   return (
     <Section id="faq" eyebrow={content('FAQ', 'প্রশ্নোত্তর')} title={content('Questions, answered', 'আপনার প্রশ্নের উত্তর')}>
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
-        {items.map((item) => (
-          <details key={item.q} className="group rounded-2xl border bg-card px-5 py-1 open:pb-4">
+        {LANDING_FAQ.map((item) => (
+          <details key={item.q.en} className="group rounded-2xl border bg-card px-5 py-1 open:pb-4">
             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-3 font-medium [&::-webkit-details-marker]:hidden">
-              <h3 className="text-base">{item.q}</h3>
+              <h3 className="text-base">{content(item.q.en, item.q.bn)}</h3>
               <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
             </summary>
-            <p className="text-sm text-pretty text-muted-foreground">{item.a}</p>
+            <p className="text-sm text-pretty text-muted-foreground">{content(item.a.en, item.a.bn)}</p>
           </details>
         ))}
       </div>

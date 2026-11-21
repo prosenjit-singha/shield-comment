@@ -210,7 +210,7 @@ describe('landing loader', () => {
   it('reports a failed plans fetch so the HTML is not cached', async () => {
     mockApi({ [PLANS]: () => json(503, { statusCode: 503, message: 'down' }) })
     const data = await loadLanding(createQueryClient())
-    expect(data).toEqual({ origin: 'http://app.test', plansLoaded: false })
+    expect(data).toEqual({ origin: 'http://app.test', plansLoaded: false, lowestPriceBdt: null })
     expect(landingHeaders(data)).toEqual({ 'Cache-Control': 'no-store' })
     expect(callsTo(PLANS)).toHaveLength(1) // no retry
   })
@@ -220,7 +220,20 @@ describe('landing loader', () => {
     const queryClient = createQueryClient()
     const data = await loadLanding(queryClient)
     expect(data.plansLoaded).toBe(true)
+    expect(data.lowestPriceBdt).toBe(499) // cheapest live monthly price in the fixture (Starter)
     expect(landingHeaders(data)).toBeUndefined()
     expect(queryClient.getQueryData(['plans'])).toEqual(plansResponse())
+  })
+
+  it.each([
+    ['/', IndexRoute, 'http://app.test/'],
+    ['/bn', BnRoute, 'http://app.test/bn'],
+  ] as const)('%s head() carries the JSON-LD offer from the loader, none after a failed fetch', async (_path, route, url) => {
+    mockApi({ [PLANS]: () => json(200, plansResponse()) })
+    const loaderData = await loadLanding(createQueryClient())
+    const head = (data: typeof loaderData) => route.options.head?.({ loaderData: data } as never) as { meta: Record<string, unknown>[] }
+    const app = (data: typeof loaderData) => head(data).meta.find((m) => 'script:ld+json' in m)?.['script:ld+json'] as Record<string, unknown>
+    expect(app(loaderData).offers).toMatchObject({ price: 499, priceCurrency: 'BDT', url: `${url}#pricing` })
+    expect(app({ ...loaderData, plansLoaded: false, lowestPriceBdt: null })).not.toHaveProperty('offers')
   })
 })
