@@ -7,14 +7,14 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 9 section + the row's decisions, `docs/project-documentation/modules/module-9-launch-security.md`, the code the row names.
 - Standing approvals: **client/ approved for the rest of the run** (user, 2026-11-21, M9-T6 pre-check: "Rest of the run"); **admin/ approved for the rest of the run** (user, 2026-11-21, M9-T8 pre-check: "Rest of the run"). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included), deploys, DNS, hosting/Neon/Redis Cloud accounts or any production credential: none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #20 (2026-11-21, continues session #19) · rows this session: 1 · estimate: 95k
+- Session: #20 (2026-11-21, continues session #19) · rows this session: 1 · estimate: 125k
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-paused: blocked M9-T13 (user account steps not done: flyctl not installed / no `fly auth login`; no Redis Cloud staging URL / `backend/.env.fly.staging`) · uncommitted: none · `## Next prompt` unchanged (re-dispatch M9-T13)
+paused: needs decision M9-T13 · `backend/.env.staging` (edited 22:00) held Neon PRODUCTION values (`ep-bold-dawn`, per MEMORY) not staging (`ep-shiny-silence`, still in `.env.staging.bak`) → `db:deploy:staging` ran on the production branch (additive, forward-only; effect unchecked) and the staged backend Fly secrets (DATABASE_URL, DIRECT_URL, AWS_* ×4, STORAGE_BUCKET, NEON_AI_GATEWAY_*) are production values (never on a machine). 3 Fly apps exist; client/admin secrets staged OK. Decision: how to restore staging values, unset staged secrets, check prod migrations, rotate prod creds. Orchestrator miss: my unblock note did not tell the agent to check the endpoint id against MEMORY before migrating. · uncommitted: none
 
 ## Resume
-`/orchestration --continue` — after you: (1) install flyctl in WSL (`curl -L https://fly.io/install.sh | sh`, add `~/.fly/bin` to PATH) and run `fly auth login` (Free plan + card); (2) create the Redis Cloud staging DB (`noeviction`) and put the backend staging secrets in git-ignored `backend/.env.fly.staging` (or have them ready); (3) keep the staging super admin + test owner credentials outside git. Then M9-T13 is dispatched again with the same prompt.
+`/orchestration --continue` — answer the M9-T13 decision (staging Neon values / staged prod secrets / prod migration check / rotation). Re-dispatch skips `fly apps create` (apps exist) and redoes only the backend secrets import → staging migration (endpoint checked against MEMORY first) → deploys.
 
 ## Next prompt (M9-T13)
 
@@ -56,6 +56,7 @@ You are implementing exactly ONE task row, **M9-T13**, in the ShieldComment BD r
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
 
 ### Decisions added by orchestrator
+- Unblock (user, 2026-11-21, verbatim): "I have put that radis url in backend/.env.staging file. The fly cli is working I am logged in with my email. I have verified it." → the Redis Cloud staging `REDIS_URL` is in git-ignored `backend/.env.staging` (with the Neon `staging` values). The user did NOT write `backend/.env.fly.staging`: build it yourself from `backend/.env.staging` (only the keys the backend needs) + the deploy.md §7 staging column (fixed hosts/values) + freshly generated secrets (e.g. `BETTER_AUTH_SECRET` via `openssl rand`), never echoing values, and delete it after `fly secrets import`. Any third-party secret the staging column needs that is not in `backend/.env.staging` (Meta, Resend, SSLCommerz sandbox, Telegram, AI keys…): if the backend env validation requires it, stop with `needs-decision` and list the exact keys; if optional, leave it unset and note it. Run `fly auth whoami` first (read-only). The user has not confirmed the Redis `noeviction` policy yet: note it as a user check in the report, don't block on it.
 - Pre-check answers for M9-T13 are quoted under "Recorded decisions" above (go-ahead, backend 512 MB, backend-only uptime monitor).
 - Carry-over from M9-T11: M9-T14 runs `npm run smoke` against staging with a fixed staging owner (verified email + workspace) and the staging super admin; the user keeps those credentials outside git.
 - Carry-over from M9-T7: `client/src/lib/legal-facts.json` holds `[TODO: …]` placeholders the user replaces before go-live; the legal copy is an agent draft awaiting the user's review.
@@ -310,6 +311,8 @@ One distinction: if you use Cloudflare's proxy, configure SSL/TLS mode as Full (
 
 - 2026-11-21 M9-T13 pre-check (user, verbatim): go-ahead "Go ahead (Recommended)"; backend RAM "512 MB (Recommended)"; uptime monitor "Backend only (Recommended)".
 
+- 2026-11-21 M9-T13 unblock (user, verbatim): "I don't see the .env.fly.staging file in backend folder. I have put that radis url in backend/.env.staging file. The fly cli is working I am logged in with my email. I have verified it."
+
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
 - 2026-11-18 M3-T9 ✅ dcab638 · client 151 · app shell + impersonation banner
@@ -450,3 +453,4 @@ One distinction: if you use Cloudflare's proxy, configure SSL/TLS mode as Full (
 - 2026-11-21 M9-REPLAN ✅ cf8b23e · docs only (no test runs; check-fly-config ✅, compose config ✅) · Oracle VPS staging re-plan: D16 added, D1/D3/D5/D6/D14 revised (history kept), new code row M9-T10b (`deploy/staging/` compose + Caddyfile + env template + DuckDNS updater + smoke allow-list), M9-T13…T17/T19/GATE rewritten for the DuckDNS hosts, deploy.md "Staging (Oracle VPS)" + Fly = production candidate, tech-stack §2 line
 - 2026-11-21 M9-T10b ✅ 52967da · check-fly-config ✅ 6 files + self-test 17/17 · compose config ✅ · e2e typecheck ✅ · root e2e 7/7 · guard 4/4 (was 3) · smoke:local 12/12 (was 11) · Fly Free-plan staging configs (`fly.staging.toml` ×3: backend 512 MB always on, client/admin 256 MB auto-stop, rolling, no release step), `SMOKE_STAGING_HOSTS` allow-list, deploy.md staging section + cost estimate, TASKS D16/D3/D6/D14 revised, M9-T13…GATE on fly.dev hosts
 - 2026-11-21 M9-T13 🟡 blocked: user account steps not done (flyctl not installed → no `fly auth login`; no Redis Cloud staging URL / `backend/.env.fly.staging`) · check-fly-config ✅ 6 files · nothing run against Fly/Neon/Redis, nothing committed
+- 2026-11-21 M9-T13 🟡 blocked (2nd try): `backend/.env.staging` holds the Neon **production** branch values (endpoint `ep-bold-dawn-a1xh3drl`, `br-winter-leaf-a1j7hozl` for DB, S3, AI gateway; only `REDIS_URL` is new), not `staging` (`ep-shiny-silence-a10t8fnn`, still in `.env.staging.bak`); found after `npm run db:deploy:staging` reported that host → migrations ran on the production branch (forward-only, additive), staging branch not migrated. Done: `fly auth whoami` ✅, check-fly-config ✅, prices checked (sin 512 MB ≈ US$4.68/mo), 3 staging apps created, backend secrets **staged with the production-branch Neon values** (no machine, nothing deployed; file deleted), client/admin secrets staged. Must re-import correct values before any deploy · nothing committed
