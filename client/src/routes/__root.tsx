@@ -4,6 +4,7 @@ import {
   HeadContent,
   Link,
   Scripts,
+  useRouter,
   type ErrorComponentProps,
 } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
@@ -56,13 +57,14 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 function RootDocument({ children }: { children: ReactNode }) {
   const { languageStore } = Route.useRouteContext()
   const language = useLanguageStoreState(languageStore, (s) => s.language)
+  const nonce = useRouter().options.ssr?.nonce
 
   return (
     // suppressHydrationWarning: the boot script may add `.dark` before React hydrates.
     <html lang={language} suppressHydrationWarning>
       <head>
         <HeadContent />
-        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
       <body className="min-h-svh bg-background font-sans text-foreground antialiased">
         <LanguageStoreContext value={languageStore}>

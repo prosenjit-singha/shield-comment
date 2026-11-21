@@ -2,6 +2,7 @@ import { createRouter } from '@tanstack/react-router'
 import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query'
 import { parseLanguage } from '@/lib/language'
 import { createQueryClient } from '@/lib/query-client'
+import { getCspNonce } from '@/lib/request-context'
 import { createLanguageStore } from '@/stores/language-store'
 import { routeTree } from './routeTree.gen'
 
@@ -23,6 +24,8 @@ export function getRouter() {
     // Loaders read from TanStack Query, which already caches; let it decide freshness.
     defaultPreloadStaleTime: 0,
     scrollRestoration: true,
+    // Start adds it to every inline script it emits (CSP Report-Only, M9-T8).
+    ssr: { nonce: getCspNonce() },
   })
 
   // Dehydrates queries fetched during SSR (e.g. the session) into the page and wraps QueryClientProvider.

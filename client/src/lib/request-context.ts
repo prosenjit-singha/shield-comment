@@ -1,4 +1,4 @@
-import { createIsomorphicFn } from '@tanstack/react-start'
+import { createIsomorphicFn, getGlobalStartContext } from '@tanstack/react-start'
 import { getCookie, getRequestUrl } from '@tanstack/react-start/server'
 import { LANGUAGE_COOKIE, languageFromCookieString, parseLanguage, type Language } from '@/lib/language'
 
@@ -14,3 +14,17 @@ export const getLanguagePreference = createIsomorphicFn()
 export const getSiteOrigin = createIsomorphicFn()
   .server((): string => (process.env.PUBLIC_SITE_URL ?? getRequestUrl().origin).replace(/\/+$/, ''))
   .client((): string => window.location.origin)
+
+/**
+ * Per-request CSP nonce (M9-T8). Server: `server.mjs` passes it in Start's request context. Browser: the
+ * `<meta property="csp-nonce">` that `HeadContent` renders when the router has one.
+ */
+export const getCspNonce = createIsomorphicFn()
+  .server((): string | undefined => {
+    const nonce: unknown = (getGlobalStartContext() as { nonce?: unknown } | undefined)?.nonce
+    return typeof nonce === 'string' ? nonce : undefined
+  })
+  .client(
+    (): string | undefined =>
+      document.querySelector<HTMLMetaElement>('meta[property="csp-nonce"]')?.content || undefined,
+  )

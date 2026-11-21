@@ -1,5 +1,19 @@
 # Rendered by the nginx image entrypoint (envsubst on ${API_UPSTREAM} / ${NGINX_RESOLVER} only;
 # nginx's own $vars are left alone) into /etc/nginx/conf.d/default.conf.
+
+# Security headers (M9-T8, D12) are set once at server level. nginx inherits add_header only into
+# locations that set none of their own, so the page/asset locations below take Cache-Control from
+# these maps instead, and /api/ (its own add_header) keeps the backend's Helmet headers alone.
+map $uri $static_cache_control {
+  ~^/assets/ "public, max-age=31536000, immutable";
+  default    "no-cache";
+}
+# HSTS only when the request reached the edge over https (an empty value adds no header).
+map $http_x_forwarded_proto $hsts {
+  https   "max-age=31536000; includeSubDomains";
+  default "";
+}
+
 server {
   listen 5173;
   listen [::]:5173;
@@ -8,10 +22,22 @@ server {
   index index.html;
 
   gzip on;
-  gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+  gzip_types text/plain text/css application/javascript text/javascript application/json image/svg+xml;
   gzip_min_length 1024;
+  gzip_vary on;
 
-  # Container healthcheck
+  add_header Cache-Control $static_cache_control always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header X-Frame-Options "DENY" always;
+  # Never no-referrer: same-origin POSTs would send Origin: null and Better Auth answers 403.
+  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+  add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()" always;
+  add_header Strict-Transport-Security $hsts always;
+  # Report-Only first (D12): the SPA has no inline scripts; inline style attributes come from React/Recharts;
+  # data: fonts = Vite-inlined font subsets; blob: = picked images, Neon object storage = presigned support-ticket attachments.
+  add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.aws.neon.tech; font-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+
+  # Container healthcheck (inherits the headers above; harmless)
   location = /healthz {
     access_log off;
     default_type text/plain;
@@ -35,16 +61,13 @@ server {
     add_header Cache-Control "no-store" always;
   }
 
-  # Hashed build assets: cache for a year
+  # Hashed build assets: cached for a year ($static_cache_control)
   location /assets/ {
     try_files $uri =404;
-    expires 1y;
-    add_header Cache-Control "public, max-age=31536000, immutable";
   }
 
-  # SPA fallback: unknown paths serve index.html (never cached, so deploys show up at once)
+  # SPA fallback: unknown paths serve index.html (no-cache, so deploys show up at once)
   location / {
     try_files $uri $uri/ /index.html;
-    add_header Cache-Control "no-cache";
   }
 }

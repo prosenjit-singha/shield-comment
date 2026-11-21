@@ -19,7 +19,7 @@ WORKDIR /app
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/server.mjs ./
+COPY --from=build /app/server.mjs /app/server-http.ts ./
 USER node
 EXPOSE 5174
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
