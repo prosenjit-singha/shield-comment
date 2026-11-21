@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 8 section + the row's decisions, `docs/project-documentation/modules/module-8-billing-sslcommerz.md`, the code the row names.
 - Standing approvals: **admin/** and **client/** for the rest of this run (user, 2026-11-21, M8-T9 pre-check). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included): none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #18 (2026-11-21) · rows this session: 0 · estimate: 40k
+- Session: #18 (2026-11-21) · rows this session: 1 · estimate: 60k
 - Previous runs (Modules 3–7, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M8-T9 (2026-11-21) · commit: "feat(admin): add a4 billing filters, sheet and refunds (M8-T9)"
+verified M8-T9
 
 ## Resume
 `/orchestration --continue` — the pre-check will ask for the admin/ approval (M8-T9 is the first admin row; client/ follows at M8-T10…T13).
@@ -357,4 +357,4 @@ You are implementing exactly ONE task row, **M8-T10**, in the ShieldComment BD r
 - 2026-11-21 M8-T6b ✅ 304a3c0 · backend 2587 unit (was 2578) + 1265 e2e (was 1260) · admin/client/root e2e untouched · tokenized auto-renew behind `SSLCOMMERZ_TOKENIZATION` (off): owner-only PUT/DELETE auto-renew, summary `autoRenew`, token saved encrypted (migration 0043), hourly charge job (≤ 24 h / ≤ 12 h retry, once per term) through the IPN validation + `activatePaidTerm`, failure email; tokenization API names provisional.
 - 2026-11-21 M8-T7 ✅ bdc6270 · backend 2589 unit (was 2587) + 1271 e2e (was 1265) · admin/client/root e2e untouched · client invoices API (list + detail, owner + admin, impersonated read, account-scoped 404s, promotion lines + credit, seller env) + term snapshot on settled rows (0044)
 - 2026-11-21 M8-T8 ✅ e9a6bbb · backend 2602 unit (was 2589) + 1314 e2e (was 1271) · admin/client/root e2e untouched · admin billing filters + transaction sheet + failed events list + D9 mark-refunded (`payment_refunds` 0045) + real dashboard MRR and gateway volume
-- 2026-11-21 M8-T9 ✅ · admin 465 (was 448) · backend/client/root e2e untouched · A4 `/admin/billing`: URL filters (status, gateway, q, from/to), risk badge + invoice column, transaction sheet (price + promotion lines, gateway ids, events, refund audit), D9 Mark refunded dialog, Failed IPNs tab
+- 2026-11-21 M8-T9 ✅ 0c3f438 · admin 465 (was 448) · backend/client/root e2e untouched · A4 `/admin/billing`: URL filters (status, gateway, q, from/to), risk badge + invoice column, transaction sheet (price + promotion lines, gateway ids, events, refund audit), D9 Mark refunded dialog, Failed IPNs tab
