@@ -3,7 +3,14 @@ import { dataDeletionStatusPath, lookupFromBody, type DataDeletionLookup } from 
 import { apiUpstream, buildForwardHeaders } from '@/server/api-proxy'
 
 /** Only what the public lookup needs: no cookie, never the page request's body headers. */
-const FORWARDED = ['user-agent', 'accept-language', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto']
+const FORWARDED = [
+  'user-agent',
+  'accept-language',
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-forwarded-proto',
+  'fly-client-ip', // the visitor's IP from the Fly edge, the backend's client IP on Fly (M9-T14a)
+]
 
 /**
  * Server-render path of the `/data-deletion` lookup: calls the backend directly (like `getServerSession`)

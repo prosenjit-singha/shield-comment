@@ -9,11 +9,16 @@ import { isValidIP, normalizeIP } from '@better-auth/core/utils/ip';
  * `TRUST_PROXY_HOPS` = proxies in front of the backend that append to `X-Forwarded-For`. From
  * `[...X-Forwarded-For entries, socket address]` the entry `hops` places from the right is the
  * client; everything left of it is client-chosen and ignored. 0 = socket only (nothing in front).
- * Compose 1 (admin nginx / client Start proxy append). Fly.io 1: the edge appends, and the app
- * proxies run with `FORWARDED_FOR_MODE=pass` (forward the edge's list as is), so the app path and
- * the direct `api.<domain>` path (Meta, Telegram) count the same hops (M9-T10, deploy.md).
+ * Compose 1 (admin nginx / client Start proxy append).
+ *
+ * Fly.io (M9-T14a): the edge adds more than one `X-Forwarded-For` entry (hops 1 = a Fly edge address),
+ * but it always sets `Fly-Client-IP` to the visitor, overwriting a client-sent one. With
+ * `TRUST_FLY_CLIENT_IP=true` (Fly only; off in compose, where anyone could send it) that header wins;
+ * missing or not one IP → the `TRUST_PROXY_HOPS` rule. The app proxies forward it unchanged, and over
+ * the private network only our own apps can reach the backend (deploy.md §2).
  */
 export const CLIENT_IP_HEADER = 'x-forwarded-for';
+export const FLY_CLIENT_IP_HEADER = 'fly-client-ip';
 
 /**
  * Better Auth's form (IPv4-mapped → IPv4, IPv6 → /64 prefix, lower case), or null for anything that
@@ -49,17 +54,20 @@ export function resolveClientIp(
  * (or removes it), so nothing downstream ever sees a client-chosen value. With Express
  * `trust proxy` = 1, `req.ip` is that same IP.
  */
-export function clientIpMiddleware(hops: number) {
+export function clientIpMiddleware(hops: number, trustFlyClientIp = false) {
   return (
     req: IncomingMessage,
     _res: ServerResponse,
     next: (error?: unknown) => void,
   ): void => {
-    const ip = resolveClientIp(
-      req.headers[CLIENT_IP_HEADER],
-      req.socket.remoteAddress,
-      hops,
-    );
+    const fly = req.headers[FLY_CLIENT_IP_HEADER];
+    const ip =
+      (trustFlyClientIp && typeof fly === 'string' ? normaliseIp(fly) : null) ??
+      resolveClientIp(
+        req.headers[CLIENT_IP_HEADER],
+        req.socket.remoteAddress,
+        hops,
+      );
     if (ip) req.headers[CLIENT_IP_HEADER] = ip;
     else delete req.headers[CLIENT_IP_HEADER];
     next();

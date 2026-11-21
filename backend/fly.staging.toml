@@ -22,6 +22,8 @@ kill_timeout = "30s"
   HOST = "::"
   LOG_LEVEL = "info"
   TRUST_PROXY_HOPS = "1"
+  # Client IP = Fly-Client-IP from the edge (M9-T14a, deploy.md §2).
+  TRUST_FLY_CLIENT_IP = "true"
 
 [http_service]
   internal_port = 3000

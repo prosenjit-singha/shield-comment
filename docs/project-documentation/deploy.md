@@ -35,9 +35,9 @@ Prices from fly.io/pricing, checked at M9-T13 (`sin` costs more than the US regi
 
 ### Staging env (D3 revised in M9-T10b)
 
-Secrets per app, as in §7 (staging column): `TRUSTED_ORIGINS=https://shield-comment-app-staging.fly.dev,https://shield-comment-admin-staging.fly.dev`, `BETTER_AUTH_URL=https://shield-comment-api-staging.fly.dev`, `CLIENT_APP_URL=https://shield-comment-app-staging.fly.dev`, client `PUBLIC_SITE_URL=https://shield-comment-app-staging.fly.dev`, client + admin `API_UPSTREAM=http://shield-comment-api-staging.internal:3000`, `CORS_ORIGINS` unset. In the files (`[env]`): backend `TRUST_PROXY_HOPS=1`, client + admin `FORWARDED_FOR_MODE=pass`. Separate admin origin = separate Better Auth cookies.
+Secrets per app, as in §7 (staging column): `TRUSTED_ORIGINS=https://shield-comment-app-staging.fly.dev,https://shield-comment-admin-staging.fly.dev`, `BETTER_AUTH_URL=https://shield-comment-api-staging.fly.dev`, `CLIENT_APP_URL=https://shield-comment-app-staging.fly.dev`, client `PUBLIC_SITE_URL=https://shield-comment-app-staging.fly.dev`, client + admin `API_UPSTREAM=http://shield-comment-api-staging.internal:3000`, `CORS_ORIGINS` unset. In the files (`[env]`): backend `TRUST_PROXY_HOPS=1` + `TRUST_FLY_CLIENT_IP=true`, client + admin `FORWARDED_FOR_MODE=pass`. Separate admin origin = separate Better Auth cookies.
 
-**Client IP:** the `*.fly.dev` hosts go through the same Fly edge as a custom domain (it appends the visitor to `X-Forwarded-For`), and an auto-started machine gets the same request with the same headers once it is up, so §2 holds unchanged: `TRUST_PROXY_HOPS=1` on both paths (app proxy → backend, and direct `shield-comment-api-staging.fly.dev`). Verify with the §2 steps on the staging hosts at M9-T13.
+**Client IP:** the `*.fly.dev` hosts go through the same Fly edge as a custom domain, and an auto-started machine gets the same request with the same headers once it is up, so §2 holds unchanged: the backend takes `Fly-Client-IP` (`TRUST_FLY_CLIENT_IP=true`) on both paths (app proxy → backend, and direct `shield-comment-api-staging.fly.dev`). Checked on staging in M9-T14a (§2 steps).
 
 ### First deploy (M9-T13, each step with the user's approval)
 
@@ -103,7 +103,7 @@ Hosting per Module 9 **D1 (a)** (revised: production only, host still open): Fly
 
 ## 2. Client IP and forwarded headers (M9-T1 / M9-T8 carry-overs)
 
-Every per-IP limit (Better Auth sign-in 10/min, the global throttler's 60/min anonymous bucket, Meta + SSLCommerz callback throttlers) keys on the IP that `backend/src/common/http/client-ip.ts` picks: the entry `TRUST_PROXY_HOPS` places from the right of `X-Forwarded-For`.
+Every per-IP limit (Better Auth sign-in 10/min, the global throttler's 60/min anonymous bucket, Meta + SSLCommerz callback throttlers) and the stored session IP key on the IP that `backend/src/common/http/client-ip.ts` picks: on Fly (`TRUST_FLY_CLIENT_IP=true`) the `Fly-Client-IP` header when it holds one IP, otherwise (and everywhere else) the entry `TRUST_PROXY_HOPS` places from the right of `X-Forwarded-For`.
 
 There are two paths to the backend:
 
@@ -112,14 +112,16 @@ There are two paths to the backend:
 | browser → Fly edge → app proxy (client Start / admin nginx) → backend | users | Fly edge appends the visitor; app proxy **passes it on unchanged** |
 | caller → Fly edge → backend (`api.<domain>`) | Meta, Telegram, anyone who finds the host | Fly edge appends the caller |
 
-**Choice:** the app proxies run with `FORWARDED_FOR_MODE=pass` on Fly (`client/src/server/api-proxy.ts`, `admin/nginx.conf.template`), so both paths have the same count and **`TRUST_PROXY_HOPS=1`** resolves the real IP on both. With the old "append" behaviour, Fly would need 2 on the app path and 1 on the direct path. With 2, anyone could pick their own bucket on `api.<domain>` (for example to get around the sign-in limit), because every backend route is reachable there. Compose keeps the default `append` (no edge in front) and also uses 1.
+**Rule on Fly (M9-T14a): trust `Fly-Client-IP`.** Staging showed (M9-T14) that the Fly edge adds more than one `X-Forwarded-For` entry (requests carry `Via: 2 fly.io`): with `TRUST_PROXY_HOPS=1` both paths resolved to a Fly edge address (`66.241.125.x`), so all visitors shared a few buckets. The edge also sets `Fly-Client-IP` to the visitor and **overwrites a client-sent one**, so `backend/fly.toml` and `fly.staging.toml` set `TRUST_FLY_CLIENT_IP=true` (checked by `scripts/check-fly-config.py`). Missing or not exactly one IP → the `TRUST_PROXY_HOPS=1` rule as a fallback. The app proxies pass every request header on, so `Fly-Client-IP` reaches the backend unchanged on the app path (client `/api` proxy via `new Headers(request.headers)`; the client SSR helpers `session.ts` + `data-deletion-upstream.ts` list it explicitly; admin nginx forwards client headers by default). The app → backend hop runs over Fly's private network, which only our own apps' machines can reach, and they only forward what the edge set. **Never set the switch off Fly** (compose, a VPS): without Fly's edge any caller could send `Fly-Client-IP` and pick its own bucket; default `false`, compose doesn't pass it.
+
+The app proxies also keep `FORWARDED_FOR_MODE=pass` on Fly (`client/src/server/api-proxy.ts`, `admin/nginx.conf.template`), so the fallback counts the same hops on both paths. Compose keeps the default `append` (no edge in front) and `TRUST_PROXY_HOPS=1`.
 
 `X-Forwarded-Proto`: Fly reaches the containers over plain http, so `$scheme` is `http` there. Both proxies now keep an incoming `X-Forwarded-Proto` (the edge sets `https`) and only fall back to their own scheme, so the backend and HSTS see `https`.
 
-**Verify on staging (M9-T13), both paths:**
-1. Sign in on `https://shield-comment-app-staging.fly.dev`, then open `https://shield-comment-app-staging.fly.dev/api/auth/list-sessions`: `ipAddress` must be your public IP (`curl -s https://ifconfig.me`; IPv6 is stored as its /64).
-2. Sign in once with a fake header straight at the backend: `curl -s https://shield-comment-api-staging.fly.dev/api/auth/sign-in/email -H 'Origin: https://shield-comment-app-staging.fly.dev' -H 'Content-Type: application/json' -H 'X-Forwarded-For: 203.0.113.99' -d '{"email":"…","password":"…"}'`. The new session's `ipAddress` must be your real IP, not `203.0.113.99`.
-3. If either shows a Fly address (`172.16.*`, `fdaa:*`), the edge adds more than one entry: raise `TRUST_PROXY_HOPS` by that number in `backend/fly.toml` and `fly.staging.toml`, redeploy and check again.
+**Verify on staging, all paths** (done in M9-T14a; repeat after a proxy or Fly change):
+1. Sign in on `https://shield-comment-app-staging.fly.dev` (client proxy) and on `https://shield-comment-admin-staging.fly.dev` (admin nginx), then `GET …/api/auth/list-sessions` on each: `ipAddress` must be your public IP (`curl -s https://ifconfig.me`; IPv6 is stored as its /64).
+2. Sign in straight at the backend with fake headers: `curl -s https://shield-comment-api-staging.fly.dev/api/auth/sign-in/email -H 'Origin: https://shield-comment-app-staging.fly.dev' -H 'Content-Type: application/json' -H 'X-Forwarded-For: 203.0.113.99' -H 'Fly-Client-IP: 203.0.113.98' -d '{"email":"…","password":"…"}'` (and the same through the app host). The new session's `ipAddress` must be your real IP, never `203.0.113.98`/`.99`.
+3. Sign out the probe sessions.
 
 ## 3. One-time setup per environment
 
@@ -219,7 +221,8 @@ Legend: **fly.toml** = `[env]` in the app's `fly.toml` and `fly.staging.toml` (s
 | Variable | Where | Secret? | Production | Staging |
 |---|---|---|---|---|
 | `NODE_ENV`, `PORT`, `HOST`, `LOG_LEVEL` | fly.toml | no | `production`, `3000`, `::`, `info` | same |
-| `TRUST_PROXY_HOPS` | fly.toml | no | `1` (§2) | same |
+| `TRUST_PROXY_HOPS` | fly.toml | no | `1` (§2, fallback) | same |
+| `TRUST_FLY_CLIENT_IP` | fly.toml | no | `true` (§2; never off Fly) | same |
 | `DATABASE_URL` | secret | yes | Neon `production` branch, **pooled** (`ep-…-pooler.ap-southeast-1.aws.neon.tech`, `sslmode=require`) | Neon `staging` branch, pooled |
 | `DIRECT_URL` | secret | yes | Neon `production` branch, **direct** (no `-pooler`; migrations only) | Neon `staging` branch, direct |
 | `REDIS_URL` | secret | yes | Redis Cloud production DB (`noeviction`) | Redis Cloud staging DB |

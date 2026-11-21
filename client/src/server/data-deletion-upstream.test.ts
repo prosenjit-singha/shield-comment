@@ -56,11 +56,17 @@ describe('fetchDataDeletionStatusUpstream', () => {
     fetchMock.mockResolvedValue(Response.json(STATUS))
     await fetchDataDeletionStatusUpstream(
       CODE,
-      pageRequest({ 'x-forwarded-for': '198.51.100.4', 'x-forwarded-host': 'app.example.com', 'x-forwarded-proto': 'https' }),
+      pageRequest({
+        'x-forwarded-for': '198.51.100.4',
+        'x-forwarded-host': 'app.example.com',
+        'x-forwarded-proto': 'https',
+        'fly-client-ip': '198.51.100.4',
+      }),
       '10.0.0.2',
       UPSTREAM,
     )
     const { headers } = lastCall()
+    expect(headers.get('fly-client-ip')).toBe('198.51.100.4') // the backend's client IP on Fly (M9-T14a)
     expect(headers.get('x-forwarded-for')).toBe('198.51.100.4, 10.0.0.2')
     expect(headers.get('x-forwarded-host')).toBe('app.example.com')
     expect(headers.get('x-forwarded-proto')).toBe('https')

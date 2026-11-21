@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 # app dir -> (production app name, health check path, env that must be set as is)
 APPS = {
-    "backend": ("shield-comment-api", "/api/health/live", {"NODE_ENV": "production", "HOST": "::", "TRUST_PROXY_HOPS": "1"}),
+    "backend": ("shield-comment-api", "/api/health/live", {"NODE_ENV": "production", "HOST": "::", "TRUST_PROXY_HOPS": "1", "TRUST_FLY_CLIENT_IP": "true"}),
     "client": ("shield-comment-app", "/healthz", {"FORWARDED_FOR_MODE": "pass"}),
     "admin": ("shield-comment-admin", "/healthz", {"FORWARDED_FOR_MODE": "pass", "NGINX_RESOLVER_IPV6": "on"}),
 }
@@ -94,6 +94,8 @@ def self_test() -> tuple[list[str], int]:
         ("admin", "staging", "env.FORWARDED_FOR_MODE", "append"),
         ("client", "production", "http_service.auto_stop_machines", "stop"),
         ("backend", "production", "deploy.release_command", None),
+        ("backend", "staging", "env.TRUST_FLY_CLIENT_IP", None),
+        ("backend", "production", "env.TRUST_FLY_CLIENT_IP", "false"),
     ]
     failures = []
     for app, kind, key, value in cases:

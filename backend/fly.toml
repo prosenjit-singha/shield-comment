@@ -25,9 +25,11 @@ kill_timeout = "30s"
   # Dual-stack: Fly's proxy connects over IPv4, the app proxies over the IPv6-only private network.
   HOST = "::"
   LOG_LEVEL = "info"
-  # The Fly edge appends the visitor to X-Forwarded-For; the app proxies pass it on unchanged
-  # (FORWARDED_FOR_MODE=pass), so the app path and api.<domain> both count 1 (verify on staging, M9-T13).
+  # Client IP = Fly-Client-IP, set by the edge (a client-sent one is overwritten) and passed on by
+  # the app proxies; X-Forwarded-For's last entry is a Fly edge address (M9-T14a, deploy.md §2).
+  # TRUST_PROXY_HOPS is only the fallback when the header is missing.
   TRUST_PROXY_HOPS = "1"
+  TRUST_FLY_CLIENT_IP = "true"
 
 [http_service]
   internal_port = 3000

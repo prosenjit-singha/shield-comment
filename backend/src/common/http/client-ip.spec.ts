@@ -5,6 +5,7 @@ import {
   CLIENT_IP_HEADER,
   clientIp,
   clientIpMiddleware,
+  FLY_CLIENT_IP_HEADER,
   normaliseIp,
   resolveClientIp,
 } from './client-ip.js';
@@ -92,13 +93,14 @@ describe('clientIpMiddleware', () => {
     headers: IncomingMessage['headers'],
     remoteAddress: string | undefined,
     hops: number,
+    trustFlyClientIp = false,
   ) {
     const req = {
       headers,
       socket: { remoteAddress } as Socket,
     } as IncomingMessage;
     const next = vi.fn<(error?: unknown) => void>();
-    clientIpMiddleware(hops)(req, {} as ServerResponse, next);
+    clientIpMiddleware(hops, trustFlyClientIp)(req, {} as ServerResponse, next);
     expect(next).toHaveBeenCalledExactlyOnceWith();
     return req;
   }
@@ -128,5 +130,71 @@ describe('clientIpMiddleware', () => {
 
     expect(req.headers[CLIENT_IP_HEADER]).toBeUndefined();
     expect(clientIp(req)).toBeNull();
+  });
+
+  describe('TRUST_FLY_CLIENT_IP (M9-T14a)', () => {
+    // What the Fly edge sends: its own address last in X-Forwarded-For, the visitor in Fly-Client-IP.
+    const EDGE_XFF = '203.0.113.7, 66.241.125.10';
+
+    it('switch on + valid Fly-Client-IP → that IP, whatever X-Forwarded-For says', () => {
+      const req = run(
+        {
+          [FLY_CLIENT_IP_HEADER]: '198.51.100.20',
+          [CLIENT_IP_HEADER]: EDGE_XFF,
+        },
+        'fdaa::3',
+        1,
+        true,
+      );
+
+      expect(clientIp(req)).toBe('198.51.100.20');
+    });
+
+    it('switch on + IPv6 Fly-Client-IP → its /64, like Better Auth', () => {
+      const req = run(
+        {
+          [FLY_CLIENT_IP_HEADER]: ' 2001:db8:1:2::5 ',
+          [CLIENT_IP_HEADER]: EDGE_XFF,
+        },
+        'fdaa::3',
+        1,
+        true,
+      );
+
+      expect(clientIp(req)).toBe(V6_64);
+    });
+
+    it.each([
+      ['missing', undefined],
+      ['empty', ''],
+      ['not an IP', 'unknown'],
+      ['a list (repeated header)', '198.51.100.20, 198.51.100.21'],
+      ['an array', ['198.51.100.20']],
+    ])(
+      'switch on + Fly-Client-IP %s → the TRUST_PROXY_HOPS rule',
+      (_name, fly) => {
+        const req = run(
+          { [FLY_CLIENT_IP_HEADER]: fly, [CLIENT_IP_HEADER]: EDGE_XFF },
+          'fdaa::3',
+          1,
+          true,
+        );
+
+        expect(clientIp(req)).toBe('66.241.125.10');
+      },
+    );
+
+    it('switch off (default, compose/Docker) → a client-sent Fly-Client-IP is ignored', () => {
+      const req = run(
+        {
+          [FLY_CLIENT_IP_HEADER]: '198.51.100.20',
+          [CLIENT_IP_HEADER]: '1.2.3.4',
+        },
+        '172.18.0.4',
+        1,
+      );
+
+      expect(clientIp(req)).toBe('1.2.3.4');
+    });
   });
 });

@@ -124,3 +124,66 @@ describe.each([0, 1])(
     });
   },
 );
+
+/**
+ * M9-T14a: on Fly (`TRUST_FLY_CLIENT_IP=true`) the edge's `Fly-Client-IP` picks the bucket; missing or
+ * invalid → the hops rule. Off (compose/Docker default) a client-sent `Fly-Client-IP` is ignored.
+ */
+describe.each(['true', 'false'])(
+  'Better Auth rate-limit client IP, TRUST_FLY_CLIENT_IP=%s (e2e)',
+  (trustFly) => {
+    let app: INestApplication<App>;
+    let storage: MemoryStorage;
+    const FLY_IP = '198.51.100.20';
+
+    beforeAll(async () => {
+      vi.stubEnv('TRUST_PROXY_HOPS', '1');
+      vi.stubEnv('TRUST_FLY_CLIENT_IP', trustFly);
+      app = await createTestApp();
+      vi.unstubAllEnvs();
+      const auth = app.get<AuthService<BetterAuth>>(AuthService).instance;
+      (await auth.$context).rateLimit.enabled = true;
+      storage = app.get<MemoryStorage>(AUTH_SECONDARY_STORAGE);
+    });
+
+    afterAll(async () => {
+      await app.close();
+    });
+
+    beforeEach(() => {
+      for (const key of storage.keys()) void storage.delete(key);
+    });
+
+    function signIn(headers: Record<string, string>) {
+      return request(app.getHttpServer())
+        .post(`/api/auth${SIGN_IN}`)
+        .set('Origin', TRUSTED_ORIGIN)
+        .set(headers)
+        .send({ email: uniqueEmail('rate-fly'), password: 'wrong-password-1' });
+    }
+
+    function buckets(): string[] {
+      return storage.keys().filter((key) => key.includes('|'));
+    }
+
+    it('keys on Fly-Client-IP only when the switch is on', async () => {
+      await signIn({
+        'Fly-Client-IP': FLY_IP,
+        'X-Forwarded-For': `203.0.113.7, ${PROXIED_IP}`,
+      }).expect(401);
+
+      expect(buckets()).toEqual([
+        `${trustFly === 'true' ? FLY_IP : PROXIED_IP}|${SIGN_IN}`,
+      ]);
+    });
+
+    it('falls back to the hops rule when Fly-Client-IP is not one IP', async () => {
+      await signIn({
+        'Fly-Client-IP': `${FLY_IP}, 198.51.100.21`,
+        'X-Forwarded-For': PROXIED_IP,
+      }).expect(401);
+
+      expect(buckets()).toEqual([`${PROXIED_IP}|${SIGN_IN}`]);
+    });
+  },
+);

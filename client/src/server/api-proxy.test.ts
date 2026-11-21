@@ -44,11 +44,17 @@ describe('buildForwardHeaders', () => {
     it("forwards the edge's X-Forwarded-For unchanged (one hop on every path)", () => {
       vi.stubEnv('FORWARDED_FOR_MODE', 'pass')
       const headers = buildForwardHeaders(
-        new Headers({ 'x-forwarded-for': '198.51.100.1, 203.0.113.7', 'x-forwarded-proto': 'https' }),
+        new Headers({
+          'x-forwarded-for': '198.51.100.1, 203.0.113.7',
+          'x-forwarded-proto': 'https',
+          'fly-client-ip': '198.51.100.1',
+        }),
         { clientIp: '172.16.5.10', host: 'app.example.com', proto: 'http' },
       )
       expect(headers.get('x-forwarded-for')).toBe('198.51.100.1, 203.0.113.7')
       expect(headers.get('x-forwarded-proto')).toBe('https')
+      // The backend's client IP on Fly (M9-T14a): passed on as the edge set it.
+      expect(headers.get('fly-client-ip')).toBe('198.51.100.1')
     })
 
     it('adds no X-Forwarded-For when the edge sent none (the backend falls back to the socket)', () => {

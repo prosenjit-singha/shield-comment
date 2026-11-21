@@ -20,7 +20,8 @@ export function configureApp(app: INestApplication): void {
   // Read like CORS_ORIGINS below; env.validation.ts has already checked it (int 0–10) at boot.
   const hops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
   (app as NestExpressApplication).set('trust proxy', 1);
-  app.use(clientIpMiddleware(hops));
+  // Fly.io only (M9-T14a): the edge's `Fly-Client-IP` wins over the hops rule.
+  app.use(clientIpMiddleware(hops, process.env.TRUST_FLY_CLIENT_IP === 'true'));
   // JSON API: Helmet defaults (incl. no `X-Powered-By`); the HTML origins set their own (M9-T8).
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }));
   // Before init(): runs ahead of the Better Auth integration's body parsers (module middleware), so

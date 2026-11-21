@@ -591,6 +591,7 @@ describe('validateEnv: documented deploy env (M9-T10, deploy.md)', () => {
     HOST: '::',
     LOG_LEVEL: 'info',
     TRUST_PROXY_HOPS: '1',
+    TRUST_FLY_CLIENT_IP: 'true',
     DATABASE_URL:
       'postgresql://app:pw@ep-example-a1b2c3d4-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
     DIRECT_URL:
@@ -648,7 +649,16 @@ describe('validateEnv: documented deploy env (M9-T10, deploy.md)', () => {
     const validated = validateEnv(env);
     expect(validated.NODE_ENV).toBe('production');
     expect(validated.TRUST_PROXY_HOPS).toBe(1);
+    expect(validated.TRUST_FLY_CLIENT_IP).toBe('true');
     expect(validated.CORS_ORIGINS).toBeUndefined();
+  });
+
+  it('TRUST_FLY_CLIENT_IP defaults to false and takes only true/false (M9-T14a)', () => {
+    const { TRUST_FLY_CLIENT_IP: _on, ...rest } = PRODUCTION;
+    expect(validateEnv(rest).TRUST_FLY_CLIENT_IP).toBe('false');
+    expect(() => validateEnv({ ...rest, TRUST_FLY_CLIENT_IP: 'yes' })).toThrow(
+      /TRUST_FLY_CLIENT_IP must be true or false/,
+    );
   });
 
   it('the minimum production env (no optional feature) passes', () => {

@@ -22,7 +22,8 @@ export const getServerSession = createServerFn({ method: 'GET' }).handler(
     })
     // Only what get-session needs; never forward the page request's body headers.
     const forward = new Headers()
-    for (const name of ['cookie', 'user-agent', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto']) {
+    // fly-client-ip: the visitor's IP from the Fly edge, the backend's client IP on Fly (M9-T14a).
+    for (const name of ['cookie', 'user-agent', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'fly-client-ip']) {
       const value = headers.get(name)
       if (value) forward.set(name, value)
     }
