@@ -37,6 +37,8 @@ Names only (values from the Meta test app; descriptions in `backend/.env.example
 
 ## 3. Meta test app dashboard
 
+Meta App Review (per-permission use cases, production URLs, screencast shot list): [`meta-app-review.md`](meta-app-review.md).
+
 1. **Facebook Login for Business** → Settings: add the OAuth redirect URI above to *Valid OAuth Redirect URIs*; set *Deauthorize callback URL* to `<base>/api/meta/deauthorize`. The configuration id goes into `META_LOGIN_CONFIG_ID`.
 2. **App settings → Basic** → *User data deletion* → *Data deletion callback URL* = `<base>/api/meta/data-deletion`.
 3. **App settings → Advanced** → switch on **Require App Secret** (every token call sends `appsecret_proof`).
