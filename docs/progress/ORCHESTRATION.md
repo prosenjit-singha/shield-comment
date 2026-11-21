@@ -11,14 +11,12 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-verified M9-T14a · next M9-T15 pre-check (Meta live calls, AI provider)
+paused: waiting on user for M9-T15 — add META_* keys to `backend/.env.staging` and buy Neon AI credits (decisions answered 2026-11-22; no PRE-CHECK left)
 
 ## Resume
-`/orchestration --continue` — M9-T14a (Fly-Client-IP fix + backend redeploy, each fly command approved) dispatched; then M9-T15 pre-check (Meta live calls approval, live AI provider + spend cap).
+`/orchestration --continue` — after you add `META_APP_ID`, `META_APP_SECRET`, `META_LOGIN_CONFIG_ID`, `META_OAUTH_REDIRECT_URI`, `META_WEBHOOK_VERIFY_TOKEN` to `backend/.env.staging` and buy Neon AI credits; then M9-T15 (live Meta test run) is dispatched.
 
 ## Next prompt (M9-T15)
-
-PRE-CHECK: needs user approval for the Meta test app setup and live Meta calls, and the live-AI decision, before dispatch. Answered 2026-11-22 (verbatim in `## Decisions asked`): META_* secrets → "Agent, from my file" (user puts them in git-ignored `backend/.env.staging`; agent imports via `fly secrets`, each command approved, never printed); M9-T14a runs first ("M9-T14a first (Recommended)"). Still to ask: approval of the Meta test app setup + live Meta calls; live AI ("Decide at M9-T15": which provider/key classifies live comments on staging + spend cap; Neon AI gateway = 403 `paid_plan_required`); confirm the META_* keys are in the file.
 
 You are implementing exactly ONE task row, **M9-T15**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
 
@@ -30,6 +28,7 @@ You are implementing exactly ONE task row, **M9-T15**, in the ShieldComment BD r
 5. Code to read or reuse: `backend/src/scripts/subscribe-active-pages.ts`, the Meta webhook controller (`/api/webhooks/meta`), `backend/src/scripts/create-super-admin.ts` (pattern for running a script on the machine), `e2e/.env.staging` (key names only: `cut -d= -f1`). Fly: `~/.fly/bin/fly`; secrets into the machine only by piping a script to `fly ssh console -a shield-comment-api-staging -C "sh -s"` (never argv).
 
 **Recorded decisions**
+- User, 2026-11-22 (M9-T15 pre-check, verbatim in `## Decisions asked`): live Meta calls → "Approve (Recommended)" (Meta test app + a test Page the user owns; every `fly`/Meta-affecting command through the permission prompt); META_* secrets → "Agent, from my file" + "I'll add them, then resume": import `META_APP_ID`, `META_APP_SECRET`, `META_LOGIN_CONFIG_ID`, `META_OAUTH_REDIRECT_URI`, `META_WEBHOOK_VERIFY_TOKEN` from git-ignored `backend/.env.staging` (check key names first; never print values; strip quotes; `fly secrets import --stage` then deploy/restart); live AI → **"Buy Neon AI credits"**: use the Neon AI gateway (`NEON_AI_GATEWAY_*`, already staged); first verify the gateway no longer answers 403 `paid_plan_required` (one tiny request); if it still does, stop with `needs-decision`.
 - D5 (a): hosted staging uses a Meta **test app** (revised 2026-11-21: staging = Fly.io Free plan, D16).
 - D7 (a) (2026-11-21): the agent writes/adapts the checklist; **the user records the screencast** on staging during this live test (connect Page → scam comment hidden → auto-reply → dashboard) and submits App Review later (M9-T16).
 - Staging URLs (M9-T10b): webhook `https://shield-comment-api-staging.fly.dev/api/webhooks/meta`, OAuth redirect `https://shield-comment-app-staging.fly.dev/api/meta/oauth/callback`, deauthorize `https://shield-comment-api-staging.fly.dev/api/meta/deauthorize`, data deletion `https://shield-comment-api-staging.fly.dev/api/meta/data-deletion`.
@@ -365,6 +364,8 @@ One distinction: if you use Cloudflare's proxy, configure SSL/TLS mode as Full (
 - 2026-11-22 M9-T14 pre-check (user, verbatim): accounts via `fly ssh console` → "Approve (Recommended)"; smoke credentials → the user typed the owner + admin emails and passwords in chat (**not recorded here: secrets**; the orchestrator hands them to the sub-agent, which writes git-ignored `e2e/.env.staging`); SSLCommerz sandbox → "Skip payments for now"; `npm run smoke` against staging → "Approve (Recommended)".
 
 - 2026-11-22 after M9-T14 (user, verbatim): order → "M9-T14a first (Recommended)"; IP fix → "Trust Fly-Client-IP (Recommended)" (on Fly only, behind an env switch; verify a client cannot fake it); M9-T15 Meta secrets → "Agent, from my file" (user puts META_* in git-ignored `backend/.env.staging`; agent imports with `fly secrets`, each command approved, never printed); M9-T15 live AI → "Decide at M9-T15" (ask again at its pre-check, with options + spend cap).
+
+- 2026-11-22 M9-T15 pre-check (user, verbatim): live Meta calls → "Approve (Recommended)" (Meta test app + a test Page the user owns; each fly command via the permission prompt); live AI → "Buy Neon AI credits" (Neon AI gateway after the user buys credits on the Neon paid plan); META_* keys → "I'll add them, then resume" (user adds them to git-ignored `backend/.env.staging`, then sends `/orchestration --continue`).
 
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
