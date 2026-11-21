@@ -7,14 +7,14 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 8 section + the row's decisions, `docs/project-documentation/modules/module-8-billing-sslcommerz.md`, the code the row names.
 - Standing approvals: none yet for admin/ or client/ (asked at the first row that touches each). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included): none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #17 (2026-11-21) · rows this session: 9 · estimate: 275k
+- Session: #17 (2026-11-21) · rows this session: 10 · estimate: 300k
 - Previous runs (Modules 3–7, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M8-T8 (2026-11-21) · commit: "feat(backend): add admin billing filters, refunds and mrr (M8-T8)"
+paused: row cap (10 rows in session #17) after verified M8-T8 · next M8-T9 touches admin/ (approval not yet given)
 
 ## Resume
-`/orchestration --continue`
+`/orchestration --continue` — the pre-check will ask for the admin/ approval (M8-T9 is the first admin row; client/ follows at M8-T10…T13).
 
 ## Next prompt (M8-T9)
 
@@ -353,4 +353,4 @@ You are implementing exactly ONE task row, **M8-T9**, in the ShieldComment BD re
 - 2026-11-21 M8-T6 ✅ 7f9c522 · backend 2578 unit (was 2568) + 1260 e2e (was 1254) · admin/client/root e2e untouched · renewal reminders (7/3/1 + expiry, once per term via a marker, migration 0042), pending-payment expiry (60 min), M8-D7b term-end switch with no gap (readers see the scheduled term, job writes it), summary `renewal` / `pendingPayment` / `scheduled`
 - 2026-11-21 M8-T6b ✅ 304a3c0 · backend 2587 unit (was 2578) + 1265 e2e (was 1260) · admin/client/root e2e untouched · tokenized auto-renew behind `SSLCOMMERZ_TOKENIZATION` (off): owner-only PUT/DELETE auto-renew, summary `autoRenew`, token saved encrypted (migration 0043), hourly charge job (≤ 24 h / ≤ 12 h retry, once per term) through the IPN validation + `activatePaidTerm`, failure email; tokenization API names provisional.
 - 2026-11-21 M8-T7 ✅ bdc6270 · backend 2589 unit (was 2587) + 1271 e2e (was 1265) · admin/client/root e2e untouched · client invoices API (list + detail, owner + admin, impersonated read, account-scoped 404s, promotion lines + credit, seller env) + term snapshot on settled rows (0044)
-- 2026-11-21 M8-T8 ✅ · backend 2602 unit (was 2589) + 1314 e2e (was 1271) · admin/client/root e2e untouched · admin billing filters + transaction sheet + failed events list + D9 mark-refunded (`payment_refunds` 0045) + real dashboard MRR and gateway volume
+- 2026-11-21 M8-T8 ✅ e9a6bbb · backend 2602 unit (was 2589) + 1314 e2e (was 1271) · admin/client/root e2e untouched · admin billing filters + transaction sheet + failed events list + D9 mark-refunded (`payment_refunds` 0045) + real dashboard MRR and gateway volume
