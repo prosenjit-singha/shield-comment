@@ -7,14 +7,14 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 8 section + the row's decisions, `docs/project-documentation/modules/module-8-billing-sslcommerz.md`, the code the row names.
 - Standing approvals: **admin/** and **client/** for the rest of this run (user, 2026-11-21, M8-T9 pre-check). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included): none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #18 (2026-11-21) · rows this session: 5 · estimate: 140k
+- Session: #18 (2026-11-21) · rows this session: 6 · estimate: 160k
 - Previous runs (Modules 3–7, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M8-GATE (2026-11-21) · commit: "test(e2e): pass module 8 gate (M8-GATE)"
+done: Module 8 M8-PLAN → M8-GATE (2026-11-21)
 
 ## Resume
-`/orchestration --continue` — the pre-check will ask for the admin/ approval (M8-T9 is the first admin row; client/ follows at M8-T10…T13).
+Run finished. Start a new run with `/orchestration <instructions>` (e.g. `/orchestration Module 9 from M9-PLAN until M9-GATE`). Pending opt-in work (not in this run): manual SSLCommerz sandbox run (D13, needs approval + a tunnel for the IPN); tokenization field-name check against the merchant docs before `SSLCOMMERZ_TOKENIZATION=true` (M8-T6b).
 
 ## Next prompt
 RUN COMPLETE
@@ -334,4 +334,4 @@ RUN COMPLETE
 - 2026-11-21 M8-T11 ✅ 52c8dfa · client 1003 (was 972) · backend/admin/root e2e untouched · invoices list + printable invoice view on `/billing` (`?invoice=`), `/plans` checkout links → `/billing?plan&interval` (preselect + checkout), banner → `/billing` for paid plans, D11 `/register` + `/login` hand-off
 - 2026-11-21 M8-T12 ✅ 6899809 · client 1023 (was 1003) · backend/admin/root e2e untouched · C1 landing `/` + `/bn`: 9 sections (navbar EN | বাং, hero + simulator, trust strip, bento, ROAS calculator, how it works, live SSR pricing from `GET /api/plans` with both prices in the HTML + D11 register links, FAQ, footer CTA), failure fallback "See plans" + no-store
 - 2026-11-21 M8-T13 ✅ 39bf4eb · client 1037 (was 1023) · backend/admin/root e2e untouched · landing SEO: JSON-LD SoftwareApplication (lowest live price) + FAQPage, og:image 1200×630 + twitter card, robots.txt + sitemap.xml server routes, TikTok → Instagram copy; Lighthouse mobile `/` 100/96/100/100, `/bn` 99/96/100/100 (`client/scripts/lighthouse.sh`)
-- 2026-11-21 M8-GATE ✅ · backend 2602 + e2e 1314 · admin 465 · client 1037 · root e2e 7/7 host + docker (was 4) · Lighthouse `/` 100/96/100/100, `/bn` 99/96/100/100 · Module 8 gate: SSLCommerz stub checkout round trip (monthly, yearly, tampered) + A4, curl raw HTML, browser check; no app code changed
+- 2026-11-21 M8-GATE ✅ 0570111 · backend 2602 + e2e 1314 · admin 465 · client 1037 · root e2e 7/7 host + docker (was 4) · Lighthouse `/` 100/96/100/100, `/bn` 99/96/100/100 · Module 8 gate: SSLCommerz stub checkout round trip (monthly, yearly, tampered) + A4, curl raw HTML, browser check; no app code changed
