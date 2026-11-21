@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 9 section + the row's decisions, `docs/project-documentation/modules/module-9-launch-security.md`, the code the row names.
 - Standing approvals: **client/ approved for the rest of the run** (user, 2026-11-21, M9-T6 pre-check: "Rest of the run"); **admin/ approved for the rest of the run** (user, 2026-11-21, M9-T8 pre-check: "Rest of the run"). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included), deploys, DNS, hosting/Neon/Redis Cloud accounts or any production credential: none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #19 (2026-11-21, continues session #18) · rows this session: 5 · estimate: 140k
+- Session: #19 (2026-11-21, continues session #18) · rows this session: 6 · estimate: 160k
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M9-T9 (2026-11-21) · commit: "fix(client,admin): darken primary for contrast and fix nav test flake (M9-T9)" (summary may vary; subject contains (M9-T9))
+verified M9-T9
 
 ## Resume
 `/orchestration --continue` — next M9-T4 (immutable audit logs, backend only, D4 answered). Coming pre-checks: M9-T5 asks what happens to existing unverified accounts and to impersonation under required email verification (D10 b); M9-T7 asks the legal facts (D11); the first admin/ and client/ rows ask for app approval.
@@ -404,4 +404,4 @@ Carry-over from M9-T9: the dark-mode brand fills now carry dark text and light `
 - 2026-11-21 M9-T6 ✅ c179560 · client 1074 (was 1037) · root e2e 7/7 · client `/forgot-password`, `/reset-password`, `/verify-email` + check-inbox/resend after sign-up, invite sign-up and login 403; login "Forgot password?" + `?reset=1` notice; invitee returns to the invite via localStorage (M9-T6-a); noindex + robots Disallow.
 - 2026-11-21 M9-T7 ✅ 22e9265 · client 1095 (was 1074) · root e2e 7/7 · client legal pages `/privacy`, `/terms`, `/refund-policy` + `/bn/*` twins (SSR, indexable, sitemap + canonical/hreflang), facts in `client/src/lib/legal-facts.json` (placeholders until go-live), links in landing footer, `/register`, `/login`; copy is a draft for the user's review.
 - 2026-11-21 M9-T8 ✅ b1f6aa6 · client 1116 (was 1095) · admin 465 · root e2e 7/7 · app-origin security headers (nosniff, DENY, strict-origin-when-cross-origin, Permissions-Policy, HSTS on https, CSP Report-Only with a per-request Start nonce) + br/gzip for Start bodies in `client/server-http.ts`; same headers in admin nginx without doubling `/api/`; 0 CSP violations on public + app + admin screens; Lighthouse `/` 99/96/100/100, `/bn` 96/96/100/100
-- 2026-11-21 M9-T9 ✅ · client 1125 (was 1116) · admin 465 · root e2e 7/7 · Lighthouse `/` + `/bn` a11y 100 (was 96), perf/bp/seo 100 · darker light primary/secondary, lifted dark brand tokens with dark foregrounds, contrast token test, client.md TikTok copy, nav flake root cause (Motion exit kept the menu's aria-hidden) fixed in the test harness
+- 2026-11-21 M9-T9 ✅ 8cb1a05 · client 1125 (was 1116) · admin 465 · root e2e 7/7 · Lighthouse `/` + `/bn` a11y 100 (was 96), perf/bp/seo 100 · darker light primary/secondary, lifted dark brand tokens with dark foregrounds, contrast token test, client.md TikTok copy, nav flake root cause (Motion exit kept the menu's aria-hidden) fixed in the test harness
