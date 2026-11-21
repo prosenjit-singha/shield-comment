@@ -111,6 +111,13 @@ export const subscriptions = pgTable(
     }),
     scheduledInterval: text().$type<SubscriptionInterval>(),
     scheduledPrice: jsonb().$type<ActivationPrice>(),
+    /**
+     * Renewal reminder marker (M8-T6, D4): the last reminder emailed for the term ending at
+     * `reminder_term_end`, as days before it (7 / 3 / 1; 0 = the expiry email). A moved or new
+     * term has another end, so it gets its own reminders; both or neither.
+     */
+    reminderTermEnd: timestamptz(),
+    reminderDays: integer(),
     ...timestamps,
   },
   (t) => [
@@ -164,6 +171,12 @@ export const subscriptions = pgTable(
       'subscriptions_scheduled_check',
       sql.raw(
         `(${allOrNoneSql(['scheduled_plan_id', 'scheduled_interval', 'scheduled_price'])}) and (${inListSql('scheduled_interval', SUBSCRIPTION_INTERVALS, true)})`,
+      ),
+    ),
+    check(
+      'subscriptions_reminder_check',
+      sql.raw(
+        `(${allOrNoneSql(['reminder_term_end', 'reminder_days'])}) and (reminder_days is null or reminder_days in (0, 1, 3, 7))`,
       ),
     ),
     check(

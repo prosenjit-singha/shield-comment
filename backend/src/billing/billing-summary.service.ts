@@ -1,13 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
+import { and, desc, eq, gt } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
+import {
+  paymentTransactions,
+  plans,
+  subscriptions,
+} from '../db/schema/index.js';
 import {
   countPooledActivePages,
   findWorkspaceBilling,
 } from '../meta/social-pages.queries.js';
 import { findLiveSubscription } from '../wallet/live-subscription.queries.js';
 import { WalletService } from '../wallet/wallet.service.js';
-import { toBillingSummary } from './billing-summary.js';
+import { renewalOf, toBillingSummary } from './billing-summary.js';
+import { PENDING_PAYMENT_TTL_MS } from './checkout.service.js';
 import {
   accountHadTrial,
   findSummarySubscription,
@@ -38,20 +45,29 @@ export class BillingSummaryService {
       findLiveSubscription(this.db, workspaceId, now),
     ]);
     const accountId = billing?.billingAccountId ?? null;
-    const [subscription, balance, workspaceCount, activePages, hadTrial] =
-      await Promise.all([
-        accountId
-          ? findSummarySubscription(
-              this.db,
-              accountId,
-              live?.subscriptionId ?? null,
-            )
-          : undefined,
-        live ? this.wallet.balance(workspaceId, 'monthlyComments', now) : null,
-        accountId ? this.limits.workspaceCount(accountId) : 1,
-        countPooledActivePages(this.db, workspaceId),
-        accountId ? accountHadTrial(this.db, accountId) : true,
-      ]);
+    const [
+      subscription,
+      balance,
+      workspaceCount,
+      activePages,
+      hadTrial,
+      pendingPayment,
+      scheduled,
+    ] = await Promise.all([
+      accountId
+        ? findSummarySubscription(
+            this.db,
+            accountId,
+            live?.subscriptionId ?? null,
+          )
+        : undefined,
+      live ? this.wallet.balance(workspaceId, 'monthlyComments', now) : null,
+      accountId ? this.limits.workspaceCount(accountId) : 1,
+      countPooledActivePages(this.db, workspaceId),
+      accountId ? accountHadTrial(this.db, accountId) : true,
+      accountId ? this.pendingPayment(accountId, now) : null,
+      live ? this.scheduled(live.subscriptionId, now) : null,
+    ]);
     return toBillingSummary({
       live,
       subscription: subscription ?? null,
@@ -60,6 +76,56 @@ export class BillingSummaryService {
       activePages,
       // PR-T3: the trial endpoint needs an account, no live plan and no trial ever (reading 1).
       trialEligible: !hadTrial && live === null,
+      renewal: renewalOf(live, scheduled !== null, now),
+      pendingPayment,
+      scheduled,
     });
+  }
+
+  /** The account's newest PENDING payment not yet expired (reading 9). */
+  private async pendingPayment(accountId: string, now: Date) {
+    const [row] = await this.db
+      .select({
+        tranId: paymentTransactions.tranId,
+        amountBdt: paymentTransactions.amountBdt,
+        createdAt: paymentTransactions.createdAt,
+      })
+      .from(paymentTransactions)
+      .where(
+        and(
+          eq(paymentTransactions.billingAccountId, accountId),
+          eq(paymentTransactions.status, 'PENDING'),
+          gt(
+            paymentTransactions.createdAt,
+            new Date(now.getTime() - PENDING_PAYMENT_TTL_MS),
+          ),
+        ),
+      )
+      .orderBy(desc(paymentTransactions.createdAt))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * The live row's scheduled change (M8-D7b) while its term runs; once the term ended the live
+   * plan already reads as the scheduled term (`findLiveSubscription`), so `null`.
+   */
+  private async scheduled(subscriptionId: string, now: Date) {
+    const [row] = await this.db
+      .select({
+        planId: plans.id,
+        planName: plans.name,
+        interval: subscriptions.scheduledInterval,
+        startsAt: subscriptions.currentTermEnd,
+      })
+      .from(subscriptions)
+      .innerJoin(plans, eq(plans.id, subscriptions.scheduledPlanId))
+      .where(
+        and(
+          eq(subscriptions.id, subscriptionId),
+          gt(subscriptions.currentTermEnd, now),
+        ),
+      );
+    return row?.interval ? { ...row, interval: row.interval } : null;
   }
 }

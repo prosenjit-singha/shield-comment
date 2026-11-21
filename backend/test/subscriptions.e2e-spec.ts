@@ -654,17 +654,19 @@ describe('Subscriptions + trial by choice (e2e)', () => {
       await app.get(BillingJobSchedulers).ready;
       expect(
         await fakeQueue(app, QUEUE_NAMES.billing).getJobSchedulers(),
-      ).toEqual([
-        {
-          id: 'subscription-expiry-15min',
-          repeat: { pattern: '*/15 * * * *', tz: 'Asia/Dhaka' },
-          template: {
-            name: SUBSCRIPTION_EXPIRY_JOB_NAME,
-            data: {},
-            opts: { ...DEFAULT_JOB_OPTIONS },
+      ).toEqual(
+        expect.arrayContaining([
+          {
+            id: 'subscription-expiry-15min',
+            repeat: { pattern: '*/15 * * * *', tz: 'Asia/Dhaka' },
+            template: {
+              name: SUBSCRIPTION_EXPIRY_JOB_NAME,
+              data: {},
+              opts: { ...DEFAULT_JOB_OPTIONS },
+            },
           },
-        },
-      ]);
+        ]),
+      );
       const owner = await actors.signUp('pwt3-job', { trial: true });
       const account = (await accountOf(owner.id))!;
       const past = new Date(Date.now() - 2 * DAY);
@@ -682,7 +684,11 @@ describe('Subscriptions + trial by choice (e2e)', () => {
         name: SUBSCRIPTION_EXPIRY_JOB_NAME,
         data: {},
       } as never);
-      expect(result).toEqual({ kind: 'subscription_expiry', expired: 1 });
+      expect(result).toEqual({
+        kind: 'subscription_expiry',
+        switched: expect.any(Number),
+        expired: 1,
+      });
       expect((await subsOf(account.id)).map((s) => s.status)).toEqual([
         'EXPIRED',
       ]);

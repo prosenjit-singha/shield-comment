@@ -92,18 +92,19 @@ describe('clientListWhere plan filter (live subscription, PW-T6b)', () => {
       .where(clientListWhere(db, filters, NOW))
       .toSQL();
   const live =
-    'select 1 from "subscriptions" where ("subscriptions"."billing_account_id" = "workspaces"."billing_account_id" and ("subscriptions"."status" in ($1, $2) and "subscriptions"."current_term_end" > $3)';
+    'select 1 from "subscriptions" where ("subscriptions"."billing_account_id" = "workspaces"."billing_account_id" and ("subscriptions"."status" in ($1, $2) and ("subscriptions"."current_term_end" > $3 or ("subscriptions"."scheduled_plan_id" is not null and "subscriptions"."current_term_end" + interval \'28 days\' > $4)))';
 
   it('an id = the account has a live subscription on that plan', () => {
     const { sql, params } = where({ planId: PLAN, status: 'ACTIVE' });
     expect(sql).toContain(
-      'where ("workspaces"."status" = $1 and exists (select 1 from "subscriptions" where ("subscriptions"."billing_account_id" = "workspaces"."billing_account_id" and ("subscriptions"."status" in ($2, $3) and "subscriptions"."current_term_end" > $4) and "subscriptions"."plan_id" = $5)))',
+      'where ("workspaces"."status" = $1 and exists (select 1 from "subscriptions" where ("subscriptions"."billing_account_id" = "workspaces"."billing_account_id" and ("subscriptions"."status" in ($2, $3) and ("subscriptions"."current_term_end" > $4 or ("subscriptions"."scheduled_plan_id" is not null and "subscriptions"."current_term_end" + interval \'28 days\' > $5))) and "subscriptions"."plan_id" = $6)))',
     );
     expect(params).toEqual([
       'ACTIVE',
       'TRIALING',
       'ACTIVE',
       NOW.toISOString(),
+      NOW,
       PLAN,
     ]);
     expect(sql).not.toContain('plan_id" is null');
@@ -112,7 +113,7 @@ describe('clientListWhere plan filter (live subscription, PW-T6b)', () => {
   it('null (`none`) = no live subscription: no account, ended or never', () => {
     const { sql, params } = where({ planId: null });
     expect(sql).toContain(`where not exists (${live}))`);
-    expect(params).toEqual(['TRIALING', 'ACTIVE', NOW.toISOString()]);
+    expect(params).toEqual(['TRIALING', 'ACTIVE', NOW.toISOString(), NOW]);
   });
 
   it('undefined = any plan (no condition)', () => {

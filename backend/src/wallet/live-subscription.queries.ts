@@ -1,4 +1,13 @@
-import { and, eq, gt, inArray } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  or,
+  type SQL,
+  sql,
+} from 'drizzle-orm';
 import { normalizeFeatureConfig } from '../admin/plan-rules.js';
 import type { Database } from '../db/database.js';
 import {
@@ -10,7 +19,11 @@ import {
   subscriptions,
   workspaces,
 } from '../db/schema/index.js';
-import { type WalletPeriod, walletPeriodAt } from './wallet-period.js';
+import {
+  monthlyReset,
+  type WalletPeriod,
+  walletPeriodAt,
+} from './wallet-period.js';
 
 /** The read-only Drizzle methods the live-subscription queries need (db or a transaction). */
 export type LiveSubscriptionExecutor = Pick<Database, 'select'>;
@@ -43,6 +56,16 @@ export interface LiveSubscription {
 /** A live subscription seen from its billing account (no workspace): what a wallet period needs. */
 export type AccountLiveSubscription = Omit<LiveSubscription, 'workspaceId'>;
 
+/** End of a scheduled term (M8-D7b) starting at `start`: one month or year later (Dhaka, month-end clamp). */
+export const scheduledTermEnd = (start: Date, interval: SubscriptionInterval) =>
+  monthlyReset(start, interval === 'year' ? 12 : 1);
+
+/**
+ * The shortest scheduled term (28 days): bounds how long a row whose scheduled switch didn't run
+ * stays live (the switch job runs every 15 min, so in practice minutes).
+ */
+const MIN_SCHEDULED_TERM = sql`interval '28 days'`;
+
 /** The columns of a live subscription + its plan (shared by the workspace and account queries). */
 const liveColumns = {
   billingAccountId: subscriptions.billingAccountId,
@@ -57,7 +80,15 @@ const liveColumns = {
   planSlug: plans.slug,
   featureConfig: plans.featureConfig,
   trialCommentLimit: promotionRedemptions.trialCommentLimit,
+  scheduledInterval: subscriptions.scheduledInterval,
 };
+
+/**
+ * The plan in force at `now`: the scheduled plan once the term with a scheduled change is over
+ * (M8-D7b, before the switch job has written it), else the row's plan.
+ */
+const planInForce = (now: Date): SQL =>
+  sql`case when ${subscriptions.currentTermEnd} <= ${now} then ${subscriptions.scheduledPlanId} else ${subscriptions.planId} end`;
 
 /** The promotion a subscription redeemed (its trial snapshot), if any. */
 const redemptionJoin = eq(
@@ -66,13 +97,21 @@ const redemptionJoin = eq(
 );
 
 /**
- * A subscription row that is live at `now`: TRIALING / ACTIVE and `now < current_term_end`. Also
- * used as a SQL condition by the admin reads (PW-T6b: client plan filter, dashboard plan tiers).
+ * A subscription row that is live at `now`: TRIALING / ACTIVE and `now < current_term_end`, or
+ * (M8-T6, no gap) a row with a scheduled change (M8-D7b) whose term ended but whose switch has not
+ * run yet: its scheduled term is live from the old end on. Also used as a SQL condition by the
+ * admin reads (PW-T6b: client plan filter, dashboard plan tiers).
  */
 export function isLiveAt(now: Date) {
   return and(
     inArray(subscriptions.status, [...LIVE_SUBSCRIPTION_STATUSES]),
-    gt(subscriptions.currentTermEnd, now),
+    or(
+      gt(subscriptions.currentTermEnd, now),
+      and(
+        isNotNull(subscriptions.scheduledPlanId),
+        sql`${subscriptions.currentTermEnd} + ${MIN_SCHEDULED_TERM} > ${now}`,
+      ),
+    ),
   );
 }
 
@@ -97,16 +136,41 @@ function liveSubscriptionQuery(
         isLiveAt(now),
       ),
     )
-    .innerJoin(plans, eq(plans.id, subscriptions.planId))
+    .innerJoin(plans, eq(plans.id, planInForce(now)))
     .leftJoin(promotionRedemptions, redemptionJoin)
     .where(inArray(workspaces.id, [...workspaceIds]));
 }
 
 type LiveRow = Awaited<ReturnType<typeof liveSubscriptionQuery>>[number];
 
+/**
+ * Maps a live row. A row past its end is one with a scheduled change (`isLiveAt`): it reads as the
+ * scheduled term `[old end, old end + interval)` on the scheduled plan (joined by `planInForce`),
+ * exactly what the switch writes (`SubscriptionService.switchScheduled`), so readers see no gap.
+ */
 function toAccountLiveSubscription(
   row: Omit<LiveRow, 'workspaceId'>,
+  now: Date,
 ): AccountLiveSubscription {
+  if (row.scheduledInterval && row.currentTermEnd.getTime() <= now.getTime()) {
+    const start = row.currentTermEnd;
+    return {
+      billingAccountId: row.billingAccountId,
+      subscriptionId: row.subscriptionId,
+      status: 'ACTIVE',
+      interval: row.scheduledInterval,
+      startedAt: start,
+      trialEndsAt: null,
+      currentTermStart: start,
+      currentTermEnd: scheduledTermEnd(start, row.scheduledInterval),
+      plan: {
+        id: row.planId,
+        slug: row.planSlug,
+        featureConfig: normalizeFeatureConfig(row.featureConfig),
+        trialCommentLimit: null,
+      },
+    };
+  }
   return {
     billingAccountId: row.billingAccountId,
     subscriptionId: row.subscriptionId,
@@ -125,8 +189,11 @@ function toAccountLiveSubscription(
   };
 }
 
-function toLiveSubscription(row: LiveRow): LiveSubscription {
-  return { workspaceId: row.workspaceId, ...toAccountLiveSubscription(row) };
+function toLiveSubscription(row: LiveRow, now: Date): LiveSubscription {
+  return {
+    workspaceId: row.workspaceId,
+    ...toAccountLiveSubscription(row, now),
+  };
 }
 
 /**
@@ -139,7 +206,7 @@ export async function findLiveSubscription(
   now: Date = new Date(),
 ): Promise<LiveSubscription | null> {
   const [row] = await liveSubscriptionQuery(db, [workspaceId], now).limit(1);
-  return row ? toLiveSubscription(row) : null;
+  return row ? toLiveSubscription(row, now) : null;
 }
 
 /**
@@ -154,7 +221,9 @@ export async function findLiveSubscriptions(
   const ids = [...new Set(workspaceIds)];
   if (ids.length === 0) return new Map();
   const rows = await liveSubscriptionQuery(db, ids, now);
-  return new Map(rows.map((row) => [row.workspaceId, toLiveSubscription(row)]));
+  return new Map(
+    rows.map((row) => [row.workspaceId, toLiveSubscription(row, now)]),
+  );
 }
 
 /**
@@ -169,13 +238,13 @@ export async function findAccountLiveSubscription(
   const [row] = await db
     .select(liveColumns)
     .from(subscriptions)
-    .innerJoin(plans, eq(plans.id, subscriptions.planId))
+    .innerJoin(plans, eq(plans.id, planInForce(now)))
     .leftJoin(promotionRedemptions, redemptionJoin)
     .where(
       and(eq(subscriptions.billingAccountId, billingAccountId), isLiveAt(now)),
     )
     .limit(1);
-  return row ? toAccountLiveSubscription(row) : null;
+  return row ? toAccountLiveSubscription(row, now) : null;
 }
 
 /**

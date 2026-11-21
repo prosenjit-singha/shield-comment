@@ -8,7 +8,16 @@ import {
 } from '../comments/comment-ingest.rules.js';
 import { isScheduledJobData } from '../queue/job-schedulers.js';
 import { QUEUE_NAMES } from '../queue/queue.constants.js';
-import { SUBSCRIPTION_EXPIRY_JOB_NAME } from './billing-scheduled.jobs.js';
+import {
+  PENDING_PAYMENT_EXPIRY_JOB_NAME,
+  RENEWAL_REMINDERS_JOB_NAME,
+  SUBSCRIPTION_EXPIRY_JOB_NAME,
+} from './billing-scheduled.jobs.js';
+import { CheckoutService } from './checkout.service.js';
+import {
+  RenewalReminderService,
+  type RenewalRemindersOutcome,
+} from './renewal-reminder.service.js';
 import { SubscriptionService } from './subscription.service.js';
 
 const ERROR_LOG_INTERVAL_MS = 5 * 60 * 1000;
@@ -16,12 +25,32 @@ const ERROR_LOG_INTERVAL_MS = 5 * 60 * 1000;
 /** What a `billing` job returned. */
 export interface SubscriptionExpiryOutcome {
   kind: 'subscription_expiry';
+  /** Scheduled changes started (M8-D7b). */
+  switched: number;
   expired: number;
 }
 
+export interface PendingPaymentExpiryOutcome {
+  kind: 'pending_payment_expiry';
+  cancelled: number;
+}
+
+export type BillingJobOutcome =
+  | SubscriptionExpiryOutcome
+  | RenewalRemindersOutcome
+  | PendingPaymentExpiryOutcome;
+
+const JOB_NAMES: readonly string[] = [
+  SUBSCRIPTION_EXPIRY_JOB_NAME,
+  RENEWAL_REMINDERS_JOB_NAME,
+  PENDING_PAYMENT_EXPIRY_JOB_NAME,
+];
+
 /**
  * The one worker of the `billing` queue (PW-T3; in the API process). Dispatches by job name:
- * `subscription-expiry` → `SubscriptionService.expireDue()`. Unknown name / invalid data /
+ * `subscription-expiry` → `SubscriptionService.switchScheduled()` + `expireDue()`,
+ * `renewal-reminders` → `RenewalReminderService.run()`, `pending-payment-expiry` →
+ * `CheckoutService.expirePendingPayments()` (M8-T6). Unknown name / invalid data /
  * permanent DB error → `UnrecoverableError` (no retries); anything else is retried (5 attempts).
  * Logs carry ids, counts and error codes only.
  *
@@ -32,14 +61,18 @@ export class BillingProcessor extends WorkerHost {
   private readonly logger = new Logger('BillingJobs');
   private lastWorkerError: { message: string; at: number } | undefined;
 
-  constructor(private readonly subscriptions: SubscriptionService) {
+  constructor(
+    private readonly subscriptions: SubscriptionService,
+    private readonly reminders: RenewalReminderService,
+    private readonly checkout: CheckoutService,
+  ) {
     super();
   }
 
   async process(
-    job: Job<unknown, SubscriptionExpiryOutcome>,
-  ): Promise<SubscriptionExpiryOutcome> {
-    if (job.name !== SUBSCRIPTION_EXPIRY_JOB_NAME) {
+    job: Job<unknown, BillingJobOutcome>,
+  ): Promise<BillingJobOutcome> {
+    if (!JOB_NAMES.includes(job.name)) {
       this.logger.warn(`Job ${job.id ?? '?'} rejected: unknown name`);
       throw new UnrecoverableError(
         `billing: unknown job name ${JSON.stringify(job.name)}`,
@@ -50,9 +83,7 @@ export class BillingProcessor extends WorkerHost {
       throw new UnrecoverableError(`${job.name}: invalid job data`);
     }
     try {
-      const expired = await this.subscriptions.expireDue();
-      this.logger.debug(`subscription-expiry: ${expired} expired`);
-      return { kind: 'subscription_expiry', expired };
+      return await this.run(job.name);
     } catch (error) {
       if (isPermanentDbError(error)) {
         const code = errorCode(error) ?? 'unknown';
@@ -65,6 +96,28 @@ export class BillingProcessor extends WorkerHost {
       }
       throw error;
     }
+  }
+
+  private async run(name: string): Promise<BillingJobOutcome> {
+    if (name === RENEWAL_REMINDERS_JOB_NAME) {
+      const outcome = await this.reminders.run();
+      this.logger.debug(
+        `renewal-reminders: ${outcome.sent} sent, ${outcome.skipped} skipped, ${outcome.failed} failed`,
+      );
+      return outcome;
+    }
+    if (name === PENDING_PAYMENT_EXPIRY_JOB_NAME) {
+      const cancelled = await this.checkout.expirePendingPayments();
+      this.logger.debug(`pending-payment-expiry: ${cancelled} cancelled`);
+      return { kind: 'pending_payment_expiry', cancelled };
+    }
+    // The switch first: `expireDue` leaves rows with a scheduled change to it.
+    const switched = await this.subscriptions.switchScheduled();
+    const expired = await this.subscriptions.expireDue();
+    this.logger.debug(
+      `subscription-expiry: ${switched} switched, ${expired} expired`,
+    );
+    return { kind: 'subscription_expiry', switched, expired };
   }
 
   @OnWorkerEvent('failed')

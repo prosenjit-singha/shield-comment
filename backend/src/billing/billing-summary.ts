@@ -2,6 +2,7 @@ import { LIVE_SUBSCRIPTION_STATUSES } from '../db/schema/index.js';
 import type { LiveSubscription } from '../wallet/live-subscription.queries.js';
 import type { WalletBalance } from '../wallet/wallet.service.js';
 import type { SummarySubscription } from './billing-summary.queries.js';
+import { RENEWAL_WINDOW_DAYS } from './paid-term.js';
 import type {
   BillingSummary,
   BillingSummaryStatus,
@@ -24,6 +25,30 @@ export interface BillingSummaryInput {
   activePages: number;
   /** The account may start a trial (`BillingSummary.trialEligible`). */
   trialEligible: boolean;
+  /** M8-T6 fields (`null` when left out). */
+  renewal?: BillingSummary['renewal'];
+  pendingPayment?: BillingSummary['pendingPayment'];
+  scheduled?: BillingSummary['scheduled'];
+}
+
+/**
+ * The summary's `renewal` (M8-T6, D4): for a live ACTIVE term, its end and whether "Renew" is
+ * open (from `RENEWAL_WINDOW_DAYS` before the end, and no scheduled change: that next term is
+ * paid already); `null` otherwise.
+ */
+export function renewalOf(
+  live: Pick<LiveSubscription, 'status' | 'currentTermEnd'> | null,
+  hasScheduledChange: boolean,
+  now: Date,
+): BillingSummary['renewal'] {
+  if (live?.status !== 'ACTIVE') return null;
+  const dueAt = live.currentTermEnd;
+  return {
+    dueAt,
+    canRenew:
+      !hasScheduledChange &&
+      now.getTime() >= dueAt.getTime() - RENEWAL_WINDOW_DAYS * 86_400_000,
+  };
 }
 
 const isLiveStatus = (status: string): boolean =>
@@ -77,5 +102,8 @@ export function toBillingSummary(input: BillingSummaryInput): BillingSummary {
       limit: live?.plan.featureConfig.limits.connectedPages ?? 0,
     },
     trialEligible: input.trialEligible,
+    renewal: input.renewal ?? null,
+    pendingPayment: input.pendingPayment ?? null,
+    scheduled: input.scheduled ?? null,
   };
 }

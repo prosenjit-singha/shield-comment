@@ -12,13 +12,19 @@ describe('planTiersQuery (PW-T6b)', () => {
     expect(sql).toBe(
       'select "plans"."name", "plans"."sort_order", count(*) from "workspaces" ' +
         'inner join "subscriptions" on ("subscriptions"."billing_account_id" = "workspaces"."billing_account_id" ' +
-        'and ("subscriptions"."status" in ($1, $2) and "subscriptions"."current_term_end" > $3)) ' +
+        'and ("subscriptions"."status" in ($1, $2) and ("subscriptions"."current_term_end" > $3 or ("subscriptions"."scheduled_plan_id" is not null and "subscriptions"."current_term_end" + interval \'28 days\' > $4)))) ' +
         'inner join "plans" on "plans"."id" = "subscriptions"."plan_id" ' +
-        'where "workspaces"."status" = $4 group by "plans"."id" ' +
+        'where "workspaces"."status" = $5 group by "plans"."id" ' +
         'order by "plans"."sort_order" asc, "plans"."name" asc',
     );
-    expect(params).toEqual(['TRIALING', 'ACTIVE', NOW.toISOString(), 'ACTIVE']);
-    expect(sql).not.toContain('plan_id" is');
+    expect(params).toEqual([
+      'TRIALING',
+      'ACTIVE',
+      NOW.toISOString(),
+      NOW,
+      'ACTIVE',
+    ]);
+    expect(sql).not.toContain('."plan_id" is');
     expect(sql).not.toContain('"workspaces"."plan_id"');
   });
 });

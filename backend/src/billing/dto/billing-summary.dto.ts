@@ -51,4 +51,18 @@ export interface BillingSummary {
    * `planId` is the card's plan id. Same for every member (only the owner may start it).
    */
   trialEligible: boolean;
+  /**
+   * M8-T6 (D4): the live paid (ACTIVE) term's renewal; `null` for a trial or no live plan.
+   * `dueAt` = the term end; `canRenew` = inside the 7-day window and no scheduled change.
+   */
+  renewal: { dueAt: Date; canRenew: boolean } | null;
+  /** M8-T6: the account's newest PENDING payment younger than 60 min (reading 9), or `null`. */
+  pendingPayment: { tranId: string; amountBdt: number; createdAt: Date } | null;
+  /** M8-D7b: the paid next term on another plan / interval, starting at the term end, or `null`. */
+  scheduled: {
+    planId: string;
+    planName: string;
+    interval: SubscriptionInterval;
+    startsAt: Date;
+  } | null;
 }

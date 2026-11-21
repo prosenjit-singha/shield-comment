@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { and, eq, isNotNull, type SQL, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, lte, type SQL, sql } from 'drizzle-orm';
 import { DEFAULT_CLIENT_APP_URL } from '../admin/admin-impersonation.service.js';
 import { MANUAL_ACTIVATION_ERROR_CODES } from '../admin/manual-activation.js';
 import type { EnvironmentVariables } from '../config/env.validation.js';
@@ -50,6 +50,9 @@ export const CHECKOUT_ERROR_CODES = {
   /** 502: the session API failed; the row is FAILED. */
   gatewayError: 'PAYMENT_GATEWAY_ERROR',
 } as const;
+
+/** Reading 9: a PENDING payment is cancelled after 60 minutes (`expirePendingPayments`). */
+export const PENDING_PAYMENT_TTL_MS = 60 * 60_000;
 
 /** SSLCommerz's minimum charge in whole ৳ (reading 8). */
 export const MIN_GATEWAY_AMOUNT_BDT = 10;
@@ -252,6 +255,30 @@ export class CheckoutService {
     return row;
   }
 
+  /**
+   * Reading 9 (M8-T6, `pending-payment-expiry` job): PENDING rows older than
+   * `PENDING_PAYMENT_TTL_MS` → CANCELLED (one guarded UPDATE). A late valid IPN still pays a
+   * CANCELLED row (M8-T5). Returns the number of rows cancelled.
+   */
+  async expirePendingPayments(now: Date = new Date()): Promise<number> {
+    const rows = await this.db
+      .update(paymentTransactions)
+      .set({ status: 'CANCELLED' })
+      .where(
+        and(
+          eq(paymentTransactions.status, 'PENDING'),
+          lte(
+            paymentTransactions.createdAt,
+            new Date(now.getTime() - PENDING_PAYMENT_TTL_MS),
+          ),
+        ),
+      )
+      .returning({ id: paymentTransactions.id });
+    if (rows.length > 0)
+      this.logger.log(`pending payments cancelled: ${rows.length}`);
+    return rows.length;
+  }
+
   /** Account → active plan → `paymentKind` → `checkoutPrice`. */
   private async prepare(
     workspaceId: string,
@@ -288,6 +315,8 @@ export class CheckoutService {
         code: CHECKOUT_ERROR_CODES.planNotAvailable,
       });
 
+    // A due scheduled term (M8-D7b) starts first, so the kind is decided on the term in force.
+    await this.subscriptions.switchScheduled(now, { accountId });
     const [current] = await this.db
       .select({
         status: subscriptions.status,

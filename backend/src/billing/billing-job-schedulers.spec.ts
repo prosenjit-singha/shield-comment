@@ -27,22 +27,25 @@ describe('BillingJobSchedulers (PW-T3)', () => {
     vi.useRealTimers();
   });
 
-  it('upserts subscription-expiry every 15 min in Asia/Dhaka with the D3 job options', async () => {
+  it('upserts subscription-expiry + pending-payment-expiry every 15 min and renewal-reminders daily, in Asia/Dhaka with the D3 job options', async () => {
     upsert.mockResolvedValue(undefined as never);
     await create().register();
+    const call = (id: string, pattern: string, name: string) => [
+      id,
+      { pattern, tz: 'Asia/Dhaka' },
+      { name, data: {}, opts: { ...DEFAULT_JOB_OPTIONS } },
+    ];
     expect(upsert.mock.calls).toEqual([
-      [
-        'subscription-expiry-15min',
-        { pattern: '*/15 * * * *', tz: 'Asia/Dhaka' },
-        {
-          name: 'subscription-expiry',
-          data: {},
-          opts: { ...DEFAULT_JOB_OPTIONS },
-        },
-      ],
+      call('subscription-expiry-15min', '*/15 * * * *', 'subscription-expiry'),
+      call('renewal-reminders-daily', '0 10 * * *', 'renewal-reminders'),
+      call(
+        'pending-payment-expiry-15min',
+        '*/15 * * * *',
+        'pending-payment-expiry',
+      ),
     ]);
     expect(logs).toEqual([
-      'log: Job schedulers registered: subscription-expiry-15min',
+      'log: Job schedulers registered: subscription-expiry-15min, renewal-reminders-daily, pending-payment-expiry-15min',
     ]);
   });
 
@@ -50,7 +53,7 @@ describe('BillingJobSchedulers (PW-T3)', () => {
     upsert.mockReturnValue(new Promise<never>(() => {}));
     const registrar = create();
     expect(registrar.onApplicationBootstrap()).toBeUndefined();
-    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert).toHaveBeenCalledTimes(3);
   });
 
   it('Redis down: one warning after the timeout, late success logged', async () => {
@@ -68,7 +71,7 @@ describe('BillingJobSchedulers (PW-T3)', () => {
     resolve();
     await vi.advanceTimersByTimeAsync(0);
     expect(logs[1]).toBe(
-      'log: Job schedulers registered late: subscription-expiry-15min',
+      'log: Job schedulers registered late: subscription-expiry-15min, renewal-reminders-daily, pending-payment-expiry-15min',
     );
   });
 

@@ -6,9 +6,11 @@ import {
   SUBSCRIPTION_EXPIRY_JOB_NAME,
 } from './billing-scheduled.jobs.js';
 import {
+  type BillingJobOutcome,
   BillingProcessor,
-  type SubscriptionExpiryOutcome,
 } from './billing.processor.js';
+import type { CheckoutService } from './checkout.service.js';
+import type { RenewalReminderService } from './renewal-reminder.service.js';
 import type { SubscriptionService } from './subscription.service.js';
 
 type ExpireDue = SubscriptionService['expireDue'];
@@ -21,21 +23,32 @@ const job = (overrides: Partial<Job> = {}) =>
     opts: { attempts: 5 },
     attemptsMade: 0,
     ...overrides,
-  }) as unknown as Job<unknown, SubscriptionExpiryOutcome>;
+  }) as unknown as Job<unknown, BillingJobOutcome>;
 
 const pgError = (code: string) =>
   Object.assign(new Error('Failed query'), {
     cause: Object.assign(new Error('x'), { code }),
   });
 
-describe('BillingProcessor (PW-T3)', () => {
+describe('BillingProcessor (PW-T3, M8-T6)', () => {
   const expireDue = vi.fn<ExpireDue>();
+  const switchScheduled = vi.fn<SubscriptionService['switchScheduled']>();
+  const run = vi.fn<RenewalReminderService['run']>();
+  const expirePendingPayments =
+    vi.fn<CheckoutService['expirePendingPayments']>();
   let logs: string[];
   const processor = () =>
-    new BillingProcessor({ expireDue } as unknown as SubscriptionService);
+    new BillingProcessor(
+      { expireDue, switchScheduled } as unknown as SubscriptionService,
+      { run } as unknown as RenewalReminderService,
+      { expirePendingPayments } as unknown as CheckoutService,
+    );
 
   beforeEach(() => {
     expireDue.mockReset();
+    switchScheduled.mockReset().mockResolvedValue(0);
+    run.mockReset();
+    expirePendingPayments.mockReset();
     logs = [];
     for (const level of ['log', 'warn', 'error', 'debug'] as const) {
       vi.spyOn(Logger.prototype, level).mockImplementation((message) => {
@@ -45,7 +58,7 @@ describe('BillingProcessor (PW-T3)', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('job contract: one scheduler on the billing queue, stable id, no colon in the name', () => {
+  it('job contract: three schedulers on the billing queue, stable ids, no colon in the names', () => {
     expect(QUEUE_NAMES.billing).toBe('billing');
     expect(BILLING_SCHEDULED_JOBS).toEqual([
       {
@@ -53,17 +66,58 @@ describe('BillingProcessor (PW-T3)', () => {
         name: 'subscription-expiry',
         pattern: '*/15 * * * *',
       },
+      {
+        schedulerId: 'renewal-reminders-daily',
+        name: 'renewal-reminders',
+        pattern: '0 10 * * *',
+      },
+      {
+        schedulerId: 'pending-payment-expiry-15min',
+        name: 'pending-payment-expiry',
+        pattern: '*/15 * * * *',
+      },
     ]);
   });
 
-  it('subscription-expiry → expireDue(), returns the count', async () => {
-    expireDue.mockResolvedValue(3);
+  it('subscription-expiry → switchScheduled() then expireDue(), returns both counts', async () => {
+    const order: string[] = [];
+    switchScheduled.mockImplementation(async () => {
+      order.push('switch');
+      return 1;
+    });
+    expireDue.mockImplementation(async () => {
+      order.push('expire');
+      return 3;
+    });
     await expect(processor().process(job())).resolves.toEqual({
       kind: 'subscription_expiry',
+      switched: 1,
       expired: 3,
     });
-    expect(expireDue).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['switch', 'expire']);
     expect(expireDue).toHaveBeenCalledWith();
+  });
+
+  it('renewal-reminders → RenewalReminderService.run(); pending-payment-expiry → expirePendingPayments()', async () => {
+    run.mockResolvedValue({
+      kind: 'renewal_reminders',
+      sent: 2,
+      skipped: 0,
+      failed: 0,
+    });
+    await expect(
+      processor().process(job({ name: 'renewal-reminders' })),
+    ).resolves.toEqual({
+      kind: 'renewal_reminders',
+      sent: 2,
+      skipped: 0,
+      failed: 0,
+    });
+    expirePendingPayments.mockResolvedValue(4);
+    await expect(
+      processor().process(job({ name: 'pending-payment-expiry' })),
+    ).resolves.toEqual({ kind: 'pending_payment_expiry', cancelled: 4 });
+    expect(expireDue).not.toHaveBeenCalled();
   });
 
   it('accepts null / missing data (scheduler ticks carry none)', async () => {

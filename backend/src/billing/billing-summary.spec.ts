@@ -63,6 +63,9 @@ describe('toBillingSummary (PW-T6)', () => {
       workspaces: { used: 1, limit: 1 },
       pages: { used: 1, limit: 1 },
       trialEligible: false,
+      renewal: null,
+      pendingPayment: null,
+      scheduled: null,
     });
   });
 
@@ -85,6 +88,9 @@ describe('toBillingSummary (PW-T6)', () => {
       workspaces: { used: 2, limit: 3 },
       pages: { used: 4, limit: 5 },
       trialEligible: false,
+      renewal: null,
+      pendingPayment: null,
+      scheduled: null,
     });
   });
 
@@ -113,6 +119,9 @@ describe('toBillingSummary (PW-T6)', () => {
       workspaces: { used: 1, limit: 0 },
       pages: { used: 2, limit: 0 },
       trialEligible: false,
+      renewal: null,
+      pendingPayment: null,
+      scheduled: null,
     });
   });
 
@@ -155,6 +164,9 @@ describe('toBillingSummary (PW-T6)', () => {
       workspaces: { used: 1, limit: 0 },
       pages: { used: 0, limit: 0 },
       trialEligible: true,
+      renewal: null,
+      pendingPayment: null,
+      scheduled: null,
     });
   });
 

@@ -5,7 +5,16 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { and, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  sql,
+} from 'drizzle-orm';
 import {
   endedStatus,
   type EndedSubscription,
@@ -47,6 +56,7 @@ import {
   findLiveSubscription,
   isLiveAt,
   type LiveSubscription,
+  scheduledTermEnd,
 } from '../wallet/live-subscription.queries.js';
 import {
   type WalletExecutor,
@@ -131,7 +141,9 @@ const LIVE_STATUS_SQL = sql.raw(
  *   subscription whose end is stored once, plus **one** wallet period granted the redemption's
  *   comment limit (snapshot: a later promotion edit never changes a running trial).
  * - Readers treat `now ≥ current_term_end` as over (`findLiveSubscription`); `expireDue()` (the
- *   `subscription-expiry` job, every 15 min) only records it as `EXPIRED`.
+ *   `subscription-expiry` job, every 15 min) only records it as `EXPIRED`. A row with a scheduled
+ *   change (M8-D7b) is read as its scheduled term from the old end on and switched by
+ *   `switchScheduled()` (same job, M8-T6), so there is no gap.
  *
  * Every query is scoped by the account id (and the workspace id where it enters). Logs carry ids
  * and counts only.
@@ -324,6 +336,8 @@ export class SubscriptionService {
       .from(billingAccounts)
       .where(eq(billingAccounts.id, accountId))
       .for('update');
+    // A scheduled term that is due starts first, so this payment follows it (M8-T6).
+    await this.switchScheduled(now, { accountId, tx });
     const [plan] = await tx
       .select({
         id: plans.id,
@@ -742,9 +756,168 @@ export class SubscriptionService {
   }
 
   /**
+   * M8-D7b switch (M8-T6): every live row with a scheduled change whose term ended moves to its
+   * scheduled term with no gap: the row ends `EXPIRED` (its `scheduled_*` stay as history), a new
+   * `ACTIVE` row `[old end, old end + interval)` on the scheduled plan + interval with the
+   * scheduled price and its (already claimed) redemption ids, the wallet period of the new term
+   * (`openSubscriptionPeriod`: a no-op when a reader already opened it after the old end), and a
+   * PAYMENT audit row (workspace = the one that paid the change). One transaction per row (or the
+   * caller's `tx`, one account); the row is re-checked under `FOR UPDATE`, so parallel runs switch
+   * once. Returns the number of rows switched.
+   */
+  async switchScheduled(
+    now: Date = new Date(),
+    scope: { accountId?: string; tx?: BillingExecutor } = {},
+  ): Promise<number> {
+    if (Number.isNaN(now.getTime())) {
+      throw new RangeError('switchScheduled needs a valid date');
+    }
+    const due = (accountId?: string) =>
+      and(
+        accountId ? eq(subscriptions.billingAccountId, accountId) : undefined,
+        LIVE_STATUS_SQL,
+        isNotNull(subscriptions.scheduledPlanId),
+        lte(subscriptions.currentTermEnd, now),
+      );
+    const ex = scope.tx ?? this.db;
+    const rows = await ex
+      .select({
+        id: subscriptions.id,
+        accountId: subscriptions.billingAccountId,
+      })
+      .from(subscriptions)
+      .where(due(scope.accountId));
+    let switched = 0;
+    for (const row of rows) {
+      const run = (tx: BillingExecutor) => this.switchOne(tx, row.id, now);
+      if (await (scope.tx ? run(scope.tx) : this.db.transaction(run)))
+        switched += 1;
+    }
+    if (switched > 0) this.logger.log(`scheduled terms started: ${switched}`);
+    return switched;
+  }
+
+  /** One `switchScheduled` row, in `tx`; `false` when it is no longer due (another run won). */
+  private async switchOne(
+    tx: BillingExecutor,
+    subscriptionId: string,
+    now: Date,
+  ): Promise<boolean> {
+    const [old] = await tx
+      .select()
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.id, subscriptionId),
+          LIVE_STATUS_SQL,
+          isNotNull(subscriptions.scheduledPlanId),
+          lte(subscriptions.currentTermEnd, now),
+        ),
+      )
+      .for('update');
+    if (!old?.scheduledPlanId || !old.scheduledInterval || !old.scheduledPrice)
+      return false;
+    const accountId = old.billingAccountId;
+    const planId = old.scheduledPlanId;
+    const interval = old.scheduledInterval;
+    const price = old.scheduledPrice;
+    const start = old.currentTermEnd;
+    const end = scheduledTermEnd(start, interval);
+    const [paidBy] = await tx
+      .select({ workspaceId: subscriptionAuditLogs.workspaceId })
+      .from(subscriptionAuditLogs)
+      .where(
+        and(
+          eq(subscriptionAuditLogs.billingAccountId, accountId),
+          eq(subscriptionAuditLogs.afterSubscriptionId, old.id),
+        ),
+      )
+      .orderBy(desc(subscriptionAuditLogs.createdAt))
+      .limit(1);
+    if (!paidBy) throw new Error(`Scheduled change of ${old.id} has no audit`);
+    const [plan] = await tx
+      .select({
+        id: plans.id,
+        slug: plans.slug,
+        featureConfig: plans.featureConfig,
+      })
+      .from(plans)
+      .where(eq(plans.id, planId));
+
+    await tx
+      .update(subscriptions)
+      .set({ status: 'EXPIRED' })
+      .where(
+        and(
+          eq(subscriptions.id, old.id),
+          eq(subscriptions.billingAccountId, accountId),
+        ),
+      );
+    const [created] = await tx
+      .insert(subscriptions)
+      .values({
+        billingAccountId: accountId,
+        planId,
+        interval,
+        status: 'ACTIVE',
+        startedAt: start,
+        currentTermStart: start,
+        currentTermEnd: end,
+        pricePerMonthBdt: price.perMonthBdt,
+        chargedBdt: price.chargedBdt,
+        promotionRedemptionId: price.discount?.redemptionId ?? null,
+        couponRedemptionId: price.coupon?.redemptionId ?? null,
+      })
+      .returning({ id: subscriptions.id });
+    const newId = created!.id;
+    // ponytail: a switch run a whole term late opens no period (the term is over anyway).
+    if (now.getTime() < end.getTime()) {
+      await this.wallet.openSubscriptionPeriod(
+        {
+          billingAccountId: accountId,
+          subscriptionId: newId,
+          status: 'ACTIVE',
+          interval,
+          startedAt: start,
+          trialEndsAt: null,
+          currentTermStart: start,
+          currentTermEnd: end,
+          plan: {
+            id: plan!.id,
+            slug: plan!.slug,
+            featureConfig: normalizeFeatureConfig(plan!.featureConfig),
+            trialCommentLimit: null,
+          },
+        },
+        now,
+        tx,
+      );
+    }
+    await tx.insert(subscriptionAuditLogs).values(
+      toActivationAudit({
+        source: 'PAYMENT',
+        adminId: null,
+        billingAccountId: accountId,
+        workspaceId: paidBy.workspaceId,
+        before: old,
+        after: { id: newId, planId, interval, status: 'ACTIVE' },
+        reason: `Scheduled change from ${old.id}`,
+        price,
+        ipAddress: null,
+        userAgent: null,
+      }),
+    );
+    this.logger.log(
+      `scheduled term started account=${accountId} from=${old.id} subscription=${newId} plan=${plan!.slug} interval=${interval}`,
+    );
+    return true;
+  }
+
+  /**
    * Marks every live subscription whose term ended (`current_term_end <= now`) as `EXPIRED` in one
    * guarded UPDATE (partial index `subscriptions_live_term_end_index`). Readers already treat
-   * those as over, so a late run never extends a plan. Returns the number of rows changed.
+   * those as over, so a late run never extends a plan. A row with a scheduled change is left to
+   * `switchScheduled` (run it first). Returns the number of rows changed.
    */
   async expireDue(now: Date = new Date()): Promise<number> {
     if (Number.isNaN(now.getTime())) {
@@ -753,7 +926,13 @@ export class SubscriptionService {
     const rows = await this.db
       .update(subscriptions)
       .set({ status: 'EXPIRED' })
-      .where(and(LIVE_STATUS_SQL, lte(subscriptions.currentTermEnd, now)))
+      .where(
+        and(
+          LIVE_STATUS_SQL,
+          lte(subscriptions.currentTermEnd, now),
+          isNull(subscriptions.scheduledPlanId),
+        ),
+      )
       .returning({
         id: subscriptions.id,
         billingAccountId: subscriptions.billingAccountId,

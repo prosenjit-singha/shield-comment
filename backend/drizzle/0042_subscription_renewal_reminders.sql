@@ -1,0 +1,3 @@
+ALTER TABLE "subscriptions" ADD COLUMN "reminder_term_end" timestamp (3) with time zone;--> statement-breakpoint
+ALTER TABLE "subscriptions" ADD COLUMN "reminder_days" integer;--> statement-breakpoint
+ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_reminder_check" CHECK (((reminder_term_end is null and reminder_days is null) or (reminder_term_end is not null and reminder_days is not null)) and (reminder_days is null or reminder_days in (0, 1, 3, 7)));

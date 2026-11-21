@@ -179,6 +179,9 @@ describe('Billing summary (e2e)', () => {
         workspaces: { used: 1, limit: 1 },
         pages: { used: 0, limit: starter.limits.connectedPages },
         trialEligible: false,
+        renewal: null,
+        pendingPayment: null,
+        scheduled: null,
       });
       expect(trial.trialEndsAt!.getTime()).toBe(trial.currentTermEnd.getTime());
 
@@ -269,6 +272,9 @@ describe('Billing summary (e2e)', () => {
         workspaces: { used: 1, limit: 0 },
         pages: { used: 1, limit: 0 },
         trialEligible: false,
+        renewal: null,
+        pendingPayment: null,
+        scheduled: null,
       });
     });
 
@@ -307,6 +313,9 @@ describe('Billing summary (e2e)', () => {
         workspaces: { used: 1, limit: 0 },
         pages: { used: 1, limit: 0 },
         trialEligible: false,
+        renewal: null,
+        pendingPayment: null,
+        scheduled: null,
       });
     });
 
@@ -322,6 +331,9 @@ describe('Billing summary (e2e)', () => {
         workspaces: { used: 1, limit: 0 },
         pages: { used: 0, limit: 0 },
         trialEligible: true,
+        renewal: null,
+        pendingPayment: null,
+        scheduled: null,
       });
       await actors.startTrial(fresh);
       expect(await summary(fresh, fresh.workspaceId)).toMatchObject({
