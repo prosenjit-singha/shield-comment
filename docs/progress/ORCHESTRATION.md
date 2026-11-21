@@ -7,14 +7,14 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 9 section + the row's decisions, `docs/project-documentation/modules/module-9-launch-security.md`, the code the row names.
 - Standing approvals: **client/ approved for the rest of the run** (user, 2026-11-21, M9-T6 pre-check: "Rest of the run"); **admin/ approved for the rest of the run** (user, 2026-11-21, M9-T8 pre-check: "Rest of the run"). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included), deploys, DNS, hosting/Neon/Redis Cloud accounts or any production credential: none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #20 (2026-11-21, continues session #19) · rows this session: 1 · estimate: 125k
+- Session: #20 (2026-11-21, continues session #19) · rows this session: 1 · estimate: 160k
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-paused: needs decision M9-T13 · `backend/.env.staging` (edited 22:00) held Neon PRODUCTION values (`ep-bold-dawn`, per MEMORY) not staging (`ep-shiny-silence`, still in `.env.staging.bak`) → `db:deploy:staging` ran on the production branch (additive, forward-only; effect unchecked) and the staged backend Fly secrets (DATABASE_URL, DIRECT_URL, AWS_* ×4, STORAGE_BUCKET, NEON_AI_GATEWAY_*) are production values (never on a machine). 3 Fly apps exist; client/admin secrets staged OK. Decision: how to restore staging values, unset staged secrets, check prod migrations, rotate prod creds. Orchestrator miss: my unblock note did not tell the agent to check the endpoint id against MEMORY before migrating. · uncommitted: none
+paused: needs decision M9-T13 (3rd try) · Neon project `calm-thunder-04124611` has ONE branch: `br-winter-leaf-a1j7hozl` (production data, endpoint `ep-bold-dawn`) renamed to `staging` 2026-11-21 16:16 UTC; old staging `br-twilight-math` deleted ("branch not found"). Prod migrations table = local 0047 (fully current, nothing unknown). Staged backend Fly secrets now point at the deleted branch (harmless, must be replaced). Nothing deployed, no machines. `backend/.env.staging` rebuilt (dead creds), old file kept as `.env.staging.prod-mixup.bak`. · uncommitted: none
 
 ## Resume
-`/orchestration --continue` — answer the M9-T13 decision (staging Neon values / staged prod secrets / prod migration check / rotation). Re-dispatch skips `fly apps create` (apps exist) and redoes only the backend secrets import → staging migration (endpoint checked against MEMORY first) → deploys.
+`/orchestration --continue` — answer how to restore the Neon branches (rename `br-winter-leaf` back to `production` + new `staging` from it, or user does it in the console), then M9-T13 continues: new `.env.staging`, unset + re-import the 9 backend Fly keys, `db:deploy:staging`, deploys.
 
 ## Next prompt (M9-T13)
 
@@ -56,6 +56,13 @@ You are implementing exactly ONE task row, **M9-T13**, in the ShieldComment BD r
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
 
 ### Decisions added by orchestrator
+- M9-T13 resume (user, 2026-11-21; verbatim in `## Decisions asked`): the 2nd try found `backend/.env.staging` held Neon **production** values (`ep-bold-dawn-a1xh3drl`, branch `br-winter-leaf`), so `db:deploy:staging` ran on production and the staged backend Fly secrets hold production values. The 3 Fly apps exist (skip `fly apps create`); client/admin secrets are staged correctly. Now, in order:
+  1. **Rebuild `backend/.env.staging`** ("Agent rebuilds it"): move the current file to `backend/.env.staging.prod-mixup.bak` (git-ignored, keep it), then write a new `.env.staging` = the Neon/S3/AI/branch keys from `backend/.env.staging.bak` (staging: `ep-shiny-silence-a10t8fnn`, `br-twilight-math-a1n7a21p`) + `REDIS_URL` from the mixed-up file. Never print values. **Before any DB command, assert** the DATABASE_URL and DIRECT_URL hosts contain `ep-shiny-silence` and NOT `ep-bold-dawn` (grep the host only); stop if not.
+  2. **Read-only production check** ("Yes, read-only check"): one `SELECT` on `drizzle.__drizzle_migrations` (count + latest `created_at`/hash) against the production branch (`backend/.env.neon`, endpoint `ep-bold-dawn`), compared with `backend/drizzle/meta/_journal.json`; report whether the 2nd try applied any migration to production. Nothing else on production.
+  3. **`fly secrets unset --stage`** on `shield-comment-api-staging` for the keys that held production values (DATABASE_URL, DIRECT_URL, AWS_* ×4, STORAGE_BUCKET, NEON_AI_GATEWAY_*) ("Unset, then re-import"), then re-import the backend secrets file built from the new `.env.staging` (+ the already generated BETTER_AUTH_SECRET / TOKEN_ENCRYPTION_KEY are staged: keep them, don't regenerate), delete the file.
+  4. Continue the row: `db:deploy:staging` (endpoint asserted again) → deploys → checks, as in the prompt above. Prices: write the verified numbers from the 2nd try into deploy.md (512 MB sin ≈ US$4.68/mo backend, client/admin ≈ $0.0038/running h each, under $5 below ≈ 60 running h/month; bill < $5 waived for personal orgs per docs; no spend alert found).
+  - Don't rotate production credentials ("No, not needed").
+  - **New row M9-T13b** (user: "After M9-T13"): when finishing, add row M9-T13b to TASKS.md right after M9-T13 — "Env files per environment (backend, admin, client): `.env` (shared defaults) → `.env.<env>` (`development`/`staging`/`production`) → `.env.local` (wins), same keys in every file, loaded with Node `--env-file-if-exists` (real env vars always win; no `dotenv` override), rename `backend/.env.neon` → `.env.production`, update package.json scripts/drizzle.config/docs/.env.example, and a guard in staging/production scripts that refuses a Neon endpoint of the wrong branch (NEON_BRANCH ↔ endpoint id)". Admin/client are Vite (`.env.[mode]` native; note Vite's own order differs: `.env.[mode].local` > `.env.[mode]` > `.env.local` > `.env`). Your `## Next prompt` is **M9-T13b** (not M9-T14), with the user's decisions quoted.
 - Unblock (user, 2026-11-21, verbatim): "I have put that radis url in backend/.env.staging file. The fly cli is working I am logged in with my email. I have verified it." → the Redis Cloud staging `REDIS_URL` is in git-ignored `backend/.env.staging` (with the Neon `staging` values). The user did NOT write `backend/.env.fly.staging`: build it yourself from `backend/.env.staging` (only the keys the backend needs) + the deploy.md §7 staging column (fixed hosts/values) + freshly generated secrets (e.g. `BETTER_AUTH_SECRET` via `openssl rand`), never echoing values, and delete it after `fly secrets import`. Any third-party secret the staging column needs that is not in `backend/.env.staging` (Meta, Resend, SSLCommerz sandbox, Telegram, AI keys…): if the backend env validation requires it, stop with `needs-decision` and list the exact keys; if optional, leave it unset and note it. Run `fly auth whoami` first (read-only). The user has not confirmed the Redis `noeviction` policy yet: note it as a user check in the report, don't block on it.
 - Pre-check answers for M9-T13 are quoted under "Recorded decisions" above (go-ahead, backend 512 MB, backend-only uptime monitor).
 - Carry-over from M9-T11: M9-T14 runs `npm run smoke` against staging with a fixed staging owner (verified email + workspace) and the staging super admin; the user keeps those credentials outside git.
@@ -313,6 +320,44 @@ One distinction: if you use Cloudflare's proxy, configure SSL/TLS mode as Full (
 
 - 2026-11-21 M9-T13 unblock (user, verbatim): "I don't see the .env.fly.staging file in backend folder. I have put that radis url in backend/.env.staging file. The fly cli is working I am logged in with my email. I have verified it."
 
+- 2026-11-21 M9-T13 decision (user, verbatim): staging env fix → "Agent rebuilds it (Recommended)"; staged production secrets → "Unset, then re-import. \n\nBut I have some suggession. try to use .env.[extension]. Like for local developement use .env.local, for staging .env.staging and for production .env.production. \n\nAny where you are using separate them based on working environment. like in admin, backend, client separate them. remember the priority of the env files .env.local will replace all other environtment variable. if loaded. \nTry to store similar variables in all env files. so when loading you can just copy paste on .env.local in developement. I have a env var loader code check it if you can use in the backend-" + the loader code quoted below; prod migration check → "Yes, read-only check (Recommended)"; rotate prod creds → "No, not needed (Recommended)".
+  - Follow-up (user, verbatim): env-file change order → "After M9-T13 (Recommended)" (new row M9-T13b after M9-T13); loader → "Node --env-file (Recommended)" (Node 24 native `--env-file`/`--env-file-if-exists`: `.env` → `.env.<env>` → `.env.local`, later files win, real env vars (Fly secrets) always win; plus a guard so staging/production scripts refuse a Neon endpoint of the wrong branch).
+  - User's loader code (reference only; not adopted as-is because `override: true` lets files beat Fly/Docker env):
+
+    ```ts
+    import dotenv from 'dotenv';
+    import path from 'path';
+    
+    dotenv.config({ path: path.join(process.cwd(), '.env') });
+    const nodeEnv = process.env.NODE_ENV ?? 'development';
+    const project_name = process.env.PROJECT_NAME ?? 'server';
+    
+    const log: string[] = [`${project_name.toUpperCase()}:`, '.env'];
+    
+    if (nodeEnv === 'development') {
+      dotenv.config({
+        path: path.join(process.cwd(), '.env.development'),
+        override: true,
+      });
+      log.push('.env.development');
+    } else if (nodeEnv === 'production') {
+      dotenv.config({
+        path: path.join(process.cwd(), '.env.production'),
+        override: true,
+      });
+      log.push('.env.production');
+    }
+    
+    dotenv.config({
+      path: path.join(process.cwd(), '.env.local'),
+      override: true,
+    });
+    
+    log.push('.env.local');
+    
+    console.log(log.join(' '), 'loaded');
+    ```
+
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
 - 2026-11-18 M3-T9 ✅ dcab638 · client 151 · app shell + impersonation banner
@@ -454,3 +499,4 @@ One distinction: if you use Cloudflare's proxy, configure SSL/TLS mode as Full (
 - 2026-11-21 M9-T10b ✅ 52967da · check-fly-config ✅ 6 files + self-test 17/17 · compose config ✅ · e2e typecheck ✅ · root e2e 7/7 · guard 4/4 (was 3) · smoke:local 12/12 (was 11) · Fly Free-plan staging configs (`fly.staging.toml` ×3: backend 512 MB always on, client/admin 256 MB auto-stop, rolling, no release step), `SMOKE_STAGING_HOSTS` allow-list, deploy.md staging section + cost estimate, TASKS D16/D3/D6/D14 revised, M9-T13…GATE on fly.dev hosts
 - 2026-11-21 M9-T13 🟡 blocked: user account steps not done (flyctl not installed → no `fly auth login`; no Redis Cloud staging URL / `backend/.env.fly.staging`) · check-fly-config ✅ 6 files · nothing run against Fly/Neon/Redis, nothing committed
 - 2026-11-21 M9-T13 🟡 blocked (2nd try): `backend/.env.staging` holds the Neon **production** branch values (endpoint `ep-bold-dawn-a1xh3drl`, `br-winter-leaf-a1j7hozl` for DB, S3, AI gateway; only `REDIS_URL` is new), not `staging` (`ep-shiny-silence-a10t8fnn`, still in `.env.staging.bak`); found after `npm run db:deploy:staging` reported that host → migrations ran on the production branch (forward-only, additive), staging branch not migrated. Done: `fly auth whoami` ✅, check-fly-config ✅, prices checked (sin 512 MB ≈ US$4.68/mo), 3 staging apps created, backend secrets **staged with the production-branch Neon values** (no machine, nothing deployed; file deleted), client/admin secrets staged. Must re-import correct values before any deploy · nothing committed
+- 2026-11-21 M9-T13 🟡 needs-decision (3rd try): the Neon `staging` branch is gone. `neon branches list` (project `calm-thunder-04124611`) shows ONE branch, named `staging`, id `br-winter-leaf-a1j7hozl` (= the production branch, endpoint `ep-bold-dawn`, default, renamed 2026-11-21 16:16 UTC); `br-twilight-math-a1n7a21p` → "branch not found", so `ep-shiny-silence` rejects the `.env.staging.bak` password and `db:deploy:staging` failed at auth (nothing applied). Done: `.env.staging` rebuilt from `.bak` + REDIS_URL (old file kept as `.env.staging.prod-mixup.bak`); production check (1 read-only SELECT): 48/48 migrations, latest `created_at` 1795259717402 = local 0047 `mark_users_verified`, hash matches → production fully migrated, no extra/foreign rows (no applied-at column, so "already current" vs "applied by the 2nd try" can't be told apart; all forward-only, additive); backend Fly secrets: 9 production-valued keys unset + re-imported from the rebuilt file (dead `ep-shiny-silence` values now, no production values staged; BETTER_AUTH_SECRET/TOKEN_ENCRYPTION_KEY kept; file deleted); check-fly-config ✅; backend build ✅ · nothing deployed, nothing committed
