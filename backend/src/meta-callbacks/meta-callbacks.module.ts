@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
 import { CommentsModule } from '../comments/comments.module.js';
 import { TokenCipherModule } from '../crypto/token-cipher.module.js';
 import { MetaGraphModule } from '../meta/meta-graph.module.js';
@@ -16,8 +15,9 @@ import { MetaTokenCheckProcessor } from './meta-token-check.processor.js';
 import { MetaTokenCheckService } from './meta-token-check.service.js';
 
 /**
- * Rate limit of the Meta callbacks, per client IP and per route (in-memory, per API process;
- * Meta's servers send a handful per user action). Over it → 429.
+ * Rate limit of the Meta callbacks, per client IP and per route (Meta's servers send a handful per
+ * user action). Over it → 429. It is the `default` throttler of the global `ThrottlerModule`
+ * (`RateLimitModule`, Redis storage, M9-T2).
  */
 export const META_CALLBACK_THROTTLE = { ttl: 60_000, limit: 30 } as const;
 
@@ -28,12 +28,7 @@ export const META_CALLBACK_THROTTLE = { ttl: 60_000, limit: 30 } as const;
  * Startup never fails when `META_APP_SECRET`, the Meta app, the cipher or Redis are missing.
  */
 @Module({
-  imports: [
-    ThrottlerModule.forRoot([{ ...META_CALLBACK_THROTTLE }]),
-    MetaGraphModule,
-    TokenCipherModule,
-    CommentsModule,
-  ],
+  imports: [MetaGraphModule, TokenCipherModule, CommentsModule],
   controllers: [MetaCallbacksController],
   providers: [
     {

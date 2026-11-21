@@ -1,4 +1,5 @@
 import {
+  applyDecorators,
   Body,
   Controller,
   Delete,
@@ -12,7 +13,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type {
   AuthRequest,
@@ -54,18 +55,21 @@ function assertNotImpersonated(session: AuthSession): void {
 
 /**
  * Per-account rate limit of the payment routes (owner only, one account per owner user, so the
- * user id tracks the account). In-memory per API process; the `ThrottlerModule` options + storage
- * are global (registered by `MetaCallbacksModule`). Over it → 429.
+ * user id tracks the account). Redis storage via the global `ThrottlerModule` (`RateLimitModule`,
+ * M9-T2); these routes skip the global throttler. Over it → 429.
  */
 const perAccount = (limit: number) =>
-  Throttle({
-    default: {
-      limit,
-      ttl: 600_000,
-      getTracker: (req) =>
-        `billing:${(req as AuthRequest).session?.user.id ?? 'none'}`,
-    },
-  });
+  applyDecorators(
+    SkipThrottle({ global: true }),
+    Throttle({
+      default: {
+        limit,
+        ttl: 600_000,
+        getTracker: (req) =>
+          `billing:${(req as AuthRequest).session?.user.id ?? 'none'}`,
+      },
+    }),
+  );
 
 /**
  * Client billing routes under `workspaces/:workspaceId/billing` (non-member or unknown workspace

@@ -14,7 +14,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../auth/decorators/public.decorator.js';
 import { DATA_DELETION_CODE_PATTERN } from '../db/schema/index.js';
 import {
@@ -46,6 +46,7 @@ import {
  */
 @Public()
 @UseGuards(ThrottlerGuard)
+@SkipThrottle({ global: true })
 @Controller('meta')
 export class MetaCallbacksController {
   private readonly logger = new Logger('MetaCallbacks');

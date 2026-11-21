@@ -1,4 +1,5 @@
 import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { Public } from '../auth/decorators/public.decorator.js';
 import { HealthService, type HealthReport } from './health.service.js';
@@ -10,6 +11,7 @@ export interface LivenessReport {
 }
 
 @Public()
+@SkipThrottle({ global: true })
 @Controller('health')
 export class HealthController {
   constructor(private readonly health: HealthService) {}

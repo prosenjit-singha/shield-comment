@@ -174,6 +174,9 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
       customRules: {
         '/sign-in/email': { window: 60, max: 10 },
         [SIGN_UP_PATH]: { window: 60, max: 5 },
+        // Password reset (D2/D10, wired in M9-T5; M9-T5 adds the verification-email resend here).
+        '/request-password-reset': { window: 60, max: 3 },
+        '/reset-password': { window: 60, max: 3 },
         // Polled by both apps on every navigation; cheap thanks to the cookie cache.
         '/get-session': false,
       },

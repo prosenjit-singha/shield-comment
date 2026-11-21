@@ -1,5 +1,6 @@
 import { type INestApplication, Module, type Type } from '@nestjs/common';
 import { Test, type TestingModuleBuilder } from '@nestjs/testing';
+import { ThrottlerStorage, ThrottlerStorageService } from '@nestjs/throttler';
 import type { App } from 'supertest/types.js';
 import { AppModule } from '../../src/app.module.js';
 import { TELEGRAM_CONFIG } from '../../src/alerts/telegram.client.js';
@@ -14,7 +15,8 @@ import { createMemorySecondaryStorage } from './memory-secondary-storage.js';
 
 /**
  * Boots the real AppModule with production wiring. Redis is stubbed unless overridden; Better Auth's
- * `secondaryStorage` is an in-memory store (`app.get(AUTH_SECONDARY_STORAGE)` to inspect it) and
+ * `secondaryStorage` (`app.get(AUTH_SECONDARY_STORAGE)`) and the throttler storage
+ * (`app.get(ThrottlerStorage)`, fresh per app) are in-memory stores and
  * every BullMQ queue is a `FakeQueue` (`fakeQueue(app, name)`) and every `@Processor` gets a
  * `FakeWorker` (no real BullMQ `Worker`; call the processor's `process(job)`), so no spec opens a
  * Redis connection.
@@ -39,6 +41,9 @@ export async function createTestApp(
     })
     .overrideProvider(AUTH_SECONDARY_STORAGE)
     .useValue(createMemorySecondaryStorage())
+    // Rate-limit counters in memory, fresh per app (M9-T2); the global + per-route limits stay on.
+    .overrideProvider(ThrottlerStorage)
+    .useFactory({ factory: () => new ThrottlerStorageService() })
     // Never real Resend, even if a local .env has a key: unconfigured email only logs (M7-T4).
     // Specs that assert emails override `EmailService` with `createEmailServiceFake()`.
     .overrideProvider(EMAIL_SETTINGS)

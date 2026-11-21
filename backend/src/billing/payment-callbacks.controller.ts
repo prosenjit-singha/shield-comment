@@ -7,7 +7,7 @@ import {
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { Public } from '../auth/decorators/public.decorator.js';
 import { clientIp } from '../common/http/client-ip.js';
@@ -37,6 +37,7 @@ type Form = Record<string, unknown>;
 @Public()
 @UseGuards(ThrottlerGuard)
 @perIp
+@SkipThrottle({ global: true })
 @Controller('billing/sslcommerz')
 export class PaymentCallbacksController {
   constructor(private readonly callbacks: PaymentCallbacksService) {}

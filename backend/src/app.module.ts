@@ -29,6 +29,7 @@ import { WalletModule } from './wallet/wallet.module.js';
 import { BillingModule } from './billing/billing.module.js';
 import { PlansModule } from './plans/plans.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
+import { RateLimitModule } from './rate-limit/rate-limit.module.js';
 
 @Module({
   imports: [
@@ -84,6 +85,8 @@ import { PaymentsModule } from './payments/payments.module.js';
     BillingModule,
     PlansModule,
     PaymentsModule,
+    // After AuthModule: the global throttler guard reads the session the auth guard attached.
+    RateLimitModule,
   ],
 })
 export class AppModule {}

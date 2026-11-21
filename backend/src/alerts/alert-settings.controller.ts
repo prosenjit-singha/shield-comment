@@ -8,6 +8,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { AuthSession, WorkspaceContext } from '../auth/auth-session.js';
 import { CurrentWorkspace } from '../auth/decorators/current-workspace.decorator.js';
@@ -59,6 +60,8 @@ export class AlertSettingsController {
  * No cool-down effect; rows are stored with `is_test` (not the "last alert").
  */
 @Controller('workspaces/:workspaceId/alerts/test')
+// Own limit (5 / workspace / hour), so not the global one too (M9-T2).
+@SkipThrottle({ global: true })
 @UseGuards(WorkspaceAccessGuard)
 @Roles('owner', 'admin')
 export class AlertTestController {

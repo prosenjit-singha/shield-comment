@@ -12,6 +12,7 @@ import {
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { Public } from '../auth/decorators/public.decorator.js';
 import {
@@ -27,6 +28,8 @@ import { checkMetaVerifyRequest } from './meta-webhook-signature.js';
  * so the raw body arrives untouched. `@Public()`: Meta has no session.
  */
 @Public()
+// Meta bursts; the HMAC signature guards it (D2).
+@SkipThrottle({ global: true })
 @Controller('webhooks/meta')
 export class MetaWebhookController {
   constructor(

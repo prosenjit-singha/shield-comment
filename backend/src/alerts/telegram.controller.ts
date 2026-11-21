@@ -12,6 +12,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { AuthSession, WorkspaceContext } from '../auth/auth-session.js';
 import { CurrentWorkspace } from '../auth/decorators/current-workspace.decorator.js';
@@ -65,6 +66,8 @@ export class TelegramLinkController {
  * (Telegram retries non-2xx), handled or ignored.
  */
 @Public()
+// Telegram bursts; the secret header guards it (D2).
+@SkipThrottle({ global: true })
 @Controller('telegram/webhook')
 export class TelegramWebhookController {
   constructor(
