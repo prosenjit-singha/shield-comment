@@ -5,6 +5,7 @@ import {
   Get,
   Header,
   HttpCode,
+  Param,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -21,7 +22,11 @@ import { WorkspaceAccessGuard } from '../auth/guards/workspace-access.guard.js';
 import { IMPERSONATION_READ_ONLY } from '../auth/workspace-invites.js';
 import type { PaymentPrice } from '../db/schema/index.js';
 import { BillingSummaryService } from './billing-summary.service.js';
-import { CheckoutService, type CheckoutResult } from './checkout.service.js';
+import {
+  CheckoutService,
+  type CheckoutResult,
+  type PaymentStatusView,
+} from './checkout.service.js';
 import type { BillingSummary } from './dto/billing-summary.dto.js';
 import { CheckoutDto, CouponPreviewDto } from './dto/checkout.dto.js';
 import { StartTrialDto } from './dto/start-trial.dto.js';
@@ -62,6 +67,8 @@ const perAccount = (limit: number) =>
  *   201 `{ tranId, gatewayUrl }` or `{ tranId, paid: true }` (৳0): **owner only** (D2),
  *   impersonated 403 `IMPERSONATION_READ_ONLY`, rate-limited per account (20 / 10 per 10 min).
  *   Codes: `CheckoutService`.
+ * - `GET payments/:tranId` (M8-T5): one payment of the workspace's billing account for the
+ *   return page, **owner + admin** (D2; impersonated read ok); another account's id → 404.
  */
 @Controller('workspaces/:workspaceId/billing')
 @UseGuards(WorkspaceAccessGuard)
@@ -133,5 +140,15 @@ export class BillingSummaryController {
       { userId: user.id, name: user.name, email: user.email },
       body,
     );
+  }
+
+  @Get('payments/:tranId')
+  @Roles('owner', 'admin')
+  @Header('Cache-Control', 'private, no-store')
+  paymentStatus(
+    @CurrentWorkspace() workspace: WorkspaceContext,
+    @Param('tranId') tranId: string,
+  ): Promise<PaymentStatusView> {
+    return this.checkout.paymentStatus(workspace.id, tranId);
   }
 }

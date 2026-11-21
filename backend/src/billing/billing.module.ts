@@ -7,6 +7,8 @@ import { BillingSummaryController } from './billing-summary.controller.js';
 import { BillingSummaryService } from './billing-summary.service.js';
 import { BillingProcessor } from './billing.processor.js';
 import { CheckoutService } from './checkout.service.js';
+import { PaymentCallbacksController } from './payment-callbacks.controller.js';
+import { PaymentCallbacksService } from './payment-callbacks.service.js';
 import { LimitService } from './limit.service.js';
 import { SubscriptionService } from './subscription.service.js';
 
@@ -16,17 +18,20 @@ import { SubscriptionService } from './subscription.service.js';
  * scheduler (every 15 min, registered at startup) + `LimitService` (PW-T5: account-pooled
  * workspace and seat limits) + the client `GET /api/workspaces/:workspaceId/billing/summary`
  * (PW-T6, `BillingSummaryService`), `POST …/billing/trial` (PR-T3) and `POST …/billing/{coupon,checkout}`
- * (M8-T4, `CheckoutService` → `PaymentsModule`). Imported by `AppModule`
+ * (M8-T4, `CheckoutService` → `PaymentsModule`), `GET …/billing/payments/:tranId` + the `@Public()`
+ * SSLCommerz callbacks `/api/billing/sslcommerz/{ipn,success,fail,cancel}` (M8-T5,
+ * `PaymentCallbacksService`). Imported by `AppModule`
  * and by the Better Auth module (sign-up + `/organization/create` hooks). Drizzle and the queues
  * are global.
  */
 @Module({
   imports: [WalletModule, PromotionsModule, PaymentsModule],
-  controllers: [BillingSummaryController],
+  controllers: [BillingSummaryController, PaymentCallbacksController],
   providers: [
     BillingSummaryService,
     SubscriptionService,
     CheckoutService,
+    PaymentCallbacksService,
     LimitService,
     BillingProcessor,
     BillingJobSchedulers,

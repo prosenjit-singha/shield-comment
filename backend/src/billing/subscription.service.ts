@@ -17,6 +17,7 @@ import type { Database } from '../db/database.js';
 import { inListSql } from '../db/schema/check-sql.js';
 import {
   type ActivationPrice,
+  type AppliedPromotion,
   billingAccounts,
   LIVE_SUBSCRIPTION_STATUSES,
   type PaymentKind,
@@ -109,6 +110,8 @@ export interface PaidTermResult {
   price: ActivationPrice;
   /** The fresh wallet period; `null` when the term was extended or scheduled (the wallet runs on). */
   balances: Awaited<ReturnType<WalletService['startFreshPeriod']>> | null;
+  /** PAYMENT only (reading 6): a promotion on the paid price was already claimed by the account. */
+  duplicateClaim: boolean;
 }
 
 /** `status in ('TRIALING', 'ACTIVE')` as a literal list, so it matches the partial indexes. */
@@ -405,13 +408,14 @@ export class SubscriptionService {
       subscriptionId = created!.id;
     }
 
-    const price = await this.claimPromotions(tx, {
+    const { price, duplicateClaim } = await this.claimPromotions(tx, {
       accountId,
       planId,
       subscriptionId,
       interval,
       price: input.price,
       link: term.scheduled ? 'never' : term.extend ? 'always' : 'claimed',
+      paid: input.source === 'PAYMENT',
       now,
     });
     if (term.scheduled) {
@@ -480,6 +484,7 @@ export class SubscriptionService {
       plan: { id: plan.id, slug: plan.slug, name: plan.name },
       price,
       balances,
+      duplicateClaim,
     };
   }
 
@@ -489,6 +494,9 @@ export class SubscriptionService {
    * a claimed one gets `months_used` advanced by them. `link`: `claimed` links both on the
    * subscription when any was claimed, `always` too (an extended row: the ids describe its latest
    * term), `never` for a scheduled term (the row's links describe its running term).
+   * `paid` (a payment, reading 6: the paid price wins): `redeem()` skips its live / plan / cap
+   * checks, and a promotion the account claimed meanwhile (once per account) is used as claimed
+   * and reported as `duplicateClaim` (logged for A4) instead of failing the activation.
    */
   private async claimPromotions(
     tx: BillingExecutor,
@@ -499,14 +507,34 @@ export class SubscriptionService {
       interval: SubscriptionInterval;
       price: PaymentPrice;
       link: 'claimed' | 'always' | 'never';
+      paid: boolean;
       now: Date;
     },
-  ): Promise<ActivationPrice> {
+  ): Promise<{ price: ActivationPrice; duplicateClaim: boolean }> {
     const { accountId, planId, subscriptionId, interval, price, now } = input;
-    const claim = async (p: PaymentPromotion | null) => {
+    let duplicateClaim = false;
+    const claim = async (
+      p: PaymentPromotion | null,
+    ): Promise<AppliedPromotion | null> => {
       if (!p) return null;
       const months = promotionMonths(p, interval);
-      if (p.redemptionId) {
+      let redemptionId = p.redemptionId;
+      if (!redemptionId && input.paid) {
+        const [claimed] = await tx
+          .select({ id: promotionRedemptions.id })
+          .from(promotionRedemptions)
+          .where(
+            and(
+              eq(promotionRedemptions.promotionId, p.promotionId),
+              eq(promotionRedemptions.billingAccountId, accountId),
+            ),
+          );
+        if (claimed) {
+          duplicateClaim = true;
+          redemptionId = claimed.id;
+        }
+      }
+      if (redemptionId) {
         await tx
           .update(promotionRedemptions)
           .set({
@@ -514,11 +542,11 @@ export class SubscriptionService {
           })
           .where(
             and(
-              eq(promotionRedemptions.id, p.redemptionId),
+              eq(promotionRedemptions.id, redemptionId),
               eq(promotionRedemptions.billingAccountId, accountId),
             ),
           );
-        return { ...p, redemptionId: p.redemptionId };
+        return { ...p, redemptionId };
       }
       const row = await this.promotions.redeem(
         tx,
@@ -531,6 +559,7 @@ export class SubscriptionService {
           monthsUsed: months,
         },
         now,
+        { paid: input.paid },
       );
       return { ...p, redemptionId: row.id };
     };
@@ -549,11 +578,14 @@ export class SubscriptionService {
         .where(eq(subscriptions.id, subscriptionId));
     }
     return {
-      listChargedBdt: price.listChargedBdt,
-      chargedBdt: price.chargedBdt,
-      perMonthBdt: price.perMonthBdt,
-      discount,
-      coupon,
+      price: {
+        listChargedBdt: price.listChargedBdt,
+        chargedBdt: price.chargedBdt,
+        perMonthBdt: price.perMonthBdt,
+        discount,
+        coupon,
+      },
+      duplicateClaim,
     };
   }
 

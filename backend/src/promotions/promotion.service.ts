@@ -317,8 +317,16 @@ export class PromotionService {
    * `PROMOTION_NOT_LIVE` (stopped / ended), `PROMOTION_NOT_FOR_PLAN`, `PROMOTION_ALREADY_CLAIMED`
    * (PR-D3), `TRIAL_ALREADY_USED` (reading 1), `PROMOTION_USED_UP` (cap). A unique-violation race
    * maps to the same codes (the transaction is then aborted: the caller rolls back).
+   * `paid` (M8-T5, Module 8 reading 6: a validated payment, the paid price wins): skips the live,
+   * plan and cap checks; once per account (and one trial) still hold.
    */
-  async redeem(tx: PromotionExecutor, input: RedeemInput, now = new Date()) {
+  async redeem(
+    tx: PromotionExecutor,
+    input: RedeemInput,
+    now = new Date(),
+    options: { paid?: boolean } = {},
+  ) {
+    const paid = options.paid === true;
     const [promo] = await tx
       .select()
       .from(promotions)
@@ -328,7 +336,7 @@ export class PromotionService {
     const conflict = (code: string, message: string) =>
       new ConflictException({ message, code });
 
-    if (promo.stoppedAt || (promo.endsAt && promo.endsAt <= now))
+    if (!paid && (promo.stoppedAt || (promo.endsAt && promo.endsAt <= now)))
       throw conflict(PROMOTION_ERROR_CODES.notLive, 'This offer has ended');
     const [state] = await tx
       .select({
@@ -339,7 +347,7 @@ export class PromotionService {
       })
       .from(promotions)
       .where(eq(promotions.id, promo.id));
-    if (!state!.targeted)
+    if (!paid && !state!.targeted)
       throw conflict(
         PROMOTION_ERROR_CODES.notForPlan,
         'This offer is not for this plan',
@@ -354,7 +362,11 @@ export class PromotionService {
         PROMOTION_ERROR_CODES.trialAlreadyUsed,
         'This account already had a free trial',
       );
-    if (promo.maxRedemptions !== null && state!.count >= promo.maxRedemptions)
+    if (
+      !paid &&
+      promo.maxRedemptions !== null &&
+      state!.count >= promo.maxRedemptions
+    )
       throw conflict(PROMOTION_ERROR_CODES.usedUp, 'This offer is used up');
 
     try {

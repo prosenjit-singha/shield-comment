@@ -6,6 +6,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -18,6 +19,7 @@ import type { Database } from '../db/database.js';
 import {
   type PaymentKind,
   type PaymentPrice,
+  type PaymentStatus,
   paymentTransactions,
   plans,
   subscriptions,
@@ -60,6 +62,18 @@ export interface CheckoutInput {
 
 export type CheckoutResult =
   { tranId: string; gatewayUrl: string } | { tranId: string; paid: true };
+
+/** `GET …/billing/payments/:tranId` (M8-T5): the return page polls it. */
+export interface PaymentStatusView {
+  tranId: string;
+  status: PaymentStatus;
+  amountBdt: number;
+  kind: PaymentKind;
+  planId: string;
+  interval: SubscriptionInterval;
+  paidAt: Date | null;
+  invoiceNumber: string | null;
+}
 
 /** D8 invoice number `SC-<Dhaka year>-<5+ digits>` from `payment_invoice_number_seq` (M8-T5 reuses it). */
 export const invoiceNumberSql = (paidAt: Date): SQL =>
@@ -205,6 +219,37 @@ export class CheckoutService {
         code: CHECKOUT_ERROR_CODES.gatewayError,
       });
     }
+  }
+
+  /** One payment of the workspace's billing account (another account's tran id → 404). */
+  async paymentStatus(
+    workspaceId: string,
+    tranId: string,
+  ): Promise<PaymentStatusView> {
+    const [row] = await this.db
+      .select({
+        tranId: paymentTransactions.tranId,
+        status: paymentTransactions.status,
+        amountBdt: paymentTransactions.amountBdt,
+        kind: paymentTransactions.kind,
+        planId: paymentTransactions.planId,
+        interval: paymentTransactions.interval,
+        paidAt: paymentTransactions.paidAt,
+        invoiceNumber: paymentTransactions.invoiceNumber,
+      })
+      .from(paymentTransactions)
+      .innerJoin(
+        workspaces,
+        eq(workspaces.billingAccountId, paymentTransactions.billingAccountId),
+      )
+      .where(
+        and(
+          eq(workspaces.id, workspaceId),
+          eq(paymentTransactions.tranId, tranId),
+        ),
+      );
+    if (!row) throw new NotFoundException('Payment not found');
+    return row;
   }
 
   /** Account → active plan → `paymentKind` → `checkoutPrice`. */
