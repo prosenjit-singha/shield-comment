@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 8 section + the row's decisions, `docs/project-documentation/modules/module-8-billing-sslcommerz.md`, the code the row names.
 - Standing approvals: none yet for admin/ or client/ (asked at the first row that touches each). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included): none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #17 (2026-11-21) · rows this session: 6 · estimate: 205k
+- Session: #17 (2026-11-21) · rows this session: 7 · estimate: 230k
 - Previous runs (Modules 3–7, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M8-T6 (2026-11-21) · commit: "feat(backend): add renewal reminders and scheduled plan switch (M8-T6)"
+verified M8-T6 · next M8-T6b needs decisions M8-D14, M8-D15 (pre-check)
 
 ## Resume
 `/orchestration --continue`
@@ -351,4 +351,4 @@ You are implementing exactly ONE task row, **M8-T6b**, in the ShieldComment BD r
 - 2026-11-21 M8-T3 ✅ ebe53a5 · backend 2561 unit (was 2535) + 1231 e2e (was 1226) · admin/client/root e2e untouched · shared `activatePaidTerm` (manual activation unchanged; renewal extends the live row, trial → paid, upgrade), pure `paid-term.ts` (terms, D7 credit, `paymentKind`), `checkoutPrice` with PR-D19 coupon months, audit `source` (migration 0040)
 - 2026-11-21 M8-T4 ✅ 80f6aa4 · backend 2563 unit (was 2561) + 1242 e2e (was 1231) · admin/client/root e2e untouched · checkout + coupon preview API (owner only, impersonated 403, per-account throttle, PENDING row + SSLCommerz session, ৳0 → PAID PROMOTION + activation, 502/503) + M8-D7b scheduled downgrade columns (0041)
 - 2026-11-21 M8-T5 ✅ 806bb0b (+ fix fc03d87: carry-overs recorded in T6/T8/T9/T10 rows) · backend 2568 unit (was 2563) + 1254 e2e (was 1242) · admin/client/root e2e untouched · SSLCommerz IPN + success/fail/cancel returns (`@Public()`, per-IP throttle, verify → validate → PAID once with `activatePaidTerm`, one `payment_events` row per callback, 303 to `/billing?payment=`), reading 6 paid redeem + duplicate claim, reading 9 late IPN, D10 risk kept, payment status GET
-- 2026-11-21 M8-T6 ✅ · backend 2578 unit (was 2568) + 1260 e2e (was 1254) · admin/client/root e2e untouched · renewal reminders (7/3/1 + expiry, once per term via a marker, migration 0042), pending-payment expiry (60 min), M8-D7b term-end switch with no gap (readers see the scheduled term, job writes it), summary `renewal` / `pendingPayment` / `scheduled`
+- 2026-11-21 M8-T6 ✅ 7f9c522 · backend 2578 unit (was 2568) + 1260 e2e (was 1254) · admin/client/root e2e untouched · renewal reminders (7/3/1 + expiry, once per term via a marker, migration 0042), pending-payment expiry (60 min), M8-D7b term-end switch with no gap (readers see the scheduled term, job writes it), summary `renewal` / `pendingPayment` / `scheduled`
