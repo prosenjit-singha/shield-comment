@@ -321,6 +321,7 @@ describe('plan status banner (PW-T8)', () => {
       limitBody: 'New comments aren’t checked until your limit resets on 15 Dec.',
       trialLimitBody: 'You’ve used all the comments in your trial. New comments aren’t checked until you choose a plan.',
       seePlans: 'See plans',
+      billing: 'Go to billing',
     },
     bn: {
       trial5: 'ট্রায়াল শেষ হবে ৫ দিনে',
@@ -333,6 +334,7 @@ describe('plan status banner (PW-T8)', () => {
       limitBody: '১৫ ডিসেম্বর সীমা রিসেট না হওয়া পর্যন্ত নতুন কমেন্ট যাচাই করা হবে না।',
       trialLimitBody: 'ট্রায়ালের সব কমেন্ট ব্যবহার হয়ে গেছে। প্ল্যান বেছে না নেওয়া পর্যন্ত নতুন কমেন্ট যাচাই করা হবে না।',
       seePlans: 'প্ল্যান দেখুন',
+      billing: 'বিলিংয়ে যান',
     },
   } as const
 
@@ -362,6 +364,7 @@ describe('plan status banner (PW-T8)', () => {
       expect(status.dataset.kind).toBe('trial')
       expect(status.textContent).toContain(t.trialBody)
       expect(status.className).toContain('rounded-2xl')
+      expect(within(status).getByRole('link', { name: t.seePlans }).getAttribute('href')).toBe('/plans')
       expect(screen.getByText('Dashboard stub')).toBeTruthy()
       expect(callsTo(SUMMARY)).toHaveLength(1)
       expect(callsTo(SUMMARY)[0]!.method).toBe('GET')
@@ -392,8 +395,10 @@ describe('plan status banner (PW-T8)', () => {
       const banner = await screen.findByRole('status', { name: t.paused })
       expect(banner.dataset.kind).toBe('paused')
       expect(banner.textContent).toContain(t.pausedBody)
-      // PR-T6: "choose a plan" links to /plans.
-      expect(within(banner).getByRole('link', { name: t.seePlans }).getAttribute('href')).toBe('/plans')
+      // M8-T11: never paid (NONE) → /plans (trial by choice); a paid plan that ended → /billing.
+      const [name, href] = status === 'NONE' ? [t.seePlans, '/plans'] : [t.billing, '/billing']
+      expect(within(banner).getByRole('link').textContent).toBe(name)
+      expect(within(banner).getByRole('link', { name }).getAttribute('href')).toBe(href)
       expect(screen.getByText('Dashboard stub')).toBeTruthy()
     })
 
@@ -404,7 +409,8 @@ describe('plan status banner (PW-T8)', () => {
       const banner = await screen.findByRole('status', { name: t.limit })
       expect(banner.dataset.kind).toBe('limit_reached')
       expect(banner.textContent).toContain(t.limitBody)
-      expect(within(banner).queryByRole('link')).toBeNull() // a paid plan waits for the reset
+      // M8-T11: a paid plan can upgrade on /billing instead of waiting for the reset.
+      expect(within(banner).getByRole('link', { name: t.billing }).getAttribute('href')).toBe('/billing')
       cleanup()
 
       mockApi({

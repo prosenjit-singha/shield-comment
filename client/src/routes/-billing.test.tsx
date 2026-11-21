@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CouponPreview, PaymentStatusView } from '@/lib/billing'
+import type { CouponPreview, InvoiceList, InvoiceListItem, InvoiceView, PaymentStatusView } from '@/lib/billing'
 import type { BillingSummary } from '@/lib/billing-summary'
 import { formatDhakaDate } from '@/lib/data-deletion'
 import type { PublicPlan, PublicPlansResponse } from '@/lib/plans'
@@ -18,6 +18,10 @@ const AUTO_RENEW = '/api/workspaces/w1/billing/auto-renew'
 const TRAN = 'SCabcdefgh12345678'
 const PAYMENT = `/api/workspaces/w1/billing/payments/${TRAN}`
 const GATEWAY = 'https://sandbox.sslcommerz.com/EasyCheckOut/abc'
+const INVOICES = '/api/workspaces/w1/billing/invoices'
+const INVOICE_ID = '01936f2a-0000-7000-8000-000000000001'
+const INVOICE = `${INVOICES}/${INVOICE_ID}`
+const NO_INVOICES: InvoiceList = { items: [], total: 0, skip: 0, take: 10 }
 
 const features: PublicPlan['features'] = {
   banglaAiFilter: true,
@@ -99,6 +103,9 @@ interface ApiOptions {
   checkout?: (body: Body) => Response
   autoRenew?: (method: string, body: Body | null) => Response
   payment?: () => Response
+  /** `GET …/invoices` by `skip` (default: none). */
+  invoices?: (skip: number) => InvoiceList
+  invoice?: () => Response
 }
 
 /** `_app` shell + `/billing`; every other request (and an unset handler) fails the test. */
@@ -128,6 +135,15 @@ function billingApi(options: ApiOptions = {}) {
     [PAYMENT]: () => {
       if (!options.payment) throw new Error('Unexpected payment status call')
       return options.payment()
+    },
+    [INVOICES]: (_init, url) => {
+      if (url?.searchParams.get('take') !== '10') throw new Error('Unexpected invoices take')
+      const skip = Number(url.searchParams.get('skip'))
+      return json(200, options.invoices ? options.invoices(skip) : { ...NO_INVOICES, skip })
+    },
+    [INVOICE]: () => {
+      if (!options.invoice) throw new Error('Unexpected invoice call')
+      return options.invoice()
     },
   })
 }
@@ -558,5 +574,259 @@ describe.each(['en', 'bn'] as const)('/billing (%s)', (language) => {
     await waitFor(() => expect(notice('auto-renew-error')!.textContent).toBe(t.autoRenewUnavailable))
     await waitFor(() => expect(callsTo(SUMMARY).length).toBeGreaterThan(summaries))
     expect(within(box).queryByRole('button', { name: t.removeCard })).toBeNull()
+  })
+})
+
+const invoiceId = (n: number) => `01936f2a-0000-7000-8000-${String(n).padStart(12, '0')}`
+const listItem = (n: number, overrides: Partial<InvoiceListItem> = {}): InvoiceListItem => ({
+  id: invoiceId(n),
+  invoiceNumber: `SC-2026-${String(n).padStart(5, '0')}`,
+  paidAt: '2026-11-21T08:00:00.000Z',
+  status: 'PAID',
+  plan: { id: 'plan-starter', name: 'Starter' },
+  interval: 'month',
+  amountBdt: 999,
+  gateway: 'bKash',
+  ...overrides,
+})
+
+const VIEW: InvoiceView = {
+  ...listItem(1),
+  plan: { id: 'plan-growth', name: 'Growth' },
+  interval: 'year',
+  amountBdt: 22000,
+  tranId: TRAN,
+  kind: 'UPGRADE',
+  term: { start: '2026-11-21T08:00:00.000Z', end: '2027-11-21T08:00:00.000Z' },
+  listPriceBdt: 26988,
+  promotions: [
+    { type: 'DISCOUNT', name: 'Launch offer', code: null, label: '৳1,000 off', labelBn: '৳১,০০০ ছাড়', amountOffBdt: 3000, months: { from: 1, to: 3, of: 6 } },
+    { type: 'COUPON', name: 'Eid', code: 'EID500', label: '৳500 off', labelBn: '৳৫০০ ছাড়', amountOffBdt: 500, months: { from: 2, to: 2, of: 6 } },
+  ],
+  creditBdt: 1488,
+  chargedBdt: 22000,
+  seller: { name: 'ShieldComment BD Ltd', address: 'House 1, Road 2\nDhaka 1212' },
+}
+
+const invoiceCopy = {
+  en: {
+    invoices: 'Invoices',
+    none: 'No invoices yet. Each payment adds one here.',
+    paid: 'Paid',
+    refunded: 'Refunded',
+    row: (d: string) => `${d} · Starter · Monthly`,
+    amount: '৳999',
+    older: 'Older',
+    newer: 'Newer',
+    page1: '1–10 of 12',
+    page2: '11–12 of 12',
+    invoice: 'Invoice',
+    back: 'Back to billing',
+    print: 'Print or save as PDF',
+    plan: 'Growth · Yearly',
+    method: 'bKash',
+    promotion: 'Promotion (nothing to pay)',
+    lines: {
+      list: ['Plan price', '৳26,988'],
+      'promotion-0': ['৳1,000 off · Months 1–3 of 6', '− ৳3,000'],
+      'promotion-1': ['Coupon EID500 · ৳500 off · Month 2 of 6', '− ৳500'],
+      credit: ['Unused days of your previous term', '− ৳1,488'],
+      total: ['Total paid', '৳22,000'],
+    },
+    vat: 'All prices include VAT.',
+    vatWord: 'VAT',
+    refundedNote: 'This payment was refunded.',
+    missing: 'This invoice isn’t available.',
+    checkoutGrowth: 'Growth · Monthly · ৳2,499',
+    checkoutStarterYear: 'Starter · Yearly · ৳11,388',
+  },
+  bn: {
+    invoices: 'ইনভয়েস',
+    none: 'এখনো কোনো ইনভয়েস নেই। প্রতিটি পেমেন্টের ইনভয়েস এখানে দেখাবে।',
+    paid: 'পরিশোধিত',
+    refunded: 'ফেরত দেওয়া হয়েছে',
+    row: (d: string) => `${d} · Starter · মাসিক`,
+    amount: '৳৯৯৯',
+    older: 'পুরোনোগুলো',
+    newer: 'নতুনগুলো',
+    page1: '১২টির মধ্যে ১–১০',
+    page2: '১২টির মধ্যে ১১–১২',
+    invoice: 'ইনভয়েস',
+    back: 'বিলিংয়ে ফিরে যান',
+    print: 'প্রিন্ট বা PDF হিসেবে সেভ করুন',
+    plan: 'Growth · বার্ষিক',
+    method: 'bKash',
+    promotion: 'প্রমোশন (কিছু দিতে হয়নি)',
+    lines: {
+      list: ['প্ল্যানের দাম', '৳২৬,৯৮৮'],
+      'promotion-0': ['৳১,০০০ ছাড় · ৬ মাসের মধ্যে ১–৩ নম্বর মাস', '− ৳৩,০০০'],
+      'promotion-1': ['কুপন EID500 · ৳৫০০ ছাড় · ৬ মাসের মধ্যে ২ নম্বর মাস', '− ৳৫০০'],
+      credit: ['আগের মেয়াদের বাকি দিন', '− ৳১,৪৮৮'],
+      total: ['মোট পরিশোধিত', '৳২২,০০০'],
+    },
+    vat: 'সব দামে ভ্যাট অন্তর্ভুক্ত।',
+    vatWord: 'ভ্যাট',
+    refundedNote: 'এই পেমেন্টটি ফেরত দেওয়া হয়েছে।',
+    missing: 'এই ইনভয়েসটি পাওয়া যাচ্ছে না।',
+    checkoutGrowth: 'Growth · মাসিক · ৳২,৪৯৯',
+    checkoutStarterYear: 'Starter · বার্ষিক · ৳১১,৩৮৮',
+  },
+} as const
+
+describe.each(['en', 'bn'] as const)('/billing invoices + checkout hand-off (%s, M8-T11)', (language) => {
+  const t = invoiceCopy[language]
+  const day = (iso: string) => formatDhakaDate(iso, language)
+  const line = (key: string) => {
+    const row = document.querySelector<HTMLElement>(`[data-testid="invoice-lines"] [data-line="${key}"]`)
+    return row ? [row.querySelector('dt')!.textContent, row.querySelector('dd')!.textContent] : null
+  }
+
+  it('lists invoices (number, date, plan · interval, amount, status incl. REFUNDED) and pages with skip/take', async () => {
+    billingApi({
+      invoices: (skip) => ({
+        items: skip === 0 ? Array.from({ length: 10 }, (_, i) => listItem(12 - i)) : [listItem(2), listItem(1, { status: 'REFUNDED' })],
+        total: 12,
+        skip,
+        take: 10,
+      }),
+    })
+    renderAppRoute('/billing', language)
+
+    const section = await screen.findByTestId('invoices')
+    expect(within(section).getByRole('heading', { level: 2 }).textContent).toBe(t.invoices)
+    const rows = await within(section).findAllByTestId('invoice-row')
+    expect(rows).toHaveLength(10)
+    expect(rows[0]!.textContent).toContain('SC-2026-00012')
+    expect(rows[0]!.textContent).toContain(t.row(day('2026-11-21T08:00:00.000Z')))
+    expect(rows[0]!.textContent).toContain(t.amount)
+    expect(within(rows[0]!).getByTestId('invoice-status').textContent).toBe(t.paid)
+    expect(within(rows[0]!).getByRole('link').getAttribute('href')).toBe(`/billing?invoice=${invoiceId(12)}`)
+    expect(within(section).getByTestId('invoices-page').textContent).toBe(t.page1)
+    expect(within(section).getByRole('button', { name: t.newer }).hasAttribute('disabled')).toBe(true)
+
+    fireEvent.click(within(section).getByRole('button', { name: t.older }))
+    await waitFor(() => expect(within(section).getAllByTestId('invoice-row')).toHaveLength(2))
+    const refunded = within(section).getAllByTestId('invoice-row')[1]!
+    expect(within(refunded).getByTestId('invoice-status').textContent).toBe(t.refunded)
+    expect(within(refunded).getByTestId('invoice-status').dataset.variant).toBe('destructive')
+    expect(within(section).getByTestId('invoices-page').textContent).toBe(t.page2)
+    expect(within(section).getByRole('button', { name: t.older }).hasAttribute('disabled')).toBe(true)
+    expect(callsTo(INVOICES).length).toBe(2)
+  })
+
+  it('says when there are no invoices yet', async () => {
+    billingApi()
+    renderAppRoute('/billing', language)
+    expect(await screen.findByText(t.none)).toBeTruthy()
+  })
+
+  it('opens an invoice: seller, plan, term, method, promotion lines with "k of N", credit, total, VAT note but no VAT line; Back returns', async () => {
+    billingApi({ invoices: () => ({ items: [listItem(1)], total: 1, skip: 0, take: 10 }), invoice: () => json(200, VIEW) })
+    const { history } = renderAppRoute('/billing', language)
+
+    fireEvent.click(within((await screen.findAllByTestId('invoice-row'))[0]!).getByRole('link'))
+    const invoice = await screen.findByTestId('invoice')
+    expect(history.location.search).toBe(`?invoice=${INVOICE_ID}`)
+    expect(screen.queryByTestId('billing-summary')).toBeNull()
+    expect(within(invoice).getByRole('heading', { level: 1 }).textContent).toBe(t.invoice)
+    expect(within(invoice).getByTestId('invoice-number').textContent).toBe('SC-2026-00001')
+    expect(within(invoice).getByTestId('invoice-status').textContent).toBe(t.paid)
+    expect(within(invoice).getByTestId('invoice-seller').textContent).toBe('ShieldComment BD LtdHouse 1, Road 2\nDhaka 1212')
+    const meta = (key: string) => invoice.querySelector(`[data-meta="${key}"] dd`)!.textContent
+    expect(meta('date')).toBe(day(VIEW.paidAt))
+    expect(meta('plan')).toBe(t.plan)
+    expect(meta('term')).toBe(`${day(VIEW.term.start)} – ${day(VIEW.term.end)}`)
+    expect(meta('method')).toBe(t.method)
+    expect(meta('tran')).toBe(TRAN)
+    for (const [key, value] of Object.entries(t.lines)) expect(line(key)).toEqual(value)
+    expect(screen.getByTestId('invoice-lines').textContent).not.toContain(t.vatWord)
+    expect(within(invoice).getByTestId('invoice-vat').textContent).toBe(t.vat)
+
+    fireEvent.click(screen.getByRole('link', { name: t.back }))
+    expect(await screen.findByTestId('billing-summary')).toBeTruthy()
+    expect(history.location.search).toBe('')
+  })
+
+  it('a REFUNDED ৳0 invoice without seller details or promotions; the print view hides the app chrome', async () => {
+    const print = vi.fn()
+    billingApi({
+      invoice: () =>
+        json(200, { ...VIEW, status: 'REFUNDED', gateway: 'PROMOTION', promotions: [], creditBdt: 0, seller: { name: null, address: null } }),
+    })
+    renderAppRoute(`/billing?invoice=${INVOICE_ID}`, language)
+
+    const invoice = await screen.findByTestId('invoice')
+    expect(within(invoice).getByTestId('invoice-status').textContent).toBe(t.refunded)
+    expect(within(invoice).getByText(t.refundedNote)).toBeTruthy()
+    expect(within(invoice).queryByTestId('invoice-seller')).toBeNull()
+    expect(invoice.querySelector('[data-meta="method"] dd')!.textContent).toBe(t.promotion)
+    expect([...invoice.querySelectorAll('[data-line]')].map((row) => row.getAttribute('data-line'))).toEqual(['list', 'total'])
+
+    vi.stubGlobal('print', print)
+    const button = screen.getByRole('button', { name: t.print })
+    fireEvent.click(button)
+    expect(print).toHaveBeenCalledOnce()
+    // Print CSS: the shell chrome (top bar, banners, nav) and the page buttons stay off paper.
+    expect(screen.getByTestId('app-chrome').className).toContain('print:hidden')
+    for (const nav of screen.getAllByRole('navigation')) expect(nav.closest('.print\\:hidden')).not.toBeNull()
+    expect(button.closest('.print\\:hidden')).not.toBeNull()
+    expect(invoice.closest('.print\\:hidden')).toBeNull()
+  })
+
+  it('an unknown invoice says it isn’t available', async () => {
+    billingApi({ invoice: () => json(404, { statusCode: 404, message: 'Not Found' }) })
+    renderAppRoute(`/billing?invoice=${INVOICE_ID}`, language)
+    expect(await screen.findByText(t.missing)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: t.print })).toBeNull()
+  })
+
+  it('hides the invoices from moderators (no call); admins and impersonated sessions read them', async () => {
+    billingApi({ team: MODERATOR })
+    renderAppRoute('/billing', language)
+    await waitFor(() => expect(notice('owner-only')).not.toBeNull())
+    await screen.findAllByTestId('plan-card')
+    expect(screen.queryByTestId('invoices')).toBeNull()
+    expect(callsTo(INVOICES)).toHaveLength(0)
+    cleanup()
+
+    for (const options of [{ team: ADMIN }, { session: IMPERSONATED }]) {
+      billingApi({ ...options, invoices: () => ({ items: [listItem(1)], total: 1, skip: 0, take: 10 }) })
+      renderAppRoute('/billing', language)
+      expect(await screen.findAllByTestId('invoice-row')).toHaveLength(1)
+      cleanup()
+    }
+  })
+
+  it('?plan=&interval= preselects that plan and opens its checkout for the owner', async () => {
+    billingApi({ summary: billingSummary(NO_PLAN) })
+    renderAppRoute('/billing?plan=growth&interval=month', language)
+    expect((await screen.findByTestId('checkout-plan')).textContent).toBe(t.checkoutGrowth)
+    expect(within(card('Growth')).getByRole('button', { name: copy[language].selected }).getAttribute('aria-pressed')).toBe('true')
+    cleanup()
+
+    billingApi({ summary: billingSummary(NO_PLAN) })
+    renderAppRoute('/billing?plan=starter&interval=year', language)
+    expect((await screen.findByTestId('checkout-plan')).textContent).toBe(t.checkoutStarterYear)
+    // Picking another card replaces the preselection.
+    fireEvent.click(within(card('Growth')).getByRole('button', { name: copy[language].choose('Growth') }))
+    await waitFor(() => expect(screen.getByTestId('checkout-plan').textContent).toBe(t.checkoutGrowth))
+  })
+
+  it('ignores an unknown or malformed plan, and opens no checkout for a non-owner', async () => {
+    for (const path of ['/billing?plan=agency&interval=month', '/billing?plan=Bad%20Plan&interval=week']) {
+      fetchMock.mockClear()
+      billingApi({ summary: billingSummary(NO_PLAN) })
+      renderAppRoute(path, language)
+      await screen.findAllByTestId('plan-card')
+      await waitFor(() => expect(callsTo('/api/workspaces/w1/team')).toHaveLength(1))
+      expect(screen.queryByTestId('checkout')).toBeNull()
+      cleanup()
+    }
+
+    billingApi({ team: ADMIN, summary: billingSummary(NO_PLAN) })
+    renderAppRoute('/billing?plan=growth&interval=month', language)
+    await waitFor(() => expect(notice('owner-only')!.textContent).toBe(copy[language].ownerOnly))
+    await screen.findAllByTestId('plan-card')
+    expect(screen.queryByTestId('checkout')).toBeNull()
   })
 })

@@ -13,22 +13,25 @@ import {
   type FieldErrors,
   type SignInInput,
 } from '@/lib/auth-forms'
+import { checkoutTarget, validateCheckoutIntent, type CheckoutIntent } from '@/lib/billing'
 import { postAuthDestination } from '@/lib/post-auth'
 import { safeRedirect } from '@/lib/safe-redirect'
 import { sessionQueryOptions } from '@/lib/session'
 
-interface LoginSearch {
+interface LoginSearch extends CheckoutIntent {
   redirect?: string
 }
 
 /**
  * C2 sign-in (M3-T8). A signed-in visitor goes straight to `?redirect=` (via `safeRedirect`). After a
- * sign-in without a usable `?redirect=`, `postAuthDestination` applies the D13 onboarding rule.
+ * sign-in without a usable `?redirect=`, `postAuthDestination` applies the D13 onboarding rule. D11
+ * (M8-T11): `?plan=&interval=` (an existing account from a "Choose plan" button) goes to that checkout.
  */
 export const Route = createFileRoute('/login')({
   // Return the key even when invalid: the router merges the raw search under this result.
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
     redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
+    ...validateCheckoutIntent(search),
   }),
   beforeLoad: async ({ context, search }) => {
     let session: unknown = null
@@ -37,14 +40,14 @@ export const Route = createFileRoute('/login')({
     } catch {
       return // session check failed (offline / API down): show the form; sign-in reports the problem
     }
-    if (session) throw redirect({ href: safeRedirect(search.redirect), replace: true })
+    if (session) throw redirect({ href: safeRedirect(search.redirect, checkoutTarget(search) ?? '/dashboard'), replace: true })
   },
   head: () => ({ meta: [{ title: 'Log in | ShieldComment BD' }, { name: 'robots', content: 'noindex' }] }),
   component: LoginPage,
 })
 
 function LoginPage() {
-  const { redirect: target } = Route.useSearch()
+  const { redirect: target, plan, interval } = Route.useSearch()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { content } = useLanguage()
@@ -57,7 +60,7 @@ function LoginPage() {
       // New identity: drop the cached `null` session and anything cached under a previous user.
       queryClient.removeQueries()
       // An explicit (safe) ?redirect= wins; otherwise D13 picks /onboarding (0 active Pages) or /dashboard.
-      const explicit = safeRedirect(target, '')
+      const explicit = safeRedirect(target, '') || checkoutTarget({ plan, interval })
       await navigate({ href: explicit || (await postAuthDestination(queryClient)), replace: true })
     },
   })
@@ -93,7 +96,7 @@ function LoginPage() {
       footer={
         <p>
           {content('New to ShieldComment?', 'ShieldComment-এ নতুন?')}{' '}
-          <Link to="/register" className="font-medium text-primary underline-offset-4 hover:underline">
+          <Link to="/register" search={{ plan, interval }} className="font-medium text-primary underline-offset-4 hover:underline">
             {content('Create an account', 'অ্যাকাউন্ট খুলুন')}
           </Link>
         </p>

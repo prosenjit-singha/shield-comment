@@ -95,6 +95,30 @@ describe.each(['en', 'bn'] as const)('/login (%s)', (language) => {
     expect(callsTo(PAGES)).toHaveLength(0) // explicit ?redirect: no D13 check
   })
 
+  it('D11: ?plan=&interval= (existing account) goes to that checkout; an explicit ?redirect still wins', async () => {
+    mockApi(signInFlow(pagesWith(0)))
+    const { history } = renderAuthRoute('/login?plan=growth&interval=year', language)
+    await fillAndSubmit(language)
+    expect(await screen.findByText('Billing stub')).toBeTruthy()
+    expect(history.location.href).toBe('/billing?plan=growth&interval=year')
+    expect(callsTo(PAGES)).toHaveLength(0)
+    expect(callsTo(SUMMARY)).toHaveLength(0)
+    cleanup()
+
+    mockApi(signInFlow(pagesWith(0)))
+    const second = renderAuthRoute('/login?redirect=%2Forders&plan=growth&interval=year', language)
+    await fillAndSubmit(language)
+    expect(await screen.findByText('Orders stub')).toBeTruthy()
+    expect(second.history.location.pathname).toBe('/orders')
+  })
+
+  it('keeps ?plan=&interval= on the "Create an account" link', async () => {
+    mockApi({})
+    renderAuthRoute('/login?plan=pro&interval=month', language)
+    const link = await screen.findByRole('link', { name: t.register })
+    expect(link.getAttribute('href')).toBe('/register?plan=pro&interval=month')
+  })
+
   describe('without ?redirect (D13 entry point)', () => {
     it('goes to /onboarding when the active workspace has 0 active Pages', async () => {
       mockApi(signInFlow(pagesWith(0)))
@@ -299,6 +323,13 @@ describe('/login error mapping', () => {
 })
 
 describe('/login guard', () => {
+  it('sends a signed-in visitor with ?plan=&interval= to that checkout (D11)', async () => {
+    mockApi({ '/api/auth/get-session': async () => json(200, SESSION) })
+    const { history } = renderAuthRoute('/login?plan=growth&interval=month')
+    expect(await screen.findByText('Billing stub')).toBeTruthy()
+    expect(history.location.href).toBe('/billing?plan=growth&interval=month')
+  })
+
   it('sends a signed-in visitor to the safe ?redirect target', async () => {
     mockApi({ '/api/auth/get-session': async () => json(200, SESSION) })
     const { history } = renderAuthRoute('/login?redirect=%2Forders')

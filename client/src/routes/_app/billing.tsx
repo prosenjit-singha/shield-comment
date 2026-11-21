@@ -1,6 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
-import { CreditCard, X } from 'lucide-react'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { ArrowLeft, CreditCard, Printer, X } from 'lucide-react'
 import { useEffect, useId, useState, type FormEvent } from 'react'
 import { DashboardError } from '@/components/dashboard/dashboard-charts'
 import { MetaNotice } from '@/components/meta/meta-notice'
@@ -18,9 +18,14 @@ import {
   autoRenewErrorMessage,
   checkoutErrorMessage,
   goToGateway,
+  INVOICES_PAGE_SIZE,
+  invoiceQueryOptions,
+  invoicesQueryKey,
+  invoicesQueryOptions,
   PAYMENT_POLL_MAX,
   paymentStatusQueryOptions,
   previewCoupon,
+  promotionMonths,
   removeSavedCard,
   setAutoRenew,
   startCheckout,
@@ -28,6 +33,8 @@ import {
   type CheckoutInput,
   type CheckoutResult,
   type CouponPreview,
+  type InvoiceStatus,
+  type InvoiceView,
   type PaymentReturn,
 } from '@/lib/billing'
 import {
@@ -50,6 +57,9 @@ import { teamQueryOptions } from '@/lib/team'
  * ৳0 path straight to the success state). `?payment=&tranId=` is the SSLCommerz return (M8-T5);
  * `pending` polls the payment until it settles. D2: only the owner pays; admins, moderators and
  * impersonated sessions read everything without the buttons (the role comes from `GET …/team`).
+ * M8-T11 (D8, D11): `?plan=<slug>&interval=` preselects that plan and opens its checkout (owner only);
+ * owner + admin see the invoices list; `?invoice=<id>` shows one invoice alone, printable (the shell
+ * chrome is `print:hidden`, the browser's "Save as PDF" makes the PDF).
  */
 export const Route = createFileRoute('/_app/billing')({
   head: () => ({ meta: [{ title: 'Billing | ShieldComment BD' }, { name: 'robots', content: 'noindex' }] }),
@@ -61,6 +71,8 @@ function BillingPage() {
   const { session } = Route.useRouteContext()
   const { content } = useLanguage()
   const workspaceId = session.session.activeOrganizationId
+  const { invoice } = Route.useSearch()
+  if (workspaceId && invoice) return <InvoiceDetail workspaceId={workspaceId} invoiceId={invoice} />
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -91,13 +103,24 @@ function BillingView({ workspaceId, userId, impersonated }: { workspaceId: strin
   const summary = useQuery(billingSummaryQueryOptions(workspaceId))
   const plans = useQuery(plansQueryOptions)
   const team = useQuery(teamQueryOptions(workspaceId))
-  const [interval, setBillingInterval] = useState<SubscriptionInterval>('month')
-  const [selected, setSelected] = useState<string | null>(null)
+  const [interval, setBillingInterval] = useState<SubscriptionInterval>(search.interval ?? 'month')
+  const [picked, setSelected] = useState<string | null>(null)
 
   const role = team.data?.members.find((member) => member.userId === userId)?.role ?? null
   const canPay = role === 'owner' && !impersonated
   const readOnly = impersonated || (role !== null && role !== 'owner')
-  const refreshSummary = () => queryClient.invalidateQueries({ queryKey: billingSummaryQueryKey(workspaceId) })
+  const refreshSummary = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: billingSummaryQueryKey(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: invoicesQueryKey(workspaceId) }),
+    ])
+
+  // D11: `?plan=<slug>&interval=` (from /plans or the sign-up hand-off) until the owner picks another card.
+  const preselected = plans.data?.items.find((plan) => plan.slug === search.plan)?.id ?? null
+  const selected = picked ?? preselected
+  useEffect(() => {
+    if (preselected && canPay) document.getElementById('billing-checkout')?.scrollIntoView?.({ behavior: 'smooth' })
+  }, [preselected, canPay])
 
   const selectedPlan = plans.data?.items.find((plan) => plan.id === selected) ?? null
   const selection: Selection | null = selectedPlan ? { planId: selectedPlan.id, interval: selectedPlan.yearly && interval === 'year' ? 'year' : 'month' } : null
@@ -214,6 +237,8 @@ function BillingView({ workspaceId, userId, impersonated }: { workspaceId: strin
           }}
         />
       ) : null}
+
+      {role === 'owner' || role === 'admin' ? <InvoicesSection workspaceId={workspaceId} /> : null}
     </>
   )
 }
@@ -641,5 +666,203 @@ function PaymentReturnNotice({
         </span>
       ) : null}
     </MetaNotice>
+  )
+}
+
+const INVOICE_STATUS: Record<InvoiceStatus, [string, string]> = { PAID: ['Paid', 'পরিশোধিত'], REFUNDED: ['Refunded', 'ফেরত দেওয়া হয়েছে'] }
+
+function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
+  const { content } = useLanguage()
+  const [en, bn] = INVOICE_STATUS[status]
+  return (
+    <Badge variant={status === 'REFUNDED' ? 'destructive' : 'outline'} data-testid="invoice-status" data-status={status}>
+      {content(en, bn)}
+    </Badge>
+  )
+}
+
+/** D2: owner + admin only (the caller hides it for moderators). Newest first, `INVOICES_PAGE_SIZE` a page. */
+function InvoicesSection({ workspaceId }: { workspaceId: string }) {
+  const { content, language } = useLanguage()
+  const [skip, setSkip] = useState(0)
+  const invoices = useQuery({ ...invoicesQueryOptions(workspaceId, skip), placeholderData: keepPreviousData })
+  const total = invoices.data?.total ?? 0
+
+  return (
+    <section aria-labelledby="billing-invoices" className="flex flex-col gap-4" data-testid="invoices">
+      <h2 id="billing-invoices" className="text-lg font-semibold">
+        {content('Invoices', 'ইনভয়েস')}
+      </h2>
+      {invoices.isPending ? (
+        <Skeleton className="h-32 w-full rounded-3xl" />
+      ) : invoices.isError ? (
+        <DashboardError
+          title={content('Couldn’t load your invoices', 'আপনার ইনভয়েস লোড করা যায়নি')}
+          message={content('Please try again.', 'আবার চেষ্টা করুন।')}
+          onRetry={() => void invoices.refetch()}
+          retrying={invoices.isFetching}
+        />
+      ) : invoices.data.items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{content('No invoices yet. Each payment adds one here.', 'এখনো কোনো ইনভয়েস নেই। প্রতিটি পেমেন্টের ইনভয়েস এখানে দেখাবে।')}</p>
+      ) : (
+        <>
+          <Card className="gap-0 rounded-3xl p-2">
+            <ul aria-label={content('Invoices', 'ইনভয়েস')}>
+              {invoices.data.items.map((item) => (
+                <li key={item.id} data-testid="invoice-row">
+                  <Link
+                    to="/billing"
+                    search={{ invoice: item.id }}
+                    className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl px-4 py-3 text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                  >
+                    <span className="font-medium tabular-nums">{item.invoiceNumber}</span>
+                    <span className="flex-1 text-muted-foreground">
+                      {`${formatDhakaDate(item.paidAt, language)} · ${item.plan.name} · ${intervalLabel(item.interval, content)}`}
+                    </span>
+                    <span className="tabular-nums">{formatTaka(item.amountBdt, language)}</span>
+                    <InvoiceStatusBadge status={item.status} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Card>
+          {total > INVOICES_PAGE_SIZE ? (
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <Button variant="outline" size="sm" className="h-9 px-4" disabled={skip === 0} onClick={() => setSkip(Math.max(0, skip - INVOICES_PAGE_SIZE))}>
+                {content('Newer', 'নতুনগুলো')}
+              </Button>
+              <span className="tabular-nums text-muted-foreground" data-testid="invoices-page">
+                {content(
+                  `${skip + 1}–${Math.min(skip + INVOICES_PAGE_SIZE, total)} of ${total}`,
+                  `${formatNumber(total, 'bn')}টির মধ্যে ${formatNumber(skip + 1, 'bn')}–${formatNumber(Math.min(skip + INVOICES_PAGE_SIZE, total), 'bn')}`,
+                )}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 px-4"
+                disabled={skip + INVOICES_PAGE_SIZE >= total}
+                onClick={() => setSkip(skip + INVOICES_PAGE_SIZE)}
+              >
+                {content('Older', 'পুরোনোগুলো')}
+              </Button>
+            </div>
+          ) : null}
+        </>
+      )}
+    </section>
+  )
+}
+
+/** `?invoice=<id>`: the invoice alone (D8), with Back + Print; both buttons stay off paper. */
+function InvoiceDetail({ workspaceId, invoiceId }: { workspaceId: string; invoiceId: string }) {
+  const { content } = useLanguage()
+  const invoice = useQuery(invoiceQueryOptions(workspaceId, invoiceId))
+  const missing = invoice.isError && [403, 404].includes(toApiError(invoice.error).status)
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+        <Button asChild variant="outline" className="h-10 px-4">
+          <Link to="/billing">
+            <ArrowLeft aria-hidden />
+            {content('Back to billing', 'বিলিংয়ে ফিরে যান')}
+          </Link>
+        </Button>
+        {invoice.data ? (
+          <Button className="h-10 px-4" onClick={() => window.print()}>
+            <Printer aria-hidden />
+            {content('Print or save as PDF', 'প্রিন্ট বা PDF হিসেবে সেভ করুন')}
+          </Button>
+        ) : null}
+      </div>
+      {invoice.isPending ? (
+        <Skeleton className="h-96 w-full rounded-3xl" />
+      ) : invoice.isError ? (
+        <DashboardError
+          title={content('Couldn’t load the invoice', 'ইনভয়েস লোড করা যায়নি')}
+          message={missing ? content('This invoice isn’t available.', 'এই ইনভয়েসটি পাওয়া যাচ্ছে না।') : content('Please try again.', 'আবার চেষ্টা করুন।')}
+          onRetry={() => void invoice.refetch()}
+          retrying={invoice.isFetching}
+        />
+      ) : (
+        <InvoiceDocument invoice={invoice.data} />
+      )}
+    </div>
+  )
+}
+
+function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
+  const { content, language } = useLanguage()
+  const date = (iso: string) => formatDhakaDate(iso, language)
+  const money = (amount: number) => formatTaka(amount, language)
+  const minus = (amount: number) => `− ${money(amount)}`
+  const { seller } = invoice
+  const meta: [string, string, string][] = [
+    ['date', content('Date paid', 'পেমেন্টের তারিখ'), date(invoice.paidAt)],
+    ['plan', content('Plan', 'প্ল্যান'), `${invoice.plan.name} · ${intervalLabel(invoice.interval, content)}`],
+    ['term', content('Term', 'মেয়াদ'), `${date(invoice.term.start)} – ${date(invoice.term.end)}`],
+    [
+      'method',
+      content('Paid with', 'পেমেন্ট মাধ্যম'),
+      invoice.gateway === 'PROMOTION' ? content('Promotion (nothing to pay)', 'প্রমোশন (কিছু দিতে হয়নি)') : invoice.gateway,
+    ],
+    ['tran', content('Transaction ID', 'ট্রানজেকশন আইডি'), invoice.tranId],
+  ]
+  const lines: [string, string, string][] = [['list', content('Plan price', 'প্ল্যানের দাম'), money(invoice.listPriceBdt)]]
+  invoice.promotions.forEach((p, index) => {
+    const label = [p.code ? `${content('Coupon', 'কুপন')} ${p.code}` : null, content(p.label, p.labelBn), promotionMonths(p.months, content)]
+    lines.push([`promotion-${index}`, label.filter(Boolean).join(' · '), minus(p.amountOffBdt)])
+  })
+  if (invoice.creditBdt > 0) lines.push(['credit', content('Unused days of your previous term', 'আগের মেয়াদের বাকি দিন'), minus(invoice.creditBdt)])
+
+  return (
+    <Card className="gap-6 rounded-3xl p-6 sm:p-8 print:shadow-none print:ring-0" data-testid="invoice">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">{content('Invoice', 'ইনভয়েস')}</h1>
+          <p className="text-sm tabular-nums text-muted-foreground" data-testid="invoice-number">
+            {invoice.invoiceNumber}
+          </p>
+        </div>
+        <InvoiceStatusBadge status={invoice.status} />
+      </div>
+
+      {seller.name || seller.address ? (
+        <div className="text-sm" data-testid="invoice-seller">
+          {seller.name ? <p className="font-medium">{seller.name}</p> : null}
+          {seller.address ? <p className="whitespace-pre-line text-muted-foreground">{seller.address}</p> : null}
+        </div>
+      ) : null}
+
+      <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+        {meta.map(([key, label, value]) => (
+          <div key={key} className="flex flex-col" data-meta={key}>
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="break-all">{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <dl className="flex flex-col gap-1.5 rounded-2xl bg-muted px-4 py-3 text-sm print:bg-transparent print:px-0" data-testid="invoice-lines">
+        {lines.map(([key, label, value]) => (
+          <div key={key} className="flex justify-between gap-3" data-line={key}>
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="shrink-0 tabular-nums">{value}</dd>
+          </div>
+        ))}
+        <div className="flex justify-between gap-3 border-t pt-1.5 font-semibold" data-line="total">
+          <dt>{content('Total paid', 'মোট পরিশোধিত')}</dt>
+          <dd className="tabular-nums">{money(invoice.chargedBdt)}</dd>
+        </div>
+      </dl>
+
+      <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+        <p data-testid="invoice-vat">{content('All prices include VAT.', 'সব দামে ভ্যাট অন্তর্ভুক্ত।')}</p>
+        {invoice.status === 'REFUNDED' ? (
+          <p>{content('This payment was refunded.', 'এই পেমেন্টটি ফেরত দেওয়া হয়েছে।')}</p>
+        ) : null}
+      </div>
+    </Card>
   )
 }

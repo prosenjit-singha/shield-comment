@@ -70,8 +70,9 @@ const ICONS = { trial: Hourglass, paused: CirclePause, limit_reached: Gauge } as
  * Plan status banner in the `_app` shell (PW-T8, plan §3.7, PW-D9): "Trial ends in N days" while on
  * the sign-up trial, "Moderation paused: choose a plan" without a live plan, "Comment limit reached"
  * when the wallet is used up. Read from the workspace billing summary; nothing shows while it loads,
- * when it fails, or for a paid plan with comments left (it never blocks the shell). Every banner that
- * asks the client to choose a plan links to `/plans` (PR-T6, reading 5).
+ * when it fails, or for a paid plan with comments left (it never blocks the shell). M8-T11: an account
+ * that never paid (no plan yet, or on a trial) gets "See plans" → `/plans` (trial by choice, D11); a paid
+ * plan that ended or ran out of comments gets "Go to billing" → `/billing` (renew or upgrade there).
  */
 export function PlanStatusBanner({ workspaceId }: { workspaceId: string }) {
   const { content, language } = useLanguage()
@@ -83,7 +84,7 @@ export function PlanStatusBanner({ workspaceId }: { workspaceId: string }) {
   const { title, body } = bannerCopy(state, content, language)
   const Icon = ICONS[state.kind]
   const urgent = state.kind !== 'trial'
-  const choosePlan = state.kind !== 'limit_reached' || state.trial
+  const neverPaid = summary.data?.status === 'NONE' || summary.data?.status === 'TRIALING'
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6">
@@ -103,14 +104,16 @@ export function PlanStatusBanner({ workspaceId }: { workspaceId: string }) {
             {title}
           </strong>{' '}
           <span>{body}</span>
-          {choosePlan ? (
-            <>
-              {' '}
-              <Link to="/plans" className="font-medium text-primary underline-offset-4 hover:underline">
-                {content('See plans', 'প্ল্যান দেখুন')}
-              </Link>
-            </>
-          ) : null}
+          {' '}
+          {neverPaid ? (
+            <Link to="/plans" className="font-medium text-primary underline-offset-4 hover:underline">
+              {content('See plans', 'প্ল্যান দেখুন')}
+            </Link>
+          ) : (
+            <Link to="/billing" className="font-medium text-primary underline-offset-4 hover:underline">
+              {content('Go to billing', 'বিলিংয়ে যান')}
+            </Link>
+          )}
         </p>
       </div>
     </div>

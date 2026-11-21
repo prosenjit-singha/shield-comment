@@ -86,50 +86,57 @@ function AppLayout() {
   if (impersonationEnded) return <ImpersonationEnded />
 
   return (
-    <div className="flex min-h-svh flex-col bg-muted">
-      {impersonated ? (
-        <ImpersonationBanner
-          ownerEmail={session.user.email}
-          onExit={() => exitImpersonation.mutate()}
-          pending={exitImpersonation.isPending}
-          error={exitImpersonation.error}
+    <div className="flex min-h-svh flex-col bg-muted print:bg-background">
+      {/* M8-T11: the app chrome stays off paper (the invoice print view). */}
+      <div className="contents print:hidden" data-testid="app-chrome">
+        {impersonated ? (
+          <ImpersonationBanner
+            ownerEmail={session.user.email}
+            onExit={() => exitImpersonation.mutate()}
+            pending={exitImpersonation.isPending}
+            error={exitImpersonation.error}
+          />
+        ) : null}
+        <AppTopBar
+          email={session.user.email}
+          onSignOut={impersonated ? undefined : () => signOut.mutate()}
+          signingOut={signOut.isPending}
+          // Impersonated sessions are locked to one workspace (the backend 403s set-active), so no switcher.
+          switcher={
+            impersonated ? null : (
+              <WorkspaceSwitcher
+                activeId={workspaceId ?? null}
+                onSwitch={(id) => switchWorkspace.mutate(id)}
+                switching={switchWorkspace.isPending}
+              />
+            )
+          }
         />
-      ) : null}
-      <AppTopBar
-        email={session.user.email}
-        onSignOut={impersonated ? undefined : () => signOut.mutate()}
-        signingOut={signOut.isPending}
-        // Impersonated sessions are locked to one workspace (the backend 403s set-active), so no switcher.
-        switcher={
-          impersonated ? null : (
-            <WorkspaceSwitcher
-              activeId={workspaceId ?? null}
-              onSwitch={(id) => switchWorkspace.mutate(id)}
-              switching={switchWorkspace.isPending}
-            />
-          )
-        }
-      />
-      {/* PW-T8: trial / paused / limit banner from the billing summary (none while loading or on failure). */}
-      {workspaceId ? <PlanStatusBanner workspaceId={workspaceId} /> : null}
-      {signOut.error && !signOut.isPending ? (
-        <ShellAlert kind={signOut.error.kind}>
-          {content('Couldn’t log you out.', 'লগ আউট করা যায়নি।')} {authErrorMessage(signOut.error, content)}
-        </ShellAlert>
-      ) : null}
-      {switchWorkspace.error && !switchWorkspace.isPending ? (
-        <ShellAlert kind={switchWorkspace.error.kind}>
-          {content('Couldn’t switch the workspace.', 'ওয়ার্কস্পেস বদলানো যায়নি।')} {authErrorMessage(switchWorkspace.error, content)}
-        </ShellAlert>
-      ) : null}
+        {/* PW-T8: trial / paused / limit banner from the billing summary (none while loading or on failure). */}
+        {workspaceId ? <PlanStatusBanner workspaceId={workspaceId} /> : null}
+        {signOut.error && !signOut.isPending ? (
+          <ShellAlert kind={signOut.error.kind}>
+            {content('Couldn’t log you out.', 'লগ আউট করা যায়নি।')} {authErrorMessage(signOut.error, content)}
+          </ShellAlert>
+        ) : null}
+        {switchWorkspace.error && !switchWorkspace.isPending ? (
+          <ShellAlert kind={switchWorkspace.error.kind}>
+            {content('Couldn’t switch the workspace.', 'ওয়ার্কস্পেস বদলানো যায়নি।')} {authErrorMessage(switchWorkspace.error, content)}
+          </ShellAlert>
+        ) : null}
+      </div>
       {/* M6-T8 (D16 c): sidebar from md up, bottom bar below (pb-24 keeps content clear of it). */}
-      <div className="mx-auto flex w-full max-w-6xl flex-1 gap-6 p-4 pb-24 sm:p-6 sm:pb-24 md:pb-6">
-        <AppSidebar />
+      <div className="mx-auto flex w-full max-w-6xl flex-1 gap-6 p-4 pb-24 sm:p-6 sm:pb-24 md:pb-6 print:p-0">
+        <div className="contents print:hidden">
+          <AppSidebar />
+        </div>
         <main className="min-w-0 flex-1">
           <Outlet />
         </main>
       </div>
-      <AppBottomBar />
+      <div className="contents print:hidden">
+        <AppBottomBar />
+      </div>
     </div>
   )
 }

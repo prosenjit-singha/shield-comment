@@ -314,6 +314,47 @@ describe('/register error mapping', () => {
   })
 })
 
+describe.each(['en', 'bn'] as const)('/register D11 hand-off (%s)', (language) => {
+  const t = copy[language]
+
+    it('D11: ?plan=&interval= lands on that checkout after sign-up, without the plan or pages checks', async () => {
+      mockApi(signUpFlow(0))
+      const { history } = renderAuthRoute('/register?plan=growth&interval=year', language)
+      await fill(language)
+      submit(language)
+
+      expect(await screen.findByText('Billing stub')).toBeTruthy()
+      expect(history.location.href).toBe('/billing?plan=growth&interval=year')
+      expect(history.length).toBe(1)
+      expect(callsTo(SUMMARY)).toHaveLength(0)
+      expect(callsTo(PAGES)).toHaveLength(0)
+    })
+
+    it('D11: a missing interval means monthly; a malformed plan falls back to the normal flow', async () => {
+      mockApi(signUpFlow(0))
+      const { history } = renderAuthRoute('/register?plan=pro', language)
+      await fill(language)
+      submit(language)
+      expect(await screen.findByText('Billing stub')).toBeTruthy()
+      expect(history.location.href).toBe('/billing?plan=pro&interval=month')
+      cleanup()
+
+      mockApi(signUpFlow(0, undefined, () => json(200, { status: 'NONE', plan: null, trialEligible: true })))
+      const second = renderAuthRoute('/register?plan=..%2Fadmin&interval=year', language)
+      await fill(language)
+      submit(language)
+      expect(await screen.findByText('Plans stub')).toBeTruthy()
+      expect(second.history.location.pathname).toBe('/plans')
+    })
+
+    it('keeps ?plan=&interval= on the "Log in" link for an existing account', async () => {
+      mockApi({})
+      renderAuthRoute('/register?plan=growth&interval=year', language)
+      const link = await screen.findByRole('link', { name: t.login })
+      expect(link.getAttribute('href')).toBe('/login?plan=growth&interval=year')
+    })
+})
+
 describe('/register guard', () => {
   it('sends a signed-in visitor to /dashboard', async () => {
     mockApi({
@@ -323,5 +364,14 @@ describe('/register guard', () => {
     const { history } = renderAuthRoute('/register')
     expect(await screen.findByText('Dashboard stub')).toBeTruthy()
     expect(history.location.pathname).toBe('/dashboard')
+  })
+  it('sends a signed-in visitor with ?plan=&interval= straight to that checkout (D11)', async () => {
+    mockApi({
+      '/api/auth/get-session': async () =>
+        json(200, { session: { id: 's1', userId: 'u1', impersonatedBy: null }, user: USER }),
+    })
+    const { history } = renderAuthRoute('/register?plan=starter&interval=month')
+    expect(await screen.findByText('Billing stub')).toBeTruthy()
+    expect(history.location.href).toBe('/billing?plan=starter&interval=month')
   })
 })

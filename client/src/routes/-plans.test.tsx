@@ -145,7 +145,7 @@ const copy = {
     saveUpTo: 'Save up to 10%',
     switchLabel: 'Bill yearly',
     perMonth: '/month',
-    contact: 'Contact us',
+    choose: (name: string) => `Choose ${name}`,
     trial: 'Start free 7-day trial',
     trialNote: '300 comments included. No payment needed.',
     starterPrice: '৳499',
@@ -160,8 +160,6 @@ const copy = {
     description: 'For growing brands',
     pages: '1 Facebook & Instagram Page',
     comments: '2,500 comments scanned a month',
-    whatsMonthly: "Hi! I'd like the Growth plan (Monthly).",
-    whatsYearly: "Hi! I'd like the Growth plan (Yearly).",
     trialUsed: 'Your account has already used its free trial.',
     trialImpersonated: 'A trial can’t be started while impersonating. The owner has to start it.',
     loadFailed: 'Couldn’t load the plans.',
@@ -174,7 +172,7 @@ const copy = {
     saveUpTo: '১০% পর্যন্ত সাশ্রয়',
     switchLabel: 'বার্ষিক বিল',
     perMonth: '/মাস',
-    contact: 'যোগাযোগ করুন',
+    choose: (name: string) => `${name} বেছে নিন`,
     trial: '৭ দিনের ফ্রি ট্রায়াল শুরু করুন',
     trialNote: '৩০০টি কমেন্ট সহ। কোনো পেমেন্ট লাগবে না।',
     starterPrice: '৳৪৯৯',
@@ -189,8 +187,6 @@ const copy = {
     description: 'বাড়তে থাকা ব্র্যান্ডের জন্য',
     pages: '১টি ফেসবুক ও ইনস্টাগ্রাম পেজ',
     comments: 'মাসে ২,৫০০টি কমেন্ট যাচাই',
-    whatsMonthly: 'হ্যালো! আমি Growth প্ল্যানটি (মাসিক) নিতে চাই।',
-    whatsYearly: 'হ্যালো! আমি Growth প্ল্যানটি (বার্ষিক) নিতে চাই।',
     trialUsed: 'আপনার অ্যাকাউন্টে ফ্রি ট্রায়াল আগেই ব্যবহার করা হয়েছে।',
     trialImpersonated: 'ইমপারসোনেশনের সময় ট্রায়াল শুরু করা যায় না। মালিককে নিজে শুরু করতে হবে।',
     loadFailed: 'প্ল্যানগুলো লোড করা যায়নি।',
@@ -199,7 +195,7 @@ const copy = {
 } as const
 
 const card = (name: string) => screen.getByRole('listitem', { name })
-const waUrl = (text: string) => `https://wa.me/${NUMBER}?text=${encodeURIComponent(text)}`
+const checkout = (name: string, language: 'en' | 'bn') => within(card(name)).getByRole('link', { name: copy[language].choose(name) })
 
 beforeEach(() => {
   fetchMock.mockReset()
@@ -250,13 +246,13 @@ describe.each(['en', 'bn'] as const)('/plans (%s)', (language) => {
     const growth = card('Growth')
     expect(growth.dataset.highlighted).toBe('true')
     expect(growth.querySelector('[data-slot="card"]')!.className).toContain('ring-primary')
-    expect(within(growth).getByRole('link', { name: t.contact }).dataset.variant).toBe('default')
+    expect(checkout('Growth', language).dataset.variant).toBe('default')
     expect(card('Starter').dataset.highlighted).toBeUndefined()
-    expect(within(card('Starter')).getByRole('link', { name: t.contact }).dataset.variant).toBe('outline')
-    expect(within(card('Pro')).getByRole('link', { name: t.contact }).dataset.variant).toBe('outline')
+    expect(checkout('Starter', language).dataset.variant).toBe('outline')
+    expect(checkout('Pro', language).dataset.variant).toBe('outline')
   })
 
-  it('switches Monthly/Yearly: "Save up to", yearly prices, billed yearly, WhatsApp text names the interval', async () => {
+  it('switches Monthly/Yearly: "Save up to", yearly prices, billed yearly, checkout links carry the interval (D11)', async () => {
     plansApi({ summary: { ...NO_PLAN, trialEligible: false } })
     renderAppRoute('/plans', language)
     await screen.findAllByTestId('plan-card')
@@ -264,10 +260,8 @@ describe.each(['en', 'bn'] as const)('/plans (%s)', (language) => {
     expect(screen.getByText(t.monthly)).toBeTruthy()
     expect(screen.getByText(t.yearly)).toBeTruthy()
     expect(screen.getByTestId('save-up-to').textContent).toBe(t.saveUpTo)
-    const contact = within(card('Growth')).getByRole('link', { name: t.contact })
-    expect(contact.getAttribute('href')).toBe(waUrl(t.whatsMonthly))
-    expect(contact.getAttribute('target')).toBe('_blank')
-    expect(contact.getAttribute('rel')).toContain('noopener')
+    expect(checkout('Growth', language).getAttribute('href')).toBe('/billing?plan=growth&interval=month')
+    expect(checkout('Growth', language).getAttribute('target')).toBeNull()
 
     const toggle = screen.getByRole('switch', { name: t.switchLabel })
     expect(toggle.getAttribute('aria-checked')).toBe('false')
@@ -280,17 +274,21 @@ describe.each(['en', 'bn'] as const)('/plans (%s)', (language) => {
     // Growth's yearly has no discount: no struck price; Pro has no yearly option.
     expect(within(card('Growth')).queryByTestId('list-price')).toBeNull()
     expect(within(card('Pro')).getByText(t.monthlyOnly)).toBeTruthy()
-    expect(within(card('Growth')).getByRole('link', { name: t.contact }).getAttribute('href')).toBe(waUrl(t.whatsYearly))
+    expect(checkout('Growth', language).getAttribute('href')).toBe('/billing?plan=growth&interval=year')
+    // No yearly option: Pro's checkout stays monthly.
+    expect(checkout('Pro', language).getAttribute('href')).toBe('/billing?plan=pro&interval=month')
   })
 
-  it('hides "Save up to" at 0% and every "Contact us" without a WhatsApp number', async () => {
+  it('hides "Save up to" at 0%; checkout links need no WhatsApp number (PR-D13 superseded)', async () => {
     plansApi({ plans: () => json(200, plansResponse({ yearlySaveUpToPercent: 0, contactWhatsapp: null })), summary: { ...NO_PLAN, trialEligible: false } })
     renderAppRoute('/plans', language)
     await screen.findAllByTestId('plan-card')
 
     expect(screen.queryByTestId('save-up-to')).toBeNull()
     expect(screen.getByRole('switch', { name: t.switchLabel })).toBeTruthy()
-    expect(screen.queryByRole('link', { name: t.contact })).toBeNull()
+    expect(checkout('Starter', language).getAttribute('href')).toBe('/billing?plan=starter&interval=month')
+    expect(screen.queryByRole('link', { name: /wa\.me|WhatsApp/ })).toBeNull()
+    expect(document.querySelector('a[href^="https://wa.me"]')).toBeNull()
   })
 
   it('shows the trial button only while the account is trial-eligible', async () => {
@@ -302,15 +300,15 @@ describe.each(['en', 'bn'] as const)('/plans (%s)', (language) => {
     const button = await within(starter).findByRole('button', { name: t.trial })
     expect(button.dataset.variant).toBe('outline') // Starter isn't the highlighted plan
     expect(within(starter).getByText(t.trialNote)).toBeTruthy()
-    expect(within(starter).queryByRole('link', { name: t.contact })).toBeNull()
-    expect(within(card('Growth')).getByRole('link', { name: t.contact })).toBeTruthy()
+    expect(within(starter).queryByRole('link', { name: t.choose('Starter') })).toBeNull()
+    expect(checkout('Growth', language)).toBeTruthy()
     cleanup()
 
     plansApi({ summary: { ...NO_PLAN, trialEligible: false } })
     renderAppRoute('/plans', language)
     await screen.findAllByTestId('plan-card')
     expect(screen.queryByRole('button', { name: t.trial })).toBeNull()
-    expect(within(card('Starter')).getByRole('link', { name: t.contact })).toBeTruthy()
+    expect(checkout('Starter', language).getAttribute('href')).toBe('/billing?plan=starter&interval=month')
   })
 
   it('starts the trial: POST { planId }, summary updated, then /onboarding', async () => {

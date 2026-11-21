@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 import { apiFetch, type ApiError } from '@/lib/api'
 import type { ContentFn } from '@/lib/auth-errors'
 import type { AutoRenewView, SubscriptionInterval } from '@/lib/billing-summary'
+import { bnNumber } from '@/lib/language'
 
 /**
  * C10 `/billing` calls (M8-T4 / T5 / T6b backend; D2 owner pays, owner + admin read payments,
@@ -98,20 +99,116 @@ export function goToGateway(url: string): void {
 export const PAYMENT_RETURNS = ['success', 'failed', 'cancelled', 'pending'] as const
 export type PaymentReturn = (typeof PAYMENT_RETURNS)[number]
 
-export interface BillingSearch {
+/** D11: the plan + interval a visitor picked before signing up / in (`/register`, `/login`, `/billing`). */
+export interface CheckoutIntent {
+  plan?: string
+  interval?: SubscriptionInterval
+}
+
+export interface BillingSearch extends CheckoutIntent {
   payment?: PaymentReturn
   tranId?: string
+  /** The open invoice (M8-T11). */
+  invoice?: string
 }
 
 const TRAN_ID_PATTERN = /^[A-Za-z0-9_-]{8,30}$/
+/** The backend's `plans_slug_format` check. */
+const PLAN_SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Both keys always returned (`undefined` when malformed); an unknown but well-formed slug just preselects nothing. */
+export function validateCheckoutIntent(search: Record<string, unknown>): CheckoutIntent {
+  const { plan, interval } = search
+  return {
+    plan: typeof plan === 'string' && plan.length <= 64 && PLAN_SLUG_PATTERN.test(plan) ? plan : undefined,
+    interval: interval === 'month' || interval === 'year' ? interval : undefined,
+  }
+}
+
+/** D11 hand-off target: `/billing?plan=…&interval=…` (interval defaults to month), `null` without a plan. */
+export function checkoutTarget({ plan, interval }: CheckoutIntent): string | null {
+  return plan ? `/billing?${new URLSearchParams({ plan, interval: interval ?? 'month' })}` : null
+}
 
 /** Every key is returned (`undefined` when invalid): the router merges raw params under this. */
 export function validateBillingSearch(search: Record<string, unknown>): BillingSearch {
-  const { payment, tranId } = search
+  const { payment, tranId, invoice } = search
   return {
     payment: PAYMENT_RETURNS.find((value) => value === payment),
     tranId: typeof tranId === 'string' && TRAN_ID_PATTERN.test(tranId) ? tranId : undefined,
+    ...validateCheckoutIntent(search),
+    invoice: typeof invoice === 'string' && UUID_PATTERN.test(invoice) ? invoice : undefined,
   }
+}
+
+/** Mirrors `backend/src/billing/invoices.ts` (M8-T7; D2 owner + admin, D8 VAT-inclusive, no VAT line). */
+export type InvoiceStatus = 'PAID' | 'REFUNDED'
+
+export interface InvoiceListItem {
+  id: string
+  /** D8 `SC-YYYY-NNNNN`. */
+  invoiceNumber: string
+  paidAt: string
+  status: InvoiceStatus
+  plan: { id: string; name: string }
+  interval: SubscriptionInterval
+  amountBdt: number
+  /** bKash / Nagad / Visa / … or `PROMOTION` (৳0 after promotions). */
+  gateway: string
+}
+
+export interface InvoiceList {
+  items: InvoiceListItem[]
+  total: number
+  skip: number
+  take: number
+}
+
+export interface InvoicePromotionLine {
+  type: 'DISCOUNT' | 'COUPON'
+  name: string
+  code: string | null
+  label: string
+  labelBn: string
+  amountOffBdt: number
+  months: { from: number; to: number; of: number } | null
+}
+
+export interface InvoiceView extends InvoiceListItem {
+  tranId: string
+  kind: 'NEW' | 'RENEWAL' | 'UPGRADE'
+  term: { start: string; end: string }
+  listPriceBdt: number
+  promotions: InvoicePromotionLine[]
+  creditBdt: number
+  chargedBdt: number
+  seller: { name: string | null; address: string | null }
+}
+
+export const INVOICES_PAGE_SIZE = 10
+
+export const invoicesQueryKey = (workspaceId: string) => ['workspace', workspaceId, 'billing', 'invoices'] as const
+
+export const invoicesQueryOptions = (workspaceId: string, skip: number) =>
+  queryOptions({
+    queryKey: [...invoicesQueryKey(workspaceId), 'list', skip] as const,
+    queryFn: () => apiFetch<InvoiceList>(billingPath(workspaceId, `invoices?skip=${skip}&take=${INVOICES_PAGE_SIZE}`)),
+  })
+
+export const invoiceQueryOptions = (workspaceId: string, invoiceId: string) =>
+  queryOptions({
+    queryKey: [...invoicesQueryKey(workspaceId), 'view', invoiceId] as const,
+    queryFn: () => apiFetch<InvoiceView>(billingPath(workspaceId, `invoices/${encodeURIComponent(invoiceId)}`)),
+  })
+
+/** PR-D12 "k of N": `Month 2 of 6` / `Months 1–3 of 6`, en + bn. */
+export function promotionMonths(months: InvoicePromotionLine['months'], content: ContentFn): string | null {
+  if (!months) return null
+  const { from, to, of } = months
+  return from === to
+    ? content(`Month ${from} of ${of}`, `${bnNumber(of)} মাসের মধ্যে ${bnNumber(from)} নম্বর মাস`)
+    : content(`Months ${from}–${to} of ${of}`, `${bnNumber(of)} মাসের মধ্যে ${bnNumber(from)}–${bnNumber(to)} নম্বর মাস`)
 }
 
 /**

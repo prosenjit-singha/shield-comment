@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiFetch, type ApiError } from '@/lib/api'
 import type { ContentFn } from '@/lib/auth-errors'
-import type { BillingSummary, SubscriptionInterval } from '@/lib/billing-summary'
+import type { BillingSummary } from '@/lib/billing-summary'
 import { bnNumber, type Language } from '@/lib/language'
 
 /**
@@ -80,7 +80,7 @@ export interface PublicPlansResponse {
   items: PublicPlan[]
   /** "Save up to N%" on the Monthly/Yearly switch; 0 = hide it. */
   yearlySaveUpToPercent: number
-  /** Support WhatsApp number (`8801…`) for "Contact us" (PR-D18); `null` = hide the button. */
+  /** Support WhatsApp number (`8801…`, PR-D18); unused since M8-T11 checkout replaced "Contact us". */
   contactWhatsapp: string | null
 }
 
@@ -112,24 +112,6 @@ export function formatNumber(value: number, language: Language): string {
 /** `৳1,349` / `৳১,৩৪৯`. */
 export function formatTaka(value: number, language: Language): string {
   return `৳${formatNumber(value, language)}`
-}
-
-/**
- * "Contact us" link (PR-D13, PR-D18): a WhatsApp chat with the support number, prefilled with the plan
- * and interval in the page language. `null` without a number (the button is hidden).
- */
-export function contactWhatsappHref(
-  number: string | null,
-  planName: string,
-  interval: SubscriptionInterval,
-  content: ContentFn,
-): string | null {
-  if (!number) return null
-  const text =
-    interval === 'year'
-      ? content(`Hi! I'd like the ${planName} plan (Yearly).`, `হ্যালো! আমি ${planName} প্ল্যানটি (বার্ষিক) নিতে চাই।`)
-      : content(`Hi! I'd like the ${planName} plan (Monthly).`, `হ্যালো! আমি ${planName} প্ল্যানটি (মাসিক) নিতে চাই।`)
-  return `https://wa.me/${number}?text=${encodeURIComponent(text)}`
 }
 
 /**

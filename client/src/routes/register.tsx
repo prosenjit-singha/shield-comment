@@ -14,23 +14,27 @@ import {
   type FieldErrors,
   type SignUpInput,
 } from '@/lib/auth-forms'
+import { checkoutTarget, validateCheckoutIntent } from '@/lib/billing'
 import { postAuthDestination } from '@/lib/post-auth'
 import { sessionQueryOptions } from '@/lib/session'
 
 /**
  * C2 sign-up (M3-T8, decision D13): name, email, password + business name (= the first workspace's
  * name). No email verification yet. After sign-up the user lands on `/onboarding` (skippable) via
- * `postAuthDestination` (D13 entry-point rule).
+ * `postAuthDestination` (D13 entry-point rule). D11 (M8-T11): `?plan=<slug>&interval=month|year` from a
+ * "Choose plan" button lands on that checkout (`/billing?plan=&interval=`) instead, signed-in or after
+ * sign-up; a malformed plan is ignored.
  */
 export const Route = createFileRoute('/register')({
-  beforeLoad: async ({ context }) => {
+  validateSearch: validateCheckoutIntent,
+  beforeLoad: async ({ context, search }) => {
     let session: unknown = null
     try {
       session = await context.queryClient.ensureQueryData(sessionQueryOptions)
     } catch {
       return // session check failed: show the form; sign-up reports the problem
     }
-    if (session) throw redirect({ to: '/dashboard', replace: true })
+    if (session) throw redirect({ href: checkoutTarget(search) ?? '/dashboard', replace: true })
   },
   head: () => ({ meta: [{ title: 'Create account | ShieldComment BD' }, { name: 'robots', content: 'noindex' }] }),
   component: RegisterPage,
@@ -39,6 +43,7 @@ export const Route = createFileRoute('/register')({
 const EMPTY: SignUpInput = { name: '', email: '', password: '', businessName: '' }
 
 function RegisterPage() {
+  const intent = Route.useSearch()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { content } = useLanguage()
@@ -51,7 +56,7 @@ function RegisterPage() {
       // Better Auth signed the new user in: drop the cached `null` session, then D13: /onboarding while
       // the new workspace has 0 active Pages (always, unless the check fails → /dashboard).
       queryClient.removeQueries()
-      await navigate({ href: await postAuthDestination(queryClient), replace: true })
+      await navigate({ href: checkoutTarget(intent) ?? (await postAuthDestination(queryClient)), replace: true })
     },
   })
 
@@ -89,7 +94,7 @@ function RegisterPage() {
       footer={
         <p>
           {content('Already have an account?', 'আগে থেকেই অ্যাকাউন্ট আছে?')}{' '}
-          <Link to="/login" className="font-medium text-primary underline-offset-4 hover:underline">
+          <Link to="/login" search={intent} className="font-medium text-primary underline-offset-4 hover:underline">
             {content('Log in', 'লগ ইন')}
           </Link>
         </p>
@@ -139,7 +144,7 @@ function RegisterPage() {
           <AuthAlert id="sign-up-error" kind={signUp.error.kind}>
             {authErrorMessage(signUp.error, content)}{' '}
             {signUp.error.kind === 'user-exists' && (
-              <Link to="/login" className="font-medium text-primary underline-offset-4 hover:underline">
+              <Link to="/login" search={intent} className="font-medium text-primary underline-offset-4 hover:underline">
                 {content('Go to login', 'লগইনে যান')}
               </Link>
             )}

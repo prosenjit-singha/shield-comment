@@ -20,7 +20,7 @@ import { createLanguageStore, LanguageStoreContext } from '@/stores/language-sto
  * Test harness for the C2 auth screens (M3-T8) + the invite link (M7-T14). The real `/login`, `/register`
  * and `/invite/$invitationId` route files are
  * mounted under a bare root (the generated tree pulls in the Start server functions); `/`, `/onboarding`,
- * `/dashboard` and `/orders` are stubs (the onboarding wizard + `_app` guard are tested in
+ * `/dashboard`, `/billing` and `/orders` are stubs (the onboarding wizard + `_app` guard are tested in
  * `src/routes/_app/-onboarding.test.tsx`).
  * Better Auth's client runs for real against a stubbed global `fetch`.
  */
@@ -38,6 +38,7 @@ const routeTree = rootRoute.addChildren([
   } as never),
   stub('/onboarding', 'Onboarding stub'),
   stub('/plans', 'Plans stub'),
+  stub('/billing', 'Billing stub'),
   stub('/', 'Landing stub'),
   stub('/dashboard', 'Dashboard stub'),
   stub('/orders', 'Orders stub'),

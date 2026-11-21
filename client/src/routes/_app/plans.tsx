@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { CircleAlert, MessageCircle } from 'lucide-react'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { CircleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { IntervalSwitch, PlanCard } from '@/components/plans/plan-card'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,6 @@ import {
   type SubscriptionInterval,
 } from '@/lib/billing-summary'
 import {
-  contactWhatsappHref,
   formatNumber,
   planButtonVariant,
   plansQueryKey,
@@ -29,8 +28,9 @@ import {
  * "Save up to N%", one card per active plan in `sort_order` (the highlighted one stronger, with the
  * primary button), the best live discount as a struck list price + plain "50% off" text, limits and
  * features. A plan with a live trial shows "Start free N-day trial" while the account is
- * `trialEligible` (→ `/onboarding`); every other card shows "Contact us" (WhatsApp, hidden without a
- * number) until Module 8 checkout. Sign-up lands here while the account has no plan (`postAuthDestination`).
+ * `trialEligible` (→ `/onboarding`); every other card links to its checkout on `/billing?plan=&interval=`
+ * (M8-T11, D11; replaced PR-D13's "Contact us"). Sign-up lands here while the account has no plan
+ * (`postAuthDestination`).
  */
 export const Route = createFileRoute('/_app/plans')({
   head: () => ({ meta: [{ title: 'Plans | ShieldComment BD' }, { name: 'robots', content: 'noindex' }] }),
@@ -114,7 +114,7 @@ function PlansPage() {
               <PlanAction
                 plan={plan}
                 showTrial={plan.trial !== null && trialEligible}
-                contactHref={contactWhatsappHref(data.contactWhatsapp, plan.name, plan.yearly && interval === 'year' ? 'year' : 'month', content)}
+                interval={plan.yearly && interval === 'year' ? 'year' : 'month'}
                 trialPending={trial.isPending && trial.variables === plan.id}
                 trialDisabled={trial.isPending}
                 onStartTrial={() => trial.mutate(plan.id)}
@@ -131,18 +131,18 @@ function PlansPage() {
   )
 }
 
-/** The card's button: "Start free N-day trial" while trial-eligible, else "Contact us" (hidden without a number). */
+/** The card's button: "Start free N-day trial" while trial-eligible, else "Choose <plan>" → its checkout. */
 function PlanAction({
   plan,
   showTrial,
-  contactHref,
+  interval,
   trialPending,
   trialDisabled,
   onStartTrial,
 }: {
   plan: PublicPlan
   showTrial: boolean
-  contactHref: string | null
+  interval: SubscriptionInterval
   trialPending: boolean
   trialDisabled: boolean
   onStartTrial: () => void
@@ -165,13 +165,11 @@ function PlanAction({
         </p>
       </div>
     )
-  if (!contactHref) return null
   return (
     <Button asChild variant={variant} size="lg" className="w-full">
-      <a href={contactHref} target="_blank" rel="noopener noreferrer">
-        <MessageCircle aria-hidden />
-        {content('Contact us', 'যোগাযোগ করুন')}
-      </a>
+      <Link to="/billing" search={{ plan: plan.slug, interval }}>
+        {content(`Choose ${plan.name}`, `${plan.name} বেছে নিন`)}
+      </Link>
     </Button>
   )
 }
