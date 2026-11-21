@@ -1,5 +1,5 @@
 # Fly.io config for the client app (TanStack Start server) on app.<domain> (Module 9 D1, deploy.md).
-# Production: `cd client && fly deploy`. Staging: same file, `cd client && fly deploy -a shield-comment-app-staging`.
+# Production: `cd client && fly deploy`. Staging has its own file: fly.staging.toml (M9-T10b).
 # Per-environment values are `fly secrets` per app: API_UPSTREAM (http://<backend app>.internal:3000)
 # and PUBLIC_SITE_URL (https://app.<domain>).
 app = "shield-comment-app"

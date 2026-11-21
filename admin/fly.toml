@@ -1,5 +1,5 @@
 # Fly.io config for the admin SPA (nginx) on admin.<domain> (Module 9 D1, deploy.md).
-# Production: `cd admin && fly deploy`. Staging: same file, `cd admin && fly deploy -a shield-comment-admin-staging`.
+# Production: `cd admin && fly deploy`. Staging has its own file: fly.staging.toml (M9-T10b).
 # Per-environment value is a `fly secret` per app: API_UPSTREAM (http://<backend app>.internal:3000).
 app = "shield-comment-admin"
 primary_region = "sin"

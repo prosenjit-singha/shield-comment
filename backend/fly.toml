@@ -1,5 +1,5 @@
 # Fly.io config for the backend (Module 9 D1, runbook: docs/project-documentation/deploy.md).
-# Production: `cd backend && fly deploy`. Staging: same file, `cd backend && fly deploy -a shield-comment-api-staging`.
+# Production: `cd backend && fly deploy`. Staging has its own file: fly.staging.toml (M9-T10b).
 # Only values shared by both environments live here; URLs, origins, Neon/Redis URLs and keys are
 # `fly secrets` per app (deploy.md env tables). Public host api.<domain> = Meta/Telegram webhooks only;
 # the apps reach this backend over Fly's private network (<app>.internal:3000).
@@ -26,7 +26,7 @@ kill_timeout = "30s"
   HOST = "::"
   LOG_LEVEL = "info"
   # The Fly edge appends the visitor to X-Forwarded-For; the app proxies pass it on unchanged
-  # (FORWARDED_FOR_MODE=pass), so the app path and api.<domain> both count 1 (verified on staging, M9-T13).
+  # (FORWARDED_FOR_MODE=pass), so the app path and api.<domain> both count 1 (verify on staging, M9-T13).
   TRUST_PROXY_HOPS = "1"
 
 [http_service]

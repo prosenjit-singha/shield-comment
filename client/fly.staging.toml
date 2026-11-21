@@ -1,0 +1,36 @@
+# Fly.io STAGING config for the client app (Free plan, $0 target: deploy.md "Staging (Fly.io Free plan)", M9-T10b).
+# Deploy: `cd client && fly deploy -c fly.staging.toml --ha=false --local-only`. Production uses fly.toml (unchanged).
+# Secrets on this app: API_UPSTREAM=http://shield-comment-api-staging.internal:3000,
+# PUBLIC_SITE_URL=https://shield-comment-app-staging.fly.dev.
+app = "shield-comment-app-staging"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+  build-target = "runtime"
+
+[deploy]
+  # bluegreen would start a second machine (Free plan: 3 machines in total).
+  strategy = "rolling"
+
+[env]
+  FORWARDED_FOR_MODE = "pass"
+
+[http_service]
+  internal_port = 5174
+  force_https = true
+  # Sleeps when idle, the Fly proxy starts it on the next request (first request waits a few seconds).
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    path = "/healthz"
+    method = "GET"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

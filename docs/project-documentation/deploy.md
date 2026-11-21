@@ -1,20 +1,72 @@
 # Deploy runbook (Module 9)
 
-**Staging runs on an Oracle Cloud VPS** (Module 9 D16, revised 2026-11-21 in M9-REPLAN): see [Staging (Oracle VPS)](#staging-oracle-vps) below. Sections 1–7 describe **Fly.io, now the production candidate only**: the production host is open again and is decided at the M9-T17 pre-check. Their "staging" columns and `-staging` app names are kept for reference; staging no longer uses them.
+**Staging runs on Fly.io's Free plan** (Module 9 D16, revised 2026-11-21 in M9-T10b; the Oracle VPS plan was dropped because the Oracle sign-up did not work): see [Staging (Fly.io Free plan)](#staging-flyio-free-plan) below. Sections 1–7 describe **Fly.io production, the production candidate**: the production host is still open and is decided at the M9-T17 pre-check. Their "staging" columns give the staging values for the same variables.
 
-## Staging (Oracle VPS)
+## Staging (Fly.io Free plan)
 
-Decision D16 (user, 2026-11-21): Oracle Cloud Always Free VM (Ampere A1, **linux/arm64**) running Docker Compose + Caddy (reverse proxy, automatic Let's Encrypt) + DuckDNS names, $0/month. Data stays on Neon `staging` + its own Redis Cloud DB (D5).
+Decision D16 (user, 2026-11-21: "Fly.io free plan"). Plan terms as the user saw them: "$5 of usage, every month · Up to 3 Machines and 3 Sprites · 1 user · At $5, you move to Pay As You Go and keep running · Credit card required". **Target: $0.** The $5 is not a hard cap: past it Fly bills the card. Data stays on Neon `staging` + its own Redis Cloud DB (D5); no Fly Postgres, no Fly volumes.
 
-| Host | Serves | Notes |
-|---|---|---|
-| `https://shield-comment.duckdns.org` | client (Start server) + backend at `/api/*` | Caddy sends `/api/*` straight to the backend. Meta webhooks, OAuth redirect, SSLCommerz IPN and Telegram use this host. No `api.` host on staging. |
-| `https://shield-comment-admin.duckdns.org` | admin nginx (proxies `/api/*`) | Own DuckDNS name (DuckDNS gives one label per registered name), so its Better Auth cookies stay separate. |
+| Fly app | Config | Host | Machine | Serves |
+|---|---|---|---|---|
+| `shield-comment-api-staging` | `backend/fly.staging.toml` | `https://shield-comment-api-staging.fly.dev` | shared-cpu-1x **512 MB, always on** | API + BullMQ workers/schedulers; Meta webhooks, deauthorize/data deletion and Telegram hit it directly |
+| `shield-comment-app-staging` | `client/fly.staging.toml` | `https://shield-comment-app-staging.fly.dev` | shared-cpu-1x 256 MB, **auto-stop** | client (Start server), `/api/*` → backend over the private network |
+| `shield-comment-admin-staging` | `admin/fly.staging.toml` | `https://shield-comment-admin-staging.fly.dev` | shared-cpu-1x 256 MB, **auto-stop** | admin nginx, `/api/*` → backend over the private network |
 
-- Staging env values (D3 revised): `TRUSTED_ORIGINS=https://shield-comment.duckdns.org,https://shield-comment-admin.duckdns.org`, `BETTER_AUTH_URL` = `CLIENT_APP_URL` = `PUBLIC_SITE_URL` = `https://shield-comment.duckdns.org`, `CORS_ORIGINS` unset. Other variables as in the §7 staging column.
-- Files (compose, `Caddyfile`, env template, DuckDNS updater, arm64 notes, smoke host allow-list): **M9-T10b**, `deploy/staging/`. Client IP plan there: Caddy sends one `X-Forwarded-For` entry, the app proxies use `FORWARDED_FOR_MODE=pass`, backend `TRUST_PROXY_HOPS=1` (verify on the VM like §2).
-- Setup on the VM (account, VM, DuckDNS, secrets, first migrate + start, super admin, monitor): **M9-T13**, each host command only with the user's approval.
-- Caveats to check in Oracle's docs at M9-T13 (not verified here): Oracle may reclaim an idle Always Free instance (95th-percentile CPU under 20 % for 7 days); the free A1 allowance is reported as 2 OCPU / 12 GB per tenancy in 2026.
+App names are placeholders until created (names are global: if one is taken, change it in the file, the secrets and every URL below). Production files (`fly.toml`) are unchanged; the staging files differ only in app name, sizing, auto-stop and deploy strategy, and `python3 scripts/check-fly-config.py` checks both (`--self-test` proves each rule fails when broken).
+
+- **Why 512 MB for the backend:** it idles at ~170 MB RSS in local compose; 256 MB leaves no room for load or a `fly ssh` migration. The client (~80 MB) and admin nginx (~20 MB) fit 256 MB.
+- **Auto-stop (client, admin):** `auto_stop_machines = "stop"`, `auto_start_machines = true`, `min_machines_running = 0`. The Fly proxy stops an idle machine after a few minutes and starts it on the next request (that request waits a few seconds). The backend stays on (`"off"`, exactly 1): Meta webhooks and the BullMQ jobs (03:00 / 15-min / hourly) need it.
+- **Exactly 3 machines (the plan's cap):** first deploy with `--ha=false` (else Fly creates 2 machines per app); `strategy = "rolling"` (updates the one machine in place; `bluegreen`/`canary` start a second one); **no `release_command`** (it runs on an extra one-off machine); build with `--local-only` (local Docker, no remote builder machine; whether a builder counts against the cap is not verified). Don't use `fly console` (starts a new machine), `fly scale count 2` or `fly machine clone` on staging; `fly ssh console` is fine (it enters the running machine).
+
+### Monthly cost (estimate)
+
+| Item | Estimate / month |
+|---|---|
+| Backend, shared-cpu-1x 512 MB, always on (730 h) | ≈ US$3.2–3.7 |
+| Client + admin, shared-cpu-1x 256 MB, only while running (≈ US$0.003 per machine-hour) | ≈ US$0.30 per 100 running hours |
+| Stopped machines (root filesystem) | a few cents |
+| Shared IPv4 + IPv6 (no dedicated IPv4) | US$0 |
+| Outbound data (staging traffic) | cents |
+| **Total** | **≈ US$3.5–4.5, under the US$5 allowance** |
+
+Estimates from Fly's 2026 pricing as researched on 2026-11-21 (256 MB ≈ US$2.19 always on); `sin` may be priced differently. **Verify on fly.io/pricing at M9-T13** before the first deploy.
+
+**Staying under US$5:** keep the sizes above; never add a dedicated IPv4 (`fly ips allocate-v4` without `--shared`), volumes, Fly Postgres/Redis or a second machine; leave client/admin on auto-stop; point uptime monitors only at the always-on backend (a 5-minute monitor on `/healthz` would keep client/admin awake all month); check the dashboard's usage/billing page weekly at first. Whether Fly offers a spend alert or limit on this plan is **not verified**: check the billing settings at M9-T13.
+
+### Staging env (D3 revised in M9-T10b)
+
+Secrets per app, as in §7 (staging column): `TRUSTED_ORIGINS=https://shield-comment-app-staging.fly.dev,https://shield-comment-admin-staging.fly.dev`, `BETTER_AUTH_URL=https://shield-comment-api-staging.fly.dev`, `CLIENT_APP_URL=https://shield-comment-app-staging.fly.dev`, client `PUBLIC_SITE_URL=https://shield-comment-app-staging.fly.dev`, client + admin `API_UPSTREAM=http://shield-comment-api-staging.internal:3000`, `CORS_ORIGINS` unset. In the files (`[env]`): backend `TRUST_PROXY_HOPS=1`, client + admin `FORWARDED_FOR_MODE=pass`. Separate admin origin = separate Better Auth cookies.
+
+**Client IP:** the `*.fly.dev` hosts go through the same Fly edge as a custom domain (it appends the visitor to `X-Forwarded-For`), and an auto-started machine gets the same request with the same headers once it is up, so §2 holds unchanged: `TRUST_PROXY_HOPS=1` on both paths (app proxy → backend, and direct `shield-comment-api-staging.fly.dev`). Verify with the §2 steps on the staging hosts at M9-T13.
+
+### First deploy (M9-T13, each step with the user's approval)
+
+1. **Account** (user): Fly.io account on the Free plan with a card; `fly auth login` on the developer machine.
+2. **Apps**: `fly apps create shield-comment-api-staging`, `… shield-comment-app-staging`, `… shield-comment-admin-staging`.
+3. **Data**: Neon `staging` branch URLs (§3 step 1; the developer machine's git-ignored `backend/.env.staging` already holds `DIRECT_URL` for migrations) and a new Redis Cloud free DB with `noeviction` (§3 step 2, §6 check).
+4. **Secrets** (`--stage`, before the first deploy): `fly secrets import --stage -a shield-comment-api-staging < backend/.env.fly.staging` (KEY=value lines per §7 staging column; git-ignored by `.env.*`; delete it after the import), `fly secrets set --stage -a shield-comment-app-staging API_UPSTREAM=http://shield-comment-api-staging.internal:3000 PUBLIC_SITE_URL=https://shield-comment-app-staging.fly.dev`, `fly secrets set --stage -a shield-comment-admin-staging API_UPSTREAM=http://shield-comment-api-staging.internal:3000`.
+5. **Migrations, from the developer machine, before the backend deploy** (same order as production's release step: the schema is ready before the new code starts): `cd backend && npm run build && npm run db:deploy:staging` (Drizzle `migrate()` on the Neon `staging` **direct** URL). Never `drizzle-kit push`.
+6. **Backend**: `cd backend && fly deploy -c fly.staging.toml --ha=false --local-only`, then `curl -fsS https://shield-comment-api-staging.fly.dev/api/health/live` and once `…/api/health` (DB + Redis up; don't repeat it, it keeps Neon awake).
+7. **Client + admin**: `cd client && fly deploy -c fly.staging.toml --ha=false --local-only`, same in `admin/`; `curl -fsS https://shield-comment-app-staging.fly.dev/healthz` and `https://shield-comment-admin-staging.fly.dev/healthz`. `fly machine list -a <app>` shows one machine per app; after a few idle minutes client/admin show `stopped`.
+8. **Super admin**: `fly ssh console -a shield-comment-api-staging`, then `SUPER_ADMIN_EMAIL=… SUPER_ADMIN_PASSWORD=… SUPER_ADMIN_NAME='Super Admin' node dist/scripts/create-super-admin.js`. Then sign up the fixed staging test owner on the client (verified email + workspace) for the smoke suite.
+9. **Outside services** (Meta test app, SSLCommerz sandbox, test bot): webhook `https://shield-comment-api-staging.fly.dev/api/webhooks/meta`, deauthorize `…/api/meta/deauthorize`, data deletion `…/api/meta/data-deletion` (api host); OAuth redirect `https://shield-comment-app-staging.fly.dev/api/meta/oauth/callback` (`META_OAUTH_REDIRECT_URI`, app host: the browser flow needs the app cookies); Telegram `setWebhook` `https://shield-comment-api-staging.fly.dev/api/telegram/webhook`; SSLCommerz sandbox IPN `https://shield-comment-app-staging.fly.dev/api/billing/sslcommerz/ipn` (the backend sends it per payment from `CLIENT_APP_URL`; set the merchant panel to the same; a stopped client machine wakes for it in a few seconds).
+10. **Checks**: §2 client-IP steps on the staging hosts, then the smoke suite:
+    ```bash
+    cd e2e && SMOKE_CLIENT_URL=https://shield-comment-app-staging.fly.dev \
+      SMOKE_ADMIN_URL=https://shield-comment-admin-staging.fly.dev \
+      SMOKE_API_URL=https://shield-comment-api-staging.fly.dev \
+      SMOKE_STAGING_HOSTS=shield-comment-app-staging.fly.dev,shield-comment-admin-staging.fly.dev,shield-comment-api-staging.fly.dev \
+      SMOKE_OWNER_EMAIL=… SMOKE_OWNER_PASSWORD=… SMOKE_ADMIN_EMAIL=… SMOKE_ADMIN_PASSWORD=… npm run smoke
+    ```
+    `SMOKE_STAGING_HOSTS` is an exact-hostname allow-list (case-insensitive, no suffix match): any other `*.fly.dev` host is refused like production.
+11. **Monitor (D14, optional on staging)**: UptimeRobot on `https://shield-comment-api-staging.fly.dev/api/health/live` only (never `/api/health`; not on client/admin `/healthz`, see "Staying under US$5").
+
+### Redeploy, migrations, rollback (staging)
+
+- **Redeploy**: new SQL in `backend/drizzle/`? Run `npm run db:deploy:staging` first (migrations stay backwards compatible, §4). Then backend, then client/admin: `fly deploy -c fly.staging.toml --ha=false --local-only` in each app dir. A rolling deploy of one machine has a short gap (seconds) while it restarts; Meta retries webhooks.
+- **Migration fallback** (no local build at hand): after the backend deploy, `fly ssh console -a shield-comment-api-staging -C "node dist/db/migrate.js"` runs it on the running machine with its `DIRECT_URL` secret. The new code then runs on the old schema for a moment, so only for additive migrations.
+- **Rollback**: `fly releases -a shield-comment-api-staging --image`, then `cd backend && fly deploy -c fly.staging.toml --ha=false --image registry.fly.io/shield-comment-api-staging:<previous tag>` (same for the apps). Migrations are not undone (§4).
+- **Secrets / key rotation**: as §5, with `-a <app>-staging`.
 
 ## Production candidate: Fly.io
 
@@ -26,16 +78,16 @@ Hosting per Module 9 **D1 (a)** (revised: production only, host still open): Fly
 
 | Fly app (production / staging) | Config | Hostname (prod / staging) | Port | Health check | Serves |
 |---|---|---|---|---|---|
-| `shield-comment-api` / `shield-comment-api-staging` | `backend/fly.toml` | `api.<domain>` / `api.staging.<domain>` | 3000 | `GET /api/health/live` | NestJS API + BullMQ workers/schedulers. Public host only for Meta webhooks + callbacks and Telegram |
-| `shield-comment-app` / `shield-comment-app-staging` | `client/fly.toml` | `app.<domain>` / `app.staging.<domain>` | 5174 | `GET /healthz` | TanStack Start server (SSR landing + app), proxies `/api/*` |
-| `shield-comment-admin` / `shield-comment-admin-staging` | `admin/fly.toml` | `admin.<domain>` / `admin.staging.<domain>` | 5173 | `GET /healthz` | nginx: admin SPA, proxies `/api/*` |
+| `shield-comment-api` / `shield-comment-api-staging` | `backend/fly.toml` / `fly.staging.toml` | `api.<domain>` / `shield-comment-api-staging.fly.dev` | 3000 | `GET /api/health/live` | NestJS API + BullMQ workers/schedulers. Public host only for Meta webhooks + callbacks and Telegram |
+| `shield-comment-app` / `shield-comment-app-staging` | `client/fly.toml` / `fly.staging.toml` | `app.<domain>` / `shield-comment-app-staging.fly.dev` | 5174 | `GET /healthz` | TanStack Start server (SSR landing + app), proxies `/api/*` |
+| `shield-comment-admin` / `shield-comment-admin-staging` | `admin/fly.toml` / `fly.staging.toml` | `admin.<domain>` / `shield-comment-admin-staging.fly.dev` | 5173 | `GET /healthz` | nginx: admin SPA, proxies `/api/*` |
 
 - **`/api` on each app origin** (tech-stack.md §4) goes to the backend over Fly's private network: `API_UPSTREAM=http://<backend app>.internal:3000`. `.internal` names are IPv6 only, so the backend listens on `HOST=::` (dual stack) and the admin nginx resolves with `NGINX_RESOLVER=[fdaa::3]` + `NGINX_RESOLVER_IPV6=on` (both in the fly.toml files).
-- **Always on:** `auto_stop_machines = "off"`, `min_machines_running = 1` (BullMQ workers and the 03:00 / 15-min / hourly jobs run in the backend process). Deploys are `bluegreen` (the new machine passes its health check before the old one stops).
+- **Always on (production):** `auto_stop_machines = "off"`, `min_machines_running = 1` (BullMQ workers and the 03:00 / 15-min / hourly jobs run in the backend process). Deploys are `bluegreen` (the new machine passes its health check before the old one stops). Staging differs (auto-stop client/admin, `rolling`, no release step): see the staging section.
 - **Never point a check or monitor at `/api/health`**: it queries the DB and keeps Neon's compute awake.
-- Fly also serves every app on `<app>.fly.dev`. Those origins are not in `TRUSTED_ORIGINS`, so Better Auth refuses sign-ins there (403). Use only the custom hostnames.
-- **One config file per app for both environments** (lighter than a second file per app): staging deploys the same file with `-a <app>-staging`. The files hold only values both environments share. Everything that differs (URLs, origins, `API_UPSTREAM`, Neon/Redis URLs, keys) is a `fly secrets` value per app (§7). Some of those values are not secret, but keeping them as secrets means there is one place per app for them.
-- Offline check of the three files (no flyctl, no account calls): `python3 scripts/check-fly-config.py`.
+- Fly also serves every app on `<app>.fly.dev`. In production those origins are not in `TRUSTED_ORIGINS`, so Better Auth refuses sign-ins there (403): use only the custom hostnames. Staging uses its `*.fly.dev` hosts as its origins.
+- **Two config files per app:** `fly.toml` (production) and `fly.staging.toml` (staging, M9-T10b: Free-plan sizing, auto-stop, `rolling`, no release step). The `[env]` blocks hold only values both environments share. Everything that differs (URLs, origins, `API_UPSTREAM`, Neon/Redis URLs, keys) is a `fly secrets` value per app (§7). Some of those values are not secret, but keeping them as secrets means there is one place per app for them.
+- Offline check of the six files (no flyctl, no account calls): `python3 scripts/check-fly-config.py` (`--self-test` breaks each rule and expects a failure).
 
 ## 2. Client IP and forwarded headers (M9-T1 / M9-T8 carry-overs)
 
@@ -53,52 +105,52 @@ There are two paths to the backend:
 `X-Forwarded-Proto`: Fly reaches the containers over plain http, so `$scheme` is `http` there. Both proxies now keep an incoming `X-Forwarded-Proto` (the edge sets `https`) and only fall back to their own scheme, so the backend and HSTS see `https`.
 
 **Verify on staging (M9-T13), both paths:**
-1. Sign in on `https://app.staging.<domain>`, then open `https://app.staging.<domain>/api/auth/list-sessions`: `ipAddress` must be your public IP (`curl -s https://ifconfig.me`; IPv6 is stored as its /64).
-2. Sign in once with a fake header straight at the backend: `curl -s https://api.staging.<domain>/api/auth/sign-in/email -H 'Origin: https://app.staging.<domain>' -H 'Content-Type: application/json' -H 'X-Forwarded-For: 203.0.113.99' -d '{"email":"…","password":"…"}'`. The new session's `ipAddress` must be your real IP, not `203.0.113.99`.
-3. If either shows a Fly address (`172.16.*`, `fdaa:*`), the edge adds more than one entry: raise `TRUST_PROXY_HOPS` by that number in `backend/fly.toml`, redeploy and check again.
+1. Sign in on `https://shield-comment-app-staging.fly.dev`, then open `https://shield-comment-app-staging.fly.dev/api/auth/list-sessions`: `ipAddress` must be your public IP (`curl -s https://ifconfig.me`; IPv6 is stored as its /64).
+2. Sign in once with a fake header straight at the backend: `curl -s https://shield-comment-api-staging.fly.dev/api/auth/sign-in/email -H 'Origin: https://shield-comment-app-staging.fly.dev' -H 'Content-Type: application/json' -H 'X-Forwarded-For: 203.0.113.99' -d '{"email":"…","password":"…"}'`. The new session's `ipAddress` must be your real IP, not `203.0.113.99`.
+3. If either shows a Fly address (`172.16.*`, `fdaa:*`), the edge adds more than one entry: raise `TRUST_PROXY_HOPS` by that number in `backend/fly.toml` and `fly.staging.toml`, redeploy and check again.
 
 ## 3. One-time setup per environment
 
-Written for staging first, then production. Since D16, staging runs on the Oracle VPS instead: on Fly, do only the production pass (M9-T17) with the production values from §7.
+Production pass (M9-T17), with the production values from §7. Staging has its own steps in [Staging (Fly.io Free plan)](#staging-flyio-free-plan) (steps 1, 2 and 8 below apply there too).
 
 1. **Neon**: the branches already exist (`production`, `staging`; project `calm-thunder-04124611`, `aws-ap-southeast-1`). Get the URLs with `neon connection-string <branch> --pooled` (→ `DATABASE_URL`, host has `-pooler`) and `neon connection-string <branch>` (→ `DIRECT_URL`).
 2. **Redis Cloud**: one free 30 MB database per environment (never shared, D5), region `ap-southeast-1` (AWS Singapore). Configuration → *Data eviction policy* = **No eviction** (`noeviction`), then run the check in §6.
 3. **Fly apps** (names are global; if one is taken, pick another and use it everywhere below, including `API_UPSTREAM`):
    ```bash
-   fly apps create shield-comment-api-staging
-   fly apps create shield-comment-app-staging
-   fly apps create shield-comment-admin-staging
+   fly apps create shield-comment-api
+   fly apps create shield-comment-app
+   fly apps create shield-comment-admin
    ```
 4. **Secrets**: use `--stage` before the first deploy so they wait for it (later `fly secrets set` restarts the machines with the new values). Put the values in a git-ignored file and import it, so they don't end up in shell history:
    ```bash
-   fly secrets import --stage -a shield-comment-api-staging < backend/.env.fly.staging   # KEY=value lines, §7
-   fly secrets set --stage -a shield-comment-app-staging API_UPSTREAM=http://shield-comment-api-staging.internal:3000 PUBLIC_SITE_URL=https://app.staging.<domain>
-   fly secrets set --stage -a shield-comment-admin-staging API_UPSTREAM=http://shield-comment-api-staging.internal:3000
+   fly secrets import --stage -a shield-comment-api < backend/.env.fly.production   # KEY=value lines, §7
+   fly secrets set --stage -a shield-comment-app API_UPSTREAM=http://shield-comment-api.internal:3000 PUBLIC_SITE_URL=https://app.<domain>
+   fly secrets set --stage -a shield-comment-admin API_UPSTREAM=http://shield-comment-api.internal:3000
    ```
    (`backend/.env.*` is git-ignored; delete the file after the import.)
 5. **Deploy, backend first** (its release step migrates the DB):
    ```bash
-   cd backend && fly deploy -a shield-comment-api-staging
-   cd ../client && fly deploy -a shield-comment-app-staging
-   cd ../admin && fly deploy -a shield-comment-admin-staging
+   cd backend && fly deploy
+   cd ../client && fly deploy
+   cd ../admin && fly deploy
    ```
-   Production: the same commands without `-a` (the fly.toml `app` names are the production apps).
-6. **Hostnames + TLS**: `fly certs add api.staging.<domain> -a shield-comment-api-staging` (same for `app.` → the client app and `admin.` → the admin app), then create the DNS records `fly certs show` prints (a CNAME to `<app>.fly.dev`, or A/AAAA to `fly ips list`). Wait until `fly certs check` says the certificate is issued.
-7. **Super admin**: `fly ssh console -a shield-comment-api-staging`, then inside the machine run `SUPER_ADMIN_EMAIL=… SUPER_ADMIN_PASSWORD=… SUPER_ADMIN_NAME='Super Admin' node dist/scripts/create-super-admin.js` (DB + secret come from the machine's env). Idempotent.
+   (`fly.toml` names the production apps, so no `-a`.)
+6. **Hostnames + TLS**: `fly certs add api.<domain> -a shield-comment-api` (same for `app.` → the client app and `admin.` → the admin app), then create the DNS records `fly certs show` prints (a CNAME to `<app>.fly.dev`, or A/AAAA to `fly ips list`). Wait until `fly certs check` says the certificate is issued.
+7. **Super admin**: `fly ssh console -a shield-comment-api`, then inside the machine run `SUPER_ADMIN_EMAIL=… SUPER_ADMIN_PASSWORD=… SUPER_ADMIN_NAME='Super Admin' node dist/scripts/create-super-admin.js` (DB + secret come from the machine's env). Idempotent.
 8. **Outside services** (staging: Meta test app, SSLCommerz sandbox store, test bot):
    - Meta app → Webhooks: callback `https://api.<host>/api/webhooks/meta`, verify token = `META_WEBHOOK_VERIFY_TOKEN`. Deauthorize callback `https://api.<host>/api/meta/deauthorize`, Data Deletion callback `https://api.<host>/api/meta/data-deletion`. Facebook Login for Business redirect URI = `META_OAUTH_REDIRECT_URI` (`https://app.<host>/api/meta/oauth/callback`).
    - Telegram: `setWebhook` with `url=https://api.<host>/api/telegram/webhook` and `secret_token=$TELEGRAM_WEBHOOK_SECRET` (command in `backend/.env.example`).
    - SSLCommerz merchant panel IPN URL = `https://app.<host>/api/billing/sslcommerz/ipn` (D8). The success/fail/cancel URLs are built from `CLIENT_APP_URL`.
    - Resend: `EMAIL_FROM` on a verified domain.
-   (`<host>` = `<domain>` in production, `staging.<domain>` on staging.)
+   (`<host>` = `<domain>`; staging URLs are in the staging section.)
    App Review (permissions, URLs table, reviewer account, screencast, pre-submit checklist): [`meta-app-review.md`](meta-app-review.md).
 9. **Smoke**: `curl -fsS https://api.<host>/api/health/live`, `https://app.<host>/healthz`, `https://admin.<host>/healthz`, then the M9-T11 smoke suite and the §2 IP check.
-   The smoke suite (`e2e/smoke/`, read-only, no Docker/DB/Redis) runs from any machine with the e2e deps: `cd e2e && SMOKE_CLIENT_URL=https://app.staging.<domain> SMOKE_ADMIN_URL=https://admin.staging.<domain> SMOKE_API_URL=https://api.staging.<domain> SMOKE_OWNER_EMAIL=… SMOKE_OWNER_PASSWORD=… SMOKE_ADMIN_EMAIL=… SMOKE_ADMIN_PASSWORD=… npm run smoke` (the fixed staging owner has a verified email and a workspace; the super admin comes from `create-super-admin`; keep the values in a password manager or a shell env file, never in git). It refuses hosts without a `staging` label (or `localhost`/`*.localhost`); in production set `SMOKE_ALLOW_PRODUCTION=1` and it runs only the public checks (health, landing, robots/sitemap, headers), no sign-in. Locally against compose: `cd e2e && npm run smoke:local` (the global setup creates a throwaway verified owner + super admin, passes them in as `SMOKE_*`, and the teardown deletes their rows and `auth:*` keys).
+   The smoke suite (`e2e/smoke/`, read-only, no Docker/DB/Redis) runs from any machine with the e2e deps: `cd e2e && SMOKE_CLIENT_URL=https://shield-comment-app-staging.fly.dev SMOKE_ADMIN_URL=https://shield-comment-admin-staging.fly.dev SMOKE_API_URL=https://shield-comment-api-staging.fly.dev SMOKE_STAGING_HOSTS=<those three hostnames> SMOKE_OWNER_EMAIL=… SMOKE_OWNER_PASSWORD=… SMOKE_ADMIN_EMAIL=… SMOKE_ADMIN_PASSWORD=… npm run smoke` (the fixed staging owner has a verified email and a workspace; the super admin comes from `create-super-admin`; keep the values in a password manager or a shell env file, never in git). It refuses hosts without a `staging` label, `localhost`/`*.localhost` or an exact `SMOKE_STAGING_HOSTS` entry; in production set `SMOKE_ALLOW_PRODUCTION=1` and it runs only the public checks (health, landing, robots/sitemap, headers), no sign-in. Locally against compose: `cd e2e && npm run smoke:local` (the global setup creates a throwaway verified owner + super admin, passes them in as `SMOKE_*`, and the teardown deletes their rows and `auth:*` keys).
 10. **Uptime monitor** (§6).
 
 ## 4. Redeploy, rollback, migrations
 
-**Redeploy**: `cd <app dir> && fly deploy [-a <app>-staging]`. Do staging first and run the smoke suite, then production. When backend and app changes go together, deploy the backend first (the apps call `/api` routes that must already exist).
+**Redeploy**: `cd <app dir> && fly deploy` (staging: `fly deploy -c fly.staging.toml --ha=false --local-only`, migrations before it, see the staging section). Do staging first and run the smoke suite, then production. When backend and app changes go together, deploy the backend first (the apps call `/api` routes that must already exist).
 
 **Migrations** run as the backend's `release_command` (`node dist/db/migrate.js`, Drizzle's `migrate()` over `backend/drizzle/*.sql`) on a one-off machine with the app's secrets, using `DIRECT_URL` (the Neon direct host; pgbouncer's transaction mode doesn't suit DDL). If it fails, the deploy stops and the old version keeps running. Rules:
 - Generate locally (`npx drizzle-kit generate --name <name>`), review the SQL, commit it. **Never `drizzle-kit push`** against Neon.
@@ -139,12 +191,12 @@ Everything written after that moment is lost (keep the preserved branch until yo
   redis-cli -u "$REDIS_URL" --no-auth-warning INFO memory | grep maxmemory_policy   # must print maxmemory_policy:noeviction
   ```
   Any other policy can silently drop BullMQ job keys and Better Auth sessions when the 30 MB fill up.
-- **Uptime monitor (D14)**: UptimeRobot free, HTTP(s) monitors every 5 minutes with email alerts to the owner, on `https://api.<domain>/api/health/live`, `https://app.<domain>/healthz`, `https://admin.<domain>/healthz` (staging the same with `.staging.` if wanted). Never `/api/health`.
-- **Config files**: `python3 scripts/check-fly-config.py` and `docker compose config -q`.
+- **Uptime monitor (D14)**: UptimeRobot free, HTTP(s) monitors every 5 minutes with email alerts to the owner, on `https://api.<domain>/api/health/live`, `https://app.<domain>/healthz`, `https://admin.<domain>/healthz` (staging: only `https://shield-comment-api-staging.fly.dev/api/health/live`, so client/admin can sleep). Never `/api/health`.
+- **Config files**: `python3 scripts/check-fly-config.py` (+ `--self-test`) and `docker compose config -q`.
 
 ## 7. Environment variables
 
-Legend: **fly.toml** = `[env]` in the app's config (same in both environments, committed). **secret** = `fly secrets set` on that app (per environment; "secret?" = whether the value itself must be kept private). Neon values come from `neon connection-string` / `neon env pull` for that environment's branch. Never set `META_GRAPH_BASE_URL`, `SSLCOMMERZ_BASE_URL` or `TELEGRAM_API_BASE_URL` on Fly (test stubs; production refuses them). Leave `CORS_ORIGINS` unset (D3: CORS off).
+Legend: **fly.toml** = `[env]` in the app's `fly.toml` and `fly.staging.toml` (same values in both, committed). **secret** = `fly secrets set` on that app (per environment; "secret?" = whether the value itself must be kept private). Neon values come from `neon connection-string` / `neon env pull` for that environment's branch. Never set `META_GRAPH_BASE_URL`, `SSLCOMMERZ_BASE_URL` or `TELEGRAM_API_BASE_URL` on Fly (test stubs; production refuses them). Leave `CORS_ORIGINS` unset (D3: CORS off).
 
 ### Backend (`shield-comment-api`, `shield-comment-api-staging`)
 
@@ -156,15 +208,15 @@ Legend: **fly.toml** = `[env]` in the app's config (same in both environments, c
 | `DIRECT_URL` | secret | yes | Neon `production` branch, **direct** (no `-pooler`; migrations only) | Neon `staging` branch, direct |
 | `REDIS_URL` | secret | yes | Redis Cloud production DB (`noeviction`) | Redis Cloud staging DB |
 | `BETTER_AUTH_SECRET` | secret | yes | `openssl rand -base64 48` | its own value |
-| `BETTER_AUTH_URL` | secret | no | `https://api.<domain>` | `https://api.staging.<domain>` |
-| `TRUSTED_ORIGINS` | secret | no | `https://app.<domain>,https://admin.<domain>` | `https://app.staging.<domain>,https://admin.staging.<domain>` |
-| `CLIENT_APP_URL` | secret | no | `https://app.<domain>` | `https://app.staging.<domain>` |
+| `BETTER_AUTH_URL` | secret | no | `https://api.<domain>` | `https://shield-comment-api-staging.fly.dev` |
+| `TRUSTED_ORIGINS` | secret | no | `https://app.<domain>,https://admin.<domain>` | `https://shield-comment-app-staging.fly.dev,https://shield-comment-admin-staging.fly.dev` |
+| `CLIENT_APP_URL` | secret | no | `https://app.<domain>` | `https://shield-comment-app-staging.fly.dev` |
 | `TOKEN_ENCRYPTION_KEY` | secret | yes | `openssl rand -base64 32` | its own value |
 | `TOKEN_ENCRYPTION_KEY_ID` | secret | no | e.g. `k2026a` | e.g. `s2026a` |
 | `TOKEN_ENCRYPTION_PREVIOUS_KEYS` | secret | yes | only during a rotation (§5) | same |
 | `META_APP_ID`, `META_LOGIN_CONFIG_ID` | secret | no | live Meta app | Meta **test app** |
 | `META_APP_SECRET` | secret | yes | live app secret | test app secret |
-| `META_OAUTH_REDIRECT_URI` | secret | no | `https://app.<domain>/api/meta/oauth/callback` | `https://app.staging.<domain>/api/meta/oauth/callback` |
+| `META_OAUTH_REDIRECT_URI` | secret | no | `https://app.<domain>/api/meta/oauth/callback` | `https://shield-comment-app-staging.fly.dev/api/meta/oauth/callback` |
 | `META_WEBHOOK_VERIFY_TOKEN` | secret | yes | `openssl rand -hex 24` | its own value |
 | `META_GRAPH_API_VERSION` | (unset) | no | only to override the pinned version | same |
 | `RESEND_API_KEY` | secret | yes | Resend sending key | Resend test key |
@@ -191,7 +243,7 @@ Legend: **fly.toml** = `[env]` in the app's config (same in both environments, c
 | `NODE_ENV`, `PORT`, `HOST` | Dockerfile | no | `production`, `5174`, `0.0.0.0` | same |
 | `FORWARDED_FOR_MODE` | fly.toml | no | `pass` (§2) | same |
 | `API_UPSTREAM` | secret | no | `http://shield-comment-api.internal:3000` | `http://shield-comment-api-staging.internal:3000` |
-| `PUBLIC_SITE_URL` | secret | no | `https://app.<domain>` (canonical, hreflang, og:url, HSTS) | `https://app.staging.<domain>` |
+| `PUBLIC_SITE_URL` | secret | no | `https://app.<domain>` (canonical, hreflang, og:url, HSTS) | `https://shield-comment-app-staging.fly.dev` |
 
 ### Admin (`shield-comment-admin`, `shield-comment-admin-staging`)
 
