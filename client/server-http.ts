@@ -80,9 +80,22 @@ export function appResponseHeaders(siteUrl = process.env.PUBLIC_SITE_URL): Serve
 
     const nonce = randomBytes(16).toString('base64')
     request.context = { ...request.context, cspNonce: nonce }
-    const response = await next()
-
-    const headers = new Headers(response.headers)
+    // Headers are set in place and the response goes back as is unless it is compressed here. Never read
+    // `response.body` just to copy it: srvx/static bodies are Node streams, and reading it wraps them in undici's
+    // ReadableStreamFrom, whose queued close() throws uncaught (process exit) when a browser leaves as the stream
+    // ends (M9-T13a, `ERR_INVALID_STATE: ReadableStream is already closed`).
+    let response = await next()
+    try {
+      response.headers.set('X-Content-Type-Options', 'nosniff')
+    } catch {
+      // Immutable headers (Start's `Response.redirect`): copy. Such bodies are web streams or null.
+      response = new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: new Headers(response.headers),
+      })
+    }
+    const headers = response.headers
     headers.set('X-Content-Type-Options', 'nosniff')
     headers.set('X-Frame-Options', 'DENY')
     // Never `no-referrer`: same-origin POSTs would send `Origin: null` and Better Auth answers 403.
@@ -93,27 +106,31 @@ export function appResponseHeaders(siteUrl = process.env.PUBLIC_SITE_URL): Serve
     if (httpsSite || forwardedProto === 'https') {
       headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
     }
-    return compress(request, response, headers)
+    return compress(request, response)
   }
 }
 
-async function compress(request: Request, response: Response, headers: Headers): Promise<Response> {
-  const init = { status: response.status, statusText: response.statusText, headers }
-  if (!COMPRESSIBLE.test(headers.get('content-type') ?? '')) return new Response(response.body, init)
+async function compress(request: Request, response: Response): Promise<Response> {
+  const headers = response.headers
+  if (!COMPRESSIBLE.test(headers.get('content-type') ?? '')) return response
 
   if (!/(^|,)\s*accept-encoding\s*(,|$)/i.test(headers.get('vary') ?? '')) headers.append('Vary', 'Accept-Encoding')
   const encoding = pickEncoding(request.headers.get('accept-encoding'))
   const length = headers.get('content-length')
   if (
     !encoding ||
-    !response.body ||
     request.method === 'HEAD' ||
     headers.has('content-encoding') ||
-    (length !== null && Number(length) < COMPRESS_MIN_BYTES)
+    // Byte ranges refer to the identity body; srvx/static marks every file it sends unencoded this way.
+    headers.has('accept-ranges') ||
+    response.status === 206 ||
+    (length !== null && Number(length) < COMPRESS_MIN_BYTES) ||
+    !response.body
   ) {
-    return new Response(response.body, init)
+    return response
   }
 
+  const init = { status: response.status, statusText: response.statusText, headers }
   // Streamed bodies (SSR) have no length: read up to the floor; a body that ends first goes out as is.
   const reader = response.body.getReader()
   const head: Uint8Array[] = []

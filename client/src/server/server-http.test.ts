@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { get as httpGet } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { serve, type Server } from 'srvx'
+import { PassThrough } from 'node:stream'
+import { FastResponse, serve, type Server } from 'srvx'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   appFetch,
@@ -170,6 +172,57 @@ describe('server-http (client server.mjs middleware)', () => {
   })
 })
 
+// M9-T13a: staging crashed with `ERR_INVALID_STATE: ReadableStream is already closed`. srvx/static answers with a
+// Node stream body; reading `response.body` wrapped it in undici's ReadableStreamFrom, whose queued close() throws
+// (uncaught) when the browser leaves just as the stream ends. The middleware must hand srvx the response as is.
+describe('aborted download of a Node-stream body', () => {
+  it('a client that leaves while the body ends does not crash the server', async () => {
+    const uncaught: unknown[] = []
+    const onUncaught = (error: unknown) => uncaught.push(error)
+    process.on('uncaughtException', onUncaught)
+
+    const body = new PassThrough()
+    // The source ends at the moment the web stream cancels it (the race seen on staging), made deterministic.
+    const iterate = body[Symbol.asyncIterator].bind(body)
+    body[Symbol.asyncIterator] = () => {
+      const iterator = iterate()
+      const stop = iterator.return!.bind(iterator)
+      iterator.return = (value) => {
+        body.end()
+        return stop(value)
+      }
+      return iterator
+    }
+    body.write(Buffer.alloc(2000, 1))
+    const fileServer = serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      silent: true,
+      middleware: [appResponseHeaders()],
+      // A Node stream body, as srvx/static sends (srvx accepts it; the DOM BodyInit type doesn't list it).
+      fetch: () => new FastResponse(body as unknown as BodyInit, { headers: { 'content-type': 'image/png' } }),
+    })
+    await fileServer.ready()
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const req = httpGet(new URL('/assets/logo.png', fileServer.url), (res) => {
+          expect(res.headers['x-content-type-options']).toBe('nosniff')
+          res.once('data', () => req.destroy())
+        })
+        req.on('error', () => undefined)
+        req.on('close', () => resolve())
+        setTimeout(() => reject(new Error('no response')), 2000)
+      })
+      await new Promise<void>((resolve) => (body.closed ? resolve() : body.once('close', () => resolve())))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(uncaught).toEqual([])
+    } finally {
+      process.off('uncaughtException', onUncaught)
+      await fileServer.close(true)
+    }
+  })
+})
+
 describe('HSTS', () => {
   const html = () => new Response('<p>hi</p>', { headers: { 'content-type': 'text/html' } })
   const run = (siteUrl: string | undefined, headers: Record<string, string> = {}) =>
@@ -183,6 +236,15 @@ describe('HSTS', () => {
       'max-age=31536000; includeSubDomains',
     )
     expect((await run('https://app.example.com')).headers.get('strict-transport-security')).toContain('max-age=31536000')
+  })
+
+  it('a response with immutable headers (Start redirect) is copied, not dropped', async () => {
+    const res = await appResponseHeaders()(new Request('http://app.localhost/x'), () =>
+      Response.redirect('http://app.localhost/y', 308),
+    )
+    expect(res.status).toBe(308)
+    expect(res.headers.get('location')).toBe('http://app.localhost/y')
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff')
   })
 })
 
