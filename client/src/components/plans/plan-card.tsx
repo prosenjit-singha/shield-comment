@@ -54,6 +54,8 @@ export function PlanCard({
   interval,
   language,
   selected = false,
+  titleAs: Title = 'h2',
+  showOtherInterval = false,
   children,
 }: {
   plan: PublicPlan
@@ -61,6 +63,10 @@ export function PlanCard({
   language: Language
   /** `/billing`: the plan picked for checkout (primary ring). */
   selected?: boolean
+  /** Landing (M8-T12): `h3` under the section's `h2`. */
+  titleAs?: 'h2' | 'h3'
+  /** Landing: also print the other interval's per-month price, so the page shows both without JS. */
+  showOtherInterval?: boolean
   /** The card's button(s), under the price. */
   children?: ReactNode
 }) {
@@ -83,9 +89,9 @@ export function PlanCard({
       >
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
-            <h2 id={titleId} className="text-lg font-semibold">
+            <Title id={titleId} className="text-lg font-semibold">
               {plan.name}
-            </h2>
+            </Title>
             {badge ? <Badge variant={plan.highlighted ? 'default' : 'outline'}>{badge}</Badge> : null}
           </div>
           {description ? <p className="text-sm text-pretty text-muted-foreground">{description}</p> : null}
@@ -113,6 +119,19 @@ export function PlanCard({
             </p>
           ) : interval === 'year' ? (
             <p className="text-xs text-muted-foreground">{content('Monthly billing only', 'শুধু মাসিক বিল')}</p>
+          ) : null}
+          {showOtherInterval && plan.yearly ? (
+            <p className="text-xs text-muted-foreground" data-testid="other-interval-price">
+              {yearly
+                ? content(
+                    `or ${formatTaka(plan.monthly.perMonthBdt, 'en')}/month billed monthly`,
+                    `অথবা মাসিক বিলে ${formatTaka(plan.monthly.perMonthBdt, 'bn')}/মাস`,
+                  )
+                : content(
+                    `or ${formatTaka(plan.yearly.perMonthBdt, 'en')}/month billed yearly (${formatTaka(plan.yearly.chargedBdt, 'en')})`,
+                    `অথবা বার্ষিক বিলে ${formatTaka(plan.yearly.perMonthBdt, 'bn')}/মাস (${formatTaka(plan.yearly.chargedBdt, 'bn')})`,
+                  )}
+            </p>
           ) : null}
         </div>
 

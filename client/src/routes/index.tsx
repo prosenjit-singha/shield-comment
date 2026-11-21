@@ -1,11 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { LandingPlaceholder } from '@/components/landing-placeholder'
-import { getSiteOrigin } from '@/lib/request-context'
+import { LandingPage } from '@/components/landing/landing-page'
+import { landingHeaders, loadLanding } from '@/lib/landing'
 import { landingHead } from '@/lib/seo'
 
-/** English landing page, server-rendered for SEO and Meta link previews. */
+/** English landing page (C1), server-rendered with live pricing for SEO and Meta link previews. */
 export const Route = createFileRoute('/')({
-  loader: () => ({ origin: getSiteOrigin() }),
+  loader: ({ context }) => loadLanding(context.queryClient),
   head: ({ loaderData }) => landingHead('en', loaderData?.origin ?? ''),
-  component: LandingPlaceholder,
+  headers: ({ loaderData }) => landingHeaders(loaderData),
+  component: LandingPage,
 })
