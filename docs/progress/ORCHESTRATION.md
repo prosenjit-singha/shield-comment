@@ -11,10 +11,10 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-verified M9-T12
+paused: needs decision — user postponed M9-T13 (staging) and proposed new hosting (Oracle Cloud VPS + Docker Compose + Caddy + DuckDNS, path routing) replacing D1 (Fly.io); re-plan needed before M9-T13 · after verified M9-T12
 
 ## Resume
-`/orchestration --continue` — next M9-T4 (immutable audit logs, backend only, D4 answered). Coming pre-checks: M9-T5 asks what happens to existing unverified accounts and to impersonation under required email verification (D10 b); M9-T7 asks the legal facts (D11); the first admin/ and client/ rows ask for app approval.
+`/orchestration --continue` — then answer the pending decision: how to re-plan Module 9 hosting for the proposed stack (Oracle Cloud Always Free VPS + Docker Compose + Caddy + Let's Encrypt + DuckDNS, `shield-comment.duckdns.org` with admin at `/admin` and the backend under a slug). Suggested: a planning row (M9-REPLAN, docs only) that rewrites D1/D3/D5/D14 and M9-T10/T13…T19 for the VPS, replacing the Fly configs; it needs answers on Postgres/Redis location, arm64 images, the backend path, and admin + client sharing one origin.
 
 ## Next prompt (M9-T13)
 
@@ -56,6 +56,7 @@ You are implementing exactly ONE task row, **M9-T13**, in the ShieldComment BD r
 4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
 
 ### Decisions added by orchestrator
+- 2026-11-21 pre-check (user): staging postponed; new hosting proposal (see `## Decisions asked`, M9-T13 pre-check). DO NOT dispatch this prompt until the hosting re-plan is decided and this prompt is rewritten.
 - admin/ + client/ approval (user, 2026-11-21): "Rest of the run" = standing approval until M9-GATE. Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over them.
 Carry-over from M9-T7: `client/src/lib/legal-facts.json` holds `[TODO: …]` placeholders the user replaces before go-live (M9-GATE / M9-T19); the legal copy is an agent draft awaiting the user's review.
 Carry-over from M9-T8: CSP ships Report-Only without a `report-uri`; switch to enforcing (`Content-Security-Policy` in `client/server-http.ts` + `admin/nginx.conf.template`) after a clean staging week (M9-T13/T14 checklist); also update `e2e/smoke/public.spec.ts` `expectAppHeaders` then.
@@ -276,6 +277,25 @@ Carry-over from M9-T12: the staging Meta test app gets the URLs from `meta-app-r
 - 2026-11-21 M9-T6 pre-check: M9-T6-a invitee after verification → "Back to the invite (Recommended)"; client/ app approval → "Rest of the run".
 - 2026-11-21 M9-T7 pre-check: D11-facts → "Can you use a json file and use some placeholder text for now I will update the details later"; M9-T6 pending invite in localStorage instead of sessionStorage → "Keep localStorage".
 - 2026-11-21 M9-T8 pre-check: admin/ app approval → "Rest of the run".
+- 2026-11-21 M9-T13 pre-check (approval of the 👤 hosting + staging step; staging domain). User answers, verbatim:
+  - M9-T13 approach: 
+```
+Postpone the staging. 
+Turn the following into markdown table-
+
+My final recommendation
+Component	Service	Cost
+VPS	Oracle Cloud Always Free	$0
+Domain	DuckDNS	$0
+SSL	Let's Encrypt	$0
+Reverse proxy	Caddy	$0
+Deployment	Docker Compose	$0
+Total: $0/month.
+
+One distinction: if you use Cloudflare's proxy, configure SSL/TLS mode as Full (strict) and use a valid origin certificate on your VPS. Cloudflare's browser-facing certificate alone doesn't secure the connection between Cloudflare and your server.
+```
+  - Domain: "shield-comment.duckdns.org/admin" for client "shield-comment.duckdns.org" for backend it will be "shield-comment.duckdns.org/[backend slug]"
+  - Orchestrator reading: staging (M9-T13) is **postponed**; the user proposes a different hosting stack (Oracle Cloud Always Free VPS + Docker Compose + Caddy + Let's Encrypt + DuckDNS, $0/month) on ONE host with path routing (admin under `/admin`, backend under a slug), which conflicts with recorded D1 (a) Fly.io `sin`, separate app origins, `api.<domain>`) and the M9-T10 Fly configs. Not yet decided: whether D1 is replaced, where Postgres/Redis run (Neon + Redis Cloud vs containers on the VPS), arm64 images, the backend slug, and whether admin + client sharing one origin (one Better Auth cookie) is OK. These need a re-plan before any remaining M9 row (M9-T13…T19 + GATE are all hosting-dependent 👤 steps).
 
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
