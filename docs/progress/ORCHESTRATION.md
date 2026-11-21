@@ -3,21 +3,57 @@
 Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committed. Resume with `/orchestration --continue`. No secrets here.
 
 ## Run
-- Scope: **Module 8 from M8-PLAN until M8-GATE** (user, 2026-11-21). M8-PLAN is docs only (adds the Module 8 section to TASKS.md: rows + open decisions); its decisions are asked at the pre-check of the first M8 row; then M8-T1… in order until M8-GATE.
-- Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 8 section + the row's decisions, `docs/project-documentation/modules/module-8-billing-sslcommerz.md`, the code the row names.
-- Standing approvals: **admin/** and **client/** for the rest of this run (user, 2026-11-21, M8-T9 pre-check). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included): none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
+- Scope: **Module 9 from M9-PLAN until M9-GATE** (user, 2026-11-21: "Start Module 9"). M9-PLAN is docs only (adds the Module 9 section to TASKS.md: rows + open decisions); its decisions are asked at the pre-check of the first M9 row; then M9-T1… in order until M9-GATE.
+- Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 9 section + the row's decisions, `docs/project-documentation/modules/module-9-launch-security.md`, the code the row names.
+- Standing approvals: none yet for admin/ or client/ in this run (the Module 8 approvals ended with that run; ask at the first row that touches each). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included), deploys, DNS, hosting/Neon/Redis Cloud accounts or any production credential: none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #18 (2026-11-21) · rows this session: 6 · estimate: 160k
-- Previous runs (Modules 3–7, PW, PR): see `## Log` and git history.
+- Session: #18 (2026-11-21, continues from the Module 8 run) · rows this session: 6 · estimate: 170k
+- Previous runs (Modules 3–8, PW, PR): see `## Log` and git history.
 
 ## State
-done: Module 8 M8-PLAN → M8-GATE (2026-11-21)
+dispatched M9-PLAN (2026-11-21) · commit: "docs(progress): plan module 9 (M9-PLAN)"
 
 ## Resume
-Run finished. Start a new run with `/orchestration <instructions>` (e.g. `/orchestration Module 9 from M9-PLAN until M9-GATE`). Pending opt-in work (not in this run): manual SSLCommerz sandbox run (D13, needs approval + a tunnel for the IPN); tokenization field-name check against the merchant docs before `SSLCOMMERZ_TOKENIZATION=true` (M8-T6b).
+`/orchestration --continue`
 
-## Next prompt
-RUN COMPLETE
+## Next prompt (M9-T1)
+
+PRE-CHECK: needs user decisions M9-D1…D15 before dispatch (TASKS.md "Module 9" decision list; ask them all at once, recommended option first, plus the domain name for D1/D3 and the legal facts for D11). Record the answers verbatim in `## Decisions asked`, mark each decision "ANSWERED <date>: …" in TASKS.md, then fill **Recorded decisions** below (M9-T1 needs D2, and D1 for the proxy hop counts). If D10 = (c), mark M9-T5/T6 "dropped (D10 c)" before dispatch. Standing approvals for admin/ or client/: none yet (M9-T1 is backend only).
+
+You are implementing exactly ONE task row, **M9-T1**, in the ShieldComment BD repo at /home/veronica/projects/shield-comment (WSL2, Node 24, npm 11, Docker in WSL). Work directly; do not spawn sub-agents. Be token-lean: don't read the whole docs/ folder.
+
+**Read first (only these)**
+1. `AGENTS.md`.
+2. `docs/progress/MEMORY.md` (all; Better Auth line incl. "Client IP (M4-T10)", Module 9 line).
+3. From `docs/progress/TASKS.md` (use `grep -n`/`sed -n`; the file is large): the `## Module 9` header paragraph, readings 1 + 2 (+ 10), decisions D1 + D2 (+ D3 for context), the M9-T1 row and the M9-T2 row (so T1 doesn't build T2's global throttler).
+4. Spec: `docs/project-documentation/modules/module-9-launch-security.md` (Implementation Checklist item 1).
+5. Code to read or reuse: `backend/src/auth/client-ip.ts` (+ its spec), `backend/src/auth/auth.module.ts` (`middleware` option), `backend/src/auth/better-auth.ts` (`advanced.ipAddress`), `backend/src/app.setup.ts`, `backend/src/main.ts`, `backend/src/meta-callbacks/meta-callbacks.controller.ts` + `.module.ts` (throttler on `req.ip`), `backend/src/billing/payment-callbacks.controller.ts` (`getTracker` = last `X-Forwarded-For` hop), `backend/src/billing/billing-summary.controller.ts` (per-user tracker, leave as is), `backend/src/config/env.validation.ts`, `backend/.env.example` + root `.env.example`, `docker-compose.yml` (backend + backend-e2e env), `client/src/server/api-proxy.test.ts` (the client proxy **extends** the XFF chain; admin nginx uses `$proxy_add_x_forwarded_for`). Test harness: `backend/test/auth-rate-limit-ip.e2e-spec.ts`, `backend/test/utils/create-test-app.ts`.
+
+**Recorded decisions** (fill at the pre-check): D2 = … · D1 = … (hop counts).
+
+**Task (M9-T1): one proxy-safe client-IP resolver + Helmet on the backend**
+- `TRUST_PROXY_HOPS` env (int ≥ 0, default 0 = socket only; compose backend 1; `.env.example` ×2 with a comment on how to count hops). Pure resolver (e.g. `src/common/http/client-ip.ts`): from `[...X-Forwarded-For entries, socket]` take the entry `hops` places from the right; garbage/missing → socket; normalise like Better Auth (IPv4-mapped → IPv4, IPv6 → /64) so buckets stay stable. Note: app-proxied traffic passes one more proxy (client Start proxy / admin nginx) than direct `api.` traffic (Meta, Telegram), so one global count can be wrong for one path: make each path resolve correctly (e.g. compose/host: the app proxies are trusted hops, `api.` = LB only) or document the chosen rule; if fixing it needs client/admin proxy changes, don't touch those apps (no approval): report it as a follow-up for M9-T8.
+- Use it everywhere an IP keys a limit: Express `app.set('trust proxy', hops)` (so `req.ip` is right for the Meta callbacks throttler), `src/auth/client-ip.ts` **always overwrites** `X-Forwarded-For` with the resolved IP (no pass-through of a client-chosen value), the payment callbacks tracker. Session `ipAddress` + audit `requestIp()` should read the same value (check `requestIp()` callers).
+- `helmet` (new backend dependency; check it needs no install script) in `configureApp()`: defaults for a JSON API, `x-powered-by` off, `crossOriginResourcePolicy: same-site`; keep CORS as is (M9-T3 owns it). Check Helmet doesn't break the Meta webhook raw body, the SSLCommerz 303 redirects, CSV downloads or ticket attachment presigned URLs.
+- Tests to write: unit resolver (0/1/2 hops, list, spoofed left entries ignored, garbage, IPv6 /64, mapped IPv4); `client-ip.ts` spec updated (overwrite always); e2e: a spoofed `X-Forwarded-For` can't pick its own auth rate-limit bucket under hops 0 and 1 (`auth-rate-limit-ip.e2e-spec.ts`), Meta + payment callback throttlers key on the resolved IP, Helmet headers present on `/api/health/live` and on an error response (404), `X-Powered-By` absent.
+
+**Rules:** TS strict, ESM, no `any`. Vitest. No live external calls in tests (Meta/SSLCommerz/etc. mocked); tests must fail on unexpected requests. Every tenant query is scoped by `workspace_id`. Backend only: don't edit `admin/` or `client/` (no approval yet). Never commit `.env*` (except `.env.example`) or build/test output. **Never stop or kill the user's own processes** (local Postgres 5432, Redis 6379, dev servers); on a port clash use env overrides or stop and report.
+
+**Verify** (run what applies; report real numbers):
+- backend: `npm run build`, `npx tsc --noEmit -p tsconfig.json`, `npm test`, `npm run test:e2e`, `npm run lint`, `npx prettier --check "src/**/*.ts" "test/**/*.ts"`. The test DB must end at its baseline (4 `plans` + 4 promotions + 4 promotion_plans).
+- compose: `docker compose up -d --build backend` + `/api/health/live` 200 + `curl -I` shows the Helmet headers; root `e2e/` `npm test` still 7/7 (auth through the app proxies must keep working: login, impersonation, checkout return).
+- Current test counts: backend unit 2602, e2e 1314; admin 465; client 1037; root `e2e/` 7.
+
+**If a decision is missing:** if THIS row needs a product decision that is not recorded in TASKS.md/MEMORY.md/this prompt, STOP without coding that part. Report `STATUS: needs-decision` with the question and 2–4 options (recommended first). If your row finishes but the NEXT row needs decisions, report `STATUS: done`, list them under DECISION NEEDED and start the next prompt with `PRE-CHECK: needs user decisions <ids> before dispatch`.
+
+**Finish (in this order)**
+1. TASKS.md: the row → `✅ <date>` + concise notes (built + choices). Add a Verification log entry at the TOP of `## Verification log`. Add short lasting facts to MEMORY.md and point its "next" phrase at M9-T2.
+2. Journal `docs/progress/ORCHESTRATION.md`:
+   - append one `## Log` line (`- <date> M9-T1 ✅ · <tests> · <1-line summary>`); the orchestrator adds the commit hash;
+   - append your choices under `## Choices to confirm` as `- M9-T1: …`;
+   - **replace** the `## Next prompt` section with the M9-T2 prompt in this same format (`.claude/skills/orchestration/subagent-prompt.md`). Write `RUN COMPLETE` instead if the run scope in `## Run` is finished.
+3. Commit everything, journal included, with `feat(backend): add proxy-safe client ip and helmet headers (M9-T1)` and an optional 2–4 bullet body. The last line is the Co-Authored-By trailer given in your dispatch message.
+4. Return the report in the format of `.claude/skills/orchestration/subagent-prompt.md`.
 
 ## Choices to confirm
 - M3-T8: whole query cache cleared on sign-in/up · /register field order name → business → email → password · own en/bn validation (noValidate) · EN/BN switch on auth cards · Bangla digits in wait times · `safeRedirect` refuses /register
@@ -139,6 +175,8 @@ RUN COMPLETE
 - M8-T13: (1) JSON-LD through TanStack `meta` `{ 'script:ld+json': … }` (escaped by `HeadContent`) instead of `head().scripts` · (2) offer = cheapest live `monthly.perMonthBdt` (discount included) as `Offer` + `UnitPriceSpecification` MON; no `offers` when the fetch failed or there are no plans · (3) FAQ copy moved to `LANDING_FAQ` in `lib/seo.ts` (page + JSON-LD share it) · (4) robots/sitemap = Start server routes (absolute URLs from `PUBLIC_SITE_URL`, 1 h cache); robots disallows all 17 noindex app paths + `/api/` as the row asked (crawlers then never see those pages' `noindex`; acceptable, they aren't meant to be found) · (5) og-image rendered once from HTML with headless Chromium, generator not kept · (6) no performance code changes (swap already set, self-hosted fonts = nothing to preconnect, CLS 0); no gzip in `server.mjs` (prod proxy/CDN should compress) · (7) `client/scripts/lighthouse.sh` uses `npx -y lighthouse` (no dependency) + a warm-up request (cold first run gave 45) · (8) title/description TikTok → Instagram also fixed in `client.md` §4 (other TikTok mentions in client.md §3 left)
 
 - M8-GATE: (1) checkout + the browser's success return are forwarded to `backend-e2e` (M6 pattern, `maxRedirects: 0` so the 303 reaches the browser) and the spec sends the IPN itself; the production `backend` keeps no store · (2) separate stub on port 4011 (not merged into the Graph stub); its hosted page is served by the stub at `localhost:4011` (reachable by the browser in host and Docker runs) · (3) each case resets the owner's billing (`resetOwnerBilling`) instead of chaining monthly → yearly (an UPGRADE with credit math); yearly case pays Growth after a Starter trial · (4) tampered = validator answers ৳1 (AMOUNT_MISMATCH) + a forged amount after signing (BAD_SIGNATURE) · (5) `cleanupRun` now also deletes `promotion_redemptions` (trials / launch discounts made by the spec).
+- M9-PLAN: (1) one table for all Module 9 rows: code/docs rows M9-T1…T12 first, 👤 user rows M9-T13…T19 after them (same ID series, marked `👤 user step` with "Agent prepares" vs "Only the user"), GATE last · (2) client-IP fix is its own first row (M9-T1, with Helmet) because every rate limit depends on it (reading 1); the global throttler is M9-T2 · (3) password reset (D10) and legal pages (D11) added although not in the spec: launch blockers (lockouts; Meta + SSLCommerz require public policy pages) · (4) staging replaces the zrok tunnel for the SSLCommerz sandbox run and the live Meta test (M9-T14/T15) · (5) D15 lets the gate pass before Meta App Review approval / live store approval (weeks) · (6) carry-overs: contrast = D9 (no silent token change), TikTok docs + nav flake = M9-T9, gzip = M9-T8, tokenization check = M9-T14.
+
 ## Decisions asked
 - 2026-11-18 M3-T10: D13 0-Pages redirect → entry points only (recorded in TASKS.md D13)
 - 2026-11-18 Module 4 run: app approval → "Both, rest of run (Recommended)" (admin/ + client/ approved for every Module 4 row in this run)
@@ -210,6 +248,8 @@ RUN COMPLETE
 - 2026-11-21 after M8-T3 (choice 2: downgrade while a paid term runs is refused until it ends): "Is that OK?" → "Schedule for term end (Recommended)" (pick in the 7-day window, pay, new plan starts at term end with no gap; new columns + job) = M8-D7b.
 - 2026-11-21 M8-T6b pre-check: M8-D14 "When should auto-renew charge a saved token?" → "1 day before + 1 retry (Recommended)" · M8-D15 "Where should the auto-renew toggle be built?" → "With /billing in M8-T10 (Recommended)".
 - 2026-11-21 M8-T9 pre-check: "How far should the admin/ approval go?" → "Rest of the run (Recommended)" · "Pre-approve client/ now so the run doesn't stop there?" → "Rest of the run (Recommended)".
+
+- 2026-11-21 Module 9 run start: user → "Start Module 9" (scope M9-PLAN → M9-GATE).
 
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
@@ -335,3 +375,4 @@ RUN COMPLETE
 - 2026-11-21 M8-T12 ✅ 6899809 · client 1023 (was 1003) · backend/admin/root e2e untouched · C1 landing `/` + `/bn`: 9 sections (navbar EN | বাং, hero + simulator, trust strip, bento, ROAS calculator, how it works, live SSR pricing from `GET /api/plans` with both prices in the HTML + D11 register links, FAQ, footer CTA), failure fallback "See plans" + no-store
 - 2026-11-21 M8-T13 ✅ 39bf4eb · client 1037 (was 1023) · backend/admin/root e2e untouched · landing SEO: JSON-LD SoftwareApplication (lowest live price) + FAQPage, og:image 1200×630 + twitter card, robots.txt + sitemap.xml server routes, TikTok → Instagram copy; Lighthouse mobile `/` 100/96/100/100, `/bn` 99/96/100/100 (`client/scripts/lighthouse.sh`)
 - 2026-11-21 M8-GATE ✅ 0570111 · backend 2602 + e2e 1314 · admin 465 · client 1037 · root e2e 7/7 host + docker (was 4) · Lighthouse `/` 100/96/100/100, `/bn` 99/96/100/100 · Module 8 gate: SSLCommerz stub checkout round trip (monthly, yearly, tampered) + A4, curl raw HTML, browser check; no app code changed
+- 2026-11-21 M9-PLAN ✅ · docs only · Module 9 planned: 19 rows (12 code/docs + 7 👤 user steps) + GATE, decisions D1–D15 open (hosting, rate limits, origins, audit immutability, staging, smoke, App Review screencast, SSLCommerz live, contrast, password reset, legal pages, CSP, compression, uptime, gate scope)
