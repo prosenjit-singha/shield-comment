@@ -4,6 +4,7 @@ import {
   check,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   unique,
@@ -15,6 +16,7 @@ import { allOrNoneSql, inListSql, nonNegativeSql } from './check-sql.js';
 import { id, timestamps, timestamptz } from './columns.js';
 import { plans } from './plans.js';
 import { promotionRedemptions } from './promotions.js';
+import type { ActivationPrice } from './subscription-audit.js';
 
 /**
  * Billing accounts and subscriptions (PW-T1; user decisions 2026-11-19 PW-D3/D5/D8, see
@@ -99,10 +101,23 @@ export const subscriptions = pgTable(
       (): AnyPgColumn => promotionRedemptions.id,
       { onDelete: 'restrict' },
     ),
+    /**
+     * A paid next term on another plan / interval (M8-D7b: a downgrade or year → month paid in the
+     * 7-day renewal window). It starts at `current_term_end` (no gap); the M8-T6 renewal job
+     * switches to it. Its promotions are already claimed (`scheduled_price` redemption ids).
+     */
+    scheduledPlanId: uuid().references(() => plans.id, {
+      onDelete: 'restrict',
+    }),
+    scheduledInterval: text().$type<SubscriptionInterval>(),
+    scheduledPrice: jsonb().$type<ActivationPrice>(),
     ...timestamps,
   },
   (t) => [
     index().on(t.promotionRedemptionId),
+    index()
+      .on(t.scheduledPlanId)
+      .where(sql`${t.scheduledPlanId} is not null`),
     index().on(t.couponRedemptionId),
     // History per account (+ the FK `restrict` lookups when deleting an account).
     index().on(t.billingAccountId, t.createdAt),
@@ -144,6 +159,12 @@ export const subscriptions = pgTable(
     check(
       'subscriptions_active_check',
       sql`status <> 'ACTIVE' or price_per_month_bdt is not null`,
+    ),
+    check(
+      'subscriptions_scheduled_check',
+      sql.raw(
+        `(${allOrNoneSql(['scheduled_plan_id', 'scheduled_interval', 'scheduled_price'])}) and (${inListSql('scheduled_interval', SUBSCRIPTION_INTERVALS, true)})`,
+      ),
     ),
     check(
       'subscriptions_canceled_at_check',

@@ -22,8 +22,10 @@ import { monthlyReset, resetIndex } from '../wallet/wallet-period.js';
  *   `current_term_start` = the wallet anchor stays, so the billing day does not drift); after the
  *   term ended, a new term from the payment.
  * - **UPGRADE** (D7): a new term from the payment; the unused days of the current paid term come
- *   off the new price (`upgradeCredit`). Downgrade and year → month only when renewing after the
- *   term ended (`paymentKind`).
+ *   off the new price (`upgradeCredit`).
+ * - **Scheduled change** (M8-D7b): a RENEWAL on another plan or interval (a downgrade or
+ *   year → month, paid in the 7-day renewal window) while the term runs: the live row keeps its
+ *   plan and stores the next term; the switch at its end is the M8-T6 renewal job.
  */
 
 const DAY_MS = 86_400_000;
@@ -35,8 +37,10 @@ export const RENEWAL_WINDOW_DAYS = 7;
 export const PAID_TERM_ERROR_CODES = {
   /** 409: same plan + interval, but the term ends more than 7 days from now (D4). */
   renewalNotOpen: 'RENEWAL_NOT_OPEN',
-  /** 409: downgrade / year → month while a paid term runs (D7: only at renewal). */
+  /** 409: downgrade / year → month before the 7-day renewal window (D7, M8-D7b). */
   changeAtRenewal: 'PLAN_CHANGE_AT_RENEWAL',
+  /** 409: the next term is already paid as a scheduled change (M8-D7b); nothing else until it starts. */
+  changeScheduled: 'PLAN_CHANGE_SCHEDULED',
 } as const;
 export type PaidTermErrorCode =
   (typeof PAID_TERM_ERROR_CODES)[keyof typeof PAID_TERM_ERROR_CODES];
@@ -53,9 +57,13 @@ export interface CurrentTerm {
   currentTermEnd: Date;
 }
 
-/** A paid term `[start, end)`; `extend` = the live row keeps running and only its end moves. */
+/**
+ * A paid term `[start, end)`; `extend` = the live row keeps running and only its end moves;
+ * `scheduled` = the term starts at the live row's end on another plan / interval (M8-D7b).
+ */
 export interface PaidTerm {
   extend: boolean;
+  scheduled?: true;
   start: Date;
   end: Date;
 }
@@ -66,8 +74,9 @@ const isLive = (t: CurrentTerm, now: Date) =>
 
 /**
  * The term a payment of `kind` buys. A RENEWAL of the live ACTIVE row on the same plan + interval
- * extends it from its current end (D4: an early payment loses nothing); anything else is a new
- * term from `start` (NEW, UPGRADE, a renewal after the end, or a late payment on a changed plan).
+ * extends it from its current end (D4: an early payment loses nothing); on another plan or
+ * interval it is scheduled from that end (M8-D7b); anything else is a new term from `start`
+ * (NEW, UPGRADE, a renewal after the end).
  */
 export function paidTerm(
   kind: PaymentKind,
@@ -80,15 +89,18 @@ export function paidTerm(
   if (
     kind === 'RENEWAL' &&
     current?.status === 'ACTIVE' &&
-    isLive(current, now) &&
-    current.planId === target.planId &&
-    current.interval === target.interval
+    isLive(current, now)
   ) {
-    return {
-      extend: true,
-      start: current.currentTermEnd,
-      end: extendedEnd(current, months),
-    };
+    const start = current.currentTermEnd;
+    return current.planId === target.planId &&
+      current.interval === target.interval
+      ? { extend: true, start, end: extendedEnd(current, months) }
+      : {
+          extend: false,
+          scheduled: true,
+          start,
+          end: monthlyReset(start, months),
+        };
   }
   return { extend: false, start, end: monthlyReset(start, months) };
 }
@@ -155,10 +167,14 @@ export interface KindTarget {
  * - no live term → NEW (RENEWAL when the account had a paid term before); a trial → NEW (D6);
  * - live ACTIVE, same plan + interval → RENEWAL from 7 days before the end, else `RENEWAL_NOT_OPEN`;
  * - live ACTIVE, a higher monthly list price or month → year (never year → month) → UPGRADE;
- * - any other change while the term runs → `PLAN_CHANGE_AT_RENEWAL` (pick it once the term ended).
+ * - any other change (downgrade, year → month): RENEWAL from 7 days before the end, scheduled at
+ *   the term end (M8-D7b), else `PLAN_CHANGE_AT_RENEWAL`;
+ * - a live row with a scheduled change → `PLAN_CHANGE_SCHEDULED` (its next term is paid).
  */
 export function paymentKind(
-  current: (CurrentTerm & { monthlyPriceBdt: number }) | null,
+  current:
+    | (CurrentTerm & { monthlyPriceBdt: number; hasScheduledChange: boolean })
+    | null,
   target: KindTarget,
   hadPaidTerm: boolean,
   now: Date,
@@ -166,13 +182,16 @@ export function paymentKind(
   if (!current || !isLive(current, now))
     return { kind: hadPaidTerm ? 'RENEWAL' : 'NEW' };
   if (current.status === 'TRIALING') return { kind: 'NEW' };
+  if (current.hasScheduledChange)
+    return { error: PAID_TERM_ERROR_CODES.changeScheduled };
+  const windowOpen =
+    now.getTime() >=
+    current.currentTermEnd.getTime() - RENEWAL_WINDOW_DAYS * DAY_MS;
   if (
     current.planId === target.planId &&
     current.interval === target.interval
   ) {
-    const opens =
-      current.currentTermEnd.getTime() - RENEWAL_WINDOW_DAYS * DAY_MS;
-    return now.getTime() >= opens
+    return windowOpen
       ? { kind: 'RENEWAL' }
       : { error: PAID_TERM_ERROR_CODES.renewalNotOpen };
   }
@@ -184,7 +203,9 @@ export function paymentKind(
   const same = target.monthlyPriceBdt === current.monthlyPriceBdt;
   if (!yearToMonth && (higher || (same && monthToYear)))
     return { kind: 'UPGRADE' };
-  return { error: PAID_TERM_ERROR_CODES.changeAtRenewal };
+  return windowOpen
+    ? { kind: 'RENEWAL' }
+    : { error: PAID_TERM_ERROR_CODES.changeAtRenewal };
 }
 
 /** A promotion on a term's bill before it is claimed: its terms as claimed so far. */

@@ -121,15 +121,24 @@ describe('paid-term rules (M8-T3)', () => {
       });
     });
 
-    it('RENEWAL on another plan or interval (late payment): a new term, never a changed live row', () => {
+    it('RENEWAL on another plan or interval while the term runs: scheduled from its end (M8-D7b)', () => {
       expect(
-        paidTerm('RENEWAL', active(), { ...target, planId: 'pro' }, now, now)
-          .extend,
-      ).toBe(false);
+        paidTerm(
+          'RENEWAL',
+          active(),
+          { ...target, planId: 'starter' },
+          now,
+          now,
+        ),
+      ).toEqual({
+        extend: false,
+        scheduled: true,
+        start: dhaka('2026-12-01T10:00:00'),
+        end: dhaka('2027-01-01T10:00:00'),
+      });
       expect(
-        paidTerm('RENEWAL', active(), { ...target, interval: 'year' }, now, now)
-          .extend,
-      ).toBe(false);
+        paidTerm('RENEWAL', active({ interval: 'year' }), target, now, now),
+      ).toMatchObject({ scheduled: true, end: dhaka('2027-01-01T10:00:00') });
     });
 
     it('UPGRADE (D7): a new term from today', () => {
@@ -217,9 +226,13 @@ describe('paid-term rules (M8-T3)', () => {
   describe('paymentKind (D4, D6, D7)', () => {
     const now = dhaka('2026-11-20T12:00:00');
     const growth = { ...target, monthlyPriceBdt: 2499 };
-    const cur = (overrides: Partial<CurrentTerm> = {}) => ({
+    const cur = (
+      overrides: Partial<CurrentTerm> = {},
+      hasScheduledChange = false,
+    ) => ({
       ...active(overrides),
       monthlyPriceBdt: 2499,
+      hasScheduledChange,
     });
 
     it('no live term → NEW, or RENEWAL after a paid term', () => {
@@ -259,7 +272,42 @@ describe('paid-term rules (M8-T3)', () => {
       ).toEqual({ kind: 'UPGRADE' });
     });
 
-    it('downgrade or year → month while the term runs → PLAN_CHANGE_AT_RENEWAL', () => {
+    it('downgrade or year → month in the 7-day window → RENEWAL (scheduled, M8-D7b)', () => {
+      const inWindow = dhaka('2026-11-24T10:00:00');
+      const starter = { planId: 'starter', interval: 'month' as const };
+      expect(
+        paymentKind(
+          cur(),
+          { ...starter, monthlyPriceBdt: 999 },
+          true,
+          inWindow,
+        ),
+      ).toEqual({ kind: 'RENEWAL' });
+      expect(
+        paymentKind(cur({ interval: 'year' }), growth, true, inWindow),
+      ).toEqual({ kind: 'RENEWAL' });
+    });
+
+    it('a scheduled change → PLAN_CHANGE_SCHEDULED for any plan, even an upgrade', () => {
+      const scheduled = { error: 'PLAN_CHANGE_SCHEDULED' };
+      const inWindow = dhaka('2026-11-24T10:00:00');
+      expect(paymentKind(cur({}, true), growth, true, inWindow)).toEqual(
+        scheduled,
+      );
+      expect(
+        paymentKind(
+          cur({}, true),
+          { planId: 'pro', interval: 'month', monthlyPriceBdt: 5999 },
+          true,
+          now,
+        ),
+      ).toEqual(scheduled);
+      expect(
+        paymentKind(cur({ status: 'TRIALING' }, true), growth, false, now),
+      ).toEqual({ kind: 'NEW' });
+    });
+
+    it('downgrade or year → month before the window → PLAN_CHANGE_AT_RENEWAL', () => {
       const change = { error: 'PLAN_CHANGE_AT_RENEWAL' };
       expect(
         paymentKind(

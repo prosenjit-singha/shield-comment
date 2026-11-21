@@ -28,7 +28,8 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
  * 5xx `code`s a client may see (opt-in, each one deliberate): the toggle's 502 when Graph
  * `subscribed_apps` fails (M4-T8, D10); the AI key save 503 without a token cipher (M5-T3); the
  * comment override's 502 / 503 (M6-T4); the playground's 503 / 502 (M6-T7); the ownership-transfer
- * code email 503 (M7-T6b); the Telegram link 503 (M7-T8). Other 5xx never carry `code`.
+ * code email 503 (M7-T6b); the Telegram link 503 (M7-T8); checkout 503 / 502 (M8-T4). Other 5xx
+ * never carry `code`.
  */
 export const PUBLIC_SERVER_ERROR_CODES: ReadonlySet<string> = new Set([
   'META_SUBSCRIBE_FAILED',
@@ -39,6 +40,8 @@ export const PUBLIC_SERVER_ERROR_CODES: ReadonlySet<string> = new Set([
   'PLAYGROUND_AI_FAILED',
   'TRANSFER_CODE_EMAIL_FAILED',
   'TELEGRAM_NOT_CONFIGURED',
+  'PAYMENTS_NOT_CONFIGURED',
+  'PAYMENT_GATEWAY_ERROR',
 ]);
 
 /** 5xx `code`s that also keep `details` (M6-T4 override 502: `{ errorKind, retryable }`). */

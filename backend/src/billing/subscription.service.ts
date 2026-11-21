@@ -107,7 +107,7 @@ export interface PaidTermResult {
   plan: { id: string; slug: string; name: string };
   /** The claimed price (redemption ids filled in), as in the audit row. */
   price: ActivationPrice;
-  /** The fresh wallet period; `null` when the term was extended (the wallet runs on). */
+  /** The fresh wallet period; `null` when the term was extended or scheduled (the wallet runs on). */
   balances: Awaited<ReturnType<WalletService['startFreshPeriod']>> | null;
 }
 
@@ -301,7 +301,10 @@ export class SubscriptionService {
    * - **extend** (a RENEWAL of the live ACTIVE row, same plan + interval): only `current_term_end`
    *   + the price snapshot move; the wallet keeps its period (no fresh grant);
    * - **new**: the live row ends (`CANCELED`, or `EXPIRED` when its term was over; a trial ends at
-   *   once, D6), a new `ACTIVE` row `[start, end)` with the price snapshot, a fresh wallet period.
+   *   once, D6), a new `ACTIVE` row `[start, end)` with the price snapshot, a fresh wallet period;
+   * - **scheduled** (M8-D7b: a RENEWAL on another plan / interval while the term runs): the live
+   *   row keeps its plan, links and wallet and stores the next term (`scheduled_*`, claimed
+   *   price); the M8-T6 renewal job switches to it at `current_term_end`.
    *
    * Then the price's promotions are claimed (`redeem()`, or `months_used` advanced for a claimed
    * one; the row links both) and one `subscription_audit_logs` row is written. `redeem()`'s 409s
@@ -361,7 +364,9 @@ export class SubscriptionService {
     };
 
     let subscriptionId: string;
-    if (term.extend) {
+    if (term.scheduled) {
+      subscriptionId = old!.id;
+    } else if (term.extend) {
       subscriptionId = old!.id;
       await tx
         .update(subscriptions)
@@ -406,12 +411,27 @@ export class SubscriptionService {
       subscriptionId,
       interval,
       price: input.price,
-      relink: term.extend,
+      link: term.scheduled ? 'never' : term.extend ? 'always' : 'claimed',
       now,
     });
+    if (term.scheduled) {
+      await tx
+        .update(subscriptions)
+        .set({
+          scheduledPlanId: planId,
+          scheduledInterval: interval,
+          scheduledPrice: price,
+        })
+        .where(
+          and(
+            eq(subscriptions.id, subscriptionId),
+            eq(subscriptions.billingAccountId, accountId),
+          ),
+        );
+    }
 
     let balances: PaidTermResult['balances'] = null;
-    if (!term.extend) {
+    if (!term.extend && !term.scheduled) {
       const live: AccountLiveSubscription = {
         billingAccountId: accountId,
         subscriptionId,
@@ -451,7 +471,7 @@ export class SubscriptionService {
       }),
     );
     this.logger.log(
-      `paid term ${term.extend ? 'extended' : 'started'} account=${accountId} workspace=${input.workspaceId} subscription=${subscriptionId} plan=${plan.slug} interval=${interval} kind=${input.kind} source=${input.source} actor=${input.actorId ?? 'none'} replaced=${old && !term.extend ? old.id : 'none'}`,
+      `paid term ${term.scheduled ? 'scheduled' : term.extend ? 'extended' : 'started'} account=${accountId} workspace=${input.workspaceId} subscription=${subscriptionId} plan=${plan.slug} interval=${interval} kind=${input.kind} source=${input.source} actor=${input.actorId ?? 'none'} replaced=${old && !term.extend && !term.scheduled ? old.id : 'none'}`,
     );
     return {
       subscriptionId,
@@ -466,8 +486,9 @@ export class SubscriptionService {
   /**
    * Records the term's promotions (PR-D12, reading 9; PR-D19): a promotion not yet claimed is
    * redeemed (`discount_bdt_first_term` = its saving, `months_used` = the months this term uses),
-   * a claimed one gets `months_used` advanced by them. Links both on the subscription (an
-   * extended row is always relinked: the ids describe its latest term).
+   * a claimed one gets `months_used` advanced by them. `link`: `claimed` links both on the
+   * subscription when any was claimed, `always` too (an extended row: the ids describe its latest
+   * term), `never` for a scheduled term (the row's links describe its running term).
    */
   private async claimPromotions(
     tx: BillingExecutor,
@@ -477,7 +498,7 @@ export class SubscriptionService {
       subscriptionId: string;
       interval: SubscriptionInterval;
       price: PaymentPrice;
-      relink: boolean;
+      link: 'claimed' | 'always' | 'never';
       now: Date;
     },
   ): Promise<ActivationPrice> {
@@ -515,7 +536,10 @@ export class SubscriptionService {
     };
     const discount = await claim(price.discount);
     const coupon = await claim(price.coupon);
-    if (discount || coupon || input.relink) {
+    if (
+      input.link === 'always' ||
+      (input.link === 'claimed' && (discount || coupon))
+    ) {
       await tx
         .update(subscriptions)
         .set({

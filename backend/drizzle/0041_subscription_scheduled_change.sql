@@ -1,0 +1,6 @@
+ALTER TABLE "subscriptions" ADD COLUMN "scheduled_plan_id" uuid;--> statement-breakpoint
+ALTER TABLE "subscriptions" ADD COLUMN "scheduled_interval" text;--> statement-breakpoint
+ALTER TABLE "subscriptions" ADD COLUMN "scheduled_price" jsonb;--> statement-breakpoint
+ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_scheduled_plan_id_plans_id_fk" FOREIGN KEY ("scheduled_plan_id") REFERENCES "public"."plans"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "subscriptions_scheduled_plan_id_index" ON "subscriptions" USING btree ("scheduled_plan_id") WHERE "subscriptions"."scheduled_plan_id" is not null;--> statement-breakpoint
+ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_scheduled_check" CHECK (((scheduled_plan_id is null and scheduled_interval is null and scheduled_price is null) or (scheduled_plan_id is not null and scheduled_interval is not null and scheduled_price is not null)) and (scheduled_interval is null or scheduled_interval in ('month', 'year')));
