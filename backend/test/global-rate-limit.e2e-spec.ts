@@ -162,6 +162,7 @@ describe('Global rate limit (e2e)', () => {
       '/get-session': false,
       '/request-password-reset': { window: 60, max: 3 },
       '/reset-password': { window: 60, max: 3 },
+      '/send-verification-email': { window: 60, max: 3 },
     });
   });
 });

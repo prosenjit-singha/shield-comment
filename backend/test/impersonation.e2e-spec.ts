@@ -520,6 +520,13 @@ describe('Impersonation (e2e)', () => {
       ['/unlink-account', () => ({ providerId: 'credential' })],
       ['/get-access-token', () => ({ providerId: 'credential' })],
       ['/refresh-token', () => ({ providerId: 'credential' })],
+      // M9-T5: password reset + email verification.
+      ['/request-password-reset', () => ({ email: owner.email })],
+      [
+        '/reset-password',
+        () => ({ token: 'whatever', newPassword: 'hijacked-password-1' }),
+      ],
+      ['/send-verification-email', () => ({ email: owner.email })],
     ])('POST %s → 403 and the owner is unchanged', async (path, body) => {
       const before = await ownerRow();
       const res = await post(path, body());
@@ -538,9 +545,13 @@ describe('Impersonation (e2e)', () => {
       expect(mine.body.session.impersonatedBy).toBe(superAdmin.id);
     });
 
-    it('GET /delete-user/callback → 403; /set-password has no HTTP route (404)', async () => {
+    it('GET /delete-user/callback and /verify-email → 403; /set-password has no HTTP route (404)', async () => {
       await http()
         .get('/api/auth/delete-user/callback?token=whatever')
+        .set('Cookie', cookie)
+        .expect(403);
+      await http()
+        .get('/api/auth/verify-email?token=whatever')
         .set('Cookie', cookie)
         .expect(403);
       expect(

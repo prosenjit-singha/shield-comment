@@ -27,7 +27,8 @@ import { PasswordService } from './password.service.js';
  * - `AUTH_SECONDARY_STORAGE` comes from the global RedisModule.
  * - `SubscriptionService` (from `BillingModule`): workspace links at sign-up / org create (PW-T3, no trial since PR-T3);
  *   `LimitService`: the `/organization/create` workspace limit (PW-T5) + invite seats (M7-T5);
- *   `EmailService` (global `EmailModule`): invitation emails (M7-T5).
+ *   `EmailService` (global `EmailModule`): invitation (M7-T5), password reset and
+ *   verification emails (M9-T5).
  * - Client IP (rate limit, session `ipAddress`): `X-Forwarded-For`, which `configureApp()` has
  *   already replaced with the resolved IP (src/common/http/client-ip.ts, M9-T1).
  */
@@ -59,7 +60,7 @@ export const AuthModule = BetterAuthModule.forRootAsync({
       rateLimit: config.get('NODE_ENV', { infer: true }) !== NodeEnv.Test,
       billing,
       limits,
-      invitations: {
+      emails: {
         email,
         clientAppUrl:
           config.get('CLIENT_APP_URL', { infer: true }) ??

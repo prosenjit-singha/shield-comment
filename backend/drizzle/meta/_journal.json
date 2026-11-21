@@ -330,6 +330,13 @@
       "when": 1795258424738,
       "tag": "0046_audit_log_immutable",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795259717402,
+      "tag": "0047_mark_users_verified",
+      "breakpoints": true
     }
   ]
 }

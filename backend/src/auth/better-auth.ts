@@ -10,6 +10,11 @@ import * as schema from '../db/schema/index.js';
 import type { EmailService } from '../email/email.service.js';
 import { CLIENT_IP_HEADER } from '../common/http/client-ip.js';
 import {
+  createAccountMailer,
+  RESET_PASSWORD_EXPIRES_IN_SEC,
+  VERIFY_EMAIL_EXPIRES_IN_SEC,
+} from './account-emails.js';
+import {
   firstWorkspaceName,
   parseWorkspaceName,
   resolveActiveWorkspace,
@@ -66,8 +71,11 @@ export interface BetterAuthSettings {
   billing: AuthBilling;
   /** Account-pooled workspace limit (PW-T5) and invite seat check (M7-T5), `LimitService`. */
   limits: AuthLimits;
-  /** Invitation emails (M7-T5): `EmailService` + `CLIENT_APP_URL` for the `/invite/<id>` link. */
-  invitations: { email: Pick<EmailService, 'send'>; clientAppUrl: string };
+  /**
+   * `EmailService` + `CLIENT_APP_URL` for the links: invitations (M7-T5, `/invite/<id>`), password
+   * reset (`/reset-password?token=`) and email verification (`/verify-email?token=`, M9-T5).
+   */
+  emails: { email: Pick<EmailService, 'send'>; clientAppUrl: string };
 }
 
 /** The `SubscriptionService` calls Better Auth's hooks make (PW-T3). */
@@ -113,6 +121,11 @@ export const IMPERSONATION_BLOCKED_ACCOUNT_PATHS: ReadonlySet<string> = new Set(
     '/unlink-account',
     '/get-access-token',
     '/refresh-token',
+    // M9-T5: password reset + email verification.
+    '/request-password-reset',
+    '/reset-password',
+    '/send-verification-email',
+    '/verify-email',
   ],
 );
 
@@ -140,6 +153,10 @@ type SessionFields = {
  */
 export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
   const secureCookies = new URL(settings.baseURL).protocol === 'https:';
+  const accountMail = createAccountMailer(
+    settings.emails.email,
+    settings.emails.clientAppUrl,
+  );
   return betterAuth({
     appName: 'ShieldComment BD',
     basePath: '/api/auth',
@@ -154,11 +171,26 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 8,
+      // D10 (b): no session until the email is verified. Side effect: a sign-up with a taken email
+      // answers the same 200 (no session, no email) instead of 422, so it can't probe accounts.
+      requireEmailVerification: true,
+      // D10: forgot/reset password. Unknown email = same 200, no email (Better Auth).
+      sendResetPassword: accountMail.sendResetPassword,
+      resetPasswordTokenExpiresIn: RESET_PASSWORD_EXPIRES_IN_SEC,
+      revokeSessionsOnPasswordReset: true,
       password: {
         hash: (password) => settings.passwords.hash(password),
         verify: ({ hash, password }) =>
           settings.passwords.verify(hash, password),
       },
+    },
+    emailVerification: {
+      sendOnSignUp: true,
+      sendVerificationEmail: accountMail.sendVerificationEmail,
+      expiresIn: VERIFY_EMAIL_EXPIRES_IN_SEC,
+      // The first use of the link signs the user in; a replay finds the email verified and makes
+      // no session.
+      autoSignInAfterVerification: true,
     },
     session: {
       // Postgres stays the source of truth (list / revoke); Redis is the fast lookup.
@@ -175,9 +207,10 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
       customRules: {
         '/sign-in/email': { window: 60, max: 10 },
         [SIGN_UP_PATH]: { window: 60, max: 5 },
-        // Password reset (D2/D10, wired in M9-T5; M9-T5 adds the verification-email resend here).
+        // Password reset + verification resend (D2/D10, M9-T5).
         '/request-password-reset': { window: 60, max: 3 },
         '/reset-password': { window: 60, max: 3 },
+        '/send-verification-email': { window: 60, max: 3 },
         // Polled by both apps on every navigation; cheap thanks to the cookie cache.
         '/get-session': false,
       },
@@ -272,26 +305,38 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
       }),
     },
     databaseHooks: {
+      user: {
+        create: {
+          // Sign-up creates the first workspace (owner) right away, although its first session only
+          // comes after the email is verified (M9-T5). A sign-up from an invite (D8) gets none.
+          after: async (user, ctx) => {
+            if (
+              ctx?.path !== SIGN_UP_PATH ||
+              signUpInvitationId(ctx.body) !== undefined
+            )
+              return;
+            await resolveActiveWorkspace(
+              db,
+              settings.billing,
+              user.id,
+              firstWorkspaceName(ctx.body),
+            );
+          },
+        },
+      },
       session: {
         create: {
-          // Sign-up creates the first workspace (owner); every new session starts in a workspace.
-          // Sessions that already carry one (impersonation, M1-T3) keep it.
-          before: async (session, ctx) => {
+          // Every new session starts in the user's oldest workspace. Sessions that already carry
+          // one (impersonation, M1-T3) keep it.
+          before: async (session) => {
             const current = (
               session as { activeOrganizationId?: string | null }
             ).activeOrganizationId;
             if (current) return;
-            // A sign-up from an invite (D8) starts with no workspace until it accepts.
-            const createName =
-              ctx?.path === SIGN_UP_PATH &&
-              signUpInvitationId(ctx.body) === undefined
-                ? firstWorkspaceName(ctx.body)
-                : undefined;
             const activeOrganizationId = await resolveActiveWorkspace(
               db,
               settings.billing,
               session.userId,
-              createName,
             );
             return { data: { ...session, activeOrganizationId } };
           },
@@ -329,8 +374,8 @@ export function createBetterAuth(db: Database, settings: BetterAuthSettings) {
         // for accept/reject; the proof is the signed-in invited email + the emailed 7-day link.
         requireEmailVerificationOnInvitation: false,
         sendInvitationEmail: createInvitationMailer(
-          settings.invitations.email,
-          settings.invitations.clientAppUrl,
+          settings.emails.email,
+          settings.emails.clientAppUrl,
         ),
         organizationHooks: {
           // PW-T5 (plan §3.6, PW-D10/D11): the creator's account needs a live plan (else 403

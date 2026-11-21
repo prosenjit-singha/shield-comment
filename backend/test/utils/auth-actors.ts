@@ -7,6 +7,7 @@ import type { App } from 'supertest/types.js';
 import type { BetterAuth } from '../../src/auth/better-auth.js';
 import { ensureSuperAdmin } from '../../src/auth/super-admin.js';
 import type { Database } from '../../src/db/database.js';
+import { EmailService } from '../../src/email/email.service.js';
 import {
   aiCreditTopupAuditLogs,
   aiCreditTopups,
@@ -49,6 +50,7 @@ import {
 } from '../../src/db/schema/index.js';
 import { AUTH_SECONDARY_STORAGE } from '../../src/redis/redis-secondary-storage.js';
 import { uniqueEmail } from './create-test-app.js';
+import type { FakeEmailService } from './fake-email.js';
 import type { createMemorySecondaryStorage } from './memory-secondary-storage.js';
 
 /** Password for every e2e user. */
@@ -178,18 +180,24 @@ export function createAuthActors(app: INestApplication<App>) {
    * Signs up a user: their first workspace (owner) linked to a new billing account, **no plan**
    * (PR-T3). `{ trial: true }` then starts the seeded Starter trial through the endpoint
    * (`startTrial`), i.e. what sign-up gave before PR-T3.
+   * Sign-up makes no session until the email is verified (M9-T5): the helper lets the
+   * verification email through a `createEmailServiceFake()` (`allow`), marks the user verified in
+   * the DB and signs in. `test/account-recovery.e2e-spec.ts` covers the real link.
    */
   async function signUp(
     prefix: string,
     options: { trial?: boolean } = {},
   ): Promise<Actor> {
     const email = uniqueEmail(prefix);
+    const mail = app.get(EmailService) as Partial<FakeEmailService>;
+    mail.allow?.(email);
     const res = await http()
       .post('/api/auth/sign-up/email')
       .send({ name: prefix, email, password: PASSWORD })
       .expect(200);
     const id = res.body.user.id as string;
     userIds.push(id);
+    await markVerified(id);
     const [member] = await db
       .select({ workspaceId: workspaceMembers.workspaceId })
       .from(workspaceMembers)
@@ -198,7 +206,7 @@ export function createAuthActors(app: INestApplication<App>) {
     const actor = {
       id,
       email,
-      cookie: sessionCookie(res),
+      cookie: await signIn(email),
       workspaceId: member!.workspaceId,
     };
     if (options.trial) await startTrial(actor);
@@ -231,6 +239,14 @@ export function createAuthActors(app: INestApplication<App>) {
         ),
       );
     return row!.id;
+  }
+
+  /** What the emailed verification link does, without the email (M9-T5). */
+  async function markVerified(userId: string): Promise<void> {
+    await db
+      .update(users)
+      .set({ emailVerified: true })
+      .where(eq(users.id, userId));
   }
 
   /** A fresh session (cookie) for an existing user. */
@@ -584,6 +600,7 @@ export function createAuthActors(app: INestApplication<App>) {
     signUp,
     startTrial,
     signIn,
+    markVerified,
     signUpSuperAdmin,
     addMember,
     patchStoredSession,

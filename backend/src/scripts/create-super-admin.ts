@@ -67,8 +67,8 @@ try {
       new PromotionService(db),
     ),
     limits: new LimitService(db),
-    // No invites from this script.
-    invitations: {
+    // No invites, reset or verification emails from this script.
+    emails: {
       email: {
         send: () => Promise.reject(new Error('No email from this script')),
       },

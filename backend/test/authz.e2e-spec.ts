@@ -5,7 +5,7 @@ import type { App } from 'supertest/types.js';
 import type { BetterAuth } from '../src/auth/better-auth.js';
 import { ensureSuperAdmin } from '../src/auth/super-admin.js';
 import type { Database } from '../src/db/database.js';
-import { users, workspaces } from '../src/db/schema/index.js';
+import { users, workspaceMembers, workspaces } from '../src/db/schema/index.js';
 import { type Actor, createAuthActors, PASSWORD } from './utils/auth-actors.js';
 import { createTestApp, uniqueEmail } from './utils/create-test-app.js';
 
@@ -72,7 +72,7 @@ describe('Guards + /me, /workspaces, /admin/clients (e2e)', () => {
           id: owner.id,
           email: owner.email,
           role: 'user',
-          emailVerified: false,
+          emailVerified: true, // sign-in needs it since M9-T5
         },
         activeWorkspaceId: owner.workspaceId,
         impersonatedBy: null,
@@ -261,6 +261,7 @@ describe('Guards + /me, /workspaces, /admin/clients (e2e)', () => {
       expect(user).toMatchObject({
         role: 'super_admin',
         name: 'Created Admin',
+        emailVerified: true, // M9-T5: sign-in requires it
       });
       expect(user!.accounts[0]!.password).toMatch(ARGON2ID_HASH);
       expect(user!.memberships).toHaveLength(0);
@@ -276,6 +277,30 @@ describe('Guards + /me, /workspaces, /admin/clients (e2e)', () => {
       await expect(
         ensureSuperAdmin(db, auth, { email: uniqueEmail('x'), name: 'x' }),
       ).rejects.toThrow(/SUPER_ADMIN_PASSWORD/);
+    });
+
+    it('promoting an unverified user also marks it verified (M9-T5), so it can sign in', async () => {
+      const email = uniqueEmail('authz-unverified');
+      const res = await http()
+        .post('/api/auth/sign-up/email')
+        .send({ name: 'Later Admin', email, password: PASSWORD })
+        .expect(200);
+      actors.trackUser(res.body.user.id as string);
+      actors.trackWorkspace(
+        (await db.query.workspaceMembers.findFirst({
+          where: eq(workspaceMembers.userId, res.body.user.id as string),
+        }))!.workspaceId,
+      );
+      await http()
+        .post('/api/auth/sign-in/email')
+        .send({ email, password: PASSWORD })
+        .expect(403);
+      const auth = app.get(AuthService).instance as BetterAuth;
+      expect(
+        await ensureSuperAdmin(db, auth, { email, name: 'Later Admin' }),
+      ).toBe('promoted');
+      const cookie = await actors.signIn(email);
+      await http().get('/api/admin/clients').set('Cookie', cookie).expect(200);
     });
   });
 });

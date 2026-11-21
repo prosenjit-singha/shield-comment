@@ -59,8 +59,9 @@ export type SessionBilling = Pick<
  * The workspace a new session starts in: the user's oldest membership. With `createName`
  * (sign-up only) and no membership yet, creates the first workspace with the user as `owner`.
  *
- * Runs from `databaseHooks.session.create.before`, i.e. after the user row exists and before
- * the session row is written, so the sign-up session (and its cookie cache) already carries
+ * Runs from `databaseHooks.user.create.after` on sign-up (with `createName`; since M9-T5 sign-up
+ * makes no session, the first one comes after email verification) and from
+ * `databaseHooks.session.create.before` (without), so every session's cookie cache already carries
  * `activeOrganizationId`. The Drizzle adapter runs without transactions, so the user row is
  * committed; workspace + owner membership + billing go in one transaction of their own.
  *

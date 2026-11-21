@@ -18,6 +18,7 @@ import { createTestApp, uniqueEmail } from './utils/create-test-app.js';
 import {
   createEmailServiceFake,
   type FakeEmailService,
+  linkToken,
 } from './utils/fake-email.js';
 
 /**
@@ -139,8 +140,10 @@ describe('Team members (e2e)', () => {
     const to = uniqueEmail('m7t6-invitee');
     const id = await invite(owner, to, 'admin');
 
+    email.expectSends(1); // verification (M9-T5)
     const res = await signUpFromInvite(to.toUpperCase(), id);
     expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.headers['set-cookie']).toBeUndefined();
     const userId = res.body.user.id as string;
     actors.trackUser(userId);
     expect(
@@ -155,13 +158,19 @@ describe('Team members (e2e)', () => {
         .from(billingAccounts)
         .where(eq(billingAccounts.ownerUserId, userId)),
     ).toEqual([]);
-    const token = sessionCookie(res);
+    // The emailed link verifies and signs in (M9-T5).
+    const verified = await actors
+      .http()
+      .get('/api/auth/verify-email')
+      .query({ token: linkToken(email.sent.at(-1)!, '/verify-email') })
+      .expect(200);
+    const token = sessionCookie(verified);
     expect(await activeWorkspace(token)).toBeNull();
 
     // Full cookie jar (token + 5-min cookie cache) like a browser.
     const jar = (r: { headers: Record<string, unknown> }) =>
       (r.headers['set-cookie'] as string[]).map((c) => c.split(';')[0]!);
-    const signUpCookies = jar(res);
+    const signUpCookies = jar(verified);
     const accepted = await accept(signUpCookies.join('; '), id);
     expect(accepted.status, JSON.stringify(accepted.body)).toBe(200);
     expect(accepted.body.member).toMatchObject({

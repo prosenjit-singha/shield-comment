@@ -87,6 +87,20 @@ describe('Better Auth (e2e)', () => {
       .send(body);
   }
 
+  /** What the emailed link does (M9-T5; account-recovery.e2e-spec.ts covers the link itself). */
+  async function markVerified(email: string) {
+    await db
+      .update(users)
+      .set({ emailVerified: true })
+      .where(eq(users.email, email));
+  }
+
+  function signIn(email: string) {
+    return request(app.getHttpServer())
+      .post('/api/auth/sign-in/email')
+      .send({ email, password: PASSWORD });
+  }
+
   async function membershipsOf(email: string) {
     const user = await db.query.users.findFirst({
       where: eq(users.email, email),
@@ -159,7 +173,9 @@ describe('Better Auth (e2e)', () => {
       emailVerified: false,
     });
     expect(signUp.body.user.id).toMatch(UUID_V7);
-    sessionCookie(signUp);
+    // No session until the email is verified (M9-T5, D10 b).
+    expect(signUp.body.token).toBeNull();
+    expect(signUp.headers['set-cookie']).toBeUndefined();
 
     // Rows land in our snake_case tables with UUIDv7 ids; the password is hashed in `accounts`.
     const user = await db.query.users.findFirst({
@@ -176,16 +192,17 @@ describe('Better Auth (e2e)', () => {
     });
     expect(account!.id).toMatch(UUID_V7);
     expect(account!.password).toMatch(ARGON2ID_HASH);
-    expect(user!.sessions).toHaveLength(1);
-    expect(user!.sessions[0]!.id).toMatch(UUID_V7);
+    expect(user!.sessions).toHaveLength(0);
 
-    // Sign-in.
-    const signIn = await request(server)
-      .post('/api/auth/sign-in/email')
-      .send({ email, password: PASSWORD })
-      .expect(200);
-    expect(signIn.body.user).toMatchObject({ id: user!.id, email });
-    const cookie = sessionCookie(signIn);
+    // Sign-in: refused until verified, then a session.
+    const unverified = await signIn(email).expect(403);
+    expect(unverified.body.code).toBe('EMAIL_NOT_VERIFIED');
+    await markVerified(email);
+    const signedIn = await signIn(email).expect(200);
+    expect(signedIn.body.user).toMatchObject({ id: user!.id, email });
+    const cookie = sessionCookie(signedIn);
+    const [session0] = (await membershipsOf(email)).sessions;
+    expect(session0!.id).toMatch(UUID_V7);
 
     // Get-session with the cookie.
     const session = await request(server)
@@ -226,11 +243,13 @@ describe('Better Auth (e2e)', () => {
     expect(membership!.workspace.slug).toMatch(
       /^rahim-uddin-s-workspace-[0-9a-f]{6}$/,
     );
-    // The sign-up session already points at it (DB row, get-session and the guard's session).
-    expect(user.sessions[0]!.activeOrganizationId).toBe(
+    // The first session (after verification) already points at it (DB row, get-session and the
+    // guard's session).
+    await markVerified(email);
+    const cookie = sessionCookie(await signIn(email).expect(200));
+    expect((await membershipsOf(email)).sessions[0]!.activeOrganizationId).toBe(
       membership!.workspaceId,
     );
-    const cookie = sessionCookie(res);
     const session = await request(app.getHttpServer())
       .get('/api/auth/get-session')
       .set('Cookie', cookie)
@@ -251,14 +270,11 @@ describe('Better Auth (e2e)', () => {
       }),
     ]);
 
-    // Sign-in reuses it (no second workspace) and starts the new session in it.
-    const signIn = await request(app.getHttpServer())
-      .post('/api/auth/sign-in/email')
-      .send({ email, password: PASSWORD })
-      .expect(200);
+    // Another sign-in reuses it (no second workspace) and starts the new session in it.
+    const again = await signIn(email).expect(200);
     const me = await request(app.getHttpServer())
       .get('/api/spike/me')
-      .set('Cookie', sessionCookie(signIn))
+      .set('Cookie', sessionCookie(again))
       .expect(200);
     expect(me.body.activeOrganizationId).toBe(membership!.workspaceId);
     expect((await membershipsOf(email)).memberships).toHaveLength(1);
@@ -312,11 +328,13 @@ describe('Better Auth (e2e)', () => {
 
   it('keeps sessions in Postgres and caches them in secondary storage', async () => {
     const email = trackedEmail('ba-cache');
-    const res = await signUp({
+    await signUp({
       name: 'Cache',
       email,
       password: PASSWORD,
     }).expect(200);
+    await markVerified(email);
+    const res = await signIn(email).expect(200);
     const token = decodeURIComponent(sessionCookie(res).split('=')[1]!).split(
       '.',
     )[0]!;
@@ -344,18 +362,22 @@ describe('Better Auth (e2e)', () => {
       .expect(401);
   });
 
-  it('rejects a duplicate sign-up', async () => {
+  it('a duplicate sign-up answers the same 200 (no account probing) and changes nothing', async () => {
     const email = trackedEmail('ba-dup');
     const body = { name: 'Dup', email, password: PASSWORD };
-    await request(app.getHttpServer())
-      .post('/api/auth/sign-up/email')
-      .send(body)
-      .expect(200);
-    const res = await request(app.getHttpServer())
-      .post('/api/auth/sign-up/email')
-      .send(body);
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(res.status).toBeLessThan(500);
+    const first = await signUp(body).expect(200);
+    const res = await signUp({ ...body, password: 'another-password' }).expect(
+      200,
+    );
+    // M9-T5: required verification makes Better Auth answer a taken email like a new one.
+    expect(res.body.token).toBeNull();
+    expect(res.headers['set-cookie']).toBeUndefined();
+    expect(res.body.user.id).not.toBe(first.body.user.id);
+    const user = await membershipsOf(email);
+    expect(user.id).toBe(first.body.user.id);
+    expect(user.memberships).toHaveLength(1);
+    await markVerified(email);
+    await signIn(email).expect(200);
   });
 
   it('global guard: 401 without a session, @Public() routes stay open', async () => {

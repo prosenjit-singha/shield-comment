@@ -66,7 +66,7 @@ export function seedSuperAdminViaCompose(identity: RunIdentity): void {
   }
 }
 
-/** The workspace owner signs up like the client's /register (sign-up also creates the workspace). */
+/** The workspace owner signs up like the client's /register (sign-up also creates the workspace), then is marked verified. */
 export async function signUpOwner(identity: RunIdentity): Promise<void> {
   const response = await fetch(`${env.apiUrl}/api/auth/sign-up/email`, {
     method: 'POST',
@@ -87,6 +87,11 @@ export async function signUpOwner(identity: RunIdentity): Promise<void> {
   if (!response.ok) {
     throw new Error(`Owner sign-up failed: ${response.status} ${await response.text()}`);
   }
+  // Sign-in needs a verified email (M9-T5); the stack has no inbox, so do what the emailed link does.
+  const verified = await withDb((db) =>
+    db.query('UPDATE users SET email_verified = true WHERE email = $1', [identity.owner.email]),
+  );
+  if (verified.rowCount !== 1) throw new Error(`Owner ${identity.owner.email} not found after sign-up`);
 }
 
 /** Module 6 gate: `backend-e2e` from the already built backend image (host runs; see docker-compose.yml). */

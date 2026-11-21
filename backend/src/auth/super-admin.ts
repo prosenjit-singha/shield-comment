@@ -53,6 +53,7 @@ export function parseSuperAdminInput(
 /**
  * Idempotent: creates the user as `super_admin` through Better Auth's admin API (password hashed
  * with argon2id by `PasswordService`; no workspace, no session), or promotes an existing user.
+ * Both are marked email-verified (M9-T5: sign-in requires it; the operator vouches for the address).
  * An existing user's password and name are never changed. Promoted users must sign in again:
  * their cached sessions still carry the old role.
  */
@@ -71,7 +72,7 @@ export async function ensureSuperAdmin(
     if (existing.role === SUPER_ADMIN_ROLE) return 'unchanged';
     await db
       .update(users)
-      .set({ role: SUPER_ADMIN_ROLE })
+      .set({ role: SUPER_ADMIN_ROLE, emailVerified: true })
       .where(eq(users.id, existing.id));
     return 'promoted';
   }
@@ -88,6 +89,7 @@ export async function ensureSuperAdmin(
       password: input.password,
       name: input.name,
       role: SUPER_ADMIN_ROLE,
+      data: { emailVerified: true },
     },
   });
   return 'created';
