@@ -14,7 +14,7 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 paused: needs decision — staging host: the user cannot create the Oracle account (payment verification page does not load); D16 must be re-decided before M9-T10b · after verified M9-REPLAN (row cap also reached in session #19)
 
 ## Resume
-`/orchestration --continue` — first answer the pending decision: which staging host replaces Oracle (recommended: Azure free account VM; alt: AWS free plan). Then the orchestrator revises D16 + the M9-T10b prompt and dispatches M9-T10b.
+`/orchestration --continue` — first answer the pending decision: which staging host replaces Oracle (Fly.io Free plan sized for $5/month, Azure free account VM, or AWS free plan). Then the orchestrator revises D16 + the M9-T10b prompt and dispatches M9-T10b.
 
 ## Next prompt (M9-T10b)
 
@@ -303,6 +303,8 @@ One distinction: if you use Cloudflare's proxy, configure SSL/TLS mode as Full (
   - Next step → "Yes, re-plan next" (docs-only M9-REPLAN row, then M9-T10b staging VPS configs)
 - 2026-11-21 after M9-REPLAN (user, verbatim): "Hey there is an issue with the oracle cloud. I am unable to create account. When it is for payment verification step the website says failed to connect I mean that verification page is not loading at all. So what are the best free hosting option available now? like azure, aws, which will give me $200 credit. Check which one can handle the our three project with docker, kubernates, because I want to build ci/cd pipeline later. First research if we can deploy our web apps to cloud free of cost, if card info needed I am okay with that but I want $0 cost for current staging."
   - Orchestrator research answer (2026-11-21): recommended Azure free account (12-month free B-series VMs, x86 B2ats v2, Docker Compose + Caddy + DuckDNS, CI/CD via GitHub Actions → GHCR); AWS free plan (6 months, $100–200 credits) as second; Kubernetes not $0 long-term (AKS system pool needs ≥2 vCPU/4 GB and no B-series). Pending: the user's pick; then revise D16 and the M9-T10b prompt (drop arm64-only notes if x86).
+- 2026-11-21 (user, verbatim): "What about your fly.io" + screenshot of a new Fly.io **Free** plan: "$5 of usage, every month · Up to 3 Machines and 3 Sprites · 1 user · A Developer Managed Postgres database, paid from the $5 · At $5, you move to Pay As You Go and keep running · Credit card required".
+  - Orchestrator answer (2026-11-21): fits only if sized for $5: backend always-on (shared-cpu-1x 256 MB ≈ $2.19/mo per Fly 2026 pricing update; 512 MB price unverified), client + admin `auto_stop_machines` (pay only while running), shared IPv4 only (no dedicated IPv4), migrations run outside a release machine (3-machine cap), Neon + Redis Cloud unchanged. Not a hard cap: past $5 it bills the card. Pending: the user's pick between Fly free plan / Azure / AWS.
 
 ## Log
 - 2026-11-18 M3-T8 ✅ 1e341c6 · client 131 · login + register, workspaceName via fetchOptions.body
