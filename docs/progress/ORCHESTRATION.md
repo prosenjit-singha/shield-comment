@@ -7,11 +7,11 @@ Run state for `/orchestration` (skill: `.claude/skills/orchestration/`). Committ
 - Sub-agent reads: AGENTS.md, MEMORY.md, the TASKS.md Module 8 section + the row's decisions, `docs/project-documentation/modules/module-8-billing-sslcommerz.md`, the code the row names.
 - Standing approvals: none yet for admin/ or client/ (asked at the first row that touches each). Live AI, Meta, email, Telegram, WhatsApp or **SSLCommerz** calls (sandbox included): none without asking (no live calls in tests). Admin keeps its redesigned components: never re-run `shadcn add`/`animate all` over existing admin components (user, 2026-11-21). Keep Docker current: a row that changes backend/admin/client code or applies a migration ends with `docker compose up -d --build <changed services>` + a health check (compose containers only; never the user's own processes).
 - Row cap per session: 10 · Budget stop: 400k (est.)
-- Session: #17 (2026-11-21) · rows this session: 8 · estimate: 255k
+- Session: #17 (2026-11-21) · rows this session: 9 · estimate: 275k
 - Previous runs (Modules 3–7, PW, PR): see `## Log` and git history.
 
 ## State
-dispatched M8-T7 (2026-11-21) · commit: "feat(backend): add client invoices api (M8-T7)"
+verified M8-T7
 
 ## Resume
 `/orchestration --continue`
@@ -350,4 +350,4 @@ You are implementing exactly ONE task row, **M8-T8**, in the ShieldComment BD re
 - 2026-11-21 M8-T5 ✅ 806bb0b (+ fix fc03d87: carry-overs recorded in T6/T8/T9/T10 rows) · backend 2568 unit (was 2563) + 1254 e2e (was 1242) · admin/client/root e2e untouched · SSLCommerz IPN + success/fail/cancel returns (`@Public()`, per-IP throttle, verify → validate → PAID once with `activatePaidTerm`, one `payment_events` row per callback, 303 to `/billing?payment=`), reading 6 paid redeem + duplicate claim, reading 9 late IPN, D10 risk kept, payment status GET
 - 2026-11-21 M8-T6 ✅ 7f9c522 · backend 2578 unit (was 2568) + 1260 e2e (was 1254) · admin/client/root e2e untouched · renewal reminders (7/3/1 + expiry, once per term via a marker, migration 0042), pending-payment expiry (60 min), M8-D7b term-end switch with no gap (readers see the scheduled term, job writes it), summary `renewal` / `pendingPayment` / `scheduled`
 - 2026-11-21 M8-T6b ✅ 304a3c0 · backend 2587 unit (was 2578) + 1265 e2e (was 1260) · admin/client/root e2e untouched · tokenized auto-renew behind `SSLCOMMERZ_TOKENIZATION` (off): owner-only PUT/DELETE auto-renew, summary `autoRenew`, token saved encrypted (migration 0043), hourly charge job (≤ 24 h / ≤ 12 h retry, once per term) through the IPN validation + `activatePaidTerm`, failure email; tokenization API names provisional.
-- 2026-11-21 M8-T7 ✅ · backend 2589 unit (was 2587) + 1271 e2e (was 1265) · admin/client/root e2e untouched · client invoices API (list + detail, owner + admin, impersonated read, account-scoped 404s, promotion lines + credit, seller env) + term snapshot on settled rows (0044)
+- 2026-11-21 M8-T7 ✅ bdc6270 · backend 2589 unit (was 2587) + 1271 e2e (was 1265) · admin/client/root e2e untouched · client invoices API (list + detail, owner + admin, impersonated read, account-scoped 404s, promotion lines + credit, seller env) + term snapshot on settled rows (0044)
